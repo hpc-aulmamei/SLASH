@@ -7,3 +7,9 @@ SLASH: An Open-Source Research Shell for Alveo V80
 ###################################################
 
 Documentation coming soon!
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Contents
+   
+   vrt/index
