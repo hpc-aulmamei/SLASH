@@ -3,13 +3,14 @@
    comment:: Copyright (C) 2025 Advanced Micro Devices, Inc
 
 ###################################################
-SLASH: An Open-Source Research Shell for Alveo V80
+SLASH V80 Run-Time (VRT)
 ###################################################
 
-Documentation coming soon!
+**********************************
+vrt::Device
+**********************************
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Contents
-   
-   vrt
+.. doxygenclass:: vrt::Device
+   :project: VRT
+   :members:
+
