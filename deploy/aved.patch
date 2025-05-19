@@ -564,23 +564,10 @@ index 63efd51..bc26318 100644
 +    }
 +}
 diff --git a/hw/amd_v80_gen5x8_24.1/src/build_design.tcl b/hw/amd_v80_gen5x8_24.1/src/build_design.tcl
-index 1e19be3..1315ed6 100644
+index 1e19be3..e829f18 100644
 --- a/hw/amd_v80_gen5x8_24.1/src/build_design.tcl
 +++ b/hw/amd_v80_gen5x8_24.1/src/build_design.tcl
-@@ -40,15 +40,16 @@ proc do_aved_build {} {
-   write_bd_tcl -force -no_ip_version -hier_blks [get_bd_cells /] "${build_dir}/bd_gen/create_bd_design_final.tcl"
- 
-   # Run all synthesis and implementation steps
--  launch_runs synth_1 -jobs 4 
--  wait_on_runs synth_1
--  launch_runs impl_1 -to_step write_device_image -jobs 4
--  wait_on_runs impl_1
-+#  launch_runs synth_1 -jobs 4 
-+#  wait_on_runs synth_1
-+#  launch_runs impl_1 -to_step write_device_image -jobs 4
-+#  wait_on_runs impl_1
- 
-   # Implementation has terminated, check it has completed successfully.
+@@ -49,6 +49,7 @@ proc do_aved_build {} {
    if {[get_property PROGRESS [get_runs impl_1]] != "100%"} {
      common::send_msg_id {BUILD_HW-6} {ERROR} "Implementation failed"
    }
@@ -602,51 +589,6 @@ index 4ddb58e..e799514 100644
    # Write the block diagram wrapper and set it as design top
    add_files -norecurse [make_wrapper -files [get_files "${bd_name}.bd"] -top]
    update_compile_order -fileset sources_1
-diff --git a/hw/amd_v80_gen5x8_24.1/src/run_post.tcl b/hw/amd_v80_gen5x8_24.1/src/run_post.tcl
-new file mode 100644
-index 0000000..1d42464
---- /dev/null
-+++ b/hw/amd_v80_gen5x8_24.1/src/run_post.tcl
-@@ -0,0 +1,2 @@
-+proc run_post {} {}
-+run_post
-\ No newline at end of file
-diff --git a/hw/amd_v80_gen5x8_24.1/src/run_pre.tcl b/hw/amd_v80_gen5x8_24.1/src/run_pre.tcl
-new file mode 100644
-index 0000000..5106860
---- /dev/null
-+++ b/hw/amd_v80_gen5x8_24.1/src/run_pre.tcl
-@@ -0,0 +1,29 @@
-+proc run_pre { parentCell } {
-+
-+    variable script_folder
-+
-+    if { $parentCell eq "" } {
-+        set parentCell [get_bd_cells /]
-+    }
-+
-+    # Get object for parentCell
-+    set parentObj [get_bd_cells $parentCell]
-+    if { $parentObj == "" } {
-+        catch {common::send_gid_msg -ssname BD::TCL -id 2090 -severity "ERROR" "Unable to find parent cell <$parentCell>!"}
-+        return
-+    }
-+
-+    # Make sure parentObj is hier blk
-+    set parentType [get_property TYPE $parentObj]
-+    if { $parentType ne "hier" } {
-+        catch {common::send_gid_msg -ssname BD::TCL -id 2091 -severity "ERROR" "Parent <$parentObj> has TYPE = <$parentType>. Expected to be <hier>."}
-+        return
-+    }
-+
-+    # Save current instance; Restore later
-+    set oldCurInst [current_bd_instance .]
-+
-+    # Set parent object as current
-+    current_bd_instance $parentObj
-+
-+}
-\ No newline at end of file
 diff --git a/sw/AMI/api/include/ami_program.h b/sw/AMI/api/include/ami_program.h
 index 4195249..3c2a7bb 100644
 --- a/sw/AMI/api/include/ami_program.h
