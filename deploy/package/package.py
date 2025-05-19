@@ -292,8 +292,8 @@ fi
 # Set permissions for all VRT-related devices
 for dev in /dev/pcie_hotplug*; do
   if [ -e "$dev" ]; then
-    chmod 666 "$dev"
-    chown root:users "$dev"
+    chmod 666 "$dev" || echo "Warning: Failed to set permissions for $dev"
+    chown root:users "$dev" || echo "Warning: Failed to change owner for $dev"
     echo "Set permissions for $dev"
   fi
 done
