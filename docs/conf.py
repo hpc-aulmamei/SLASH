@@ -44,7 +44,7 @@ copyright = '2025 Advanced Micro Devices, Inc'
 author = 'Advanced Micro Devices Inc'
 
 breathe_projects = {}
-breathe_projects['VRT'] = '../vrt/docs/xml'
+breathe_projects['VRT'] = '../vrt/doc/docs/xml'
 
 # Check if we're running on Read the Docs' servers
 read_the_docs_build = os.environ.get('READTHEDOCS', None) == 'True'
