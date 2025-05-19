@@ -12,4 +12,4 @@ Documentation coming soon!
    :maxdepth: 1
    :caption: Contents
    
-   vrt/index
+   vrt/docs/html/index
