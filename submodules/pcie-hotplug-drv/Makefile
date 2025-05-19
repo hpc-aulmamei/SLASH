@@ -31,7 +31,7 @@ install: $(KMOD).ko
 	cp driver/$(KMOD).ko /lib/modules/$(shell uname -r)/kernel/drivers/misc/
 	depmod
 	modprobe $(KMOD)
-	chmod 666 /dev/$(KMOD)_*
+	chmod 666 /dev/$(KMOD)_* || echo "Warning: Failed to set permissions for dev"
 
 uninstall:
 	modprobe -r $(KMOD)
