@@ -1,8 +1,7 @@
-======================
 Contributing to SLASH
 ======================
 
-We welcome contributions to SLASH! You can contribute to SLASH in a variety of ways. You can report bugs and feature requests using `GitHub Issues <https://github.com/Xilinx/SLASH/issues>`_. You can send patches which add new features to, or fix bugs in SLASH. We also encourage sending patches to update `SLASH documentation <https://slash-fpga.readthedocs.io/>`.
+We welcome contributions to SLASH! You can contribute to SLASH in a variety of ways. You can report bugs and feature requests using [GitHub Issues](https://github.com/Xilinx/SLASH/issues). You can send patches which add new features to, or fix bugs in SLASH. We also encourage sending patches to update [SLASH documentation](https://slash-fpga.readthedocs.io/).
 
 
 Reporting Issues
@@ -81,13 +80,12 @@ Here is an example Signed-off-by line which indicates that the contributor accep
 Code License
 ============
 
-All SLASH code is licensed under the terms `LICENSE <https://github.com/Xilinx/SLASH/blob/main/LICENSE>`_ Your contribution will be accepted under the same license.
+All SLASH code is licensed under the terms [LICENSE](https://github.com/Xilinx/SLASH/blob/main/LICENSE) Your contribution will be accepted under the same license.
 
 Please consult the table below for the brief summary of SLASH license for various components.
 
-====================  =========================
-Component             License
-====================  =========================
-Linux vrt driver      GPLv2
-User space            Apache 2.0
-====================  =========================
+
+| Component           |  License     |
+|---------------------|--------------|
+| Linux vrt driver    |  GPLv2       |
+| User space          |  MIT         |
