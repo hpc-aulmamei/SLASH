@@ -20,6 +20,8 @@
 
 #include "commands/partial_program_command.hpp"
 
+#include "utils/filesystem_cache.hpp"
+
 PartialProgramCommand::PartialProgramCommand(const std::string& device,
                                              const std::string& image_path) {
     this->device = device;
@@ -45,15 +47,15 @@ void PartialProgramCommand::execute() {
     ami_dev_get_pci_bdf(dev, &dev_bdf);
 
     if (ArgParser::endsWith(this->imagePath, ".vrtbin")) {
-        Vrtbin::extract(this->imagePath, "/tmp");
+        Vrtbin::extract(this->imagePath, FilesystemCache::getCachePath());
         std::string ami_path = std::string(std::getenv("AMI_HOME"));
         std::string create_path = "mkdir -p " + ami_path + "/" + device + ":00.0/";
         std::string basePath = ami_path + "/" + device + ":00.0/";
         system(create_path.c_str());
-        Vrtbin::copy("/tmp/system_map.xml", basePath + "system_map.xml");
-        Vrtbin::copy("/tmp/version.json", basePath + "version.json");
-        Vrtbin::copy("/tmp/report_utilization.xml", basePath + "report_utilization.xml");
-        imagePath = "/tmp/design.pdi";
+        Vrtbin::copy(FilesystemCache::getCachePath() / "system_map.xml", basePath + "system_map.xml");
+        Vrtbin::copy(FilesystemCache::getCachePath() / "version.json", basePath + "version.json");
+        Vrtbin::copy(FilesystemCache::getCachePath() / "report_utilization.xml", basePath + "report_utilization.xml");
+        imagePath = FilesystemCache::getCachePath() / "design.pdi";
     }
 
     int ret = ami_prog_device_boot(&dev, 1);  // segmented PDI is on partition 1

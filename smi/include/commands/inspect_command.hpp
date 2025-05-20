@@ -28,8 +28,8 @@
 
 #include "utils/vrtbin.hpp"
 
-#define INSPECT_SYSTEM_MAP_PATH "/tmp/system_map.xml"  ///< Path to the system map XML file
-#define INSPECT_VERSION_PATH "/tmp/version.json"       ///< Path to the version JSON file
+#define INSPECT_SYSTEM_MAP_PATH ((FilesystemCache::getCachePath() / "system_map.xml").c_str())  ///< Path to the system map XML file
+#define INSPECT_VERSION_PATH ((FilesystemCache::getCachePath() / "version.json").c_str())       ///< Path to the version JSON file
 
 /**
  * @brief Class for inspecting VRTBIN files.

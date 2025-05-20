@@ -32,6 +32,7 @@
 #include "parser/xml_parser.hpp"
 #include "utils/logger.hpp"
 #include "utils/platform.hpp"
+#include "utils/filesystem_cache.hpp"
 
 namespace vrt {
 
@@ -39,15 +40,15 @@ namespace vrt {
  * @brief Class for handling VRTBIN operations.
  */
 class Vrtbin {
-    std::string vrtbinPath;                ///< Path to the VRTBIN file
-    std::string systemMapPath;             ///< Path to the system map file
-    std::string versionPath;               ///< Path to the version file
-    std::string pdiPath;                   ///< Path to the PDI file
-    std::string uuid;                      ///< UUID of the VRTBIN
-    std::string tempExtractPath = "/tmp";  ///< Temporary extraction path
-    std::string emulationExecPath;         ///< Path to the emulation executable
-    std::string simulationExecPath;        ///< Path to the simulation executable
-    Platform platform;                     ///< Platform type
+    std::string vrtbinPath;                                         ///< Path to the VRTBIN file
+    std::string systemMapPath;                                      ///< Path to the system map file
+    std::string versionPath;                                        ///< Path to the version file
+    std::string pdiPath;                                            ///< Path to the PDI file
+    std::string uuid;                                               ///< UUID of the VRTBIN
+    std::string tempExtractPath = FilesystemCache::getCachePath();  ///< Temporary extraction path
+    std::string emulationExecPath;                                  ///< Path to the emulation executable
+    std::string simulationExecPath;                                 ///< Path to the simulation executable
+    Platform platform;                                              ///< Platform type
     /**
      * @brief Copies a file from source to destination.
      * @param source The source file path.

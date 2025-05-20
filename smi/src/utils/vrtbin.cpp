@@ -19,6 +19,7 @@
  */
 
 #include "utils/vrtbin.hpp"
+#include "utils/filesystem_cache.hpp"
 
 void Vrtbin::extract(std::string source, std::string destination) {
     std::string command = "tar -xvf " + source + " -C " + destination + " 2>&1";
@@ -63,7 +64,7 @@ void Vrtbin::copy(const std::string& source, const std::string& destination) {
 
 std::string Vrtbin::extractUUID() {
     std::string uuid;
-    std::ifstream jsonFile("/tmp/version.json");
+    std::ifstream jsonFile(FilesystemCache::getCachePath() / "version.json");
     if (!jsonFile.is_open()) {
         uuid = "";
     }

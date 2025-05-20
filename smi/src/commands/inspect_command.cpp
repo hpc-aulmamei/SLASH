@@ -19,11 +19,12 @@
  */
 
 #include "commands/inspect_command.hpp"
+#include "utils/filesystem_cache.hpp"
 
 InspectCommand::InspectCommand(const std::string& image_path) : imagePath(image_path) {}
 
 void InspectCommand::execute() {
-    Vrtbin::extract(this->imagePath, "/tmp");
+    Vrtbin::extract(this->imagePath, FilesystemCache::getCachePath());
     queryMetadata();
 }
 

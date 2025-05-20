@@ -20,6 +20,8 @@
 
 #include "api/device.hpp"
 
+#include "utils/filesystem_cache.hpp"
+
 namespace vrt {
 
 Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool program,
@@ -378,7 +380,7 @@ Allocator* Device::getAllocator() { return allocator; }
 std::vector<QdmaIntf*> Device::getQdmaInterfaces() { return qdmaIntfs; }
 
 void Device::lockPcieDevice(const std::string& bdf) {
-    std::string lockFile = "/tmp/pcie_device_" + bdf + ".lock";
+    std::string lockFile = FilesystemCache::getRuntimePath() / ("pcie_device_" + bdf + ".lock");
     int fd = open(lockFile.c_str(), O_CREAT | O_WRONLY, 0666);
     if (fd == -1) {
         throw std::runtime_error("Failed to lock PCIe device " + bdf);
@@ -391,7 +393,7 @@ void Device::lockPcieDevice(const std::string& bdf) {
 }
 
 void Device::unlockPcieDevice(const std::string& bdf) {
-    std::string lockFile = "/tmp/pcie_device_" + bdf + ".lock";
+    std::string lockFile = FilesystemCache::getRuntimePath() / ("pcie_device_" + bdf + ".lock");
     int fd = open(lockFile.c_str(), O_WRONLY, 0666);
     if (fd == -1) {
         throw std::runtime_error("Failed to lock PCIe device " + bdf);
