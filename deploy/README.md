@@ -18,6 +18,15 @@ cd <project_root>/submodules/v80-vitis-flow/submodules/aved/
 git apply ../../../../deploy/aved.patch
 ```
 
+## Create the base PDI for segmented configuration
+
+In order to build the base PDI for segmented configuration, run the following commands:
+```bash
+cd <project_root>/deploy/base_pdi
+python3 build.py --platform compute
+```
+This will take a few hours.
+
 ## Build the AVED software stack
 In order to build the AVED software stack, run the following commands:
 

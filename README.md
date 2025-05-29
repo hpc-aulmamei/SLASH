@@ -15,7 +15,7 @@ The project was tested with AMD Vivado & Vitis tools version 2024.2, kernel vers
 To install the dependencies:
 
 ```bash
-sudo apt install libxml2-dev libzmq3-dev libjsoncpp-dev
+sudo apt install libxml2-dev libzmq3-dev libjsoncpp-dev xvfb
 ```
 
 ### Submodules
