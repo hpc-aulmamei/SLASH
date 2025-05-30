@@ -62,7 +62,9 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
     }
 }
 
-Device::~Device() {}
+Device::~Device() {
+    unlockPcieDevice(bdf);
+}
 
 void Device::parseSystemMap() {
     XMLParser parser(systemMap);
