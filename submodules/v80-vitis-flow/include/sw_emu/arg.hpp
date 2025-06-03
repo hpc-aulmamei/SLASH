@@ -22,6 +22,7 @@
 #define ARG_HPP
 
 #include <string>
+#include <cstdint>
 
 /**
  * @brief Class representing a function argument.

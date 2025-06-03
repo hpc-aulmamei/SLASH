@@ -209,7 +209,14 @@ void BdBuilder::buildBlockDesign() {
         // blockDesignFile << assignQdmaLogicGpioAddr() << std::endl;
         blockDesignFile << "assign_bd_address" << std::endl;
 
-        if (segmented) blockDesignFile << setSegmented() << std::endl;
+        if (segmented) {
+            blockDesignFile << "set_property segmented_configuration true [current_project]\n";
+            try {
+                blockDesignFile << setSegmented() << std::endl;
+            } catch (...){
+                utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Segmented not set");
+            }
+        }
 
         blockDesignFile << printFooter();
         blockDesignFile.close();
@@ -993,6 +1000,7 @@ std::string BdBuilder::setupSysRst() {
 }
 
 std::string BdBuilder::printFooter() {
+    utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Print TCL footer");
     std::stringstream ss;
     ss << "}\n";
     return ss.str();
@@ -1070,8 +1078,7 @@ std::string BdBuilder::setSegmented() {
         }
     }
     std::stringstream ss;
-    ss << "set_property segmented_configuration true [current_project]\n"
-       << "set_property NOC_SOLUTION_FILE " << std::string(resolvedPath) << " [get_runs impl_1]\n";
+    ss << "set_property NOC_SOLUTION_FILE " << std::string(resolvedPath) << " [get_runs impl_1]\n";
     return ss.str();
 }
 
