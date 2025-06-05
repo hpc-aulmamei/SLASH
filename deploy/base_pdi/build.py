@@ -26,7 +26,7 @@ import os
 
 ROOT_PATH = os.path.realpath(".")
 DESIGN_PDI_PATH = os.path.join(ROOT_PATH, "..")
-NOC_SOLUTION_PATH = os.path.realpath("../../submodules/v80-vitis-flow/resources/")
+RESOURCES_PATH = os.path.realpath("../../submodules/v80-vitis-flow/resources/")
 COMPUTE_EXAMPLE_DIR = os.path.realpath("../../examples/05_perf/")
 DEPLOY_PROJECT_COMPUTE = os.path.join(os.getcwd(), "deploy_project_compute")
 HLS_DIR_COMPUTE = os.path.join(DEPLOY_PROJECT_COMPUTE, "hls/")
@@ -103,6 +103,7 @@ def linker_step(platform):
         sol1_paths = [os.path.join(d, "sol1") for d in build_dirs]
         run_linker(CONFIG_FILE_PATH_COMPUTE, sol1_paths)
         shutil.copy(os.path.join(LINKER_BUILD_DIR_COMPUTE, "run_pre.tcl"), AVED_SRC_DIR_COMPUTE)
+        shutil.copy(os.path.join(RESOURCES_PATH, "run_post.tcl"), AVED_SRC_DIR_COMPUTE)
     elif platform == "eth":
         print("Eth mode not supported yet.")
     else:
@@ -131,7 +132,7 @@ def generate_noc_solution_step(platform):
     if platform == "compute":
         os.chdir(AVED_ROOT_DIR_COMPUTE)
         subprocess.run(["vivado", "-mode", "tcl", "-source", "src/export_noc.tcl"], check=True)
-        shutil.copy(os.path.join(AVED_ROOT_DIR_COMPUTE, "noc_sol.ncr"), os.path.join(NOC_SOLUTION_PATH, "noc_sol_compute.ncr"))
+        shutil.copy(os.path.join(AVED_ROOT_DIR_COMPUTE, "noc_sol.ncr"), os.path.join(RESOURCES_PATH, "noc_sol_compute.ncr"))
     elif platform == "eth":
         print("Eth mode not supported yet.")
     else:
@@ -215,7 +216,7 @@ def main():
     #     shutil.copy(os.path.join(AVED_ROOT_DIR_COMPUTE, "design.pdi"), os.path.join(ROOT_PATH, "design.pdi"))
     #     # Generate NoC solution from the vivado project
     #     subprocess.run(["vivado", "-mode", "batch", "-source", "export_noc.tcl"], check=True)
-    #     shutil.copy(os.path.join(AVED_ROOT_DIR_COMPUTE, "noc_sol.ncr"), os.path.join(NOC_SOLUTION_PATH, "noc_sol_compute.ncr"))
+    #     shutil.copy(os.path.join(AVED_ROOT_DIR_COMPUTE, "noc_sol.ncr"), os.path.join(RESOURCES_PATH, "noc_sol_compute.ncr"))
     # elif args.platform == "eth":
     #     print("Eth mode not supported yet.")
 
