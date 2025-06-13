@@ -360,6 +360,7 @@ static int __init pcie_hotplug_init(void) {
     if (ret < 0) {
         class_destroy(pcie_hotplug_class);
         unregister_chrdev(major_number, DEVICE_NAME);
+        printk(KERN_ERR "Failed to register PCI driver\n");
         return ret;
     }
 
