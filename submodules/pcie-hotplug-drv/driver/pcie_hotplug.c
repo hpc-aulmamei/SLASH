@@ -367,6 +367,7 @@ static int __init pcie_hotplug_init(void) {
         return major_number;
     }
 
+    
     // Initialize class
     pcie_hotplug_class = class_create(THIS_MODULE, CLASS_NAME);
     if (IS_ERR(pcie_hotplug_class)) {
@@ -381,6 +382,8 @@ static int __init pcie_hotplug_init(void) {
         unregister_chrdev(major_number, DEVICE_NAME);
         return ret;
     }
+
+    discover_and_add_devices();
 
     printk(KERN_INFO "PCIe hotplug initialized\n");
     return 0;
