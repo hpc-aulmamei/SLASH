@@ -197,6 +197,40 @@ static long pcie_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lon
         case PCIE_IOCTL_HOTPLUG:
             handle_pcie_hotplug(dev);
             break;
+        case PCIE_IOCTL_GET_BAR_VAL: {
+            struct pcie_bar_read barreq;
+            void __iomem *mapped;
+            struct pci_dev *pdev = get_pci_dev_by_bdf(dev->bdf);
+            if (!pdev)
+                return -ENODEV;
+
+            if (copy_from_user(&barreq, (void __user *)arg, sizeof(barreq)))
+                return -EFAULT;
+
+            if (barreq.bar_index >= PCI_STD_NUM_BARS)
+                return -EINVAL;
+
+            // Sanity check: BAR must exist
+            if (!(pci_resource_flags(pdev, barreq.bar_index) & IORESOURCE_MEM))
+                return -EINVAL;
+
+            if (barreq.offset >= pci_resource_len(pdev, barreq.bar_index))
+                return -EINVAL;
+
+            // Map BAR temporarily
+            mapped = pci_iomap(pdev, barreq.bar_index, 0);
+            if (!mapped)
+                return -ENOMEM;
+
+            barreq.value = ioread32(mapped + barreq.offset);
+            pci_iounmap(pdev, mapped);
+
+            if (copy_to_user((void __user *)arg, &barreq, sizeof(barreq)))
+                return -EFAULT;
+
+            return 0;
+        }
+
         default:
             printk(KERN_WARNING "Invalid IOCTL command: 0x%x\n", cmd);
             return -EINVAL;
