@@ -39,7 +39,6 @@ static const struct pci_device_id pcie_hotplug_ids[] = {
         0,
     } /**< End of list */
 };
-MODULE_DEVICE_TABLE(pci, pcie_hotplug_ids);
 
 
 #endif  // PCIE_HOTPLUG_IDS
