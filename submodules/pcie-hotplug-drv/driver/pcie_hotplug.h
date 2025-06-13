@@ -26,9 +26,16 @@
 #include <linux/device.h>
 #include <linux/slab.h>
 #include <linux/list.h>
+#include <linux/ioctl.h>
 
 #include "pcie_hotplug_ids.h"
 
+#define PCIE_IOCTL_MAGIC 0xB5
+
+#define PCIE_IOCTL_RESCAN      _IO(PCIE_IOCTL_MAGIC, 0x01)
+#define PCIE_IOCTL_REMOVE      _IO(PCIE_IOCTL_MAGIC, 0x02)
+#define PCIE_IOCTL_TOGGLE_SBR  _IO(PCIE_IOCTL_MAGIC, 0x03)
+#define PCIE_IOCTL_HOTPLUG     _IO(PCIE_IOCTL_MAGIC, 0x04)
 
 static int major_number;
 static struct class* pcie_hotplug_class = NULL;
@@ -40,7 +47,6 @@ struct pcie_hotplug_device {
     struct cdev cdev;
     struct list_head list;
 };
-
 
 static LIST_HEAD(device_list);
 static int device_count = 0;
@@ -102,36 +108,29 @@ static int device_count = 0;
      * Kernel Specific Functions
      */
 
-    /**
-     * pcie_hotplug_write - Write handler for the character device
-     * @file: File structure
-     * @buffer: User buffer
-     * @len: Length of the buffer
-     * @offset: Offset in the file
-     *
-     * Handles write operations to the character device.
-     *
-     * Returns the number of bytes written on success, negative error code on failure.
-     */
-    static ssize_t pcie_hotplug_write(struct file* file, const char __user* buffer, size_t len, loff_t* offset);
+    static long pcie_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
-    // /**
-    //  * @brief Store function for adding a new PCIe hotplug device.
-    //  *
-    //  * This function is called when a new device BDF is written to the sysfs entry.
-    //  * It allocates and initializes a new `pcie_hotplug_device` structure, finds the
-    //  * root port for the device, allocates a character device region, and creates
-    //  * the character device.
-    //  *
-    //  * @param kobj Pointer to the kobject.
-    //  * @param attr Pointer to the kobj_attribute.
-    //  * @param buf Buffer containing the BDF string.
-    //  * @param count Number of bytes in the buffer.
-    //  * @return Number of bytes processed on success, negative error code on failure.
-    //  */
-    // static ssize_t add_device_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count);
+    static int pcie_hotplug_probe(struct pci_dev *pdev, const struct pci_device_id *id);
 
-    static void add_device(const char *bdf);
+    static void pcie_hotplug_remove(struct pci_dev *pdev);
+
+    // // /**
+    // //  * @brief Store function for adding a new PCIe hotplug device.
+    // //  *
+    // //  * This function is called when a new device BDF is written to the sysfs entry.
+    // //  * It allocates and initializes a new `pcie_hotplug_device` structure, finds the
+    // //  * root port for the device, allocates a character device region, and creates
+    // //  * the character device.
+    // //  *
+    // //  * @param kobj Pointer to the kobject.
+    // //  * @param attr Pointer to the kobj_attribute.
+    // //  * @param buf Buffer containing the BDF string.
+    // //  * @param count Number of bytes in the buffer.
+    // //  * @return Number of bytes processed on success, negative error code on failure.
+    // //  */
+    // // static ssize_t add_device_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count);
+
+    // static void add_device(const char *bdf);
 
     /**
      * pcie_hotplug_init - Module initialization function

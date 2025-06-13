@@ -181,112 +181,166 @@ static int pcie_hotplug_release(struct inode *inode, struct file *file) {
     return 0;
 }
 
-static ssize_t pcie_hotplug_write(struct file* file, const char __user* buffer, size_t len, loff_t* offset) {
-    char cmd[16];
-    struct pcie_hotplug_device *dev = file->private_data;
 
-    if(len > 15) {
-        return -EINVAL;
-    }
+static void pcie_hotplug_remove(struct pci_dev *pdev) {
+    struct pcie_hotplug_device *dev = pci_get_drvdata(pdev);
 
-    if(copy_from_user(cmd, buffer, len)) {
-        return -EFAULT;
-    }
+    if (!dev)
+        return;
 
-    cmd[len] = '\0';
-    printk(KERN_INFO "Received command: %s\n", cmd);
+    device_destroy(pcie_hotplug_class, dev->devt);
+    cdev_del(&dev->cdev);
+    unregister_chrdev_region(dev->devt, 1);
+    kfree(dev->bdf);
+    kfree(dev);
 
-    if(strncmp(cmd, "rescan", 6) == 0) {
-        handle_rescan();
-    } else if(strncmp(cmd, "remove", 6) == 0) {
-        handle_pcie_remove(dev);
-    } else if(strncmp(cmd, "toggle_sbr", 10) == 0) {
-        toggle_sbr(dev);
-    } else if(strncmp(cmd, "hotplug", 7) == 0) {
-        handle_pcie_hotplug(dev);
-    } else {
-        printk(KERN_WARNING "Invalid command\n");
-    }
-
-    return len;
+    printk(KERN_INFO "PCIe hotplug remove\n");
 }
 
 static struct file_operations fops = {
     .owner = THIS_MODULE,
     .open = pcie_hotplug_open,
     .release = pcie_hotplug_release,
-    .write = pcie_hotplug_write,
+    .unlocked_ioctl = pcie_hotplug_ioctl,
 };
 
-static void discover_and_add_devices(void) {
-    struct pci_dev *pdev = NULL;
-    char bdf[16];
-    const struct pci_device_id *id;
+static long pcie_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
+    struct pcie_hotplug_device *dev = file->private_data;
 
-    for_each_pci_dev(pdev) {
-        for (id = pcie_hotplug_ids; id->vendor != 0; id++) {
-            if (pdev->vendor == id->vendor && pdev->device == id->device && PCI_FUNC(pdev->devfn) == 0) {
-                snprintf(bdf, sizeof(bdf), "%04x:%02x:%02x.%x",
-                         pci_domain_nr(pdev->bus),
-                         pdev->bus->number,
-                         PCI_SLOT(pdev->devfn),
-                         PCI_FUNC(pdev->devfn));
-                add_device(bdf);
-            }
-        }
+    switch (cmd) {
+        case PCIE_IOCTL_RESCAN:
+            handle_rescan();
+            break;
+        case PCIE_IOCTL_REMOVE:
+            handle_pcie_remove(dev);
+            break;
+        case PCIE_IOCTL_TOGGLE_SBR:
+            toggle_sbr(dev);
+            break;
+        case PCIE_IOCTL_HOTPLUG:
+            handle_pcie_hotplug(dev);
+            break;
+        default:
+            printk(KERN_WARNING "Invalid IOCTL command: 0x%x\n", cmd);
+            return -EINVAL;
     }
+
+    return 0;
 }
 
-static void add_device(const char *bdf) {
-    struct pcie_hotplug_device *dev;
+static int pcie_hotplug_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
     int ret;
+    char bdf[16];
+    struct pcie_hotplug_device *dev;
+
+    ret = pci_enable_device(pdev);
 
     dev = kzalloc(sizeof(*dev), GFP_KERNEL);
-    if (!dev) {
-        return;
-    }
+    if (!dev)
+        return -ENOMEM;
+
+    snprintf(bdf, sizeof(bdf), "%04x:%02x:%02x.%x",
+             pci_domain_nr(pdev->bus),
+             pdev->bus->number,
+             PCI_SLOT(pdev->devfn),
+             PCI_FUNC(pdev->devfn));
 
     dev->bdf = kstrdup(bdf, GFP_KERNEL);
     if (!dev->bdf) {
         kfree(dev);
-        return;
+        return -ENOMEM;
     }
 
-    // Find root port for the device
     ret = get_bdfs(dev->bdf, dev->rootport_bdf);
-    if (ret < 0) {
-        kfree(dev->bdf);
-        kfree(dev);
-        return;
-    }
+    if (ret < 0)
+        goto err_bdf;
 
     ret = alloc_chrdev_region(&dev->devt, 0, 1, DEVICE_NAME);
-    if (ret < 0) {
-        kfree(dev->bdf);
-        kfree(dev);
-        return;
-    }
+    if (ret < 0)
+        goto err_bdf;
 
     cdev_init(&dev->cdev, &fops);
     dev->cdev.owner = THIS_MODULE;
+
     ret = cdev_add(&dev->cdev, dev->devt, 1);
-    if (ret < 0) {
-        unregister_chrdev_region(dev->devt, 1);
-        kfree(dev->bdf);
-        kfree(dev);
-        return;
-    }
+    if (ret < 0)
+        goto err_chrdev;
 
     device_create(pcie_hotplug_class, NULL, dev->devt, NULL, "pcie_hotplug_%s", dev->bdf);
 
+    pci_set_drvdata(pdev, dev);  // link device struct to PCI dev
     list_add(&dev->list, &device_list);
     device_count++;
 
-    printk(KERN_INFO "Added PCIe hotplug device: %s, root port: %s\n", dev->bdf, dev->rootport_bdf);
+    printk(KERN_INFO "PCIe hotplug probe: %s\n", dev->bdf);
+    return 0;
+
+err_chrdev:
+    unregister_chrdev_region(dev->devt, 1);
+err_bdf:
+    kfree(dev->bdf);
+    kfree(dev);
+    return ret;
+
 }
 
-static int __init pcie_hotplug_init(void) {
+// static void add_device(const char *bdf) {
+//     struct pcie_hotplug_device *dev;
+//     int ret;
 
+//     dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+//     if (!dev) {
+//         return;
+//     }
+
+//     dev->bdf = kstrdup(bdf, GFP_KERNEL);
+//     if (!dev->bdf) {
+//         kfree(dev);
+//         return;
+//     }
+
+//     // Find root port for the device
+//     ret = get_bdfs(dev->bdf, dev->rootport_bdf);
+//     if (ret < 0) {
+//         kfree(dev->bdf);
+//         kfree(dev);
+//         return;
+//     }
+
+//     ret = alloc_chrdev_region(&dev->devt, 0, 1, DEVICE_NAME);
+//     if (ret < 0) {
+//         kfree(dev->bdf);
+//         kfree(dev);
+//         return;
+//     }
+
+//     cdev_init(&dev->cdev, &fops);
+//     dev->cdev.owner = THIS_MODULE;
+//     ret = cdev_add(&dev->cdev, dev->devt, 1);
+//     if (ret < 0) {
+//         unregister_chrdev_region(dev->devt, 1);
+//         kfree(dev->bdf);
+//         kfree(dev);
+//         return;
+//     }
+
+//     device_create(pcie_hotplug_class, NULL, dev->devt, NULL, "pcie_hotplug_%s", dev->bdf);
+
+//     list_add(&dev->list, &device_list);
+//     device_count++;
+
+//     printk(KERN_INFO "Added PCIe hotplug device: %s, root port: %s\n", dev->bdf, dev->rootport_bdf);
+// }
+
+static struct pci_driver pcie_hotplug_driver = {
+    .name = "pcie_hotplug",
+    .id_table = pcie_hotplug_ids,
+    .probe = pcie_hotplug_probe,
+    .remove = pcie_hotplug_remove,
+};
+
+static int __init pcie_hotplug_init(void) {
+    int ret;
     // Register character device
     major_number = register_chrdev(0, DEVICE_NAME, &fops);
     if (major_number < 0) {
@@ -302,8 +356,12 @@ static int __init pcie_hotplug_init(void) {
         return PTR_ERR(pcie_hotplug_class);
     }
 
-    // Discover and add devices with the specified vendor ID
-    discover_and_add_devices();
+    ret = pci_register_driver(&pcie_hotplug_driver);
+    if (ret < 0) {
+        class_destroy(pcie_hotplug_class);
+        unregister_chrdev(major_number, DEVICE_NAME);
+        return ret;
+    }
 
     printk(KERN_INFO "PCIe hotplug initialized\n");
     return 0;
@@ -311,7 +369,8 @@ static int __init pcie_hotplug_init(void) {
 
 static void __exit pcie_hotplug_exit(void) {
     struct pcie_hotplug_device *dev, *tmp;
-
+    
+    pci_unregister_driver(&pcie_hotplug_driver);
     list_for_each_entry_safe(dev, tmp, &device_list, list) {
         device_destroy(pcie_hotplug_class, dev->devt);
         cdev_del(&dev->cdev);
@@ -331,4 +390,4 @@ module_exit(pcie_hotplug_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("AMD Inc.");
 MODULE_DESCRIPTION("PCIe hotplug module");
-MODULE_VERSION("1.0");
+MODULE_VERSION("1.1");
