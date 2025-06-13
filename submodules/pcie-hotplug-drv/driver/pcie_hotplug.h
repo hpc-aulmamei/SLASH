@@ -46,6 +46,14 @@ struct pcie_bar_read {
 
 #define PCIE_IOCTL_GET_BAR_VAL _IOWR(PCIE_IOCTL_MAGIC, 0x05, struct pcie_bar_read)
 
+struct pcie_bar_write {
+    uint32_t bar_index;
+    uint32_t offset;
+    uint32_t value;
+};
+
+#define PCIE_IOCTL_SET_BAR_VAL _IOW(PCIE_IOCTL_MAGIC, 0x06, struct pcie_bar_write)
+
 static int major_number;
 static struct class* pcie_hotplug_class = NULL;
 
