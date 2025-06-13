@@ -230,26 +230,6 @@ static long pcie_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lon
 
             return 0;
         }
-        case PCIE_IOCTL_SET_BAR_VAL: {
-            struct pcie_bar_write bar;
-            struct pci_dev *pdev = get_pci_dev_by_bdf(dev->bdf);
-            if (!pdev)
-                return -ENODEV;
-
-            if (copy_from_user(&bar, (void __user *)arg, sizeof(bar)))
-                return -EFAULT;
-
-            if (bar.bar_index >= PCI_STD_NUM_BARS)
-                return -EINVAL;
-
-            void __iomem *bar_addr = pci_iomap(pdev, bar.bar_index, 0);
-            if (!bar_addr)
-                return -ENXIO;
-
-            writel(bar.value, bar_addr + bar.offset);
-            pci_iounmap(pdev, bar_addr);
-            return 0;
-        }
 
         default:
             printk(KERN_WARNING "Invalid IOCTL command: 0x%x\n", cmd);
