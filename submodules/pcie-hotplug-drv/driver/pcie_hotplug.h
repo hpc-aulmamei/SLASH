@@ -50,7 +50,7 @@ struct pcie_bar_write {
     uint32_t value;
 };
 
-#define PCIE_IOCTL_GET_BAR_VAL _IOWR(PCIE_IOCTL_MAGIC, 0x06, struct pcie_bar_write)
+#define PCIE_IOCTL_SET_BAR_VAL _IOWR(PCIE_IOCTL_MAGIC, 0x06, struct pcie_bar_write)
 
 
 static int major_number;
