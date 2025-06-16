@@ -44,6 +44,13 @@ struct pcie_bar_read {
 };
 #define PCIE_IOCTL_GET_BAR_VAL _IOWR(PCIE_IOCTL_MAGIC, 0x05, struct pcie_bar_read)
 
+struct pcie_bar_write {
+    uint8_t bar_index;
+    uint32_t offset;
+    uint32_t value;
+};
+
+#define PCIE_IOCTL_GET_BAR_VAL _IOWR(PCIE_IOCTL_MAGIC, 0x06, struct pcie_bar_write)
 
 
 static int major_number;
@@ -71,7 +78,7 @@ static int device_count = 0;
      * Returns the PCI device corresponding to the given BDF.
      */
     static struct pci_dev *get_pci_dev_by_bdf(const char* bdf);
-
+ 
     /**
      * get_bdfs - Get BDFs for the device and root port
      *
