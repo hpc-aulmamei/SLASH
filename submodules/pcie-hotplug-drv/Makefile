@@ -17,11 +17,14 @@ KMOD := pcie_hotplug
 KDIR := /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 CC := g++
+QDMA_DIR_ABS := $(shell cd $(PWD)/../qdma_drv/QDMA/linux-kernel/driver && pwd)
+
+export KBUILD_EXTRA_SYMBOLS := $(QDMA_DIR_ABS)/src/Module.symvers
 
 all: $(KMOD).ko
 
 $(KMOD).ko: driver/$(KMOD).c
-	$(MAKE) -C $(KDIR) M=$(PWD)/driver modules
+	$(MAKE) -C $(KDIR) M=$(PWD)/driver QDMA_DIR_ABS=$(QDMA_DIR_ABS) modules
 
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD)/driver clean

@@ -260,6 +260,60 @@ static long pcie_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lon
             return 0;
         }
 
+        case PCIE_IOCTL_READ_BAR_RANGE: {
+            struct pcie_bar_range range;
+            void __iomem *mapped;
+            struct pci_dev *pdev = get_pci_dev_by_bdf(dev->bdf);
+            if (!pdev)
+                return -ENODEV;
+
+            if (copy_from_user(&range, (void __user *)arg, sizeof(range)))
+                return -EFAULT;
+
+            if (range.bar_index >= PCI_STD_NUM_BARS ||
+                range.size > MAX_BAR_RW_SIZE ||
+                range.offset + range.size > pci_resource_len(pdev, range.bar_index))
+                return -EINVAL;
+
+            mapped = pci_iomap(pdev, range.bar_index, 0);
+            if (!mapped)
+                return -ENOMEM;
+
+            memcpy_fromio(range.data, mapped + range.offset, range.size);
+            pci_iounmap(pdev, mapped);
+
+            if (copy_to_user((void __user *)arg, &range, sizeof(range)))
+                return -EFAULT;
+
+            return 0;
+        }
+
+        case PCIE_IOCTL_WRITE_BAR_RANGE: {
+            struct pcie_bar_range range;
+            void __iomem *mapped;
+            struct pci_dev *pdev = get_pci_dev_by_bdf(dev->bdf);
+            if (!pdev)
+                return -ENODEV;
+
+            if (copy_from_user(&range, (void __user *)arg, sizeof(range)))
+                return -EFAULT;
+
+            if (range.bar_index >= PCI_STD_NUM_BARS ||
+                range.size > MAX_BAR_RW_SIZE ||
+                range.offset + range.size > pci_resource_len(pdev, range.bar_index))
+                return -EINVAL;
+
+            mapped = pci_iomap(pdev, range.bar_index, 0);
+            if (!mapped)
+                return -ENOMEM;
+
+            memcpy_toio(mapped + range.offset, range.data, range.size);
+            pci_iounmap(pdev, mapped);
+
+            return 0;
+        }
+
+
 
         default:
             printk(KERN_WARNING "Invalid IOCTL command: 0x%x\n", cmd);
@@ -280,6 +334,7 @@ static int pcie_hotplug_probe(struct pci_dev *pdev, const struct pci_device_id *
     int ret;
     char bdf[16];
     struct pcie_hotplug_device *dev;
+    struct qdma_dev_conf conf;
 
     pci_enable_device(pdev);
 
@@ -321,6 +376,31 @@ static int pcie_hotplug_probe(struct pci_dev *pdev, const struct pci_device_id *
     device_count++;
 
     printk(KERN_INFO "PCIe hotplug probe: %s\n", dev->bdf);
+    // printk((KERN_INFO "Probing QDMA for device: %s\n", dev->bdf));
+    
+    memset(&conf, 0, sizeof(conf));
+    conf.qdma_drv_mode = POLL_MODE;
+    conf.intr_rngsz = QDMA_INTR_COAL_RING_SIZE;
+    conf.pdev = get_next_function_pci_dev(dev->bdf);
+    if (!conf.pdev) {
+        printk(KERN_ERR "Failed to get next function PCI device for %s\n", dev->bdf);
+        ret = -ENODEV;
+        goto err_chrdev;
+    }
+    conf.bar_num_config = -1;
+	conf.bar_num_user = -1;
+	conf.bar_num_bypass = -1;
+
+	conf.bar_num_config = 2; // @TODO fix //extract_mod_param(pdev, CONFIG_BAR);
+	conf.qsets_max = 0;
+	conf.qsets_base = -1;
+	conf.msix_qvec_max = 32;
+	conf.user_msix_qvec_max = 1;
+    ret = qdma_device_open("pcie_hotplug", &conf, &dev->dev_hndl);
+    if (ret < 0 && ret != -ENODEV) {
+        printk(KERN_ERR "Failed to open QDMA device: %d\n", ret);
+        goto err_chrdev;
+    }
     return 0;
 
 err_chrdev:
@@ -450,6 +530,15 @@ static int __init pcie_hotplug_init(void) {
     discover_and_add_devices();
 
     printk(KERN_INFO "PCIe hotplug initialized\n");
+
+    ret = libqdma_init(8, NULL);
+    if (ret < 0) {
+        printk(KERN_ERR "Failed to initialize libqdma\n");
+        pci_unregister_driver(&pcie_hotplug_driver);
+        class_destroy(pcie_hotplug_class);
+        unregister_chrdev(major_number, DEVICE_NAME);
+        return ret;
+    }
     return 0;
 }
 
@@ -468,6 +557,7 @@ static void __exit pcie_hotplug_exit(void) {
     class_unregister(pcie_hotplug_class);
     class_destroy(pcie_hotplug_class);
     unregister_chrdev(major_number, DEVICE_NAME);
+    libqdma_exit();
     printk(KERN_INFO "pcie_hotplug module unloaded\n");
 }
 

@@ -29,40 +29,10 @@
 #include <linux/ioctl.h>
 
 #include "pcie_hotplug_ids.h"
-
-#define PCIE_IOCTL_MAGIC 0xB5
-
-#define PCIE_IOCTL_RESCAN      _IO(PCIE_IOCTL_MAGIC, 0x01)
-#define PCIE_IOCTL_REMOVE      _IO(PCIE_IOCTL_MAGIC, 0x02)
-#define PCIE_IOCTL_TOGGLE_SBR  _IO(PCIE_IOCTL_MAGIC, 0x03)
-#define PCIE_IOCTL_HOTPLUG     _IO(PCIE_IOCTL_MAGIC, 0x04)
-
-struct pcie_bar_read {
-    unsigned int bar_index;       // IN: BAR number (0-5)
-    unsigned int offset;          // IN: Offset in BAR to read
-    u32 value;                    // OUT: Value read (32-bit)
-};
-#define PCIE_IOCTL_GET_BAR_VAL _IOWR(PCIE_IOCTL_MAGIC, 0x05, struct pcie_bar_read)
-
-struct pcie_bar_write {
-    uint8_t bar_index;
-    uint32_t offset;
-    uint32_t value;
-};
-
-#define PCIE_IOCTL_SET_BAR_VAL _IOWR(PCIE_IOCTL_MAGIC, 0x06, struct pcie_bar_write)
+#include "pcie_hotplug_ioctl.h"
+#include "libqdma_export.h"
 
 
-static int major_number;
-static struct class* pcie_hotplug_class = NULL;
-
-struct pcie_hotplug_device {
-    char *bdf;
-    char rootport_bdf[32];
-    dev_t devt;
-    struct cdev cdev;
-    struct list_head list;
-};
 
 static LIST_HEAD(device_list);
 static int device_count = 0;
@@ -123,8 +93,6 @@ static int device_count = 0;
     /**
      * Kernel Specific Functions
      */
-
-    static long pcie_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
 
     static int pcie_hotplug_probe(struct pci_dev *pdev, const struct pci_device_id *id);
 
