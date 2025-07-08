@@ -20,7 +20,7 @@
 
 set build_dir "build"
 open_project $build_dir/prj.xpr
-open_run impl_1
+open_run synth_1
 set_property lock true [get_noc_net_routes -of [get_noc_logical_paths -filter {initial_boot == 1}]]
 write_noc_solution -file noc_sol.ncr
 exit
