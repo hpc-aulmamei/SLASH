@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
         std::string bdf = argv[1];
         std::string vrtbinFile = argv[2];
         uint32_t size = 1024;
-        vrt::utils::Logger::setLogLevel(vrt::utils::LogLevel::INFO);
+        vrt::utils::Logger::setLogLevel(vrt::utils::LogLevel::DEBUG);
         std::cout << "VRT Version: " << vrt::getVersion() << std::endl;
         vrt::Device device(bdf, vrtbinFile);
 
@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Generating data...\n";
         for(uint32_t i = 0; i < size; i++) {
             buffer[i] = static_cast<float>(dis(gen));
-            goldenModel+=buffer[i] + 1;
+            goldenModel += buffer[i] + 1;
         }
 
         buffer.sync(vrt::SyncType::HOST_TO_DEVICE);

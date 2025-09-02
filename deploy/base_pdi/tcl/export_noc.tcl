@@ -1,4 +1,4 @@
-# ##################################################################################################
+deploy/base_pdi/build.py# ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 # 
@@ -22,5 +22,6 @@ set build_dir "build"
 open_project $build_dir/prj.xpr
 open_run synth_1
 set_property lock true [get_noc_net_routes -of [get_noc_logical_paths -filter {initial_boot == 1}]]
+set_property lock true [get_noc_net_routes -of [get_noc_logical_paths -of [get_noc_logical_instances *n?u128*]]]
 write_noc_solution -file noc_sol.ncr
 exit

@@ -63,29 +63,84 @@ static struct pci_dev *get_next_function_pci_dev(const char* bdf) {
     return pdev;
 }
 
-static void toggle_sbr(struct pcie_hotplug_device *dev) {
+static void toggle_sbr(struct pcie_hotplug_device *dev)
+{
+    struct pci_dev *bridge = NULL, *ep = NULL, *p;
+    int domain, bus, slot, func;
     u16 ctrl;
-    struct pci_dev* pdev = NULL;
-    printk(KERN_INFO "Toggling SBR for device: %s\n", dev->bdf);
-    pdev = get_pci_dev_by_bdf(dev->rootport_bdf);
-    if (!pdev) {
+
+    if (!dev || !dev->bdf) {
+        printk(KERN_ERR "toggle_sbr: invalid device\n");
         return;
     }
 
-    // Read the PCI control register
-    pci_read_config_word(pdev, PCI_BRIDGE_CONTROL, &ctrl);
+    /* Parse BDF of the endpoint we want to reset under */
+    if (sscanf(dev->bdf, "%x:%x:%x.%x", &domain, &bus, &slot, &func) != 4) {
+        printk(KERN_ERR "toggle_sbr: invalid BDF format: %s\n", dev->bdf);
+        return;
+    }
 
-    // set SBR - PDI will reload here
+    /* First try: if EP is present, get its immediate upstream bridge */
+    ep = pci_get_domain_bus_and_slot(domain, bus, PCI_DEVFN(slot, func));
+    if (ep) {
+        struct pci_dev *up = pci_upstream_bridge(ep);
+        if (up)
+            bridge = pci_dev_get(up);   /* take ref */
+        pci_dev_put(ep);
+    }
+
+    /* Fallback: EP may be removed already. Find the bridge whose secondary bus == EP bus. */
+    if (!bridge) {
+        for_each_pci_dev(p) {
+            if (pci_domain_nr(p->bus) != domain)
+                continue;
+            if (!pci_is_bridge(p) || !p->subordinate)
+                continue;
+            if (p->subordinate->number == bus) {
+                bridge = pci_dev_get(p); /* take ref */
+                break;
+            }
+        }
+    }
+
+    if (!bridge) {
+        printk(KERN_ERR "toggle_sbr: no upstream bridge found for %s\n", dev->bdf);
+        return;
+    }
+
+    printk(KERN_INFO "toggle_sbr: pulsing SBR on upstream bridge %04x:%02x:%02x.%x (sec bus %02x)\n",
+           pci_domain_nr(bridge->bus),
+           bridge->bus->number,
+           PCI_SLOT(bridge->devfn),
+           PCI_FUNC(bridge->devfn),
+           bridge->subordinate ? bridge->subordinate->number : 0xff);
+
+#if IS_ENABLED(CONFIG_PCI)
+    /*
+     * Prefer core helper; returns 0 on success on modern kernels.
+     * If unavailable or it fails, fall back to manual toggle.
+     */
+    if (!pci_bridge_secondary_bus_reset(bridge)) {
+        /* small settle time similar to userspace */
+        msleep(300);
+        pci_dev_put(bridge);
+        return;
+    }
+#endif
+
+    /* Manual SBR pulse on PCI_BRIDGE_CONTROL */
+    pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl);
     ctrl |= PCI_BRIDGE_CTL_BUS_RESET;
-    pci_write_config_word(pdev, PCI_BRIDGE_CONTROL, ctrl);
+    pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl);
 
-    msleep(2); // small delay before resetting the SBR
+    msleep(2);   /* short pulse like userspace */
 
-    // clear SBR
     ctrl &= ~PCI_BRIDGE_CTL_BUS_RESET;
-    pci_write_config_word(pdev, PCI_BRIDGE_CONTROL, ctrl);
+    pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl);
 
-    msleep(5000);
+    msleep(50000);
+
+    pci_dev_put(bridge);
 }
 
 static void handle_rescan(void) {
