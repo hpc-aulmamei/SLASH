@@ -103,6 +103,7 @@ void ProgramCommand::bootDevice() {
     ami_dev_delete(&dev);
     pcieHandler.execute(PcieDriverHandler::Command::REMOVE);
     pcieHandler.execute(PcieDriverHandler::Command::TOGGLE_SBR);
+    usleep(5000000);
     pcieHandler.execute(PcieDriverHandler::Command::RESCAN);
     pcieHandler.execute(PcieDriverHandler::Command::HOTPLUG);
     std::cout << device.c_str() << "\n";

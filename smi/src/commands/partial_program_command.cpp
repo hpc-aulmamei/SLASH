@@ -69,6 +69,7 @@ void PartialProgramCommand::execute() {
     ami_dev_delete(&dev);
     pcieDriverHandler.execute(PcieDriverHandler::Command::REMOVE);
     pcieDriverHandler.execute(PcieDriverHandler::Command::TOGGLE_SBR);
+    usleep(5000000);
     pcieDriverHandler.execute(PcieDriverHandler::Command::RESCAN);
     pcieDriverHandler.execute(PcieDriverHandler::Command::HOTPLUG);
 
