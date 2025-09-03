@@ -5,7 +5,9 @@ This repository contains SLASH, a SmartNIC platform for Alveo V80. SLASH consist
 - V80 RunTime (VRT): the VRT API implementation, along with examples.
 - (upcoming) 200Gbps MAC implementation for network-attached kernels and SmartNIC applications
 
-The project was tested with AMD Vivado & Vitis tools version 2024.2, kernel version 5.15.
+> [!WARNING]
+> The project was only tested with AMD Vivado & Vitis tools version 2024.2, on Ubuntu 22.04, kernel version 5.15. Please use same versions of tools/kernel.
+
 ## Dependencies
 
 - libxml2
