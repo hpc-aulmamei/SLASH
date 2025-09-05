@@ -13,23 +13,15 @@
  */
 
 #include "pcie_hotplug.h"
-#include <linux/version.h>
-
 #ifdef RHEL_RELEASE_CODE
-#include <linux/rhelversion.h>
+#include <linux/rhelversion.h>   /* provides RHEL_RELEASE_VERSION() */
 #endif
-
-#if (defined(LINUX_VERSION_CODE) && defined(KERNEL_VERSION) && \
-     (LINUX_VERSION_CODE >= KERNEL_VERSION(6,4,0))) || \
-    (defined(RHEL_RELEASE_CODE) && (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,0)))
-    /* New API: class_create(const char *name) */
-#   define CLASS_CREATE(name) class_create(name)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,4,0) || \
+    (defined(RHEL_RELEASE_CODE) && RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,0))
+# define CLASS_CREATE(name) class_create(name)
 #else
-    /* Old API: class_create(struct module *, const char *name) */
-#   define CLASS_CREATE(name) class_create(THIS_MODULE, name)
+# define CLASS_CREATE(name) class_create(THIS_MODULE, name)
 #endif
-
-// #   define CLASS_CREATE(name) class_create(THIS_MODULE, name)
 
 #define DEVICE_NAME "pcie_hotplug"
 #define CLASS_NAME "pcie"
