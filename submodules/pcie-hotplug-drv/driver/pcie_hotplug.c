@@ -31,7 +31,6 @@
 
 // #   define CLASS_CREATE(name) class_create(THIS_MODULE, name)
 
-
 #define DEVICE_NAME "pcie_hotplug"
 #define CLASS_NAME "pcie"
 #define BUF_SIZE 16
