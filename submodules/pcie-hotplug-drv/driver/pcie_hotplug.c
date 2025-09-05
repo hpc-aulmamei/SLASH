@@ -15,6 +15,10 @@
 #include "pcie_hotplug.h"
 #include <linux/version.h>          // <-- add this
 
+#ifdef RHEL_RELEASE_CODE
+#include <linux/rhelversion.h>
+#endif
+
 #if (defined(LINUX_VERSION_CODE) && defined(KERNEL_VERSION) && \
      (LINUX_VERSION_CODE >= KERNEL_VERSION(6,4,0))) || \
     (defined(RHEL_RELEASE_CODE) && (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9,0)))
