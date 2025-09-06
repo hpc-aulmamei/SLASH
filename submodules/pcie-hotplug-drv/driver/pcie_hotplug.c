@@ -29,7 +29,7 @@
 #   define CLASS_CREATE(name) class_create(THIS_MODULE, name)
 #endif
 
-//#   define CLASS_CREATE(name) class_create(THIS_MODULE, name)
+// #   define CLASS_CREATE(name) class_create(THIS_MODULE, name)
 
 
 #define DEVICE_NAME "pcie_hotplug"
@@ -83,95 +83,197 @@ static struct pci_dev *get_next_function_pci_dev(const char* bdf) {
 
 static void toggle_sbr(struct pcie_hotplug_device *dev)
 {
-    struct pci_dev *ep = NULL, *bridge = NULL, *p;
-    struct pci_bus *sub = NULL;
+    struct pci_dev *ep = NULL, *bridge = NULL;
+    struct pci_bus *root;
     int domain, bus, slot, func;
     u16 ctrl;
+    unsigned long t0 = jiffies;
+
+    /* configurable delays to match userspace; provide sane defaults */
+#ifndef HOT_RESET_GPIO_SET_DELAY_MS
+# define HOT_RESET_GPIO_SET_DELAY_MS   20
+#endif
+#ifndef HOT_RESET_SBR_SET_DELAY_MS
+# define HOT_RESET_SBR_SET_DELAY_MS    2
+#endif
+#ifndef HOT_RESET_RESCAN_DELAY_MS
+# define HOT_RESET_RESCAN_DELAY_MS     300
+#endif
+
+    printk(KERN_INFO "toggle_sbr: ENTER dev=%p bdf=%s (t0=%lu)\n",
+           dev, dev ? dev->bdf : "(null)", t0);
 
     if (!dev || !dev->bdf) {
-        printk(KERN_ERR "toggle_sbr: invalid device\n");
+        printk(KERN_ERR "toggle_sbr: invalid device or BDF (dt=%ums)\n",
+               jiffies_to_msecs(jiffies - t0));
         return;
     }
 
-    /* Parse the saved BDF */
     if (sscanf(dev->bdf, "%x:%x:%x.%x", &domain, &bus, &slot, &func) != 4) {
-        printk(KERN_ERR "toggle_sbr: invalid BDF format: %s\n", dev->bdf);
+        printk(KERN_ERR "toggle_sbr: invalid BDF format: %s (dt=%ums)\n",
+               dev->bdf, jiffies_to_msecs(jiffies - t0));
         return;
     }
+    printk(KERN_INFO "toggle_sbr: parsed BDF dom=%04x bus=%02x slot=%02x func=%x (dt=%ums)\n",
+           domain, bus, slot, func, jiffies_to_msecs(jiffies - t0));
 
-    /* Try to get the EP and its immediate upstream bridge */
+    /* Resolve EP if present (may already be gone) */
+    printk(KERN_INFO "toggle_sbr: resolving EP @ %s (dt=%ums)\n",
+           dev->bdf, jiffies_to_msecs(jiffies - t0));
     ep = pci_get_domain_bus_and_slot(domain, bus, PCI_DEVFN(slot, func));
+
+    /* Resolve the *immediate upstream bridge* (same as the sysfs "port") */
     if (ep) {
-        struct pci_dev *up = pci_upstream_bridge(ep);
-        if (up)
-            bridge = pci_dev_get(up);
+        printk(KERN_INFO "toggle_sbr: EP PRESENT %04x:%02x:%02x.%x ven=%04x dev=%04x class=0x%06x (dt=%ums)\n",
+               pci_domain_nr(ep->bus), ep->bus->number,
+               PCI_SLOT(ep->devfn), PCI_FUNC(ep->devfn),
+               ep->vendor, ep->device, ep->class,
+               jiffies_to_msecs(jiffies - t0));
+        {
+            struct pci_dev *up = pci_upstream_bridge(ep);
+            if (up) {
+                bridge = pci_dev_get(up);
+                printk(KERN_INFO "toggle_sbr: upstream bridge via pci_upstream_bridge(): %04x:%02x:%02x.%x (dt=%ums)\n",
+                       pci_domain_nr(bridge->bus), bridge->bus->number,
+                       PCI_SLOT(bridge->devfn), PCI_FUNC(bridge->devfn),
+                       jiffies_to_msecs(jiffies - t0));
+            } else {
+                printk(KERN_INFO "toggle_sbr: pci_upstream_bridge() returned NULL (dt=%ums)\n",
+                       jiffies_to_msecs(jiffies - t0));
+            }
+        }
+    } else {
+        printk(KERN_INFO "toggle_sbr: EP ABSENT at %s (dt=%ums)\n",
+               dev->bdf, jiffies_to_msecs(jiffies - t0));
     }
 
-    /* If EP already gone, find the bridge whose secondary bus == EP bus */
+    /* Fallback without walking global device list: use bus->self */
     if (!bridge) {
-        for_each_pci_dev(p) {
-            if (pci_domain_nr(p->bus) != domain)
-                continue;
-            if (!pci_is_bridge(p) || !p->subordinate)
-                continue;
-            if (p->subordinate->number == bus) {
-                bridge = pci_dev_get(p);
-                break;
-            }
+        struct pci_bus *ep_bus;
+
+        printk(KERN_INFO "toggle_sbr: fallback via pci_find_bus(dom=%04x,bus=%02x) (dt=%ums)\n",
+               domain, bus, jiffies_to_msecs(jiffies - t0));
+
+        ep_bus = pci_find_bus(domain, bus);
+        if (!ep_bus) {
+            printk(KERN_ERR "toggle_sbr: pci_find_bus() returned NULL for %04x:%02x (dt=%ums)\n",
+                   domain, bus, jiffies_to_msecs(jiffies - t0));
+        } else if (!ep_bus->self) {
+            printk(KERN_ERR "toggle_sbr: bus %02x has no upstream bridge (root bus?) (dt=%ums)\n",
+                   bus, jiffies_to_msecs(jiffies - t0));
+        } else {
+            bridge = pci_dev_get(ep_bus->self);
+            printk(KERN_INFO "toggle_sbr: found bridge via bus->self: %04x:%02x:%02x.%x (sec=%02x) (dt=%ums)\n",
+                   pci_domain_nr(bridge->bus), bridge->bus->number,
+                   PCI_SLOT(bridge->devfn), PCI_FUNC(bridge->devfn),
+                   bridge->subordinate ? bridge->subordinate->number : 0xff,
+                   jiffies_to_msecs(jiffies - t0));
         }
     }
 
     if (!bridge) {
         if (ep) pci_dev_put(ep);
-        printk(KERN_ERR "toggle_sbr: no upstream bridge found for %s\n", dev->bdf);
+        printk(KERN_ERR "toggle_sbr: NO upstream bridge for %s — abort (dt=%ums)\n",
+               dev->bdf, jiffies_to_msecs(jiffies - t0));
         return;
     }
-    sub = bridge->subordinate;
 
-    printk(KERN_INFO "toggle_sbr: upstream bridge %04x:%02x:%02x.%x (sec %02x) for %s\n",
+    printk(KERN_INFO "toggle_sbr: using bridge %04x:%02x:%02x.%x (secondary=%02x) (dt=%ums)\n",
            pci_domain_nr(bridge->bus), bridge->bus->number,
            PCI_SLOT(bridge->devfn), PCI_FUNC(bridge->devfn),
-           sub ? sub->number : 0xff, dev->bdf);
+           bridge->subordinate ? bridge->subordinate->number : 0xff,
+           jiffies_to_msecs(jiffies - t0));
 
-    /*
-     * === Critical section ===
-     * Prevent races with pciehp/AER/DPC workers while we remove and rescan.
-     */
-    pci_lock_rescan_remove();
-
-    /* If EP is present, stop DMA & remove just the function (like userspace) */
+    /* 1) REMOVE the endpoint under the PCI remove/rescan lock — like sysfs */
     if (ep) {
-        pci_clear_master(ep);                 /* quiesce bus mastering */
-        pci_stop_and_remove_bus_device(ep);   /* unbind + remove */
+        printk(KERN_INFO "toggle_sbr: acquiring rescan/remove lock to delete EP (dt=%ums)\n",
+               jiffies_to_msecs(jiffies - t0));
+        pci_lock_rescan_remove();
+
+        printk(KERN_INFO "toggle_sbr: clearing bus master on EP (dt=%ums)\n",
+               jiffies_to_msecs(jiffies - t0));
+        pci_clear_master(ep);
+
+        printk(KERN_INFO "toggle_sbr: calling pci_stop_and_remove_bus_device_locked(ep) (dt=%ums)\n",
+               jiffies_to_msecs(jiffies - t0));
+        pci_stop_and_remove_bus_device_locked(ep);
+
+        printk(KERN_INFO "toggle_sbr: releasing rescan/remove lock after EP removal (dt=%ums)\n",
+               jiffies_to_msecs(jiffies - t0));
+        pci_unlock_rescan_remove();
+
+        printk(KERN_INFO "toggle_sbr: EP removed; dropping EP ref (dt=%ums)\n",
+               jiffies_to_msecs(jiffies - t0));
         pci_dev_put(ep);
         ep = NULL;
-        msleep(20);                           /* small guard delay */
+    } else {
+        printk(KERN_INFO "toggle_sbr: EP already absent — skipping removal (dt=%ums)\n",
+               jiffies_to_msecs(jiffies - t0));
     }
 
+    /* (userspace did a small guard delay after GPIO poke) */
+    printk(KERN_INFO "toggle_sbr: sleeping %d ms before SBR (dt=%ums)\n",
+           HOT_RESET_GPIO_SET_DELAY_MS, jiffies_to_msecs(jiffies - t0));
+    msleep(HOT_RESET_GPIO_SET_DELAY_MS);
+    printk(KERN_INFO "toggle_sbr: woke from pre-SBR sleep (dt=%ums)\n",
+           jiffies_to_msecs(jiffies - t0));
+
+    /* 2) PULSE SBR on the bridge — *NO PCI LOCK HELD* (matches sysfs fd write) */
 #if IS_ENABLED(CONFIG_PCI)
-    /* Ask the core to do a secondary-bus reset on the bridge (preferred) */
+    printk(KERN_INFO "toggle_sbr: attempting pci_bridge_secondary_bus_reset() (dt=%ums)\n",
+           jiffies_to_msecs(jiffies - t0));
     if (!pci_bridge_secondary_bus_reset(bridge)) {
-        msleep(300);                          /* allow link retrain */
+        printk(KERN_INFO "toggle_sbr: pci_bridge_secondary_bus_reset() OK; settle sleep %d ms (dt=%ums)\n",
+               HOT_RESET_SBR_SET_DELAY_MS + HOT_RESET_RESCAN_DELAY_MS,
+               jiffies_to_msecs(jiffies - t0));
+        msleep(HOT_RESET_SBR_SET_DELAY_MS + HOT_RESET_RESCAN_DELAY_MS);
     } else
 #endif
     {
-        /* Manual SBR pulse */
-        pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl);
-        ctrl |= PCI_BRIDGE_CTL_BUS_RESET;
+        u16 ctrl_before = 0, ctrl_after = 0;
+        printk(KERN_INFO "toggle_sbr: manual SBR path (dt=%ums)\n",
+               jiffies_to_msecs(jiffies - t0));
+        pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl_before);
+        printk(KERN_INFO "toggle_sbr: BRIDGE_CONTROL before=0x%04x (dt=%ums)\n",
+               ctrl_before, jiffies_to_msecs(jiffies - t0));
+
+        ctrl = ctrl_before | PCI_BRIDGE_CTL_BUS_RESET;
         pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl);
-        msleep(2);
+        printk(KERN_INFO "toggle_sbr: set BUS_RESET; sleep %d ms (dt=%ums)\n",
+               HOT_RESET_SBR_SET_DELAY_MS, jiffies_to_msecs(jiffies - t0));
+        msleep(HOT_RESET_SBR_SET_DELAY_MS);
+
         ctrl &= ~PCI_BRIDGE_CTL_BUS_RESET;
         pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl);
-        msleep(300);
+        pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl_after);
+        printk(KERN_INFO "toggle_sbr: cleared BUS_RESET; BRIDGE_CONTROL after=0x%04x; settle %d ms (dt=%ums)\n",
+               ctrl_after, HOT_RESET_RESCAN_DELAY_MS,
+               jiffies_to_msecs(jiffies - t0));
+        msleep(HOT_RESET_RESCAN_DELAY_MS);
     }
 
-    /* Rescan only the subtree we just reset (don’t poke the whole machine) */
-    if (sub)
-        pci_rescan_bus(sub);
+    printk(KERN_INFO "toggle_sbr: extra settle sleep 5000 ms (dt=%ums)\n",
+           jiffies_to_msecs(jiffies - t0));
+    msleep(5000);
 
+    /* 3) GLOBAL RESCAN under the PCI lock — exactly like /sys/bus/pci/rescan */
+    printk(KERN_INFO "toggle_sbr: BEGIN global rescan (dt=%ums)\n",
+           jiffies_to_msecs(jiffies - t0));
+    pci_lock_rescan_remove();
+    list_for_each_entry(root, &pci_root_buses, node) {
+        printk(KERN_INFO "toggle_sbr: pci_rescan_bus(root=%02x) (dt=%ums)\n",
+               root->number, jiffies_to_msecs(jiffies - t0));
+        pci_rescan_bus(root);
+    }
     pci_unlock_rescan_remove();
+    printk(KERN_INFO "toggle_sbr: END global rescan (dt=%ums)\n",
+           jiffies_to_msecs(jiffies - t0));
+
     pci_dev_put(bridge);
+    printk(KERN_INFO "toggle_sbr: EXIT (total=%ums)\n",
+           jiffies_to_msecs(jiffies - t0));
 }
+
 
 
 static void handle_rescan(void) {
