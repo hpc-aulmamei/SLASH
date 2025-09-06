@@ -13,7 +13,7 @@
  */
 
 #include "pcie_hotplug.h"
-#include <linux/version.h>          // <-- add this
+#include <linux/version.h>
 
 #ifdef RHEL_RELEASE_CODE
 #include <linux/rhelversion.h>
@@ -28,6 +28,9 @@
     /* Old API: class_create(struct module *, const char *name) */
 #   define CLASS_CREATE(name) class_create(THIS_MODULE, name)
 #endif
+
+//#   define CLASS_CREATE(name) class_create(THIS_MODULE, name)
+
 
 #define DEVICE_NAME "pcie_hotplug"
 #define CLASS_NAME "pcie"
@@ -80,7 +83,8 @@ static struct pci_dev *get_next_function_pci_dev(const char* bdf) {
 
 static void toggle_sbr(struct pcie_hotplug_device *dev)
 {
-    struct pci_dev *bridge = NULL, *ep = NULL, *p;
+    struct pci_dev *ep = NULL, *bridge = NULL, *p;
+    struct pci_bus *sub = NULL;
     int domain, bus, slot, func;
     u16 ctrl;
 
@@ -89,22 +93,21 @@ static void toggle_sbr(struct pcie_hotplug_device *dev)
         return;
     }
 
-    /* Parse BDF of the endpoint we want to reset under */
+    /* Parse the saved BDF */
     if (sscanf(dev->bdf, "%x:%x:%x.%x", &domain, &bus, &slot, &func) != 4) {
         printk(KERN_ERR "toggle_sbr: invalid BDF format: %s\n", dev->bdf);
         return;
     }
 
-    /* First try: if EP is present, get its immediate upstream bridge */
+    /* Try to get the EP and its immediate upstream bridge */
     ep = pci_get_domain_bus_and_slot(domain, bus, PCI_DEVFN(slot, func));
     if (ep) {
         struct pci_dev *up = pci_upstream_bridge(ep);
         if (up)
-            bridge = pci_dev_get(up);   /* take ref */
-        pci_dev_put(ep);
+            bridge = pci_dev_get(up);
     }
 
-    /* Fallback: EP may be removed already. Find the bridge whose secondary bus == EP bus. */
+    /* If EP already gone, find the bridge whose secondary bus == EP bus */
     if (!bridge) {
         for_each_pci_dev(p) {
             if (pci_domain_nr(p->bus) != domain)
@@ -112,51 +115,64 @@ static void toggle_sbr(struct pcie_hotplug_device *dev)
             if (!pci_is_bridge(p) || !p->subordinate)
                 continue;
             if (p->subordinate->number == bus) {
-                bridge = pci_dev_get(p); /* take ref */
+                bridge = pci_dev_get(p);
                 break;
             }
         }
     }
 
     if (!bridge) {
+        if (ep) pci_dev_put(ep);
         printk(KERN_ERR "toggle_sbr: no upstream bridge found for %s\n", dev->bdf);
         return;
     }
+    sub = bridge->subordinate;
 
-    printk(KERN_INFO "toggle_sbr: pulsing SBR on upstream bridge %04x:%02x:%02x.%x (sec bus %02x)\n",
-           pci_domain_nr(bridge->bus),
-           bridge->bus->number,
-           PCI_SLOT(bridge->devfn),
-           PCI_FUNC(bridge->devfn),
-           bridge->subordinate ? bridge->subordinate->number : 0xff);
+    printk(KERN_INFO "toggle_sbr: upstream bridge %04x:%02x:%02x.%x (sec %02x) for %s\n",
+           pci_domain_nr(bridge->bus), bridge->bus->number,
+           PCI_SLOT(bridge->devfn), PCI_FUNC(bridge->devfn),
+           sub ? sub->number : 0xff, dev->bdf);
+
+    /*
+     * === Critical section ===
+     * Prevent races with pciehp/AER/DPC workers while we remove and rescan.
+     */
+    pci_lock_rescan_remove();
+
+    /* If EP is present, stop DMA & remove just the function (like userspace) */
+    if (ep) {
+        pci_clear_master(ep);                 /* quiesce bus mastering */
+        pci_stop_and_remove_bus_device(ep);   /* unbind + remove */
+        pci_dev_put(ep);
+        ep = NULL;
+        msleep(20);                           /* small guard delay */
+    }
 
 #if IS_ENABLED(CONFIG_PCI)
-    /*
-     * Prefer core helper; returns 0 on success on modern kernels.
-     * If unavailable or it fails, fall back to manual toggle.
-     */
+    /* Ask the core to do a secondary-bus reset on the bridge (preferred) */
     if (!pci_bridge_secondary_bus_reset(bridge)) {
-        /* small settle time similar to userspace */
-        msleep(300);
-        pci_dev_put(bridge);
-        return;
-    }
+        msleep(300);                          /* allow link retrain */
+    } else
 #endif
+    {
+        /* Manual SBR pulse */
+        pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl);
+        ctrl |= PCI_BRIDGE_CTL_BUS_RESET;
+        pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl);
+        msleep(2);
+        ctrl &= ~PCI_BRIDGE_CTL_BUS_RESET;
+        pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl);
+        msleep(300);
+    }
 
-    /* Manual SBR pulse on PCI_BRIDGE_CONTROL */
-    pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl);
-    ctrl |= PCI_BRIDGE_CTL_BUS_RESET;
-    pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl);
+    /* Rescan only the subtree we just reset (don’t poke the whole machine) */
+    if (sub)
+        pci_rescan_bus(sub);
 
-    msleep(2);   /* short pulse like userspace */
-
-    ctrl &= ~PCI_BRIDGE_CTL_BUS_RESET;
-    pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl);
-
-    msleep(50000);
-
+    pci_unlock_rescan_remove();
     pci_dev_put(bridge);
 }
+
 
 static void handle_rescan(void) {
     struct pci_bus* bus;
@@ -365,7 +381,7 @@ static int __init pcie_hotplug_init(void) {
     }
 
     // Initialize class
-    pcie_hotplug_class = class_create(CLASS_NAME);
+    pcie_hotplug_class = CLASS_CREATE(CLASS_NAME);
     if (IS_ERR(pcie_hotplug_class)) {
         unregister_chrdev(major_number, DEVICE_NAME);
         printk(KERN_ERR "Failed to create class\n");
