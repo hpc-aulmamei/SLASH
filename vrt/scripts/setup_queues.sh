@@ -35,6 +35,7 @@ shift
 
 BDF_PCI="${BDF/.0/.1}"
 BDF_QDMA="${BDF:0:2}${BDF:3:2}1"
+PATH=$PATH:/usr/local/sbin
 
 echo "Starting QDMA queue..." >> /var/log/setup_queues.log
 echo "Setting qmax..." >> /var/log/setup_queues.log

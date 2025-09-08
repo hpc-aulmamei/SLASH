@@ -43,7 +43,7 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
             programDevice();
         }
         parseSystemMap();
-        this->clkWiz.setRateHz(clockFreq, false);
+        this->clkWiz.setRateHz(200000000, false);
     } else if (platform == Platform::EMULATION) {
         parseSystemMap();
         std::string emulationExecPath = this->vrtbin.getEmulationExec() + " >/dev/null";
@@ -337,7 +337,7 @@ void Device::setFrequency(uint64_t freq) {
                                "Setting frequency {}, which is higher than max frequency {}", freq,
                                clockFreq);
         }
-        clkWiz.setRateHz(freq);
+        clkWiz.setRateHz(200000000);
     }
 }
 
