@@ -1,0 +1,2 @@
+KERNEL=="slash",      MODE="0600", OWNER="vrtd", GROUP="vrtd"
+KERNEL=="slash_ctl*", MODE="0600", OWNER="vrtd", GROUP="vrtd"
