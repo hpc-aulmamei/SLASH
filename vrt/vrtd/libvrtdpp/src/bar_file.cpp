@@ -4,6 +4,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <utility>
+
 namespace vrtd {
 
 BarFile::BarFile(slash_bar_file barFile) noexcept {
@@ -12,6 +14,24 @@ BarFile::BarFile(slash_bar_file barFile) noexcept {
 
 BarFile::~BarFile() {
     close();
+}
+
+BarFile::BarFile(BarFile&& other) noexcept {
+    barFile = std::exchange(other.barFile, {});
+    reading = std::exchange(other.reading, false);
+    writing = std::exchange(other.writing, false);
+    closed  = std::exchange(other.closed, true);
+}
+
+BarFile& BarFile::operator=(BarFile&& other) noexcept {
+    close();
+
+    barFile = std::exchange(other.barFile, {});
+    reading = std::exchange(other.reading, false);
+    writing = std::exchange(other.writing, false);
+    closed  = std::exchange(other.closed, true);
+
+    return *this;
 }
 
 void BarFile::close() {
@@ -25,6 +45,10 @@ void BarFile::close() {
 
     munmap(barFile.map, barFile.len);
     ::close(barFile.fd);
+}
+
+bool BarFile::isClosed() const noexcept {
+    return closed;
 }
 
 size_t BarFile::getLen() const noexcept {

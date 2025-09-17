@@ -52,8 +52,9 @@ enum vrtd_ret vrtd_raw_request(
     uint16_t opcode,
     const void *req_body, uint16_t req_size,
     void *resp_body_buf, size_t resp_bufsz,
-    int *out_fd                          /* optional; only used by GET_BAR_FD */
-) {
+    int *out_fd
+)
+{
     if (req_size > VRTD_MSG_MAX_SIZE - sizeof(struct vrtd_req_header)) { errno = EMSGSIZE; return -1; }
 
     /* ---- Send ---- */
@@ -136,7 +137,8 @@ enum vrtd_ret vrtd_raw_request(
     return 0;
 }
 
-enum vrtd_ret vrtd_get_num_devices(int fd, uint32_t *out) {
+enum vrtd_ret vrtd_get_num_devices(int fd, uint32_t *out)
+{
     if (out == NULL) {
         return VRTD_RET_BAD_LIB_CALL;
     }
@@ -155,7 +157,8 @@ enum vrtd_ret vrtd_get_num_devices(int fd, uint32_t *out) {
     return VRTD_RET_OK;
 }
 
-enum vrtd_ret vrtd_get_device_info(int fd, uint32_t dev, char name_out[128]) {
+enum vrtd_ret vrtd_get_device_info(int fd, uint32_t dev, char name_out[128])
+{
     if (name_out == NULL) {
         return VRTD_RET_BAD_LIB_CALL;
     }
@@ -177,7 +180,8 @@ enum vrtd_ret vrtd_get_device_info(int fd, uint32_t dev, char name_out[128]) {
     return VRTD_RET_OK;
 }
 
-enum vrtd_ret vrtd_get_bar_info(int fd, uint32_t dev, uint8_t bar, struct slash_ioctl_bar_info *bar_info_out) {
+enum vrtd_ret vrtd_get_bar_info(int fd, uint32_t dev, uint8_t bar, struct slash_ioctl_bar_info *bar_info_out)
+{
     if (bar_info_out == NULL) {
         return VRTD_RET_BAD_LIB_CALL;
     }
@@ -187,7 +191,7 @@ enum vrtd_ret vrtd_get_bar_info(int fd, uint32_t dev, uint8_t bar, struct slash_
         .bar_number = bar,
     };
     struct vrtd_resp_get_bar_info resp = {0};
-    int ret = vrtd_raw_request(fd, VRTD_REQ_GET_DEVICE_INFO,
+    int ret = vrtd_raw_request(fd, VRTD_REQ_GET_BAR_INFO,
                               &req, sizeof(req),
                               &resp, sizeof(resp),
                               NULL);
@@ -200,7 +204,8 @@ enum vrtd_ret vrtd_get_bar_info(int fd, uint32_t dev, uint8_t bar, struct slash_
     return VRTD_RET_OK;
 }
 
-enum vrtd_ret vrtd_get_bar_fd(int fd, uint32_t dev, uint8_t bar, int *fd_out, uint64_t *len_out) {
+enum vrtd_ret vrtd_get_bar_fd(int fd, uint32_t dev, uint8_t bar, int *fd_out, uint64_t *len_out)
+{
     if (fd_out == NULL || len_out == NULL) {
         return VRTD_RET_BAD_LIB_CALL;
     }
@@ -210,7 +215,7 @@ enum vrtd_ret vrtd_get_bar_fd(int fd, uint32_t dev, uint8_t bar, int *fd_out, ui
         .bar_number = bar,
     };
     struct vrtd_resp_get_bar_fd resp = {0};
-    int ret = vrtd_raw_request(fd, VRTD_REQ_GET_DEVICE_INFO,
+    int ret = vrtd_raw_request(fd, VRTD_REQ_GET_BAR_FD,
                               &req, sizeof(req),
                               &resp, sizeof(resp),
                               fd_out);
@@ -242,9 +247,24 @@ enum vrtd_ret vrtd_open_bar_file(
 
     bar_file_out->map = mmap(NULL, bar_file_out->len, PROT_READ | PROT_WRITE, MAP_SHARED, bar_file_out->fd, 0);
     if (bar_file_out->map == MAP_FAILED) {
+        bar_file_out->map = NULL;
         close(fd);
         return VRTD_RET_INTERNAL_ERROR;
     }
 
     return VRTD_RET_OK;
+}
+
+void vrtd_close_bar_file(struct slash_bar_file *bar_file)
+{
+    if (bar_file == NULL) {
+        return;
+    }
+
+    if (bar_file->map != NULL) {
+        munmap(bar_file->map, bar_file->len);
+        close(bar_file->fd);
+
+        bar_file->map = NULL;
+    }
 }
