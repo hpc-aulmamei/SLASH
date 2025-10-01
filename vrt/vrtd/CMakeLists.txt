@@ -33,7 +33,7 @@ option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-find_package(slash_driver REQUIRED)
+find_package(slash REQUIRED)
 
 add_subdirectory(src)
 

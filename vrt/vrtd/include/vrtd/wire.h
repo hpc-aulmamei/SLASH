@@ -48,7 +48,7 @@
 
 #include <stdint.h>
 
-#include <slash_driver/uapi/slash_driver_interface.h>
+#include <slash/uapi/slash_interface.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -23,7 +23,7 @@
 
 #include <stddef.h>
 
-#include <slash_driver/ctldev.h>
+#include <slash/ctldev.h>
 
 #include "array.h"
 

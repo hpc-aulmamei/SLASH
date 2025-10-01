@@ -22,6 +22,6 @@
 
 # If you have dependencies, call find_dependency() here.
 # e.g.: find_dependency(Threads)
-find_dependency(slash_driver)
+find_dependency(slash)
 
 include("${CMAKE_CURRENT_LIST_DIR}/vrtdTargets.cmake")

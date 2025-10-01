@@ -86,7 +86,7 @@ Same operation using the C API and explicit bracketing for memory access:
 .. code-block:: c
 
    #include <vrtd/vrtd.h>
-   #include <slash_driver/ctldev.h>
+   #include <slash/ctldev.h>
    #include <stdint.h>
    #include <stdio.h>
    #include <unistd.h>

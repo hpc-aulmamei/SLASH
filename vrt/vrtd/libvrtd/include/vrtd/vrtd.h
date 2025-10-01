@@ -36,7 +36,7 @@
 #ifndef LIBVRTD_VRTD_H
 #define LIBVRTD_VRTD_H
 
-#include <slash_driver/ctldev.h>
+#include <slash/ctldev.h>
 #include <vrtd/wire.h>
 
 #include <stddef.h>

@@ -21,7 +21,7 @@
 #include "vrtd/wire.h"
 #define _GNU_SOURCE
 
-#include <slash_driver/uapi/slash_driver_interface.h>
+#include <slash/uapi/slash_interface.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/uio.h>

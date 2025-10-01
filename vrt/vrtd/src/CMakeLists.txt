@@ -48,4 +48,4 @@ target_include_directories(vrtd
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(vrtd PRIVATE slash_driver::slash_driver systemd inih)
+target_link_libraries(vrtd PRIVATE slash::slash systemd inih)

@@ -21,7 +21,7 @@
 #ifndef VRTD_BAR_FILE_HPP
 #define VRTD_BAR_FILE_HPP
 
-#include <slash_driver/ctldev.h>
+#include <slash/ctldev.h>
 
 #include <vrtd/bar_file_ptr.hpp>
 
