@@ -1,9 +1,9 @@
 
-MODULE      := slash_driver
+MODULE      := slash
 
 obj-m          := $(MODULE).o
-$(MODULE)-objs := $(MODULE)_main.o $(MODULE)_ctldev.o $(MODULE)_pcie.o $(MODULE)_dmabuf.o
-ccflags-y += -I$(PWD)/libslash_driver/include/slash_driver/uapi
+$(MODULE)-objs := $(MODULE)_main.o $(MODULE)_ctldev.o $(MODULE)_pcie.o $(MODULE)_dmabuf.o $(MODULE)_hotplug.o
+ccflags-y += -I$(PWD)/libslash/include/slash/uapi
 
 KDIR        ?= /lib/modules/$(shell uname -r)/build
 PWD         := $(shell pwd)
