@@ -313,7 +313,6 @@ static int parse_file_unique(struct config_parse_state *state, const char *path)
     return 0;
 }
 
-
 // This callback uses 0 for error and 1 for success, as per inih spec
 static int parse_config_callback(void *user, const char *section, const char *name, const char *value)
 {
@@ -339,6 +338,8 @@ static int parse_config_callback(void *user, const char *section, const char *na
         if (ret == -1) {
             return 0;
         }
+    } else if (MATCH("", "enable-mock-device")) {
+        state->config->mock_device = string_to_bool(value);
     } else if (MATCH_OBJECT("role", objname)) {
         ret = role_find_and_add_value(state->config, objname, name, value);
         if (ret == -1) {

@@ -23,6 +23,9 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdbool.h>
+#include <ctype.h>
+#include <strings.h>
 
 #include <glob.h>
 #include <systemd/sd-journal.h>
@@ -178,6 +181,48 @@ void cleanup_argv(char ***p) {
     free(ptr);
 
     *p = NULL;
+}
+
+static inline
+bool string_to_bool(const char *s)
+{
+    if (unlikely(!s)) {
+        return false;
+    }
+
+    // Trim leading/trailing ASCII whitespace (locale-agnostic)
+    while (isspace(*s)) {
+        s++;
+    }
+    size_t n = strlen(s);
+    while (n && isspace(s[n-1])) {
+        n--;
+    }
+
+    if (unlikely(n == 0)) {
+        return false;
+    }
+
+    // Fast-path single-char cases
+    if (n == 1) {
+        char c = s[0];
+        if (c == '1' || c == 'y' || c == 'Y') {
+            return true;
+        }
+        return false;
+    }
+
+    // "yes"
+    if (n == 3 && strncasecmp(s, "yes", 3) == 0) {
+        return true;
+    }
+
+    // "true"
+    if (n == 4 && strncasecmp(s, "true", 4) == 0) {
+        return true;
+    }
+
+    return false;
 }
 
 #endif // VRTD_UTILS_H

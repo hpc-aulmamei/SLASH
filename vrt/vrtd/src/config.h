@@ -110,6 +110,8 @@ struct config {
 
     struct user_config_ptr_array users;
     struct group_config_ptr_array groups;
+
+    bool mock_device;
 };
 
 void cleanup_config(struct config *config);
