@@ -156,11 +156,12 @@ class ArgParser {
     std::vector<std::string> getKernelPaths();
 
     /**
-     * @brief Sets the network interface flags.
-     * @param networkInterfaces Array of booleans indicating the status of enablement of each
-     * network interface.
+     * @brief Gets the network interface flags.
+     * @return Array indicating which network interfaces are enabled.
      */
     std::array<bool, 4> getNetworkInterfaces() const;
+
+    /**
      * @brief Gets the set of Tcl files to inject.
      * @return Structure representing the set of Tcl files to inject.
      */
