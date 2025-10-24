@@ -78,6 +78,14 @@ class BdBuilder {
     bool segmented;                             ///< Flag indicating if design is segmented
     Platform platform;                  ///< Target platform (hardware, simulation, emulation)
     std::array<bool, 4> netInterfaces;  ///< Array indicating which network interfaces to use
+    TclInjections tclInjections; ///< Set of Tcl files to inject
+
+    /**
+     * @brief Generate source instruction.
+     * @param path The path to source.
+     * @return The source instruction.
+     */
+    std::string generateSourceInstruction(const std::string& path) const;
 
    public:
     /**
@@ -100,7 +108,7 @@ class BdBuilder {
      */
     BdBuilder(std::vector<Kernel> kernels, std::vector<Connection> connections,
               double targetClockFreq, bool segmented, Platform platform,
-              std::array<bool, 4> netInterfaces);
+              std::array<bool, 4> netInterfaces, TclInjections tclInjections);
 
     /**
      * @brief Builds the block design by generating TCL commands.

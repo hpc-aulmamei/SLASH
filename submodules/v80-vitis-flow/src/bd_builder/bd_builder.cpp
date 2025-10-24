@@ -20,7 +20,9 @@
 
 #include "bd_builder.hpp"
 
+#include "arg_parser.hpp"
 #include "system_map.hpp"
+#include <sstream>
 
 bool BdBuilder::hasAximmIntf = false;
 
@@ -31,14 +33,15 @@ BdBuilder::BdBuilder(std::vector<Kernel> kernels, std::vector<Connection> connec
 }
 
 BdBuilder::BdBuilder(std::vector<Kernel> kernels, std::vector<Connection> connections,
-                     double targetClockFreq, bool segmented, Platform platform,
-                     std::array<bool, 4> netInterfaces)
-    : systemMap(segmented, platform), netInterfaces(netInterfaces) {
+                     double targetClockFreq, bool segmented, Platform platform)
+    : systemMap(segmented, platform) {
     this->kernels = kernels;
     this->streamConnections = connections;
     this->targetClockFreq = targetClockFreq;
     this->segmented = segmented;
     this->platform = platform;
+    this->tclInjections = std::move(tclInjections);
+
     systemMap.setClockFreq(targetClockFreq);
     StreamingConnection qdmaStreamConnection;
     for (auto sc = streamConnections.begin(); sc != streamConnections.end(); sc++) {
@@ -88,13 +91,10 @@ void BdBuilder::buildBlockDesign() {
         inputBlockDesignFile.open(INPUT_FILE_SIM);
     }
     std::ofstream blockDesignFile;
-    std::ofstream netConfigFile;
     if (platform == Platform::EMULATOR) {
         blockDesignFile.open("/dev/null");
-        netConfigFile.open("/dev/null");
     } else {
         blockDesignFile.open(OUTPUT_FILE);
-        netConfigFile.open(NET_CONFIG_FILE);
     }
 
     if (platform == Platform::HARDWARE) {
@@ -218,8 +218,30 @@ void BdBuilder::buildBlockDesign() {
             }
         }
 
+
+
+        for (const auto &script : tclInjections.scriptsPreSynth) {
+            blockDesignFile << generateSourceInstruction(script);
+        }
+
         blockDesignFile << printFooter();
         blockDesignFile.close();
+
+        // Inline and dirty.
+        postBuildScriptFile << "proc run_post {} {\n"
+            << "\topen_run impl_1\n"
+            << "\treport_utilization -hierarchical -hierarchical_depth 3 -hierarchical_percentages -file build/report_utilization.txt\n"
+            << "\treport_timing_summary -delay_type min_max -check_timing_verbose -max_paths 1 -input_pins -routable_nets -name timing_1 -file build/report_timing.txt\n\n";
+
+
+        for (const auto &script : tclInjections.scriptsPostBuild) {
+            postBuildScriptFile << generateSourceInstruction(script);
+        }
+
+        postBuildScriptFile << "}\n"
+            << "run_post\n";
+
+
         systemMap.printToFile();
     } else if (platform == Platform::SIMULATOR) {
         std::string line;
@@ -1409,67 +1431,5 @@ std::string BdBuilder::addRunPreHeader() {
        << "    current_bd_instance $parentObj\n"
        << "\n";
 
-    return ss.str();
-}
-
-std::string BdBuilder::configNetInterfaces() {
-    std::stringstream ss;
-    ss << "# Enabling DCMAC interfaces\n";
-    if (netInterfaces.at(0)) {
-        ss << "set DCMAC0_ENABLED 1\n";
-    } else {
-        ss << "set DCMAC0_ENABLED 0\n";
-    }
-    if (netInterfaces.at(2)) {
-        ss << "set DCMAC1_ENABLED 1\n";
-    } else {
-        ss << "set DCMAC1_ENABLED 0\n";
-    }
-    ss << "# Each DCMAC can support 2 QSFP56 interfaces\n";
-    if (netInterfaces.at(1)) {
-        ss << "set DUAL_QSFP_DCMAC0 1\n";
-    } else {
-        ss << "set DUAL_QSFP_DCMAC0 0\n";
-    }
-    if (netInterfaces.at(3)) {
-        ss << "set DUAL_QSFP_DCMAC1 1\n";
-    } else {
-        ss << "set DUAL_QSFP_DCMAC1 0\n";
-    }
-    return ss.str();
-}
-
-std::string BdBuilder::connectDummyTrafficGen() {
-    std::stringstream ss;
-    ss << "create_bd_cell -type ip -vlnv xilinx.com:ip:axi_traffic_gen:3.0 "
-          "base_logic/axi_traffic_gen_0\n";
-    ss << "connect_bd_intf_net [get_bd_intf_pins base_logic/axi_traffic_gen_0/M_AXI] "
-          "[get_bd_intf_pins base_logic/noc_xbar/S00_AXI]\n";
-    ss << "connect_bd_net [get_bd_pins base_logic/axi_traffic_gen_0/s_axi_aclk] [get_bd_pins "
-          "base_logic/clk_wiz/clk_out1]\n";
-    ss << "connect_bd_net [get_bd_pins base_logic/axi_traffic_gen_0/s_axi_aresetn] [get_bd_pins "
-          "base_logic/sys_rst/peripheral_aresetn]\n";
-    ss << "create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 base_logic/xlconstant_0\n";
-    ss << "set_property CONFIG.CONST_VAL {0} [get_bd_cells base_logic/xlconstant_0]\n";
-    ss << "connect_bd_net [get_bd_pins base_logic/xlconstant_0/dout] [get_bd_pins "
-          "base_logic/axi_traffic_gen_0/core_ext_start]\n";
-    ss << "save_bd_design\n";
-    return ss.str();
-}
-
-std::string BdBuilder::addBarCrossbar() {
-    std::stringstream ss;
-    ss << "create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 bar_sc\n";
-    ss << "set_property CONFIG.NUM_SI {1} [get_bd_cells bar_sc]\n";
-    // delete AVED standard connection between NoC and base_logic
-    ss << "delete_bd_objs [get_bd_intf_nets axi_noc_cips_M00_AXI]\n";
-    ss << "connect_bd_intf_net [get_bd_intf_pins bar_sc/M00_AXI] -boundary_type upper "
-          "[get_bd_intf_pins base_logic/s_axi_pcie_mgmt_slr0]\n";
-
-    ss << "connect_bd_intf_net [get_bd_intf_pins axi_noc_cips/M00_AXI] [get_bd_intf_pins "
-          "bar_sc/S00_AXI]\n";
-    ss << "connect_bd_net [get_bd_pins bar_sc/aclk] [get_bd_pins cips/pl0_ref_clk]\n";
-    ss << "connect_bd_net [get_bd_pins bar_sc/aresetn] [get_bd_pins cips/pl0_resetn]\n";
-    ss << "save_bd_design\n";
     return ss.str();
 }

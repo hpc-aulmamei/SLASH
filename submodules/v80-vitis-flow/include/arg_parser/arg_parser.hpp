@@ -33,6 +33,14 @@
 #include "xml_parser.hpp"
 
 /**
+ * @brief Structure representing the Tcl scripts to inject into the Vivado build scripts.
+ */
+struct TclInjections {
+    std::vector<std::string> scriptsPreSynth; ///< The name of the scripts to inject before the synthesis phase
+    std::vector<std::string> scriptsPostBuild; ///< The name of the scripts to inject after the build phase
+};
+
+/**
  * @brief Structure representing a connection element within a hardware design.
  */
 struct ConnectionElement {
@@ -153,6 +161,10 @@ class ArgParser {
      * network interface.
      */
     std::array<bool, 4> getNetworkInterfaces() const;
+     * @brief Gets the set of Tcl files to inject.
+     * @return Structure representing the set of Tcl files to inject.
+     */
+    const TclInjections &getTclInjections() const;
 
    private:
     std::vector<std::string> kernelPaths;  ///< Paths to kernel files
@@ -165,6 +177,8 @@ class ArgParser {
     bool segmented;                       ///< Flag indicating if the design is segmented
     Platform platform;                    ///< Target platform
     std::array<bool, 4> networkInterfaces = {false, false, false, false};  ///< Network interface flags
+    TclInjections tclInjections;          ///< Tcl files to inject                
+
     /**
      * @brief Parses kernel information from configuration files.
      * @return Vector of parsed kernel objects.
