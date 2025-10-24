@@ -94,10 +94,14 @@ void BdBuilder::buildBlockDesign() {
     }
     std::ofstream blockDesignFile;
     std::ofstream postBuildScriptFile;
+    std::ofstream postBuildScriptFile;
     if (platform == Platform::EMULATOR) {
         blockDesignFile.open("/dev/null");
         postBuildScriptFile.open("/dev/null");
+        postBuildScriptFile.open("/dev/null");
     } else {
+        blockDesignFile.open(PRE_OUTPUT_FILE);
+        postBuildScriptFile.open(POST_OUTPUT_FILE);
         blockDesignFile.open(PRE_OUTPUT_FILE);
         postBuildScriptFile.open(POST_OUTPUT_FILE);
     }
@@ -1444,6 +1448,20 @@ std::string BdBuilder::addRunPreHeader() {
 
     return ss.str();
 }
+
+std::string BdBuilder::generateSourceInstruction(const std::string& path) const {
+    std::stringstream ss;
+
+    if (path.find("{") != std::string::npos
+        || path.find("}") != std::string::npos) {
+        throw std::runtime_error("Path to script to source cannot contian '{' or '}'");
+    }
+
+    ss << "\tsource {" << path << "}\n";
+
+    return ss.str();
+}
+
 
 std::string BdBuilder::generateSourceInstruction(const std::string& path) const {
     std::stringstream ss;
