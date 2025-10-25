@@ -26,7 +26,6 @@ DESIGN_NAME=""
 SEGMENTED=""
 PLATFORM="hw"
 TCL_INJECT_ARGS=()
-TCL_INJECT_ARGS=()
 
 usage() {
     echo "Usage: $0 --cfg <config_file> --design-name <design_name> --platform <hw|emu|sim> --kernels <kernel_path1> <kernel_path2> ..."
