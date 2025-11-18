@@ -40,9 +40,9 @@ add_subdirectory(src)
 add_subdirectory(libvrtd)
 add_subdirectory(libvrtdpp)
 
-if(VRTD_BUILD_EXAMPLES)
-  add_subdirectory(examples)
-endif()
+#if(VRTD_BUILD_EXAMPLES)
+#  add_subdirectory(examples)
+#endif()
 
 # -------- Installation: headers and library --------
 # Public headers are under include/  (layout: include/vrtd/*.h)

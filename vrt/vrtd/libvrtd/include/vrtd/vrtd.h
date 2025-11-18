@@ -210,6 +210,88 @@ void vrtd_close_bar_file(
     struct slash_bar_file *bar_file_out
 );
 
+/**
+ * @brief Query QDMA capabilities for a device.
+ *
+ * Thin wrapper around the vrtd QDMA GET_INFO opcode. On success,
+ * fills @p info_out with the kernel's view of the QDMA device.
+ *
+ * @param fd        Connected vrtd socket file descriptor.
+ * @param dev       Device index (0‑based).
+ * @param info_out  Output pointer for QDMA capability information.
+ *
+ * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
+ * @pre @p info_out must not be NULL.
+ */
+enum vrtd_ret vrtd_qdma_get_info(
+    int fd,
+    uint32_t dev,
+    struct slash_qdma_info *info_out
+);
+
+/**
+ * @brief Create a QDMA qpair on a device.
+ *
+ * On success, @p qpair_inout is updated with the kernel‑assigned qid.
+ *
+ * @param fd           Connected vrtd socket file descriptor.
+ * @param dev          Device index (0‑based).
+ * @param qpair_inout  In/out QDMA qpair parameters (see slash_qdma_qpair_add).
+ *
+ * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
+ * @pre @p qpair_inout must not be NULL.
+ */
+enum vrtd_ret vrtd_qdma_qpair_add(
+    int fd,
+    uint32_t dev,
+    struct slash_qdma_qpair_add *qpair_inout
+);
+
+/**
+ * @brief Start, stop, or delete a QDMA qpair.
+ *
+ * Convenience wrappers around the QDMA qpair OP opcode.
+ */
+enum vrtd_ret vrtd_qdma_qpair_start(
+    int fd,
+    uint32_t dev,
+    uint32_t qid
+);
+
+enum vrtd_ret vrtd_qdma_qpair_stop(
+    int fd,
+    uint32_t dev,
+    uint32_t qid
+);
+
+enum vrtd_ret vrtd_qdma_qpair_del(
+    int fd,
+    uint32_t dev,
+    uint32_t qid
+);
+
+/**
+ * @brief Obtain a read/write file descriptor for a QDMA qpair.
+ *
+ * The descriptor can be used with read()/write() for C2H/H2C data transfer.
+ *
+ * @param fd        Connected vrtd socket file descriptor.
+ * @param dev       Device index (0‑based).
+ * @param qid       Qpair identifier as returned by vrtd_qdma_qpair_add().
+ * @param flags     OR of O_CLOEXEC and 0 (other flags are rejected by the daemon).
+ * @param fd_out    Output pointer to receive the qpair file descriptor.
+ *
+ * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
+ * @pre @p fd_out must not be NULL.
+ */
+enum vrtd_ret vrtd_qdma_qpair_get_fd(
+    int fd,
+    uint32_t dev,
+    uint32_t qid,
+    uint32_t flags,
+    int *fd_out
+);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

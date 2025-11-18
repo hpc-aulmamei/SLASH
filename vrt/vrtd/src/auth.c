@@ -119,6 +119,113 @@ int auth_request_get_bar_fd(
     return 1;
 }
 
+int auth_request_qdma_get_info(
+    struct client *client,
+    const struct vrtd_req_qdma_get_info *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (client->role->query) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+int auth_request_qdma_qpair_add(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_add *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (!client->role->query) {
+        return 0;
+    }
+
+    if (!client->role->allow_any_device) {
+        return 0;
+    }
+
+    if (!client->role->bar_policy.any) {
+        /* TODO: introduce a dedicated QDMA policy instead of reusing bar_policy. */
+        return 0;
+    }
+
+    return 1;
+}
+
+int auth_request_qdma_qpair_op(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_op *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (!client->role->query) {
+        return 0;
+    }
+
+    if (!client->role->allow_any_device) {
+        return 0;
+    }
+
+    if (!client->role->bar_policy.any) {
+        /* TODO: introduce a dedicated QDMA policy instead of reusing bar_policy. */
+        return 0;
+    }
+
+    return 1;
+}
+
+int auth_request_qdma_qpair_get_fd(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_get_fd *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (!client->role->query) {
+        return 0;
+    }
+
+    if (!client->role->allow_any_device) {
+        return 0;
+    }
+
+    if (!client->role->bar_policy.any) {
+        /* TODO: introduce a dedicated QDMA policy instead of reusing bar_policy. */
+        return 0;
+    }
+
+    return 1;
+}
+
 int ensure_role(struct client *client)
 {
     assert(client != NULL);

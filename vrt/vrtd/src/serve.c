@@ -33,6 +33,7 @@
 #include <sys/uio.h>
 
 #include <stdio.h>
+#include <slash/qdma.h>
 
 #include "array.h"
 #include "auth.h"
@@ -71,6 +72,36 @@ static uint16_t client_handle_request_get_bar_fd(
     const struct vrtd_req_get_bar_fd *req_body,
     uint16_t req_size,
     struct vrtd_resp_get_bar_fd *resp_body,
+    uint16_t *resp_size,
+    int *out_fd,
+    bool *have_out_fd
+);
+static uint16_t client_handle_request_qdma_get_info(
+    struct client *client,
+    const struct vrtd_req_qdma_get_info *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_qdma_get_info *resp_body,
+    uint16_t *resp_size
+);
+static uint16_t client_handle_request_qdma_qpair_add(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_add *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_qdma_qpair_add *resp_body,
+    uint16_t *resp_size
+);
+static uint16_t client_handle_request_qdma_qpair_op(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_op *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_qdma_qpair_op *resp_body,
+    uint16_t *resp_size
+);
+static uint16_t client_handle_request_qdma_qpair_get_fd(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_get_fd *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_qdma_qpair_get_fd *resp_body,
     uint16_t *resp_size,
     int *out_fd,
     bool *have_out_fd
@@ -324,6 +355,48 @@ static int client_handle_request(struct client *client)
                 &client->have_out_fd
             );
         break;
+    case VRTD_REQ_QDMA_GET_INFO:
+        resp_header->ret =
+            client_handle_request_qdma_get_info(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_qdma_get_info),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_qdma_get_info),
+                &size
+            );
+        break;
+    case VRTD_REQ_QDMA_QPAIR_ADD:
+        resp_header->ret =
+            client_handle_request_qdma_qpair_add(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_qdma_qpair_add),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_qdma_qpair_add),
+                &size
+            );
+        break;
+    case VRTD_REQ_QDMA_QPAIR_OP:
+        resp_header->ret =
+            client_handle_request_qdma_qpair_op(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_qdma_qpair_op),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_qdma_qpair_op),
+                &size
+            );
+        break;
+    case VRTD_REQ_QDMA_QPAIR_GET_FD:
+        resp_header->ret =
+            client_handle_request_qdma_qpair_get_fd(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_qdma_qpair_get_fd),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_qdma_qpair_get_fd),
+                &size,
+                &client->out_fd,
+                &client->have_out_fd
+            );
+        break;
 
     default:
         resp_header->ret = VRTD_RET_BAD_REQUEST;
@@ -364,6 +437,183 @@ static uint16_t client_handle_request_get_num_devices(
 
     resp_body->num_devices = client->state->devices.len;
     
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
+static uint16_t client_handle_request_qdma_get_info(
+    struct client *client,
+    const struct vrtd_req_qdma_get_info *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_qdma_get_info *resp_body,
+    uint16_t *resp_size
+)
+{
+    int ret = auth_request_qdma_get_info(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL || d->qdma == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    if (slash_qdma_info_read(d->qdma, &resp_body->info) != 0) {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
+static uint16_t client_handle_request_qdma_qpair_add(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_add *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_qdma_qpair_add *resp_body,
+    uint16_t *resp_size
+)
+{
+    int ret = auth_request_qdma_qpair_add(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL || d->qdma == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    resp_body->add = req_body->add;
+
+    if (slash_qdma_qpair_add(d->qdma, &resp_body->add) != 0) {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
+static uint16_t client_handle_request_qdma_qpair_op(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_op *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_qdma_qpair_op *resp_body,
+    uint16_t *resp_size
+)
+{
+    int ret = auth_request_qdma_qpair_op(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL || d->qdma == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    switch (req_body->op) {
+    case SLASH_QDMA_QUEUE_OP_START:
+        ret = slash_qdma_qpair_start(d->qdma, req_body->qid);
+        break;
+    case SLASH_QDMA_QUEUE_OP_STOP:
+        ret = slash_qdma_qpair_stop(d->qdma, req_body->qid);
+        break;
+    case SLASH_QDMA_QUEUE_OP_DEL:
+        ret = slash_qdma_qpair_del(d->qdma, req_body->qid);
+        break;
+    default:
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    if (ret != 0) {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    resp_body->zero = 0;
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
+static uint16_t client_handle_request_qdma_qpair_get_fd(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_get_fd *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_qdma_qpair_get_fd *resp_body,
+    uint16_t *resp_size,
+    int *out_fd,
+    bool *have_out_fd
+)
+{
+    int ret = auth_request_qdma_qpair_get_fd(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+    *have_out_fd = false;
+
+    if (req_size < sizeof(*req_body)) {
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL || d->qdma == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    int fd = slash_qdma_qpair_get_fd(d->qdma, req_body->qid, (int)req_body->flags);
+    if (fd < 0) {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    *out_fd = fd;
+    *have_out_fd = true;
+
+    resp_body->zero = 0;
     *resp_size = sizeof(*resp_body);
     return VRTD_RET_OK;
 }

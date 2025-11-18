@@ -26,6 +26,7 @@
 #include <vrtd/device.hpp>
 #include <vrtd/bar.hpp>
 #include <vrtd/bar_file.hpp>
+#include <vrtd/qdma_qpair.hpp>
 
 #include <mutex>
 #include <memory>
@@ -110,6 +111,54 @@ public:
      * The returned @c Device becomes invalid if this session is later closed or moved.
      */
     Device getDevice(size_t i) const;
+
+    /**
+     * @brief Query QDMA capabilities for a device.
+     *
+     * @param device Device for which to query QDMA info.
+     * @return A copy of the QDMA capability struct as reported by the daemon.
+     * @throws vrtd::Error on error.
+     */
+    struct slash_qdma_info getQdmaInfo(const Device& device) const;
+
+    /**
+     * @brief Create a QDMA qpair on a device.
+     *
+     * Returns an owning @c QdmaQpair that will automatically delete
+     * the qpair on destruction.
+     *
+     * @param device Device on which to create the qpair.
+     * @param cfg    Qpair configuration parameters. The returned qpair
+     *               exposes @c getQid().
+     * @return An owning @c QdmaQpair.
+     * @throws vrtd::Error on error.
+     */
+    QdmaQpair createQdmaQpair(
+        const Device& device,
+        const struct slash_qdma_qpair_add& cfg
+    ) const;
+
+    /**
+     * @brief Start, stop or delete an existing QDMA qpair.
+     *
+     * Convenience wrappers around the vrtd QDMA queue-op requests.
+     *
+     * @throws vrtd::Error on error.
+     */
+    void startQdmaQpair(const Device& device, uint32_t qid) const;
+    void stopQdmaQpair (const Device& device, uint32_t qid) const;
+    void deleteQdmaQpair(const Device& device, uint32_t qid) const;
+
+    /**
+     * @brief Obtain a read/write file descriptor for a QDMA qpair.
+     *
+     * @param device Device owning the qpair.
+     * @param qid    Qpair identifier as returned by @c createQdmaQpair().
+     * @param flags  OR of O_CLOEXEC and 0 (other flags may be rejected).
+     * @return A new file descriptor referring to the qpair, owned by the caller.
+     * @throws vrtd::Error on error.
+     */
+    int openQdmaQpairFd(const Device& device, uint32_t qid, uint32_t flags = 0) const;
 
     /**
      * @brief Explicitly close the session.

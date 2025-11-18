@@ -73,6 +73,18 @@ enum vrtd_opcode {
 
     /** Obtain a device BAR file descriptor via SCM_RIGHTS. */
     VRTD_REQ_GET_BAR_FD,
+
+    /** Query QDMA capabilities of a device. */
+    VRTD_REQ_QDMA_GET_INFO,
+
+    /** Create a QDMA qpair on a device. */
+    VRTD_REQ_QDMA_QPAIR_ADD,
+
+    /** Apply an operation (start/stop/del) to a QDMA qpair. */
+    VRTD_REQ_QDMA_QPAIR_OP,
+
+    /** Obtain a read/write file descriptor for a QDMA qpair. */
+    VRTD_REQ_QDMA_QPAIR_GET_FD,
 };
 
 /**
@@ -149,6 +161,66 @@ struct vrtd_req_get_bar_fd {
  */
 struct vrtd_resp_get_bar_fd {
     uint64_t len; ///< Size of the BAR address space; suitable for mmap.
+} __attribute__((packed));
+
+/**
+ * @brief Request QDMA capability information for a device.
+ *
+ * Complementary to @ref slash_qdma_info; this wraps the libslash QDMA
+ * info query and exposes it over the vrtd protocol.
+ */
+struct vrtd_req_qdma_get_info {
+    uint32_t dev_number; ///< The device for which to get QDMA info. An index in the range [0, n).
+} __attribute__((packed));
+
+struct vrtd_resp_qdma_get_info {
+    struct slash_qdma_info info; ///< QDMA capabilities for the device.
+} __attribute__((packed));
+
+/**
+ * @brief Request creation of a QDMA qpair.
+ *
+ * The @ref slash_qdma_qpair_add payload is passed through to the kernel
+ * and the resulting qid is returned in the response.
+ */
+struct vrtd_req_qdma_qpair_add {
+    uint32_t dev_number; ///< Device index (0-based).
+    struct slash_qdma_qpair_add add; ///< Qpair creation parameters.
+} __attribute__((packed));
+
+struct vrtd_resp_qdma_qpair_add {
+    struct slash_qdma_qpair_add add; ///< Echoed qpair parameters with qid filled in.
+} __attribute__((packed));
+
+/**
+ * @brief Request an operation on an existing QDMA qpair.
+ *
+ * @ref op uses the same numeric values as @ref SLASH_QDMA_QUEUE_OP_START and friends.
+ */
+struct vrtd_req_qdma_qpair_op {
+    uint32_t dev_number; ///< Device index (0-based).
+    uint32_t qid;        ///< Qpair identifier as returned by qpair_add.
+    uint32_t op;         ///< One of SLASH_QDMA_QUEUE_OP_{START,STOP,DEL}.
+} __attribute__((packed));
+
+struct vrtd_resp_qdma_qpair_op {
+    uint8_t zero; ///< Placeholder to avoid empty-struct ABI issues.
+} __attribute__((packed));
+
+/**
+ * @brief Request a read/write file descriptor for a QDMA qpair.
+ *
+ * The qpair FD is sent out-of-band via SCM_RIGHTS when
+ * @ref vrtd_resp_header::ret == VRTD_RET_OK.
+ */
+struct vrtd_req_qdma_qpair_get_fd {
+    uint32_t dev_number; ///< Device index (0-based).
+    uint32_t qid;        ///< Qpair identifier as returned by qpair_add.
+    uint32_t flags;      ///< Only O_CLOEXEC is currently honored.
+} __attribute__((packed));
+
+struct vrtd_resp_qdma_qpair_get_fd {
+    uint8_t zero; ///< Placeholder; all data is carried via SCM_RIGHTS.
 } __attribute__((packed));
 
 #ifdef __cplusplus

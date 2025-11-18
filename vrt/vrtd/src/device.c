@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <syslog.h>
 #include <systemd/sd-journal.h>
 
@@ -91,6 +92,38 @@ static int device_open(struct device *d, const char *path)
 
     assert(d->ctl != NULL);
 
+    /* Best-effort QDMA ctl path:
+     * Map /dev/slash_ctlN -> /dev/slash_qdma_ctlN by string replacement.
+     * This assumes matching indices and a single device.
+     *
+     * TODO: replace this with a robust mapping via sysfs/PCI BDF when
+     * multiple devices or different naming schemes are supported.
+     */
+    {
+        const char *prefix = "/dev/slash_ctl";
+        _cleanup_(cleanup_free)
+        char *qdma_path = NULL;
+
+        if (strncmp(path, prefix, strlen(prefix)) == 0) {
+            const char *suffix = path + strlen(prefix);
+            int n = asprintf(&qdma_path, "/dev/slash_qdma_ctl%s", suffix);
+            if (n < 0) {
+                qdma_path = NULL;
+            }
+        }
+
+        if (qdma_path != NULL) {
+            d->qdma = slash_qdma_open(qdma_path);
+            if (d->qdma == NULL) {
+                (void) sd_journal_print(
+                    LOG_WARNING,
+                    "Error opening QDMA device %s (for %s): %m",
+                    qdma_path, d->path
+                );
+            }
+        }
+    }
+
     for (size_t i = 0; i < SIZEOF_ARRAY(d->bar_info); i++) {
         d->bar_info[i] = slash_bar_info_read(d->ctl, i);
         if (d->bar_info[i] == NULL) {
@@ -123,6 +156,17 @@ void cleanup_device(struct device *d)
 {
     if (d == NULL) {
         return;
+    }
+
+    if (d->qdma != NULL) {
+        if (slash_qdma_close(d->qdma) != 0) {
+            (void) sd_journal_print(
+                LOG_WARNING,
+                "Error closing qdma device for %s: %m (ignored)",
+                d->path ? d->path : "(unknown)"
+            );
+        }
+        d->qdma = NULL;
     }
 
     /* Close any opened BAR files */

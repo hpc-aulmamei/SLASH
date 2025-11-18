@@ -139,6 +139,97 @@ BarFile Session::openBarFile(const Bar& bar) const {
     return BarFile(barFile);
 }
 
+slash_qdma_info Session::getQdmaInfo(const Device& device) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    slash_qdma_info info;
+    auto ret = vrtd_qdma_get_info(fd, device.getNum(), &info);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    return info;
+}
+
+QdmaQpair Session::createQdmaQpair(
+    const Device& device,
+    const slash_qdma_qpair_add& cfg
+) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    slash_qdma_qpair_add tmp = cfg;
+    auto ret = vrtd_qdma_qpair_add(fd, device.getNum(), &tmp);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    return QdmaQpair(
+        device.getNum(),
+        tmp.qid,
+        [this, device](const QdmaQpair& qp) { startQdmaQpair(device, qp.getQid()); },
+        [this, device](const QdmaQpair& qp) { stopQdmaQpair(device, qp.getQid()); },
+        [this, device](const QdmaQpair& qp) { deleteQdmaQpair(device, qp.getQid()); },
+        [this, device](const QdmaQpair& qp, uint32_t flags) { return openQdmaQpairFd(device, qp.getQid(), flags); }
+    );
+}
+
+void Session::startQdmaQpair(const Device& device, uint32_t qid) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    auto ret = vrtd_qdma_qpair_start(fd, device.getNum(), qid);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
+void Session::stopQdmaQpair(const Device& device, uint32_t qid) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    auto ret = vrtd_qdma_qpair_stop(fd, device.getNum(), qid);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
+void Session::deleteQdmaQpair(const Device& device, uint32_t qid) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    auto ret = vrtd_qdma_qpair_del(fd, device.getNum(), qid);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
+int Session::openQdmaQpairFd(const Device& device, uint32_t qid, uint32_t flags) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    int qfd = -1;
+    auto ret = vrtd_qdma_qpair_get_fd(fd, device.getNum(), qid, flags, &qfd);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    return qfd;
+}
+
 void Session::close() noexcept {
     if (isClosed()) {
         return;

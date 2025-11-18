@@ -248,6 +248,120 @@ enum vrtd_ret vrtd_get_bar_fd(int fd, uint32_t dev, uint8_t bar, int *fd_out, ui
     return VRTD_RET_OK;
 }
 
+enum vrtd_ret vrtd_qdma_get_info(int fd, uint32_t dev, struct slash_qdma_info *info_out)
+{
+    if (info_out == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    struct vrtd_req_qdma_get_info req = {
+        .dev_number = dev,
+    };
+    struct vrtd_resp_qdma_get_info resp = {0};
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_QDMA_GET_INFO,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    memcpy(info_out, &resp.info, sizeof(struct slash_qdma_info));
+
+    return VRTD_RET_OK;
+}
+
+enum vrtd_ret vrtd_qdma_qpair_add(int fd, uint32_t dev, struct slash_qdma_qpair_add *qpair_inout)
+{
+    if (qpair_inout == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    struct vrtd_req_qdma_qpair_add req = {
+        .dev_number = dev,
+        .add        = *qpair_inout,
+    };
+    struct vrtd_resp_qdma_qpair_add resp = {0};
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_QDMA_QPAIR_ADD,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    *qpair_inout = resp.add;
+
+    return VRTD_RET_OK;
+}
+
+static enum vrtd_ret vrtd_qdma_qpair_op(int fd, uint32_t dev, uint32_t qid, uint32_t op)
+{
+    struct vrtd_req_qdma_qpair_op req = {
+        .dev_number = dev,
+        .qid        = qid,
+        .op         = op,
+    };
+    struct vrtd_resp_qdma_qpair_op resp = {0};
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_QDMA_QPAIR_OP,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    return VRTD_RET_OK;
+}
+
+enum vrtd_ret vrtd_qdma_qpair_start(int fd, uint32_t dev, uint32_t qid)
+{
+    return vrtd_qdma_qpair_op(fd, dev, qid, SLASH_QDMA_QUEUE_OP_START);
+}
+
+enum vrtd_ret vrtd_qdma_qpair_stop(int fd, uint32_t dev, uint32_t qid)
+{
+    return vrtd_qdma_qpair_op(fd, dev, qid, SLASH_QDMA_QUEUE_OP_STOP);
+}
+
+enum vrtd_ret vrtd_qdma_qpair_del(int fd, uint32_t dev, uint32_t qid)
+{
+    return vrtd_qdma_qpair_op(fd, dev, qid, SLASH_QDMA_QUEUE_OP_DEL);
+}
+
+enum vrtd_ret vrtd_qdma_qpair_get_fd(
+    int fd,
+    uint32_t dev,
+    uint32_t qid,
+    uint32_t flags,
+    int *fd_out
+)
+{
+    if (fd_out == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    struct vrtd_req_qdma_qpair_get_fd req = {
+        .dev_number = dev,
+        .qid        = qid,
+        .flags      = flags,
+    };
+    struct vrtd_resp_qdma_qpair_get_fd resp = {0};
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_QDMA_QPAIR_GET_FD,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               fd_out);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    return VRTD_RET_OK;
+}
+
 enum vrtd_ret vrtd_open_bar_file(
     int fd,
     uint32_t dev,

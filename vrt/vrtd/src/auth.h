@@ -43,4 +43,24 @@ int auth_request_get_bar_fd(
     const struct vrtd_req_get_bar_fd *req_body
 );
 
+int auth_request_qdma_get_info(
+    struct client *client,
+    const struct vrtd_req_qdma_get_info *req_body
+);
+
+int auth_request_qdma_qpair_add(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_add *req_body
+);
+
+int auth_request_qdma_qpair_op(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_op *req_body
+);
+
+int auth_request_qdma_qpair_get_fd(
+    struct client *client,
+    const struct vrtd_req_qdma_qpair_get_fd *req_body
+);
+
 #endif // VRTD_AUTH_H

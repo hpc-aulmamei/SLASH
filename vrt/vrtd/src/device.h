@@ -24,12 +24,14 @@
 #include <stddef.h>
 
 #include <slash/ctldev.h>
+#include <slash/qdma.h>
 
 #include "array.h"
 
 struct device {
     char *path; /* owning */
     struct slash_ctldev *ctl;
+    struct slash_qdma *qdma;
     struct slash_ioctl_bar_info *bar_info[6];
     struct slash_bar_file *bar_files[6];
 };

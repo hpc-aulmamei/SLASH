@@ -22,6 +22,7 @@
 add_library(slash
   ${CMAKE_CURRENT_SOURCE_DIR}/ctldev.c
   ${CMAKE_CURRENT_SOURCE_DIR}/ctldev_mock.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/qdma.c
 )
 
 # Provide an alias target with namespace (nice for internal use too)

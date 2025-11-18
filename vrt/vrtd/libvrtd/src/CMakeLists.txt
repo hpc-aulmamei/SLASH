@@ -36,3 +36,7 @@ target_include_directories(libvrtd
 # CMake prepends lib for libraries so libvrtd would be output as liblibvrtd otherwise
 set_target_properties(libvrtd PROPERTIES OUTPUT_NAME vrtd)
 
+target_link_libraries(libvrtd
+  PUBLIC
+    slash::slash
+)
