@@ -69,8 +69,9 @@ static int slash_pcie_probe(struct pci_dev *pdev, const struct pci_device_id *id
     }
 
     err = slash_hotplug_register_device(pdev);
-    if (err)
+    if (err) {
         dev_warn(&pdev->dev, "slash: hotplug registration failed: %d\n", err);
+    }
 
     dev_info(&pdev->dev, "slash: probe successful\n");  
     return 0;

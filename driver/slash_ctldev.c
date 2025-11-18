@@ -16,11 +16,28 @@
 
 #include <linux/atomic.h>
 #include <linux/capability.h>
+#include <linux/kernel.h>
+#include <linux/minmax.h>
 #include <linux/printk.h>
+#include <linux/stddef.h>
+#include <linux/string.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
 
 #include "slash.h"
 #include "slash_dmabuf.h"
+
+#define SLASH_FIELD_SIZE(_type, _member) (sizeof(((_type *)0)->_member))
+
+#define SLASH_IOCTL_BAR_INFO_MIN_SIZE \
+    (offsetof(struct slash_ioctl_bar_info, bar_number) + SLASH_FIELD_SIZE(struct slash_ioctl_bar_info, bar_number))
+#define SLASH_IOCTL_BAR_INFO_RESPONSE_SIZE \
+    (offsetof(struct slash_ioctl_bar_info, length) + SLASH_FIELD_SIZE(struct slash_ioctl_bar_info, length))
+
+#define SLASH_IOCTL_BAR_FD_MIN_SIZE \
+    (offsetof(struct slash_ioctl_bar_fd_request, flags) + SLASH_FIELD_SIZE(struct slash_ioctl_bar_fd_request, flags))
+#define SLASH_IOCTL_BAR_FD_RESPONSE_SIZE \
+    (offsetof(struct slash_ioctl_bar_fd_request, length) + SLASH_FIELD_SIZE(struct slash_ioctl_bar_fd_request, length))
 
 static int slash_ctldev_set_bar_info(struct pci_dev *pdev, struct slash_ctldev *ctldev);
 static int slash_ctldev_create_bar_dmabufs(struct slash_ctldev *ctldev);
@@ -232,15 +249,25 @@ static long slash_ctldev_fop_ioctl(struct file *file, unsigned int op, unsigned 
         struct slash_ioctl_bar_info bar_info = {0};
         struct slash_ctldev_bar *bar = NULL;
         u32 bar_info_alleged_size;
+        size_t copy_size;
 
-        if (copy_from_user(&bar_info_alleged_size), (void __user *) arg, sizeof(bar_info_alleged_size)) {
+        if (copy_from_user(&bar_info_alleged_size, (void __user *)arg, sizeof(bar_info_alleged_size))) {
             dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_INFO copy_from_user failed\n");
             return -EFAULT;
         }
 
-        if (copy_struct_from_user(&bar_info, sizeof(bar_info), (void __user *) arg, bar_info_alleged_size)) {
+        if (bar_info_alleged_size < SLASH_IOCTL_BAR_INFO_MIN_SIZE) {
+            dev_warn(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_INFO size too small (%u)\n", bar_info_alleged_size);
+            return -EINVAL;
+        }
+
+        copy_size = min_t(size_t, bar_info_alleged_size, sizeof(bar_info));
+        if (copy_from_user(&bar_info, (void __user *)arg, copy_size)) {
             dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_INFO copy_from_user failed\n");
             return -EFAULT;
+        }
+        if (copy_size < sizeof(bar_info)) {
+            memset((u8 *)&bar_info + copy_size, 0, sizeof(bar_info) - copy_size);
         }
 
         if (bar_info.bar_number < 0 || bar_info.bar_number >= PCI_STD_NUM_BARS) {
@@ -255,9 +282,26 @@ static long slash_ctldev_fop_ioctl(struct file *file, unsigned int op, unsigned 
         bar_info.start_address = bar->start;
         bar_info.length = bar->len;
 
-        if (copy_struct_to_user((void __user *) arg, bar_info_alleged_size, &bar_info, sizeof(bar_info), NULL)) {
+        bar_info.size = sizeof(bar_info);
+
+        if (bar_info_alleged_size < SLASH_IOCTL_BAR_INFO_RESPONSE_SIZE) {
+            dev_warn(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_INFO response size too small (%u)\n", bar_info_alleged_size);
+            return -EINVAL;
+        }
+
+        copy_size = min_t(size_t, bar_info_alleged_size, sizeof(bar_info));
+        if (copy_to_user((void __user *)arg, &bar_info, copy_size)) {
             dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_INFO copy_to_user failed\n");
             return -EFAULT;
+        }
+        if (bar_info_alleged_size > sizeof(bar_info)) {
+            size_t extra = bar_info_alleged_size - sizeof(bar_info);
+            void __user *dst = (void __user *)((unsigned long)arg + sizeof(bar_info));
+
+            if (clear_user(dst, extra)) {
+                dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_INFO clear_user failed\n");
+                return -EFAULT;
+            }
         }
 
         return 0;
@@ -267,16 +311,31 @@ static long slash_ctldev_fop_ioctl(struct file *file, unsigned int op, unsigned 
         struct slash_ioctl_bar_fd_request fd_request = {0};
         struct slash_ctldev_bar *bar = NULL;
         int ret;
-        u32 
+        u32 fd_request_alleged_size;
+        size_t copy_size;
 
         if (!capable(CAP_SYS_RAWIO)) {
             dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_FD capability check failed\n");
             return -EPERM;
         }
 
-        if (copy_from_user(&fd_request, (void __user *) arg, sizeof(fd_request))) {
+        if (copy_from_user(&fd_request_alleged_size, (void __user *)arg, sizeof(fd_request_alleged_size))) {
             dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_FD copy_from_user failed\n");
             return -EFAULT;
+        }
+
+        if (fd_request_alleged_size < SLASH_IOCTL_BAR_FD_MIN_SIZE) {
+            dev_warn(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_FD size too small (%u)\n", fd_request_alleged_size);
+            return -EINVAL;
+        }
+
+        copy_size = min_t(size_t, fd_request_alleged_size, sizeof(fd_request));
+        if (copy_from_user(&fd_request, (void __user *)arg, copy_size)) {
+            dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_FD copy_from_user failed\n");
+            return -EFAULT;
+        }
+        if (copy_size < sizeof(fd_request)) {
+            memset((u8 *)&fd_request + copy_size, 0, sizeof(fd_request) - copy_size);
         }
 
         if (fd_request.bar_number < 0 || fd_request.bar_number >= PCI_STD_NUM_BARS) {
@@ -297,9 +356,26 @@ static long slash_ctldev_fop_ioctl(struct file *file, unsigned int op, unsigned 
 
         fd_request.length = bar->len;
 
-        if (copy_to_user((void __user *) arg, &fd_request, sizeof(fd_request))) {
+        fd_request.size = sizeof(fd_request);
+
+        if (fd_request_alleged_size < SLASH_IOCTL_BAR_FD_RESPONSE_SIZE) {
+            dev_warn(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_FD response size too small (%u)\n", fd_request_alleged_size);
+            return -EINVAL;
+        }
+
+        copy_size = min_t(size_t, fd_request_alleged_size, sizeof(fd_request));
+        if (copy_to_user((void __user *)arg, &fd_request, copy_size)) {
             dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_FD copy_to_user failed\n");
             return -EFAULT;
+        }
+        if (fd_request_alleged_size > sizeof(fd_request)) {
+            size_t extra = fd_request_alleged_size - sizeof(fd_request);
+            void __user *dst = (void __user *)((unsigned long)arg + sizeof(fd_request));
+
+            if (clear_user(dst, extra)) {
+                dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_FD clear_user failed\n");
+                return -EFAULT;
+            }
         }
 
         get_dma_buf(bar->dmabuf);

@@ -67,4 +67,59 @@ struct slash_ioctl_bar_fd_request {
 #define SLASH_CTLDEV_IOCTL_GET_BAR_INFO _IOWR('v', 0x30, struct slash_ioctl_bar_info)
 #define SLASH_CTLDEV_IOCTL_GET_BAR_FD   _IOWR('v', 0x31, struct slash_ioctl_bar_fd_request)
 
+/* The following are QDMA operations */
+
+struct slash_qdma_info {
+    __u32 size;
+
+    /* Kernel to userspace */
+    __u32 qsets_max;
+    __u32 msix_qvecs;
+    __u32 vf_max;
+    __u32 caps;
+};
+
+struct slash_qdma_qpair_add {
+    __u32 size;
+
+    /* Userspace to kernel */
+    __u32 mode;
+    __u32 dir_mask;
+
+    __u32 h2c_ring_sz;
+    __u32 c2h_ring_sz;
+    __u32 cmpt_ring_sz;
+
+    /* Kernel to userspace */
+    __u32 qid;
+};
+
+enum {
+    SLASH_QDMA_QUEUE_OP_START,
+    SLASH_QDMA_QUEUE_OP_STOP,
+    SLASH_QDMA_QUEUE_OP_DEL,
+};
+
+struct slash_qdma_qpair_op {
+    __u32 size;
+
+    /* Userspace to kernel */
+    __u32 qid;
+    __u32 op;
+};
+
+struct slash_qdma_qpair_fd_request {
+    __u32 size;
+
+    /* Userspace to kernel */
+    __u32 qid;
+    __u32 flags; /* Only O_CLOEXEC */
+};
+
+#define SLASH_QDMA_IOCTL_INFO          _IOWR('v', 0x50, struct slash_qdma_info)
+#define SLASH_QDMA_IOCTL_QPAIR_ADD     _IOWR('v', 0x51, struct slash_qdma_qpair_add)
+#define SLASH_QDMA_IOCTL_Q_OP          _IOWR('v', 0x52, struct slash_qdma_qpair_op)
+#define SLASH_QDMA_IOCTL_QPAIR_GET_FD  _IOWR('v', 0x53, struct slash_qdma_qpair_fd_request)
+
+
 #endif
