@@ -48,7 +48,7 @@ hls:
 hw: setup hls
 	@echo "Running HW step"
 	(cd $(VPP_DIR) && \
-	./scripts/v80++ --design-name $(DESIGN_NAME) --cfg $(HOME_DIR)/config.cfg --platform hw --segmented --kernels $(HLS_DIR)/$(HLS_BUILD_DIR_PERF)/sol1 && \
+	./scripts/v80++ --design-name $(DESIGN_NAME) --cfg $(HOME_DIR)/config.cfg --platform hw --segmented --source-pre-synth $(HOME_DIR)/c.tcl --kernels $(HLS_DIR)/$(HLS_BUILD_DIR_PERF)/sol1 && \
 	cp build/$(DESIGN_NAME)_hw.vrtbin $(BUILD_DIR))
 
 emu: setup hls

@@ -59,8 +59,15 @@ static int slash_bar_dmabuf_mmap(struct dma_buf *dmabuf, struct vm_area_struct *
     struct slash_bar_dmabuf_data *priv = dmabuf->priv;
     unsigned long pfn;
     int err;
+    unsigned long size = vma->vm_end - vma->vm_start;
+    u64 offset = (u64)vma->vm_pgoff << PAGE_SHIFT;
+
 
     bool wc = !!(pci_resource_flags(priv->pdev, priv->bar_number) & IORESOURCE_PREFETCH);
+
+    /* Ensure the requested range lies fully within the BAR */
+    if (offset > priv->len || size > priv->len - offset)
+        return -EINVAL;
 
     vma->vm_flags |= VM_DONTDUMP | VM_DONTEXPAND;
 
@@ -72,9 +79,9 @@ static int slash_bar_dmabuf_mmap(struct dma_buf *dmabuf, struct vm_area_struct *
     pfn = (pci_resource_start(priv->pdev, priv->bar_number) >> PAGE_SHIFT) + vma->vm_pgoff;
 
     dev_dbg(&priv->pdev->dev, "slash: mmap BAR%d wc=%d start_pfn=0x%lx len=0x%lx\n", priv->bar_number, wc, pfn, vma->vm_end - vma->vm_start);
+   
     err = io_remap_pfn_range(vma, vma->vm_start, pfn,
                              vma->vm_end - vma->vm_start, vma->vm_page_prot);
-
     if (err) {
         dev_err(&priv->pdev->dev, "slash: io_remap_pfn_range failed: %d\n", err);
         return err;

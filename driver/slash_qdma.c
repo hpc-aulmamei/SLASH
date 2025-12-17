@@ -1247,14 +1247,44 @@ static int slash_qdma_ioctl_qpair_get_fd_w(struct miscdevice *misc,
         return fd;
     }
 
-    fd_install(fd, file);
-
     req.size = sizeof(req);
     copy_size = min_t(size_t, user_size, sizeof(req));
     if (copy_to_user(uarg, &req, copy_size)) {
-        /* On error, we still return the fd we created */
+        put_unused_fd(fd);
+        fput(file);
+        slash_qdma_qpair_put(entry);
+        kref_put(&qdma_dev->ref, slash_qdma_dev_release);
+        kfree(ctx);
         return -EFAULT;
     }
 
+    fd_install(fd, file);
+
     return fd;
+}
+
+/* Must be called with qdma_dev->lock held */
+static void slash_qdma_qpair_teardown(struct slash_qdma_dev *qdma_dev, u32 qid,
+                                      struct slash_qdma_qpair_entry *entry)
+{
+    unsigned int idx;
+
+    if (!entry)
+        return;
+
+    /* Remove any queues that still exist */
+    for (idx = 0; idx < SLASH_QDMA_QTYPE_COUNT; idx++) {
+        enum queue_type_t qtype = idx;
+
+        if (entry->dir_mask & slash_qdma_qtype_to_dir(qtype))
+            slash_qdma_ioctl_qpair_rm_q(&qdma_dev->misc, qdma_dev, entry, qtype);
+    }
+
+    /* Mark entry dead for any stale FDs */
+    memset(entry->qhndl, 0, sizeof(entry->qhndl));
+    entry->dir_mask = 0;
+
+    /* Drop from xarray and release ref */
+    xa_erase(&qdma_dev->qpairs, qid);
+    slash_qdma_qpair_put(entry);
 }
