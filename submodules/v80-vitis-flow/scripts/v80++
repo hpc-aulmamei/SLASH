@@ -143,6 +143,10 @@ pushd ${BUILD_DIR}
     ./v80++-linker --cfg "$CONFIG_FILE" --platform "$PLATFORM" $SEGMENTED "${TCL_INJECT_ARGS[@]}" --kernels "${KERNEL_PATHS[@]}"
     if [ "$PLATFORM" = "hw" ]; then
         cp run_pre.tcl $AVED_DIR/hw/amd_v80_gen5x8_24.1/src/run_pre.tcl
+        cp -r ../resources/dcmac $AVED_DIR/hw/amd_v80_gen5x8_24.1/src/dcmac
+        cp dcmac_config.tcl $AVED_DIR/hw/amd_v80_gen5x8_24.1/src/dcmac/tcl/dcmac_config.tcl
+        cp ../resources/run_post.tcl $AVED_DIR/hw/amd_v80_gen5x8_24.1/src/run_post.tcl
+        cp ../resources/create_design.tcl $AVED_DIR/hw/amd_v80_gen5x8_24.1/src/create_design.tcl
         cp run_post.tcl $AVED_DIR/hw/amd_v80_gen5x8_24.1/src/run_post.tcl
     fi
     if [ "$PLATFORM" = "emu" ]; then

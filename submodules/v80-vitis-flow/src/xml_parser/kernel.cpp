@@ -93,3 +93,7 @@ void Kernel::print() {
         el.print();
     }
 }
+
+void Kernel::setNetworkKernel() { this->networkKernel = true; }
+
+bool Kernel::isNetworkKernel() { return this->networkKernel; }

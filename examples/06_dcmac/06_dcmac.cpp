@@ -19,30 +19,33 @@
  */
 
 #include <iostream>
+#include <cstring>
 
-#include "arg_parser.hpp"
-#include "bd_builder.hpp"
-#include "emulator.hpp"
-#include "xml_parser.hpp"
-int main(int argc, char** argv) {
+#include <api/device.hpp>
+#include <api/buffer.hpp>
+#include <api/kernel.hpp>
+
+int main(int argc, char* argv[]) {
     try {
-        utils::Logger::setOutput("v80++-linker.log");
-        ArgParser parser(argc, argv);
-        auto plat = parser.getPlatform();
-
-        BdBuilder builder(parser.getKernels(), parser.getConnections(), parser.getFreqHz(),
-                          parser.isSegmented(), plat, parser.getNetworkInterfaces(),
-                          parser.getTclInjections());
-        builder.buildBlockDesign();
-
-        if (plat == Platform::EMULATOR) {
-            Emulator emulator(parser.getKernelPaths(), parser.getKernels(),
-                              parser.getConnections());
-            emulator.print();
+        if (argc < 3) {
+            std::cerr << "Usage: " << argv[0] << " <BDF> <vrtbin file>" << std::endl;
+            return 1;
         }
+        std::string bdf = argv[1];
+        std::string vrtbinFile = argv[2];
+        vrt::utils::Logger::setLogLevel(vrt::utils::LogLevel::DEBUG);
+        uint32_t size = 1024;
 
-    } catch (std::exception& e) {
-        std::cout << "Exception: " << e.what() << std::endl;
+        vrt::Device device(bdf, vrtbinFile);
+        vrt::Kernel traffic_producer_0(device, "traffic_producer_0");
+        vrt::Kernel traffic_producer_1(device, "traffic_producer_1");
+        traffic_producer_0.start(100, 0);
+        traffic_producer_0.wait();
+        traffic_producer_1.start(100, 1);
+        traffic_producer_1.wait();
+        device.cleanup();
+     } catch (std::exception const& e) {
+        std::cerr << "Exception: " << e.what() << std::endl;
+        return 1;
     }
-    return 0;
 }

@@ -156,6 +156,13 @@ class ArgParser {
     std::vector<std::string> getKernelPaths();
 
     /**
+     * @brief Sets the network interface flags.
+     * @param networkInterfaces Array of booleans indicating the status of enablement of each
+     * network interface.
+     */
+    std::array<bool, 4> getNetworkInterfaces() const;
+
+    /**
      * @brief Gets the set of Tcl files to inject.
      * @return Structure representing the set of Tcl files to inject.
      */
@@ -171,6 +178,7 @@ class ArgParser {
     uint64_t freqHz;                      ///< Clock frequency in Hz
     bool segmented;                       ///< Flag indicating if the design is segmented
     Platform platform;                    ///< Target platform
+    std::array<bool, 4> networkInterfaces = {false, false, false, false};  ///< Network interface flags
     TclInjections tclInjections;          ///< Tcl files to inject                
 
     /**
@@ -183,6 +191,8 @@ class ArgParser {
      * @brief Parses the configuration file.
      */
     void parseConfig();
+
+    bool isNetworkKernel(const std::string& kernelName);
 };
 
 #endif  // ARG_PARSER_HPP

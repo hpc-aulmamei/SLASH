@@ -57,6 +57,7 @@ class Kernel {
     AreaEstimates estimates;            ///< Resource utilization estimates
     std::vector<Interface> interfaces;  ///< List of kernel interfaces
     std::vector<Register> registers;    ///< List of registers in the kernel
+    bool networkKernel;               ///< Flag indicating if the kernel is a network kernel
 
    public:
     /**
@@ -217,4 +218,17 @@ class Kernel {
      * and registers for debugging or documentation.
      */
     void print();
+
+    /**
+     * @brief Checks if the kernel is a network kernel.
+     * @return True if the kernel is a network kernel, false otherwise.
+     */
+    void setNetworkKernel();
+
+    /**
+     * @brief Checks if the kernel is a network kernel.
+     * @return True if the kernel is a network kernel, false otherwise.
+     */
+    bool isNetworkKernel();
+
 };
