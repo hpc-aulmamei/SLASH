@@ -16,8 +16,11 @@ obj-m := pcie_hotplug.o
 KDIR := /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 
+EXTRA_CFLAGS += -I$(QDMA_DIR_ABS)/libqdma \
+                -I$(QDMA_DIR_ABS)/libqdma/qdma_access
+
 all:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	$(MAKE) -C $(KDIR) M=$(PWD) modules EXTRA_CFLAGS="$(EXTRA_CFLAGS)"
 
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean

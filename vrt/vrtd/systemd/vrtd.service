@@ -1,0 +1,42 @@
+[Unit]
+Description=vrtd daemon
+
+[Service]
+Type=notify
+ExecStart=/usr/lib/vrt/vrtd
+User=vrtd
+Group=vrtd
+
+WatchdogSec=60s
+
+DevicePolicy=auto
+PrivateDevices=false
+
+# Create a writable runtime dir for any transient files if you want it:
+RuntimeDirectory=vrtd
+RuntimeDirectoryMode=0755
+
+AmbientCapabilities=CAP_SYS_RAWIO
+CapabilityBoundingSet=CAP_SYS_RAWIO
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/run/vrtd
+
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
