@@ -233,22 +233,4 @@ Platform ArgParser::getPlatform() { return platform; }
 
 std::vector<std::string> ArgParser::getKernelPaths() { return kernelPaths; }
 
-<<<<<<< HEAD
-std::array<bool, 4> ArgParser::getNetworkInterfaces() const { return networkInterfaces; }
-
-bool ArgParser::isNetworkKernel(const std::string& kernelName) {
-    for (auto conn = connections.begin(); conn != connections.end(); conn++) {
-        if (conn->src.kernelName == kernelName && (conn->dst.kernelName.find("eth_") == 0)) {
-            return true;
-        } else if (conn->dst.kernelName == kernelName && (conn->src.kernelName.find("eth_") == 0)) {
-            return true;
-        } else {
-            continue;
-        }
-    }
-
-    return false;
-}
-=======
 const TclInjections &ArgParser::getTclInjections() const { return tclInjections; }
->>>>>>> 5d534e2 (Added tcl injection to run_pre.tcl and run_post.tcl)

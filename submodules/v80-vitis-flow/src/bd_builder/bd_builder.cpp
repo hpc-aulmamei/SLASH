@@ -33,7 +33,8 @@ BdBuilder::BdBuilder(std::vector<Kernel> kernels, std::vector<Connection> connec
 }
 
 BdBuilder::BdBuilder(std::vector<Kernel> kernels, std::vector<Connection> connections,
-                     double targetClockFreq, bool segmented, Platform platform)
+                     double targetClockFreq, bool segmented, Platform platform,
+                     TclInjections tclInjections)
     : systemMap(segmented, platform) {
     this->kernels = kernels;
     this->streamConnections = connections;
@@ -91,10 +92,13 @@ void BdBuilder::buildBlockDesign() {
         inputBlockDesignFile.open(INPUT_FILE_SIM);
     }
     std::ofstream blockDesignFile;
+    std::ofstream postBuildScriptFile;
     if (platform == Platform::EMULATOR) {
         blockDesignFile.open("/dev/null");
+        postBuildScriptFile.open("/dev/null");
     } else {
-        blockDesignFile.open(OUTPUT_FILE);
+        blockDesignFile.open(PRE_OUTPUT_FILE);
+        postBuildScriptFile.open(POST_OUTPUT_FILE);
     }
 
     if (platform == Platform::HARDWARE) {
@@ -1430,6 +1434,19 @@ std::string BdBuilder::addRunPreHeader() {
        << "    # Set parent object as current\n"
        << "    current_bd_instance $parentObj\n"
        << "\n";
+
+    return ss.str();
+}
+
+std::string BdBuilder::generateSourceInstruction(const std::string& path) const {
+    std::stringstream ss;
+
+    if (path.find("{") != std::string::npos
+        || path.find("}") != std::string::npos) {
+        throw std::runtime_error("Path to script to source cannot contian '{' or '}'");
+    }
+
+    ss << "\tsource {" << path << "}\n";
 
     return ss.str();
 }
