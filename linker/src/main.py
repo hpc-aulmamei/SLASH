@@ -17,6 +17,7 @@ from parser.component_parser import parse_component_xml
 from emit.network_ctx import build_network_axis_context
 from emit.stream_ctx import build_stream_connect_context
 from emit.host_ctx import build_host_smartconnect_context
+from emit.addr_ctx import build_axilite_address_context
 
 # Service layer
 from emit.service_layer_ctx import *
@@ -57,10 +58,37 @@ def _collect_used_targets(ctx: dict) -> set[str]:
 
     return used
 
+# --- add this helper somewhere in main.py ---
+def print_memory_maps(k):
+    if not getattr(k, "memory_maps", None):
+        print("  (no memory maps)")
+        return
+    print("  Memory maps:")
+    for mm in k.memory_maps:
+        print(f"    - map: {mm.name}")
+        for ab in mm.address_blocks:
+            ba = f"0x{ab.base_address:X}"
+            rg = f"0x{ab.range:X}"
+            print(f"        block {ab.name}: base={ba} range={rg} width={ab.width} usage={ab.usage or '-'} access={ab.access or '-'}")
+            if ab.offset_base_param or ab.offset_high_param:
+                print(f"          params: base_param={ab.offset_base_param or '-'} high_param={ab.offset_high_param or '-'}")
+            if ab.registers:
+                for r in ab.registers:
+                    off = f"0x{r.address_offset:X}"
+                    print(f"          reg {r.name}: off={off} size={r.size} access={r.access or '-'} reset={('0x%X' % r.reset_value) if r.reset_value is not None else '-'}")
+                    if r.fields:
+                        for f in r.fields:
+                            rng = f"[{f.bit_offset + f.bit_width - 1}:{f.bit_offset}]"
+                            print(f"            - {f.name} {rng} access={f.access or '-'}"
+                                  f" reset={('0x%X' % f.reset_value) if f.reset_value is not None else '-'}")
+
+
 def print_kernel(k):
     print(f"\nKernel: {k.name}")
     for p in k.ports.values():
         print(f"  - {p.name:24s} {p.ptype.name:9s} width={p.width}")
+    print_memory_maps(k)
+
 
 
 def print_cfg(cfg):
@@ -204,6 +232,14 @@ def main():
         + terms_ddr_noc.get("axi_terminators", [])
         + terms_mem_noc.get("axi_terminators", [])
     )
+    ctx.update(
+    build_axilite_address_context(
+        instances,
+        addr_space="S_AXILITE_INI",
+        base_offset=0x0202_0000_0000,
+        min_align=0x0001_0000,
+    )
+)
     #ctx.update(build_axi_terminators_context(bd, used_targets))
 
     template_path = Path(args.template)   # resources/slash.tcl

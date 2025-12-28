@@ -1,9 +1,9 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, Optional, List
 
 from core.port import Port, PortType
-
+from core.regs import MemoryMap
 
 @dataclass(frozen=True)
 class Kernel:
@@ -14,6 +14,7 @@ class Kernel:
     name: str
     ports: Dict[str, Port] = field(default_factory=dict)
     vlnv: Optional[str] = None
+    memory_maps: List[MemoryMap] = field(default_factory=list)   # NEW
 
     def port(self, name: str) -> Port:
         """Retrieve a port by name."""

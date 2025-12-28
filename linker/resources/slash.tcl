@@ -2102,6 +2102,12 @@ connect_bd_intf_net [get_bd_intf_pins {{ t.name }}/M_AXI] [get_bd_intf_pins {{ t
   # HOST section: nothing to do
 {% endif %}
 
+# === AXI-Lite address map ===
+{% for a in axilite_addr %}
+assign_bd_address -offset {{ "0x%012X"|format(a.offset) }} -range {{ "0x%08X"|format(a.range)  }} -target_address_space [get_bd_addr_spaces {{ a.addr_space }}] [get_bd_addr_segs {{ a.inst }}/{{ a.busif }}/{{ a.segment }}] -force
+{% endfor %}
+
+
 
 
 
