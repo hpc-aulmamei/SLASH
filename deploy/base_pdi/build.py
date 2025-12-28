@@ -131,8 +131,9 @@ def generate_pdi_step(platform):
 def generate_noc_solution_step(platform):
     if platform == "compute":
         os.chdir(AVED_ROOT_DIR_COMPUTE)
-        subprocess.run(["vivado", "-mode", "tcl", "-source", "src/export_noc.tcl"], check=True)
-        shutil.copy(os.path.join(AVED_ROOT_DIR_COMPUTE, "noc_sol.ncr"), os.path.join(RESOURCES_PATH, "noc_sol_compute.ncr"))
+        # subprocess.run(["vivado", "-mode", "tcl", "-source", "src/export_noc.tcl"], check=True)
+        # shutil.copy(os.path.join(AVED_ROOT_DIR_COMPUTE, "noc_sol.ncr"), os.path.join(RESOURCES_PATH, "noc_sol_compute.ncr"))
+        shutil.copy(os.path.join(RESOURCES_PATH, "noc_sol.ncr"), os.path.join(RESOURCES_PATH, "noc_sol_compute.ncr"))
     elif platform == "eth":
         print("Eth mode not supported yet.")
     else:

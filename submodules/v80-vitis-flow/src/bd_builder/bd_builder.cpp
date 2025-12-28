@@ -20,7 +20,9 @@
 
 #include "bd_builder.hpp"
 
+#include "arg_parser.hpp"
 #include "system_map.hpp"
+#include <sstream>
 
 bool BdBuilder::hasAximmIntf = false;
 
@@ -38,6 +40,8 @@ BdBuilder::BdBuilder(std::vector<Kernel> kernels, std::vector<Connection> connec
     this->targetClockFreq = targetClockFreq;
     this->segmented = segmented;
     this->platform = platform;
+    this->tclInjections = std::move(tclInjections);
+
     systemMap.setClockFreq(targetClockFreq);
     StreamingConnection qdmaStreamConnection;
     for (auto sc = streamConnections.begin(); sc != streamConnections.end(); sc++) {
@@ -69,6 +73,15 @@ BdBuilder::BdBuilder(std::vector<Kernel> kernels, std::vector<Connection> connec
             // streamConnections.erase(sc--);
             systemMap.addStreamConnection(qdmaStreamConnection);
         }
+        //  else if (sc->src.kernelName.find("eth_") != std::string::npos) {
+        //     // network interface rx
+        //     netConnections.push_back(*sc);
+        //     streamConnections.erase(sc--);
+        // } else if (sc->dst.kernelName.find("eth_") != std::string::npos) {
+        //     // network interface tx
+        //     netConnections.push_back(*sc);
+        //     streamConnections.erase(sc--);
+        // }
     }
 }
 
@@ -86,9 +99,11 @@ void BdBuilder::buildBlockDesign() {
 
     if (platform == Platform::HARDWARE) {
         std::string line;
+        netConfigFile << configNetInterfaces();
         blockDesignFile << addRunPreHeader();
         blockDesignFile << setupQdmaStreaming();
-        blockDesignFile << addQdmaLogic();
+        // Not fully supported yet
+        // blockDesignFile << addQdmaLogic();
         blockDesignFile << setupClkWiz();
         blockDesignFile << setupSysRst();
         blockDesignFile << configNumberOfAXILiteSlaves();  // done
@@ -96,7 +111,12 @@ void BdBuilder::buildBlockDesign() {
         blockDesignFile << configureUserClock();
 
         blockDesignFile << connectClkWiz();
-        blockDesignFile << connectQdmaLogic();
+
+        if (std::all_of(netInterfaces.begin(), netInterfaces.end(),
+                        [](bool enabled) { return !enabled; })) {
+            blockDesignFile << addBarCrossbar();
+        }
+        // blockDesignFile << connectQdmaLogic();
         // blockDesignFile << connectQdmaToRouter();
 
         // do this for each kernel to be added
@@ -153,8 +173,18 @@ void BdBuilder::buildBlockDesign() {
             }
             utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
                                "Adding xbar for axi4full interfaces: {}", countAxi4FullInterfaces);
-            blockDesignFile << addXbar(countAxi4FullInterfaces);
-            blockDesignFile << connectXbarToNoC();
+            if (countAxi4FullInterfaces > 0) {
+                blockDesignFile << addXbar(countAxi4FullInterfaces);
+                blockDesignFile << connectXbarToNoC();
+            } else {
+                blockDesignFile << addXbar(countAxi4FullInterfaces + 1);
+                blockDesignFile << connectXbarToNoC();
+                // Adding dummy traffic generator to connect to xbar when no cores access memory
+                // This makes sure that the xbar is not empty
+                blockDesignFile << connectDummyTrafficGen();
+            }
+            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
+                               "Adding xbar for axi4full interfaces: {}", countAxi4FullInterfaces);
         }
         for (int i = 0; i < kernels.size(); i++) {
             Interface axi_intf;  // TODO: make this work for any number of interfaces....
@@ -173,7 +203,7 @@ void BdBuilder::buildBlockDesign() {
                                                           BASE_ADDRESS + i * offset);
                 }
             }
-            blockDesignFile << "\n";
+            blockDesignFile << "\n\nsave_bd_design\n";
         }
         blockDesignFile << assignClkWizAddr() << std::endl;
         // blockDesignFile << assignQdmaLogicGpioAddr() << std::endl;
@@ -188,8 +218,30 @@ void BdBuilder::buildBlockDesign() {
             }
         }
 
+
+
+        for (const auto &script : tclInjections.scriptsPreSynth) {
+            blockDesignFile << generateSourceInstruction(script);
+        }
+
         blockDesignFile << printFooter();
         blockDesignFile.close();
+
+        // Inline and dirty.
+        postBuildScriptFile << "proc run_post {} {\n"
+            << "\topen_run impl_1\n"
+            << "\treport_utilization -hierarchical -hierarchical_depth 3 -hierarchical_percentages -file build/report_utilization.txt\n"
+            << "\treport_timing_summary -delay_type min_max -check_timing_verbose -max_paths 1 -input_pins -routable_nets -name timing_1 -file build/report_timing.txt\n\n";
+
+
+        for (const auto &script : tclInjections.scriptsPostBuild) {
+            postBuildScriptFile << generateSourceInstruction(script);
+        }
+
+        postBuildScriptFile << "}\n"
+            << "run_post\n";
+
+
         systemMap.printToFile();
     } else if (platform == Platform::SIMULATOR) {
         std::string line;
@@ -753,7 +805,9 @@ std::string BdBuilder::connectAxis(std::string krnl_name) {
     uint32_t c2hIdx = 0;
     for (auto el = streamConnections.begin(); el != streamConnections.end(); el++) {
         if ((el->src.kernelName == krnl_name || el->dst.kernelName == krnl_name) &&
-            el->src.kernelName != "cips" && el->dst.kernelName != "cips") {
+            el->src.kernelName != "cips" && el->dst.kernelName != "cips" &&
+            el->src.kernelName.find("eth_") == std::string::npos &&
+            el->dst.kernelName.find("eth_") == std::string::npos) {
             utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
                                "Connecting axi4stream {}.{} to {}.{}", el->src.kernelName,
                                el->src.interfaceName, el->dst.kernelName, el->dst.interfaceName);
@@ -764,7 +818,7 @@ std::string BdBuilder::connectAxis(std::string krnl_name) {
                                  el->dst.interfaceName + "]\n";
             streamConnections.erase(el);
             return result;
-        } else if (el->src.kernelName == "cips") {
+        } else if (el->src.kernelName == "cips" && el->dst.kernelName == krnl_name) {
             uint32_t qid;
             std::string srcInterface = el->src.interfaceName;
             std::regex re("qdma_(\\d)");
@@ -791,7 +845,7 @@ std::string BdBuilder::connectAxis(std::string krnl_name) {
             }
             streamConnections.erase(el);
             return result;
-        } else if (el->dst.kernelName == "cips") {
+        } else if (el->dst.kernelName == "cips" && el->src.kernelName == krnl_name) {
             throw std::runtime_error("QDMA Stream C2H connections not supported yet");
             // std::string result;
             // if(c2hIdx > 15) {
@@ -810,7 +864,109 @@ std::string BdBuilder::connectAxis(std::string krnl_name) {
             //     el->src.interfaceName + "]\n";
             // }
             // return result;
+
+        } else if (el->src.kernelName == "eth_0" && el->dst.kernelName == krnl_name) {
+            // naming fifo after the kernel
+            std::string fifoName = "fifo_" + el->dst.kernelName + "_" + el->dst.interfaceName;
+            std::string result;
+            result +=
+                "create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 " + fifoName + "\n";
+            result += "  set_property CONFIG.IS_ACLK_ASYNC {1} [get_bd_cells " + fifoName + "]\n";
+            result +=
+                "connect_bd_intf_net -boundary_type upper [get_bd_intf_pins qsfp_0_n_1/M_AXIS_0] "
+                "[get_bd_intf_pins " +
+                fifoName + "/S_AXIS]\n";
+
+            result += "connect_bd_intf_net -boundary_type lower [get_bd_intf_pins " + fifoName +
+                      "/M_AXIS] [get_bd_intf_pins base_logic/" + el->dst.kernelName + "/" +
+                      el->dst.interfaceName + "]\n";
+            result += "  connect_bd_net [get_bd_pins " + fifoName +
+                      "/s_axis_aresetn] [get_bd_pins qsfp_0_n_1/ap_rst_n]\n";
+
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/s_axis_aclk] [get_bd_pins qsfp_0_n_1/ap_clk]\n";
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/m_axis_aclk] [get_bd_pins base_logic/clk_wiz/clk_out1]\n";
+            // result += "connect_bd_intf_net [get_bd_intf_pins base_logic/" + el->dst.kernelName +
+            //           "/" + el->dst.interfaceName + "] [get_bd_intf_pins " + fifoName +
+            //           "/S_AXIS]\n";
+            streamConnections.erase(el);
+            return result;
+        } else if (el->dst.kernelName == "eth_0" && el->src.kernelName == krnl_name) {
+            // naming fifo after the kernel
+            std::string fifoName = "fifo_" + el->src.kernelName + "_" + el->src.interfaceName;
+            std::string result;
+            result += "# Adding network connection for " + el->src.kernelName + "\n";
+            result +=
+                "create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 " + fifoName + "\n";
+            result += "set_property CONFIG.IS_ACLK_ASYNC {1} [get_bd_cells " + fifoName + "]\n";
+            result += "connect_bd_intf_net [get_bd_intf_pins " + fifoName + "/M_AXIS]" +
+                      " -boundary_type upper [get_bd_intf_pins qsfp_0_n_1/S_AXIS_0]\n";
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/s_axis_aresetn] [get_bd_pins qsfp_0_n_1/ap_rst_n]\n";
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/s_axis_aclk] [get_bd_pins base_logic/clk_wiz/clk_out1]\n";
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/m_axis_aclk] [get_bd_pins qsfp_0_n_1/ap_clk]\n";
+            result += "connect_bd_intf_net [get_bd_intf_pins base_logic/" + el->src.kernelName +
+                      "/" + el->src.interfaceName + "] [get_bd_intf_pins " + fifoName +
+                      "/S_AXIS]\n";
+            streamConnections.erase(el);
+            return result;
+        } else if (el->src.kernelName == "eth_2" && el->dst.kernelName == krnl_name) {
+            // naming fifo after the kernel
+            std::string fifoName = "fifo_" + el->dst.kernelName + "_" + el->dst.interfaceName;
+            std::string result;
+            result +=
+                "create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 " + fifoName + "\n";
+            result += "set_property CONFIG.IS_ACLK_ASYNC {1} [get_bd_cells " + fifoName + "]\n";
+            result +=
+                "connect_bd_intf_net -boundary_type upper [get_bd_intf_pins qsfp_2_n_3/M_AXIS_0] "
+                "[get_bd_intf_pins " +
+                fifoName + "/S_AXIS]\n";
+
+            result += "connect_bd_intf_net -boundary_type lower [get_bd_intf_pins " + fifoName +
+                      "/M_AXIS] [get_bd_intf_pins base_logic/" + el->dst.kernelName + "/" +
+                      el->dst.interfaceName + "]\n";
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/s_axis_aresetn] [get_bd_pins qsfp_2_n_3/ap_rst_n]\n";
+
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/s_axis_aclk] [get_bd_pins qsfp_2_n_3/ap_clk]\n";
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/m_axis_aclk] [get_bd_pins base_logic/clk_wiz/clk_out1]\n";
+            // result += "connect_bd_intf_net [get_bd_intf_pins base_logic/" + el->dst.kernelName +
+            //           "/" + el->dst.interfaceName + "] [get_bd_intf_pins " + fifoName +
+            //           "/S_AXIS]\n";
+            streamConnections.erase(el);
+            return result;
+        } else if (el->dst.kernelName == "eth_2" && el->src.kernelName == krnl_name) {
+            // naming fifo after the kernel
+            std::string fifoName = "fifo_" + el->src.kernelName + "_" + el->src.interfaceName;
+            std::string result;
+            result += "# Adding network connection for " + el->src.kernelName + "\n";
+            result +=
+                "create_bd_cell -type ip -vlnv xilinx.com:ip:axis_data_fifo:2.0 " + fifoName + "\n";
+            result += "set_property CONFIG.IS_ACLK_ASYNC {1} [get_bd_cells " + fifoName + "]\n";
+            result += "connect_bd_intf_net [get_bd_intf_pins " + fifoName + "/M_AXIS]" +
+                      " -boundary_type upper [get_bd_intf_pins qsfp_2_n_3/S_AXIS_0]\n";
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/s_axis_aresetn] [get_bd_pins qsfp_2_n_3/ap_rst_n]\n";
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/s_axis_aclk] [get_bd_pins base_logic/clk_wiz/clk_out1]\n";
+            result += "connect_bd_net [get_bd_pins " + fifoName +
+                      "/m_axis_aclk] [get_bd_pins qsfp_2_n_3/ap_clk]\n";
+            result += "connect_bd_intf_net [get_bd_intf_pins base_logic/" + el->src.kernelName +
+                      "/" + el->src.interfaceName + "] [get_bd_intf_pins " + fifoName +
+                      "/S_AXIS]\n";
+            streamConnections.erase(el);
+            return result;
         }
+        //  else {
+        //     throw std::runtime_error("Invalid stream connection: " + el->src.kernelName + " -> "
+        //     +
+        //                              el->dst.kernelName);
+        // }
     }
     return "\n";  // if no stream interfaces exist
 }
@@ -922,10 +1078,26 @@ std::string BdBuilder::assignClkWizAddr() {
 
 std::string BdBuilder::setSegmented() {
     char resolvedPath[PATH_MAX];
-    if (realpath(NOC_SOLUTION.c_str(), resolvedPath) == nullptr) {
-        utils::Logger::log(utils::LogLevel::ERROR, __PRETTY_FUNCTION__,
-                           "Failed to resolve path to {}", NOC_SOLUTION);
-        throw std::runtime_error("Failed to resolve path to " + std::string(NOC_SOLUTION));
+    /**
+     *  if (std::all_of(netInterfaces.begin(), netInterfaces.end(),
+                        [](bool enabled) { return !enabled; })) {
+            blockDesignFile << addBarCrossbar();
+        }
+     *
+     */
+    if (std::all_of(netInterfaces.begin(), netInterfaces.end(),
+                    [](bool enabled) { return !enabled; })) {
+        if (realpath(NOC_SOLUTION.c_str(), resolvedPath) == nullptr) {
+            utils::Logger::log(utils::LogLevel::ERROR, __PRETTY_FUNCTION__,
+                               "Failed to resolve path to {}", NOC_SOLUTION);
+            throw std::runtime_error("Failed to resolve path to " + std::string(NOC_SOLUTION));
+        }
+    } else {
+        if (realpath(DCMAC_NOC_SOLUTION.c_str(), resolvedPath) == nullptr) {
+            utils::Logger::log(utils::LogLevel::ERROR, __PRETTY_FUNCTION__,
+                               "Failed to resolve path to {}", DCMAC_NOC_SOLUTION);
+            throw std::runtime_error("Failed to resolve path to " + std::string(DCMAC_NOC_SOLUTION));
+        }
     }
     std::stringstream ss;
     ss << "set_property NOC_SOLUTION_FILE " << std::string(resolvedPath) << " [get_runs impl_1]\n";

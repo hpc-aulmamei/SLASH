@@ -19,6 +19,8 @@
  */
 
 #include "arg_parser.hpp"
+#include <stdexcept>
+#include <filesystem>
 
 const std::string ArgParser::XML_PATH = "/syn/report/csynth.xml";
 
@@ -35,6 +37,18 @@ ArgParser::ArgParser(int argc, char** argv) {
             segmented = true;
         } else if (arg == "--kernels") {
             parsingKernels = true;
+        } else if (arg == "--source-pre-synth") {
+            if (i + 1 < argc) {
+                tclInjections.scriptsPreSynth.emplace_back(argv[++i]);
+            } else {
+                throw std::runtime_error("Missing argument to --source-pre-synth");
+            }
+        } else if (arg == "--source-post-build") {
+            if (i + 1 < argc) {
+                tclInjections.scriptsPostBuild.emplace_back(argv[++i]);
+            } else {
+                throw std::runtime_error("Missing argument to --source-pre-synth");
+            }
         } else if (arg == "--platform") {
             std::string plat = argv[++i];
             if (plat == "hw") {
@@ -69,7 +83,50 @@ void ArgParser::parseConfig() {
         throw std::runtime_error("Config file not provided");
     }
     std::string line;
+    bool inNetworkSection = false;
     while (std::getline(configFileStream, line)) {
+        if (line.empty() || line[0] == '#') {
+            continue;  // Skip empty lines and comments
+        }
+
+        if (line.find("[network]") == 0) {
+            inNetworkSection = true;
+            continue;
+        } else if (line[0] == '[') {
+            inNetworkSection = false;  // End of network section
+        }
+
+        if (inNetworkSection) {
+            if (line.find("eth_") == 0) {
+                std::size_t equalPos = line.find('=');
+                if (equalPos != std::string::npos) {
+                    std::string ethIntf = line.substr(4, equalPos - 4);
+                    int ethIntfNum = -1;
+
+                    try {
+                        ethIntfNum = std::stoi(ethIntf);
+                    } catch (const std::exception& e) {
+                        utils::Logger::log(utils::LogLevel::ERROR, __PRETTY_FUNCTION__,
+                                           "Invalid interface number: {}", ethIntf);
+                        throw std::runtime_error("Invalid interface number");
+                    }
+
+                    std::string statusStr = line.substr(equalPos + 1);
+                    bool enabled = (statusStr == "1");
+                    if (ethIntfNum >= 0 && ethIntfNum < 4) {
+                        networkInterfaces[ethIntfNum] = enabled;
+                        utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
+                                           "Network interface {}: {}", ethIntfNum,
+                                           enabled ? "enabled" : "disabled");
+                    } else {
+                        utils::Logger::log(utils::LogLevel::ERROR, __PRETTY_FUNCTION__,
+                                           "Invalid interface number: {}", ethIntf);
+                        throw std::runtime_error("Invalid interface number");
+                    }
+                }
+            }
+        }
+
         if (line.find("nk=") == 0) {
             std::istringstream iss(line.substr(3));
             std::string kernelType, count, kernelName;
@@ -105,6 +162,36 @@ void ArgParser::parseConfig() {
                 utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
                                    "Setting clock at {} Hz", freqHz);
             }
+        } else if (line.find("pre_synth=") == 0) {
+            std::istringstream iss(line.substr(10));
+            std::string relfile;
+            if (std::getline(iss, relfile)) {
+                std::filesystem::path base = std::filesystem::absolute(std::filesystem::path(configFile)).parent_path();
+                std::filesystem::path candidate = std::filesystem::path(relfile);
+
+                if (candidate.is_relative()) {
+                    candidate = base / candidate;
+                }
+
+                std::string path = std::filesystem::weakly_canonical(candidate).string();
+
+                tclInjections.scriptsPreSynth.push_back(std::move(path));
+            }
+        } else if (line.find("post_build=") == 0) {
+            std::istringstream iss(line.substr(11));
+            std::string relfile;
+            if (std::getline(iss, relfile)) {
+                std::filesystem::path base = std::filesystem::absolute(std::filesystem::path(configFile)).parent_path();
+                std::filesystem::path candidate = std::filesystem::path(relfile);
+
+                if (candidate.is_relative()) {
+                    candidate = base / candidate;
+                }
+
+                std::string path = std::filesystem::weakly_canonical(candidate).string();
+
+                tclInjections.scriptsPostBuild.push_back(std::move(path));
+            }
         }
     }
 }
@@ -117,6 +204,9 @@ std::vector<Kernel> ArgParser::parseKernels() {
         std::for_each(kernelEntities.begin(), kernelEntities.end(), [&](const auto& entity) {
             Kernel krnl = parser.getKernel();
             if (krnl.getTopModelName() == entity.second) {
+                if (isNetworkKernel(entity.first)) {
+                    krnl.setNetworkKernel();
+                }
                 krnl.setName(entity.first);
                 kernels_.emplace_back(krnl);
                 krnl.print();
@@ -142,3 +232,23 @@ bool ArgParser::isSegmented() const { return segmented; }
 Platform ArgParser::getPlatform() { return platform; }
 
 std::vector<std::string> ArgParser::getKernelPaths() { return kernelPaths; }
+
+<<<<<<< HEAD
+std::array<bool, 4> ArgParser::getNetworkInterfaces() const { return networkInterfaces; }
+
+bool ArgParser::isNetworkKernel(const std::string& kernelName) {
+    for (auto conn = connections.begin(); conn != connections.end(); conn++) {
+        if (conn->src.kernelName == kernelName && (conn->dst.kernelName.find("eth_") == 0)) {
+            return true;
+        } else if (conn->dst.kernelName == kernelName && (conn->src.kernelName.find("eth_") == 0)) {
+            return true;
+        } else {
+            continue;
+        }
+    }
+
+    return false;
+}
+=======
+const TclInjections &ArgParser::getTclInjections() const { return tclInjections; }
+>>>>>>> 5d534e2 (Added tcl injection to run_pre.tcl and run_post.tcl)

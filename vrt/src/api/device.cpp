@@ -43,7 +43,7 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
             programDevice();
         }
         parseSystemMap();
-        this->clkWiz.setRateHz(clockFreq, false);
+        this->clkWiz.setRateHz(200000000, false);
     } else if (platform == Platform::EMULATION) {
         parseSystemMap();
         std::string emulationExecPath = this->vrtbin.getEmulationExec() + " >/dev/null";
@@ -64,7 +64,9 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
     }
 }
 
-Device::~Device() {}
+Device::~Device() {
+    unlockPcieDevice(bdf);
+}
 
 void Device::parseSystemMap() {
     XMLParser parser(systemMap);
@@ -208,6 +210,7 @@ void Device::bootDevice() {
                 destroyAmiDev();
                 pcieHandler.execute(PcieDriverHandler::Command::REMOVE);
                 pcieHandler.execute(PcieDriverHandler::Command::TOGGLE_SBR);
+                usleep(5000000);
                 pcieHandler.execute(PcieDriverHandler::Command::RESCAN);
                 pcieHandler.execute(PcieDriverHandler::Command::HOTPLUG);
                 createAmiDev();
@@ -265,6 +268,7 @@ void Device::bootDevice() {
             destroyAmiDev();
             pcieHandler.execute(PcieDriverHandler::Command::REMOVE);
             pcieHandler.execute(PcieDriverHandler::Command::TOGGLE_SBR);
+            usleep(5000000);
             pcieHandler.execute(PcieDriverHandler::Command::RESCAN);
             pcieHandler.execute(PcieDriverHandler::Command::HOTPLUG);
             createAmiDev();
@@ -333,7 +337,7 @@ void Device::setFrequency(uint64_t freq) {
                                "Setting frequency {}, which is higher than max frequency {}", freq,
                                clockFreq);
         }
-        clkWiz.setRateHz(freq);
+        clkWiz.setRateHz(200000000);
     }
 }
 
