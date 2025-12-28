@@ -369,60 +369,250 @@ static int pcie_hotplug_release(struct inode *inode, struct file *file) {
     return 0;
 }
 
-static ssize_t pcie_hotplug_write(struct file* file, const char __user* buffer, size_t len, loff_t* offset) {
-    char cmd[16];
+static long pcie_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
     struct pcie_hotplug_device *dev = file->private_data;
 
-    if(len > 15) {
-        return -EINVAL;
+    switch (cmd) {
+        case PCIE_IOCTL_RESCAN:
+            handle_rescan();
+            break;
+        case PCIE_IOCTL_REMOVE:
+            handle_pcie_remove(dev);
+            break;
+        case PCIE_IOCTL_TOGGLE_SBR:
+            toggle_sbr(dev);
+            break;
+        case PCIE_IOCTL_HOTPLUG:
+            handle_pcie_hotplug(dev);
+            break;
+        case PCIE_IOCTL_GET_BAR_VAL: {
+            struct pcie_bar_read barreq;
+            void __iomem *mapped;
+            struct pci_dev *pdev = get_pci_dev_by_bdf(dev->bdf);
+            if (!pdev)
+                return -ENODEV;
+
+            if (copy_from_user(&barreq, (void __user *)arg, sizeof(barreq)))
+                return -EFAULT;
+
+            if (barreq.bar_index >= PCI_STD_NUM_BARS)
+                return -EINVAL;
+
+            // Sanity check: BAR must exist
+            if (!(pci_resource_flags(pdev, barreq.bar_index) & IORESOURCE_MEM))
+                return -EINVAL;
+
+            if (barreq.offset >= pci_resource_len(pdev, barreq.bar_index))
+                return -EINVAL;
+
+            // Map BAR temporarily
+            mapped = pci_iomap(pdev, barreq.bar_index, 0);
+            if (!mapped)
+                return -ENOMEM;
+
+            barreq.value = ioread32(mapped + barreq.offset);
+            pci_iounmap(pdev, mapped);
+
+            if (copy_to_user((void __user *)arg, &barreq, sizeof(barreq)))
+                return -EFAULT;
+
+            return 0;
+        }
+
+        case PCIE_IOCTL_SET_BAR_VAL: {
+            struct pcie_bar_write barreq;
+            void __iomem *mapped;
+            struct pci_dev *pdev = get_pci_dev_by_bdf(dev->bdf);
+            if (!pdev)
+                return -ENODEV;
+
+            if (copy_from_user(&barreq, (void __user *)arg, sizeof(barreq)))
+                return -EFAULT;
+
+            if (barreq.bar_index >= PCI_STD_NUM_BARS)
+                return -EINVAL;
+
+            if (!(pci_resource_flags(pdev, barreq.bar_index) & IORESOURCE_MEM))
+                return -EINVAL;
+
+            if (barreq.offset >= pci_resource_len(pdev, barreq.bar_index))
+                return -EINVAL;
+
+            mapped = pci_iomap(pdev, barreq.bar_index, 0);
+            if (!mapped)
+                return -ENOMEM;
+
+            iowrite32(barreq.value, mapped + barreq.offset);
+
+            pci_iounmap(pdev, mapped);
+            return 0;
+        }
+
+        case PCIE_IOCTL_READ_BAR_RANGE: {
+            struct pcie_bar_range range;
+            void __iomem *mapped;
+            struct pci_dev *pdev = get_pci_dev_by_bdf(dev->bdf);
+            if (!pdev)
+                return -ENODEV;
+
+            if (copy_from_user(&range, (void __user *)arg, sizeof(range)))
+                return -EFAULT;
+
+            if (range.bar_index >= PCI_STD_NUM_BARS ||
+                range.size > MAX_BAR_RW_SIZE ||
+                range.offset + range.size > pci_resource_len(pdev, range.bar_index))
+                return -EINVAL;
+
+            mapped = pci_iomap(pdev, range.bar_index, 0);
+            if (!mapped)
+                return -ENOMEM;
+
+            memcpy_fromio(range.data, mapped + range.offset, range.size);
+            pci_iounmap(pdev, mapped);
+
+            if (copy_to_user((void __user *)arg, &range, sizeof(range)))
+                return -EFAULT;
+
+            return 0;
+        }
+
+        case PCIE_IOCTL_WRITE_BAR_RANGE: {
+            struct pcie_bar_range range;
+            void __iomem *mapped;
+            struct pci_dev *pdev = get_pci_dev_by_bdf(dev->bdf);
+            if (!pdev)
+                return -ENODEV;
+
+            if (copy_from_user(&range, (void __user *)arg, sizeof(range)))
+                return -EFAULT;
+
+            if (range.bar_index >= PCI_STD_NUM_BARS ||
+                range.size > MAX_BAR_RW_SIZE ||
+                range.offset + range.size > pci_resource_len(pdev, range.bar_index))
+                return -EINVAL;
+
+            mapped = pci_iomap(pdev, range.bar_index, 0);
+            if (!mapped)
+                return -ENOMEM;
+
+            memcpy_toio(mapped + range.offset, range.data, range.size);
+            pci_iounmap(pdev, mapped);
+
+            return 0;
+        }
+
+
+
+        default:
+            printk(KERN_WARNING "Invalid IOCTL command: 0x%x\n", cmd);
+            return -EINVAL;
     }
 
-    if(copy_from_user(cmd, buffer, len)) {
-        return -EFAULT;
-    }
-
-    cmd[len] = '\0';
-    printk(KERN_INFO "Received command: %s\n", cmd);
-
-    if(strncmp(cmd, "rescan", 6) == 0) {
-        handle_rescan();
-    } else if(strncmp(cmd, "remove", 6) == 0) {
-        handle_pcie_remove(dev);
-    } else if(strncmp(cmd, "toggle_sbr", 10) == 0) {
-        toggle_sbr(dev);
-    } else if(strncmp(cmd, "hotplug", 7) == 0) {
-        handle_pcie_hotplug(dev);
-    } else {
-        printk(KERN_WARNING "Invalid command\n");
-    }
-
-    return len;
+    return 0;
 }
 
 static struct file_operations fops = {
     .owner = THIS_MODULE,
     .open = pcie_hotplug_open,
     .release = pcie_hotplug_release,
-    .write = pcie_hotplug_write,
+    .unlocked_ioctl = pcie_hotplug_ioctl,
 };
 
-static void discover_and_add_devices(void) {
-    struct pci_dev *pdev = NULL;
+static int pcie_hotplug_probe(struct pci_dev *pdev, const struct pci_device_id *id) {
+    int ret;
     char bdf[16];
-    const struct pci_device_id *id;
+    struct pcie_hotplug_device *dev;
+    struct qdma_dev_conf conf;
 
-    for_each_pci_dev(pdev) {
-        for (id = pcie_hotplug_ids; id->vendor != 0; id++) {
-            if (pdev->vendor == id->vendor && pdev->device == id->device && PCI_FUNC(pdev->devfn) == 0) {
-                snprintf(bdf, sizeof(bdf), "%04x:%02x:%02x.%x",
-                         pci_domain_nr(pdev->bus),
-                         pdev->bus->number,
-                         PCI_SLOT(pdev->devfn),
-                         PCI_FUNC(pdev->devfn));
-                add_device(bdf);
-            }
-        }
+    pci_enable_device(pdev);
+
+    dev = kzalloc(sizeof(*dev), GFP_KERNEL);
+    if (!dev)
+        return -ENOMEM;
+
+    snprintf(bdf, sizeof(bdf), "%04x:%02x:%02x.%x",
+             pci_domain_nr(pdev->bus),
+             pdev->bus->number,
+             PCI_SLOT(pdev->devfn),
+             PCI_FUNC(pdev->devfn));
+
+    dev->bdf = kstrdup(bdf, GFP_KERNEL);
+    if (!dev->bdf) {
+        kfree(dev);
+        return -ENOMEM;
     }
+
+    ret = get_bdfs(dev->bdf, dev->rootport_bdf);
+    if (ret < 0)
+        goto err_bdf;
+
+    ret = alloc_chrdev_region(&dev->devt, 0, 1, DEVICE_NAME);
+    if (ret < 0)
+        goto err_bdf;
+
+    cdev_init(&dev->cdev, &fops);
+    dev->cdev.owner = THIS_MODULE;
+
+    ret = cdev_add(&dev->cdev, dev->devt, 1);
+    if (ret < 0)
+        goto err_chrdev;
+
+    device_create(pcie_hotplug_class, NULL, dev->devt, NULL, "pcie_hotplug_%s", dev->bdf);
+
+    pci_set_drvdata(pdev, dev);  // link device struct to PCI dev
+    list_add(&dev->list, &device_list);
+    device_count++;
+
+    printk(KERN_INFO "PCIe hotplug probe: %s\n", dev->bdf);
+    // printk((KERN_INFO "Probing QDMA for device: %s\n", dev->bdf));
+    
+    memset(&conf, 0, sizeof(conf));
+    conf.qdma_drv_mode = POLL_MODE;
+    conf.intr_rngsz = QDMA_INTR_COAL_RING_SIZE;
+    conf.pdev = get_next_function_pci_dev(dev->bdf);
+    if (!conf.pdev) {
+        printk(KERN_ERR "Failed to get next function PCI device for %s\n", dev->bdf);
+        ret = -ENODEV;
+        goto err_chrdev;
+    }
+    conf.bar_num_config = -1;
+	conf.bar_num_user = -1;
+	conf.bar_num_bypass = -1;
+
+	conf.bar_num_config = 2; // @TODO fix //extract_mod_param(pdev, CONFIG_BAR);
+	conf.qsets_max = 0;
+	conf.qsets_base = -1;
+	conf.msix_qvec_max = 32;
+	conf.user_msix_qvec_max = 1;
+    ret = qdma_device_open("pcie_hotplug", &conf, &dev->dev_hndl);
+    if (ret < 0 && ret != -ENODEV) {
+        printk(KERN_ERR "Failed to open QDMA device: %d\n", ret);
+        goto err_chrdev;
+    }
+    return 0;
+
+err_chrdev:
+    unregister_chrdev_region(dev->devt, 1);
+err_bdf:
+    kfree(dev->bdf);
+    kfree(dev);
+    return ret;
+
+}
+
+static void pcie_hotplug_remove(struct pci_dev *pdev) {
+    struct pcie_hotplug_device *dev = pci_get_drvdata(pdev);
+
+    if (!dev)
+        return;
+
+    device_destroy(pcie_hotplug_class, dev->devt);
+    cdev_del(&dev->cdev);
+    unregister_chrdev_region(dev->devt, 1);
+    kfree(dev->bdf);
+    kfree(dev);
+
+    printk(KERN_INFO "PCIe hotplug remove\n");
 }
 
 static void add_device(const char *bdf) {
@@ -473,8 +663,35 @@ static void add_device(const char *bdf) {
     printk(KERN_INFO "Added PCIe hotplug device: %s, root port: %s\n", dev->bdf, dev->rootport_bdf);
 }
 
-static int __init pcie_hotplug_init(void) {
+static void discover_and_add_devices(void) {
+    struct pci_dev *pdev = NULL;
+    char bdf[16];
+    const struct pci_device_id *id;
 
+    for_each_pci_dev(pdev) {
+        for (id = pcie_hotplug_ids; id->vendor != 0; id++) {
+            if (pdev->vendor == id->vendor && pdev->device == id->device && PCI_FUNC(pdev->devfn) == 0) {
+                snprintf(bdf, sizeof(bdf), "%04x:%02x:%02x.%x",
+                         pci_domain_nr(pdev->bus),
+                         pdev->bus->number,
+                         PCI_SLOT(pdev->devfn),
+                         PCI_FUNC(pdev->devfn));
+                add_device(bdf);
+            }
+        }
+    }
+}
+
+
+static struct pci_driver pcie_hotplug_driver = {
+    .name = "pcie_hotplug",
+    .id_table = pcie_hotplug_ids,
+    .probe = pcie_hotplug_probe,
+    .remove = pcie_hotplug_remove,
+};
+
+static int __init pcie_hotplug_init(void) {
+    int ret;
     // Register character device
     major_number = register_chrdev(0, DEVICE_NAME, &fops);
     if (major_number < 0) {
@@ -482,6 +699,7 @@ static int __init pcie_hotplug_init(void) {
         return major_number;
     }
 
+    
     // Initialize class
     pcie_hotplug_class = CLASS_CREATE(CLASS_NAME);
     if (IS_ERR(pcie_hotplug_class)) {
@@ -490,16 +708,32 @@ static int __init pcie_hotplug_init(void) {
         return PTR_ERR(pcie_hotplug_class);
     }
 
-    // Discover and add devices with the specified vendor ID
+    ret = pci_register_driver(&pcie_hotplug_driver);
+    if (ret < 0) {
+        class_destroy(pcie_hotplug_class);
+        unregister_chrdev(major_number, DEVICE_NAME);
+        return ret;
+    }
+
     discover_and_add_devices();
 
     printk(KERN_INFO "PCIe hotplug initialized\n");
+
+    ret = libqdma_init(8, NULL);
+    if (ret < 0) {
+        printk(KERN_ERR "Failed to initialize libqdma\n");
+        pci_unregister_driver(&pcie_hotplug_driver);
+        class_destroy(pcie_hotplug_class);
+        unregister_chrdev(major_number, DEVICE_NAME);
+        return ret;
+    }
     return 0;
 }
 
 static void __exit pcie_hotplug_exit(void) {
     struct pcie_hotplug_device *dev, *tmp;
-
+    
+    pci_unregister_driver(&pcie_hotplug_driver);
     list_for_each_entry_safe(dev, tmp, &device_list, list) {
         device_destroy(pcie_hotplug_class, dev->devt);
         cdev_del(&dev->cdev);
@@ -511,6 +745,7 @@ static void __exit pcie_hotplug_exit(void) {
     class_unregister(pcie_hotplug_class);
     class_destroy(pcie_hotplug_class);
     unregister_chrdev(major_number, DEVICE_NAME);
+    libqdma_exit();
     printk(KERN_INFO "pcie_hotplug module unloaded\n");
 }
 
