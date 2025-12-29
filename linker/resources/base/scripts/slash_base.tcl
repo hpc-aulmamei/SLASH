@@ -1224,7 +1224,7 @@ proc create_root_design { parentCell } {
 
 
   # Create ports
-  set aclk1 [ create_bd_port -dir I -type clk -freq_hz 400000000 aclk1 ]
+  set aclk1 [ create_bd_port -dir I -type clk -freq_hz 300000000 aclk1 ]
   set_property -dict [ list \
    CONFIG.ASSOCIATED_BUSIF {HBM_AXI_05:HBM_AXI_02:HBM_AXI_03:HBM_AXI_06:HBM_AXI_09:HBM_AXI_07:HBM_AXI_08:HBM_AXI_00:HBM_AXI_01:HBM_AXI_04:HBM_AXI_10:HBM_AXI_11:HBM_AXI_12:HBM_AXI_13:HBM_AXI_14:HBM_AXI_15:HBM_AXI_16:HBM_AXI_17:HBM_AXI_18:HBM_AXI_19:HBM_AXI_20:HBM_AXI_21:HBM_AXI_22:HBM_AXI_23:HBM_AXI_24:HBM_AXI_25:HBM_AXI_26:HBM_AXI_27:HBM_AXI_28:HBM_AXI_29:HBM_AXI_30:HBM_AXI_31:HBM_AXI_32:HBM_AXI_33:HBM_AXI_34:HBM_AXI_35:HBM_AXI_36:HBM_AXI_37:HBM_AXI_38:HBM_AXI_39:HBM_AXI_40:HBM_AXI_41:HBM_AXI_42:HBM_AXI_43:HBM_AXI_44:HBM_AXI_45:HBM_AXI_46:HBM_AXI_47:HBM_AXI_48:HBM_AXI_49:HBM_AXI_50:HBM_AXI_51:HBM_AXI_52:HBM_AXI_53:HBM_AXI_54:HBM_AXI_55:HBM_AXI_56:HBM_AXI_57:HBM_AXI_58:HBM_AXI_59:HBM_AXI_60:HBM_AXI_61:HBM_AXI_62:HBM_AXI_63:SL_VIRT_0:SL_VIRT_1:SL_VIRT_2:SL_VIRT_3:QDMA_SLAVE_BRIDGE:S_AXILITE_INI} \
    CONFIG.CLK_DOMAIN {top_clk_wizard_0_0_clk_out1} \
@@ -1232,9 +1232,10 @@ proc create_root_design { parentCell } {
   set ap_rst_n [ create_bd_port -dir I -type rst ap_rst_n ]
   set arstn [ create_bd_port -dir I -type rst arstn ]
   set s_axi_aclk [ create_bd_port -dir I -type clk s_axi_aclk ]
-  set_property -dict [ list \
-   CONFIG.CLK_DOMAIN {bd_4885_pspmc_0_0_pl0_ref_clk} \
- ] $s_axi_aclk
+  set_property CONFIG.FREQ_HZ 300000000 [get_bd_ports s_axi_aclk]
+#   set_property -dict [ list \
+#    CONFIG.CLK_DOMAIN {bd_4885_pspmc_0_0_pl0_ref_clk} \
+#  ] $s_axi_aclk
 
   # Create instance: axi_register_slice_0, and set properties
   set axi_register_slice_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_0 ]
@@ -2582,6 +2583,11 @@ proc create_root_design { parentCell } {
 
   # Create instance: traffic_virt_4, and set properties
   set traffic_virt_4 [ create_bd_cell -type ip -vlnv xilinx.com:hls:hbm_bandwidth:1.0 traffic_virt_4 ]
+
+  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_0
+  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_1
+  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_2
+  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_3
   set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {128} $traffic_virt_4
 
 
@@ -2651,6 +2657,8 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ASSOCIATED_BUSIF {M00_AXI} \
  ] [get_bd_pins /axi_noc_0/aclk0]
+
+ 
 
   # Create interface connections
   connect_bd_intf_net -intf_net S00_INIS_0_1 [get_bd_intf_ports S_DCMAC_INIS0] [get_bd_intf_pins dcmac_axis_noc_s_0/S00_INIS]
@@ -2934,14 +2942,14 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net smartconnect_5_M11_AXI [get_bd_intf_pins traffic_virt_2/s_axi_control] [get_bd_intf_pins smartconnect_5/M11_AXI]
   connect_bd_intf_net -intf_net smartconnect_5_M12_AXI [get_bd_intf_pins traffic_virt_3/s_axi_control] [get_bd_intf_pins smartconnect_5/M12_AXI]
   connect_bd_intf_net -intf_net smartconnect_5_M13_AXI [get_bd_intf_pins traffic_virt_4/s_axi_control] [get_bd_intf_pins smartconnect_5/M13_AXI]
-  connect_bd_intf_net -intf_net traffic_producer_0_out_r [get_bd_intf_pins traffic_producer_0/out_r] [get_bd_intf_pins dcmac_axis_noc_0/S00_AXIS]
-  connect_bd_intf_net -intf_net traffic_producer_1_out_r [get_bd_intf_pins traffic_producer_1/out_r] [get_bd_intf_pins dcmac_axis_noc_1/S00_AXIS]
-  connect_bd_intf_net -intf_net traffic_producer_2_out_r [get_bd_intf_pins traffic_producer_2/out_r] [get_bd_intf_pins dcmac_axis_noc_2/S00_AXIS]
-  connect_bd_intf_net -intf_net traffic_producer_3_out_r [get_bd_intf_pins traffic_producer_3/out_r] [get_bd_intf_pins dcmac_axis_noc_3/S00_AXIS]
-  connect_bd_intf_net -intf_net traffic_producer_4_out_r [get_bd_intf_pins traffic_producer_4/out_r] [get_bd_intf_pins dcmac_axis_noc_4/S00_AXIS]
-  connect_bd_intf_net -intf_net traffic_producer_5_out_r [get_bd_intf_pins traffic_producer_5/out_r] [get_bd_intf_pins dcmac_axis_noc_5/S00_AXIS]
-  connect_bd_intf_net -intf_net traffic_producer_6_out_r [get_bd_intf_pins traffic_producer_6/out_r] [get_bd_intf_pins dcmac_axis_noc_6/S00_AXIS]
-  connect_bd_intf_net -intf_net traffic_producer_7_out_r [get_bd_intf_pins traffic_producer_7/out_r] [get_bd_intf_pins dcmac_axis_noc_7/S00_AXIS]
+  connect_bd_intf_net -intf_net traffic_producer_0_axis_out [get_bd_intf_pins traffic_producer_0/axis_out] [get_bd_intf_pins dcmac_axis_noc_0/S00_AXIS]
+  connect_bd_intf_net -intf_net traffic_producer_1_axis_out [get_bd_intf_pins traffic_producer_1/axis_out] [get_bd_intf_pins dcmac_axis_noc_1/S00_AXIS]
+  connect_bd_intf_net -intf_net traffic_producer_2_axis_out [get_bd_intf_pins traffic_producer_2/axis_out] [get_bd_intf_pins dcmac_axis_noc_2/S00_AXIS]
+  connect_bd_intf_net -intf_net traffic_producer_3_axis_out [get_bd_intf_pins traffic_producer_3/axis_out] [get_bd_intf_pins dcmac_axis_noc_3/S00_AXIS]
+  connect_bd_intf_net -intf_net traffic_producer_4_axis_out [get_bd_intf_pins traffic_producer_4/axis_out] [get_bd_intf_pins dcmac_axis_noc_4/S00_AXIS]
+  connect_bd_intf_net -intf_net traffic_producer_5_axis_out [get_bd_intf_pins traffic_producer_5/axis_out] [get_bd_intf_pins dcmac_axis_noc_5/S00_AXIS]
+  connect_bd_intf_net -intf_net traffic_producer_6_axis_out [get_bd_intf_pins traffic_producer_6/axis_out] [get_bd_intf_pins dcmac_axis_noc_6/S00_AXIS]
+  connect_bd_intf_net -intf_net traffic_producer_7_axis_out [get_bd_intf_pins traffic_producer_7/axis_out] [get_bd_intf_pins dcmac_axis_noc_7/S00_AXIS]
   connect_bd_intf_net -intf_net traffic_virt_1_m_axi_gmem0 [get_bd_intf_pins traffic_virt_1/m_axi_gmem0] [get_bd_intf_pins slash2service_slice_1/S_AXI]
   connect_bd_intf_net -intf_net traffic_virt_2_m_axi_gmem0 [get_bd_intf_pins traffic_virt_2/m_axi_gmem0] [get_bd_intf_pins slash2service_slice_2/S_AXI]
   connect_bd_intf_net -intf_net traffic_virt_3_m_axi_gmem0 [get_bd_intf_pins traffic_virt_3/m_axi_gmem0] [get_bd_intf_pins slash2service_slice_3/S_AXI]
