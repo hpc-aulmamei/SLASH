@@ -1,140 +1,147 @@
-proc create_service_layer { parentCell } {
+# proc create_service_layer { parentCell } {
 
-  variable script_folder
+#   variable script_folder
 
 
-  # Get object for parentCell
-  set parentObj [get_bd_cells $parentCell]
-  if { $parentObj == "" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2090 -severity "ERROR" "Unable to find parent cell <$parentCell>!"}
-     return
-  }
+#   # Get object for parentCell
+#   set parentObj [get_bd_cells $parentCell]
+#   if { $parentObj == "" } {
+#      catch {common::send_gid_msg -ssname BD::TCL -id 2090 -severity "ERROR" "Unable to find parent cell <$parentCell>!"}
+#      return
+#   }
 
-  # Make sure parentObj is hier blk
-  set parentType [get_property TYPE $parentObj]
-  if { $parentType ne "hier" } {
-     catch {common::send_gid_msg -ssname BD::TCL -id 2091 -severity "ERROR" "Parent <$parentObj> has TYPE = <$parentType>. Expected to be <hier>."}
-     return
-  }
+#   # Make sure parentObj is hier blk
+#   set parentType [get_property TYPE $parentObj]
+#   if { $parentType ne "hier" } {
+#      catch {common::send_gid_msg -ssname BD::TCL -id 2091 -severity "ERROR" "Parent <$parentObj> has TYPE = <$parentType>. Expected to be <hier>."}
+#      return
+#   }
 
-  # Save current instance; Restore later
-  set oldCurInst [current_bd_instance .]
+#   # Save current instance; Restore later
+#   set oldCurInst [current_bd_instance .]
 
-  # Set parent object as current
-  current_bd_instance $parentObj
+#   # Set parent object as current
+#   current_bd_instance $parentObj
 
-  # Create interface pins
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS0
+#   # Create interface pins
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS0
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS1
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS1
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS2
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS2
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS3
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS3
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS4
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS4
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS5
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS5
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS6
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS6
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS7
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inis_rtl:1.0 M_DCMAC_INIS7
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS0
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS0
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS1
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS1
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS2
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS2
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS3
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS3
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS4
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS4
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS5
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS5
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS6
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS6
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS7
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inis_rtl:1.0 S_DCMAC_INIS7
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_0
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_0
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_1
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_1
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_2
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_2
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_3
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_3
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_4
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_4
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_5
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_5
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_6
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_6
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_7
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 SL2NOC_7
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 M_VIRT_0
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 M_VIRT_0
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 M_VIRT_1
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 M_VIRT_1
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 M_VIRT_2
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 M_VIRT_2
 
-  create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 M_VIRT_3
+#   create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 M_VIRT_3
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_VIRT_0
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_VIRT_0
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_VIRT_1
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_VIRT_1
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_VIRT_2
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_VIRT_2
 
-  create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_VIRT_3
+#   create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_VIRT_3
 
-  set S_AXILITE_INI [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inimm_rtl:1.0 S_AXILITE_INI ]
-  set_property -dict [ list \
-   CONFIG.COMPUTED_STRATEGY {driver} \
-   CONFIG.INI_STRATEGY {driver} \
-   ] $S_AXILITE_INI
+#   set S_AXILITE_INI [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inimm_rtl:1.0 S_AXILITE_INI ]
+#   set_property -dict [ list \
+#    CONFIG.COMPUTED_STRATEGY {driver} \
+#    CONFIG.INI_STRATEGY {driver} \
+#    ] $S_AXILITE_INI
 
-  set S_QDMA_SLAVE_BRIDGE [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_QDMA_SLAVE_BRIDGE ]
-  set_property -dict [ list \
-   CONFIG.ADDR_WIDTH {32} \
-   CONFIG.ARUSER_WIDTH {0} \
-   CONFIG.AWUSER_WIDTH {0} \
-   CONFIG.BUSER_WIDTH {0} \
-   CONFIG.DATA_WIDTH {32} \
-   CONFIG.FREQ_HZ {300000000} \
-   CONFIG.HAS_BRESP {1} \
-   CONFIG.HAS_BURST {1} \
-   CONFIG.HAS_CACHE {1} \
-   CONFIG.HAS_LOCK {1} \
-   CONFIG.HAS_PROT {1} \
-   CONFIG.HAS_QOS {1} \
-   CONFIG.HAS_REGION {1} \
-   CONFIG.HAS_RRESP {1} \
-   CONFIG.HAS_WSTRB {1} \
-   CONFIG.ID_WIDTH {0} \
-   CONFIG.MAX_BURST_LENGTH {256} \
-   CONFIG.NUM_READ_OUTSTANDING {2} \
-   CONFIG.NUM_READ_THREADS {1} \
-   CONFIG.NUM_WRITE_OUTSTANDING {2} \
-   CONFIG.NUM_WRITE_THREADS {1} \
-   CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {READ_WRITE} \
-   CONFIG.RUSER_BITS_PER_BYTE {0} \
-   CONFIG.RUSER_WIDTH {0} \
-   CONFIG.SUPPORTS_NARROW_BURST {1} \
-   CONFIG.WUSER_BITS_PER_BYTE {0} \
-   CONFIG.WUSER_WIDTH {0} \
-   ] $S_QDMA_SLAVE_BRIDGE
+#   set S_QDMA_SLAVE_BRIDGE [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_QDMA_SLAVE_BRIDGE ]
+#   set_property -dict [ list \
+#    CONFIG.ADDR_WIDTH {32} \
+#    CONFIG.ARUSER_WIDTH {0} \
+#    CONFIG.AWUSER_WIDTH {0} \
+#    CONFIG.BUSER_WIDTH {0} \
+#    CONFIG.DATA_WIDTH {32} \
+#    CONFIG.FREQ_HZ {300000000} \
+#    CONFIG.HAS_BRESP {1} \
+#    CONFIG.HAS_BURST {1} \
+#    CONFIG.HAS_CACHE {1} \
+#    CONFIG.HAS_LOCK {1} \
+#    CONFIG.HAS_PROT {1} \
+#    CONFIG.HAS_QOS {1} \
+#    CONFIG.HAS_REGION {1} \
+#    CONFIG.HAS_RRESP {1} \
+#    CONFIG.HAS_WSTRB {1} \
+#    CONFIG.ID_WIDTH {0} \
+#    CONFIG.MAX_BURST_LENGTH {256} \
+#    CONFIG.NUM_READ_OUTSTANDING {2} \
+#    CONFIG.NUM_READ_THREADS {1} \
+#    CONFIG.NUM_WRITE_OUTSTANDING {2} \
+#    CONFIG.NUM_WRITE_THREADS {1} \
+#    CONFIG.PROTOCOL {AXI4} \
+#    CONFIG.READ_WRITE_MODE {READ_WRITE} \
+#    CONFIG.RUSER_BITS_PER_BYTE {0} \
+#    CONFIG.RUSER_WIDTH {0} \
+#    CONFIG.SUPPORTS_NARROW_BURST {1} \
+#    CONFIG.WUSER_BITS_PER_BYTE {0} \
+#    CONFIG.WUSER_WIDTH {0} \
+#    ] $S_QDMA_SLAVE_BRIDGE
 
-  set M_QDMA_SLAVE_BRIDGE [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_QDMA_SLAVE_BRIDGE ]
-  set_property -dict [ list \
-   CONFIG.ADDR_WIDTH {32} \
-   CONFIG.DATA_WIDTH {32} \
-   CONFIG.FREQ_HZ {300000000} \
-   CONFIG.NUM_READ_OUTSTANDING {2} \
-   CONFIG.NUM_WRITE_OUTSTANDING {2} \
-   CONFIG.PROTOCOL {AXI4} \
-   ] $M_QDMA_SLAVE_BRIDGE
+#   set M_QDMA_SLAVE_BRIDGE [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 M_QDMA_SLAVE_BRIDGE ]
+#   set_property -dict [ list \
+#    CONFIG.ADDR_WIDTH {32} \
+#    CONFIG.DATA_WIDTH {32} \
+#    CONFIG.FREQ_HZ {300000000} \
+#    CONFIG.NUM_READ_OUTSTANDING {2} \
+#    CONFIG.NUM_WRITE_OUTSTANDING {2} \
+#    CONFIG.PROTOCOL {AXI4} \
+#    ] $M_QDMA_SLAVE_BRIDGE
+
+set cur_design [current_bd_design]
+create_bd_design -boundary_from_container [get_bd_cells /service_layer] service_layer_user
+current_bd_design $cur_design
+set_property -dict [list CONFIG.LIST_SYNTH_BD {service_layer.bd:service_layer_user.bd} CONFIG.LIST_SIM_BD {service_layer.bd:service_layer_user.bd}] [get_bd_cells /service_layer]
+current_bd_design service_layer_user
+update_compile_order -fileset sources_1
 
     set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_0 ]
   set_property -dict [list \
@@ -144,26 +151,26 @@ proc create_service_layer { parentCell } {
 
 {% raw %}
   set_property -dict [ list \
-   CONFIG.APERTURES {{0x203_0000_0000 4M}} \
+   CONFIG.APERTURES {{0x203_0000_0000 128M}} \
    CONFIG.CATEGORY {pl} \
  ] [get_bd_intf_pins /axi_noc_0/M00_AXI]
   
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {driver} \
+   CONFIG.INI_STRATEGY {load} \
    CONFIG.CONNECTIONS {M00_AXI {read_bw {5} write_bw {5} read_avg_burst {4} write_avg_burst {4}}} \
  ] [get_bd_intf_pins /axi_noc_0/S00_INI]
 
   set_property -dict [ list \
    CONFIG.ASSOCIATED_BUSIF {M00_AXI:S_QDMA_SLAVE_BRIDGE:M_QDMA_SLAVE_BRIDGE:S_VIRT_3:S_VIRT_2:S_VIRT_1:S_VIRT_0} \
  ] [get_bd_pins /axi_noc_0/aclk0]
-  set_property APERTURES {{0x203_0000_0000 4M}} [get_bd_intf_ports S_AXILITE_INI]
+  set_property APERTURES {{0x203_0000_0000 128M}} [get_bd_intf_ports S_AXILITE_INI]
   {% endraw %}
-  # Create pins
-  create_bd_port -dir I -type clk aclk0
-  create_bd_port -dir I -type rst ap_rst_n
-  create_bd_port -dir I -type clk aclk1
+  # # Create pins
+  # create_bd_port -dir I -type clk aclk0
+  # create_bd_port -dir I -type rst ap_rst_n
+  # create_bd_port -dir I -type clk aclk1
 
-  # Create instance: dummy_noc_0, and set properties
+ # Create instance: dummy_noc_0, and set properties
   set dummy_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_noc:1.0 dummy_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_NSI {1} \
@@ -179,7 +186,7 @@ proc create_service_layer { parentCell } {
  ] [get_bd_intf_pins /dummy_noc_0/M00_AXIS]
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {load} \
    CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} \
    CONFIG.DEST_IDS {} \
  ] [get_bd_intf_pins /dummy_noc_0/S00_INIS]
@@ -187,8 +194,6 @@ proc create_service_layer { parentCell } {
   set_property -dict [ list \
    CONFIG.ASSOCIATED_BUSIF {M00_AXIS} \
  ] [get_bd_pins /dummy_noc_0/aclk0]
-
-  set axi_register_slice_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_4 ]
 
   # Create instance: dummy_noc_1, and set properties
   set dummy_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_noc:1.0 dummy_noc_1 ]
@@ -206,7 +211,7 @@ proc create_service_layer { parentCell } {
  ] [get_bd_intf_pins /dummy_noc_1/M00_AXIS]
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {load} \
    CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} \
    CONFIG.DEST_IDS {} \
  ] [get_bd_intf_pins /dummy_noc_1/S00_INIS]
@@ -231,7 +236,7 @@ proc create_service_layer { parentCell } {
  ] [get_bd_intf_pins /dummy_noc_2/M00_AXIS]
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {load} \
    CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} \
    CONFIG.DEST_IDS {} \
  ] [get_bd_intf_pins /dummy_noc_2/S00_INIS]
@@ -256,7 +261,7 @@ proc create_service_layer { parentCell } {
  ] [get_bd_intf_pins /dummy_noc_3/M00_AXIS]
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {load} \
    CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} \
    CONFIG.DEST_IDS {} \
  ] [get_bd_intf_pins /dummy_noc_3/S00_INIS]
@@ -281,7 +286,7 @@ proc create_service_layer { parentCell } {
  ] [get_bd_intf_pins /dummy_noc_4/M00_AXIS]
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {load} \
    CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} \
    CONFIG.DEST_IDS {} \
  ] [get_bd_intf_pins /dummy_noc_4/S00_INIS]
@@ -306,7 +311,7 @@ proc create_service_layer { parentCell } {
  ] [get_bd_intf_pins /dummy_noc_5/M00_AXIS]
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {load} \
    CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} \
    CONFIG.DEST_IDS {} \
  ] [get_bd_intf_pins /dummy_noc_5/S00_INIS]
@@ -331,7 +336,7 @@ proc create_service_layer { parentCell } {
  ] [get_bd_intf_pins /dummy_noc_6/M00_AXIS]
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {load} \
    CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} \
    CONFIG.DEST_IDS {} \
  ] [get_bd_intf_pins /dummy_noc_6/S00_INIS]
@@ -356,7 +361,7 @@ proc create_service_layer { parentCell } {
  ] [get_bd_intf_pins /dummy_noc_7/M00_AXIS]
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {load} \
    CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} \
    CONFIG.DEST_IDS {} \
  ] [get_bd_intf_pins /dummy_noc_7/S00_INIS]
@@ -374,7 +379,7 @@ proc create_service_layer { parentCell } {
 
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {driver} \
  ] [get_bd_intf_pins /dummy_noc_m_0/M00_INIS]
 
   set_property -dict [ list \
@@ -399,7 +404,7 @@ proc create_service_layer { parentCell } {
 
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {driver} \
  ] [get_bd_intf_pins /dummy_noc_m_1/M00_INIS]
 
   set_property -dict [ list \
@@ -424,7 +429,7 @@ proc create_service_layer { parentCell } {
 
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {driver} \
  ] [get_bd_intf_pins /dummy_noc_m_2/M00_INIS]
 
   set_property -dict [ list \
@@ -449,7 +454,7 @@ proc create_service_layer { parentCell } {
 
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {driver} \
  ] [get_bd_intf_pins /dummy_noc_m_3/M00_INIS]
 
   set_property -dict [ list \
@@ -474,7 +479,7 @@ proc create_service_layer { parentCell } {
 
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {driver} \
  ] [get_bd_intf_pins /dummy_noc_m_4/M00_INIS]
 
   set_property -dict [ list \
@@ -499,7 +504,7 @@ proc create_service_layer { parentCell } {
 
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {driver} \
  ] [get_bd_intf_pins /dummy_noc_m_5/M00_INIS]
 
   set_property -dict [ list \
@@ -524,7 +529,7 @@ proc create_service_layer { parentCell } {
 
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {driver} \
  ] [get_bd_intf_pins /dummy_noc_m_6/M00_INIS]
 
   set_property -dict [ list \
@@ -549,7 +554,7 @@ proc create_service_layer { parentCell } {
 
 
   set_property -dict [ list \
-   CONFIG.INI_STRATEGY {auto} \
+   CONFIG.INI_STRATEGY {driver} \
  ] [get_bd_intf_pins /dummy_noc_m_7/M00_INIS]
 
   set_property -dict [ list \
@@ -793,6 +798,9 @@ proc create_service_layer { parentCell } {
    CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
  ] [get_bd_pins /sl2noc_virt_3/aclk0]
 
+  set axi_register_slice_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_4 ]
+
+
   connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins dummy_noc_m_0/M00_INIS] [get_bd_intf_pins M_DCMAC_INIS0]
   connect_bd_intf_net -intf_net Conn2 [get_bd_intf_pins dummy_noc_m_1/M00_INIS] [get_bd_intf_pins M_DCMAC_INIS1]
   connect_bd_intf_net -intf_net Conn3 [get_bd_intf_pins dummy_noc_m_2/M00_INIS] [get_bd_intf_pins M_DCMAC_INIS2]
@@ -861,31 +869,31 @@ proc create_service_layer { parentCell } {
   [get_bd_pins axi_noc_0/aclk0] \
   [get_bd_pins axi_register_slice_4/aclk]
 
-  set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_0/S00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_1/S00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_2/S00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_3/S00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_4/S00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_5/S00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_6/S00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_7/S00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_0/S00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_1/S00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_2/S00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_3/S00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_4/S00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_5/S00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_6/S00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_AXIS { write_bw {500} write_avg_burst {4}}} CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /dummy_noc_7/S00_INIS]
 
-  set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_0/M00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_0/S00_AXIS]
-  set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_1/M00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_1/S00_AXIS]
-  set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_2/M00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_2/S00_AXIS]
-  set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_3/M00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_3/S00_AXIS]
-  set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_4/M00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_4/S00_AXIS]
-  set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_5/M00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_5/S00_AXIS]
-  set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_6/M00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_6/S00_AXIS]
-  set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_7/M00_INIS]
-  set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_7/S00_AXIS]
+  # set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_0/M00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_0/S00_AXIS]
+  # set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_1/M00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_1/S00_AXIS]
+  # set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_2/M00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_2/S00_AXIS]
+  # set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_3/M00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_3/S00_AXIS]
+  # set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_4/M00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_4/S00_AXIS]
+  # set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_5/M00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_5/S00_AXIS]
+  # set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_6/M00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_6/S00_AXIS]
+  # set_property -dict [list CONFIG.INI_STRATEGY {load}] [get_bd_intf_pins /dummy_noc_m_7/M00_INIS]
+  # set_property -dict [list CONFIG.CONNECTIONS {M00_INIS { write_bw {500}}}] [get_bd_intf_pins /dummy_noc_m_7/S00_AXIS]
 
   set_property -dict [list CONFIG.INI_STRATEGY {driver}] [get_bd_intf_pins /sl2noc_0/M00_INI]
   set_property -dict [list CONFIG.CONNECTIONS {M00_INI {read_bw {500} write_bw {500}}}] [get_bd_intf_pins /sl2noc_0/S00_AXI]
@@ -906,7 +914,7 @@ proc create_service_layer { parentCell } {
   set_property -dict [list CONFIG.CONNECTIONS {M00_INI {read_bw {500} write_bw {500}}}] [get_bd_intf_pins /sl2noc_7/S00_AXI]
 
 
-}
+
 proc add_dcmac_inst {} {
 
   set DCMAC0_ENABLED 1
@@ -930,7 +938,7 @@ proc add_dcmac_inst {} {
     }
 }
 # ===== Service Layer (generated) =====
-create_service_layer ""
+# create_service_layer ""
 
 # Absolute paths (normalized)
 set ::slash_proj_root  [file normalize "{{ proj_root }}"]
@@ -965,7 +973,7 @@ import_files -fileset sources_1 -norecurse [file normalize "{{ vf }}"]
 # === AXI-Lite SmartConnect for service_layer control ===
 # === AXI-Lite SmartConnect for service_layer control ===
 {% if sl_have_xbar %}
-  current_bd_design service_layer
+  current_bd_design service_layer_user
 
   # Create SmartConnect inside the service_layer BD with a local name
   create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_0
@@ -1004,7 +1012,7 @@ import_files -fileset sources_1 -norecurse [file normalize "{{ vf }}"]
 {% else %}
   # No AXI-Lite users: create a dummy SmartConnect with clocks+reset,
   # connect S_AXILITE -> S00_AXI, but leave the single M00_AXI unconnected.
-  current_bd_design service_layer
+  current_bd_design service_layer_user
 
   create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_0
   set_property -dict [list \
@@ -1056,7 +1064,7 @@ import_files -fileset sources_1 -norecurse [file normalize "{{ vf }}"]
 
 # @TODO: change this when virtualization core is available.
 # === Temporary VIRT wiring: S_VIRT_x -> sl2noc_virt_x/S00_AXI ===
-current_bd_design service_layer
+current_bd_design service_layer_user
 for {set i 0} {$i < 4} {incr i} {
   set sv     [get_bd_intf_pins S_VIRT_$i]
   set noc_in [get_bd_intf_pins sl2noc_virt_$i/S00_AXI]
@@ -1072,5 +1080,11 @@ for {set i 0} {$i < 4} {incr i} {
   connect_bd_intf_net $sv $noc_in
 }
 
+assign_bd_address
+validate_bd_design
+save_bd_design
+current_bd_design [get_bd_designs top]
+validate_bd_design
+save_bd_design
 
 # ===== End Service Layer =====

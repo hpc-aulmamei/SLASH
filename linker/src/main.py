@@ -18,6 +18,7 @@ from emit.network_ctx import build_network_axis_context
 from emit.stream_ctx import build_stream_connect_context
 from emit.host_ctx import build_host_smartconnect_context
 from emit.addr_ctx import build_axilite_address_context
+from emit.param_ctx import build_data_width_param_context
 
 # Service layer
 from emit.service_layer_ctx import *
@@ -208,6 +209,7 @@ def main():
 
     # 4) Build context for kernel adds (+clocks/resets) and render
     ctx = build_kernel_add_context(instances)
+    ctx.update(build_data_width_param_context(instances))
     ctx.update(build_axilite_smartconnect_context(instances))
     ctx.update(build_hbm_smartconnect_context(instances, bd, max_si=16))
     ctx.update(build_ddr_smartconnect_context(instances, max_si=16))
