@@ -1233,9 +1233,6 @@ proc create_root_design { parentCell } {
   set arstn [ create_bd_port -dir I -type rst arstn ]
   set s_axi_aclk [ create_bd_port -dir I -type clk s_axi_aclk ]
   set_property CONFIG.FREQ_HZ 300000000 [get_bd_ports s_axi_aclk]
-#   set_property -dict [ list \
-#    CONFIG.CLK_DOMAIN {bd_4885_pspmc_0_0_pl0_ref_clk} \
-#  ] $s_axi_aclk
 
   # Create instance: axi_register_slice_0, and set properties
   set axi_register_slice_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_0 ]
