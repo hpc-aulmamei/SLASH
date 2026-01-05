@@ -129,7 +129,6 @@ set bCheckIPsPassed 1
 set bCheckIPs 1
 if { $bCheckIPs == 1 } {
    set list_check_ips "\ 
-xilinx.com:ip:axi_register_slice:2.1\
 xilinx.com:hls:hbm_bandwidth:1.0\
 xilinx.com:ip:smartconnect:1.0\
 xilinx.com:ip:axi_noc:1.1\
@@ -203,7 +202,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -216,7 +215,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -229,7 +228,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -242,7 +241,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -255,7 +254,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -268,7 +267,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -281,7 +280,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -294,7 +293,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -307,7 +306,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -320,7 +319,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -333,7 +332,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -346,7 +345,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -359,7 +358,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -372,7 +371,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -385,7 +384,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -398,7 +397,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -411,7 +410,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -424,7 +423,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -437,7 +436,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -450,7 +449,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -463,7 +462,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -476,7 +475,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -489,7 +488,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -502,7 +501,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -515,7 +514,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -528,7 +527,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -541,7 +540,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -554,7 +553,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -567,7 +566,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -580,7 +579,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -593,7 +592,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -606,7 +605,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -619,7 +618,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -632,7 +631,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -645,7 +644,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -658,7 +657,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -671,7 +670,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -684,7 +683,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -697,7 +696,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -710,7 +709,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -723,7 +722,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -736,7 +735,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -749,7 +748,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -762,7 +761,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -775,7 +774,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -788,7 +787,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -801,7 +800,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -814,7 +813,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -827,7 +826,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -840,7 +839,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -853,7 +852,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -866,7 +865,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -879,7 +878,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -892,7 +891,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -905,7 +904,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -918,7 +917,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -931,7 +930,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -944,7 +943,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -957,7 +956,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -970,7 +969,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -983,7 +982,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -996,7 +995,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -1009,7 +1008,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -1022,7 +1021,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -1163,7 +1162,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {512} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
@@ -1174,7 +1173,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {512} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
@@ -1185,7 +1184,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {512} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
@@ -1196,7 +1195,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {512} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
@@ -1207,7 +1206,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {128} \
-   CONFIG.FREQ_HZ {400000000} \
+   CONFIG.FREQ_HZ {300000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
@@ -1231,209 +1230,7 @@ proc create_root_design { parentCell } {
  ] $aclk1
   set ap_rst_n [ create_bd_port -dir I -type rst ap_rst_n ]
   set arstn [ create_bd_port -dir I -type rst arstn ]
-  set s_axi_aclk [ create_bd_port -dir I -type clk s_axi_aclk ]
-  set_property CONFIG.FREQ_HZ 300000000 [get_bd_ports s_axi_aclk]
-
-  # Create instance: axi_register_slice_0, and set properties
-  set axi_register_slice_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_0 ]
-
-  # Create instance: axi_register_slice_1, and set properties
-  set axi_register_slice_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_1 ]
-
-  # Create instance: axi_register_slice_10, and set properties
-  set axi_register_slice_10 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_10 ]
-
-  # Create instance: axi_register_slice_11, and set properties
-  set axi_register_slice_11 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_11 ]
-
-  # Create instance: axi_register_slice_12, and set properties
-  set axi_register_slice_12 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_12 ]
-
-  # Create instance: axi_register_slice_13, and set properties
-  set axi_register_slice_13 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_13 ]
-
-  # Create instance: axi_register_slice_14, and set properties
-  set axi_register_slice_14 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_14 ]
-
-  # Create instance: axi_register_slice_15, and set properties
-  set axi_register_slice_15 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_15 ]
-
-  # Create instance: axi_register_slice_16, and set properties
-  set axi_register_slice_16 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_16 ]
-
-  # Create instance: axi_register_slice_17, and set properties
-  set axi_register_slice_17 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_17 ]
-
-  # Create instance: axi_register_slice_18, and set properties
-  set axi_register_slice_18 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_18 ]
-
-  # Create instance: axi_register_slice_19, and set properties
-  set axi_register_slice_19 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_19 ]
-
-  # Create instance: axi_register_slice_2, and set properties
-  set axi_register_slice_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_2 ]
-
-  # Create instance: axi_register_slice_20, and set properties
-  set axi_register_slice_20 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_20 ]
-
-  # Create instance: axi_register_slice_21, and set properties
-  set axi_register_slice_21 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_21 ]
-
-  # Create instance: axi_register_slice_22, and set properties
-  set axi_register_slice_22 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_22 ]
-
-  # Create instance: axi_register_slice_23, and set properties
-  set axi_register_slice_23 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_23 ]
-
-  # Create instance: axi_register_slice_24, and set properties
-  set axi_register_slice_24 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_24 ]
-
-  # Create instance: axi_register_slice_25, and set properties
-  set axi_register_slice_25 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_25 ]
-
-  # Create instance: axi_register_slice_26, and set properties
-  set axi_register_slice_26 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_26 ]
-
-  # Create instance: axi_register_slice_27, and set properties
-  set axi_register_slice_27 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_27 ]
-
-  # Create instance: axi_register_slice_28, and set properties
-  set axi_register_slice_28 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_28 ]
-
-  # Create instance: axi_register_slice_29, and set properties
-  set axi_register_slice_29 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_29 ]
-
-  # Create instance: axi_register_slice_3, and set properties
-  set axi_register_slice_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_3 ]
-
-  # Create instance: axi_register_slice_30, and set properties
-  set axi_register_slice_30 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_30 ]
-
-  # Create instance: axi_register_slice_31, and set properties
-  set axi_register_slice_31 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_31 ]
-
-  # Create instance: axi_register_slice_32, and set properties
-  set axi_register_slice_32 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_32 ]
-
-  # Create instance: axi_register_slice_33, and set properties
-  set axi_register_slice_33 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_33 ]
-
-  # Create instance: axi_register_slice_34, and set properties
-  set axi_register_slice_34 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_34 ]
-
-  # Create instance: axi_register_slice_35, and set properties
-  set axi_register_slice_35 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_35 ]
-
-  # Create instance: axi_register_slice_36, and set properties
-  set axi_register_slice_36 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_36 ]
-
-  # Create instance: axi_register_slice_37, and set properties
-  set axi_register_slice_37 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_37 ]
-
-  # Create instance: axi_register_slice_38, and set properties
-  set axi_register_slice_38 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_38 ]
-
-  # Create instance: axi_register_slice_39, and set properties
-  set axi_register_slice_39 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_39 ]
-
-  # Create instance: axi_register_slice_4, and set properties
-  set axi_register_slice_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_4 ]
-
-  # Create instance: axi_register_slice_40, and set properties
-  set axi_register_slice_40 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_40 ]
-
-  # Create instance: axi_register_slice_41, and set properties
-  set axi_register_slice_41 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_41 ]
-
-  # Create instance: axi_register_slice_42, and set properties
-  set axi_register_slice_42 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_42 ]
-
-  # Create instance: axi_register_slice_43, and set properties
-  set axi_register_slice_43 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_43 ]
-
-  # Create instance: axi_register_slice_44, and set properties
-  set axi_register_slice_44 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_44 ]
-
-  # Create instance: axi_register_slice_45, and set properties
-  set axi_register_slice_45 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_45 ]
-
-  # Create instance: axi_register_slice_46, and set properties
-  set axi_register_slice_46 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_46 ]
-
-  # Create instance: axi_register_slice_47, and set properties
-  set axi_register_slice_47 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_47 ]
-
-  # Create instance: axi_register_slice_48, and set properties
-  set axi_register_slice_48 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_48 ]
-
-  # Create instance: axi_register_slice_49, and set properties
-  set axi_register_slice_49 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_49 ]
-
-  # Create instance: axi_register_slice_5, and set properties
-  set axi_register_slice_5 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_5 ]
-
-  # Create instance: axi_register_slice_50, and set properties
-  set axi_register_slice_50 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_50 ]
-
-  # Create instance: axi_register_slice_51, and set properties
-  set axi_register_slice_51 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_51 ]
-
-  # Create instance: axi_register_slice_52, and set properties
-  set axi_register_slice_52 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_52 ]
-
-  # Create instance: axi_register_slice_53, and set properties
-  set axi_register_slice_53 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_53 ]
-
-  # Create instance: axi_register_slice_54, and set properties
-  set axi_register_slice_54 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_54 ]
-
-  # Create instance: axi_register_slice_55, and set properties
-  set axi_register_slice_55 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_55 ]
-
-  # Create instance: axi_register_slice_56, and set properties
-  set axi_register_slice_56 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_56 ]
-
-  # Create instance: axi_register_slice_57, and set properties
-  set axi_register_slice_57 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_57 ]
-
-  # Create instance: axi_register_slice_58, and set properties
-  set axi_register_slice_58 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_58 ]
-
-  # Create instance: axi_register_slice_59, and set properties
-  set axi_register_slice_59 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_59 ]
-
-  # Create instance: axi_register_slice_6, and set properties
-  set axi_register_slice_6 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_6 ]
-
-  # Create instance: axi_register_slice_60, and set properties
-  set axi_register_slice_60 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_60 ]
-
-  # Create instance: axi_register_slice_61, and set properties
-  set axi_register_slice_61 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_61 ]
-
-  # Create instance: axi_register_slice_62, and set properties
-  set axi_register_slice_62 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_62 ]
-
-  # Create instance: axi_register_slice_64, and set properties
-  set axi_register_slice_64 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_64 ]
-
-  # Create instance: axi_register_slice_65, and set properties
-  set axi_register_slice_65 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_65 ]
-
-  # Create instance: axi_register_slice_66, and set properties
-  set axi_register_slice_66 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_66 ]
-
-  # Create instance: axi_register_slice_67, and set properties
-  set axi_register_slice_67 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_67 ]
-
-  # Create instance: axi_register_slice_7, and set properties
-  set axi_register_slice_7 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_7 ]
-
-  # Create instance: axi_register_slice_8, and set properties
-  set axi_register_slice_8 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_8 ]
-
-  # Create instance: axi_register_slice_9, and set properties
-  set axi_register_slice_9 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_9 ]
+  set s_axi_aclk [ create_bd_port -dir I -type clk -freq_hz 300000000 s_axi_aclk ]
 
   # Create instance: ddr_bandwidth_64, and set properties
   set ddr_bandwidth_64 [ create_bd_cell -type ip -vlnv xilinx.com:hls:hbm_bandwidth:1.0 ddr_bandwidth_64 ]
@@ -1910,30 +1707,6 @@ proc create_root_design { parentCell } {
   set hbm_bandwidth_71 [ create_bd_cell -type ip -vlnv xilinx.com:hls:hbm_bandwidth:1.0 hbm_bandwidth_71 ]
   set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {256} $hbm_bandwidth_71
 
-
-  # Create instance: axi_register_slice_68, and set properties
-  set axi_register_slice_68 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_68 ]
-
-  # Create instance: axi_register_slice_69, and set properties
-  set axi_register_slice_69 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_69 ]
-
-  # Create instance: axi_register_slice_70, and set properties
-  set axi_register_slice_70 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_70 ]
-
-  # Create instance: axi_register_slice_71, and set properties
-  set axi_register_slice_71 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_71 ]
-
-  # Create instance: axi_register_slice_72, and set properties
-  set axi_register_slice_72 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_72 ]
-
-  # Create instance: axi_register_slice_73, and set properties
-  set axi_register_slice_73 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_73 ]
-
-  # Create instance: axi_register_slice_74, and set properties
-  set axi_register_slice_74 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_74 ]
-
-  # Create instance: axi_register_slice_75, and set properties
-  set axi_register_slice_75 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_75 ]
 
   # Create instance: hbm_vnoc_00, and set properties
   set hbm_vnoc_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_00 ]
@@ -2554,37 +2327,28 @@ proc create_root_design { parentCell } {
   # Create instance: xlconstant_0, and set properties
   set xlconstant_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 xlconstant_0 ]
 
-  # Create instance: slash2service_slice_0, and set properties
-  set slash2service_slice_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 slash2service_slice_0 ]
-
-  # Create instance: slash2service_slice_1, and set properties
-  set slash2service_slice_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 slash2service_slice_1 ]
-
-  # Create instance: slash2service_slice_2, and set properties
-  set slash2service_slice_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 slash2service_slice_2 ]
-
-  # Create instance: slash2service_slice_3, and set properties
-  set slash2service_slice_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 slash2service_slice_3 ]
-
   # Create instance: traffic_virt_0, and set properties
   set traffic_virt_0 [ create_bd_cell -type ip -vlnv xilinx.com:hls:hbm_bandwidth:1.0 traffic_virt_0 ]
+  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_0
+
 
   # Create instance: traffic_virt_1, and set properties
   set traffic_virt_1 [ create_bd_cell -type ip -vlnv xilinx.com:hls:hbm_bandwidth:1.0 traffic_virt_1 ]
+  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_1
+
 
   # Create instance: traffic_virt_2, and set properties
   set traffic_virt_2 [ create_bd_cell -type ip -vlnv xilinx.com:hls:hbm_bandwidth:1.0 traffic_virt_2 ]
+  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_2
+
 
   # Create instance: traffic_virt_3, and set properties
   set traffic_virt_3 [ create_bd_cell -type ip -vlnv xilinx.com:hls:hbm_bandwidth:1.0 traffic_virt_3 ]
+  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_3
+
 
   # Create instance: traffic_virt_4, and set properties
   set traffic_virt_4 [ create_bd_cell -type ip -vlnv xilinx.com:hls:hbm_bandwidth:1.0 traffic_virt_4 ]
-
-  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_0
-  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_1
-  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_2
-  set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {512} $traffic_virt_3
   set_property CONFIG.C_M_AXI_GMEM0_DATA_WIDTH {128} $traffic_virt_4
 
 
@@ -2655,8 +2419,6 @@ proc create_root_design { parentCell } {
    CONFIG.ASSOCIATED_BUSIF {M00_AXI} \
  ] [get_bd_pins /axi_noc_0/aclk0]
 
- 
-
   # Create interface connections
   connect_bd_intf_net -intf_net S00_INIS_0_1 [get_bd_intf_ports S_DCMAC_INIS0] [get_bd_intf_pins dcmac_axis_noc_s_0/S00_INIS]
   connect_bd_intf_net -intf_net S00_INIS_1_1 [get_bd_intf_ports S_DCMAC_INIS1] [get_bd_intf_pins dcmac_axis_noc_s_1/S00_INIS]
@@ -2668,81 +2430,6 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net S00_INIS_7_1 [get_bd_intf_ports S_DCMAC_INIS7] [get_bd_intf_pins dcmac_axis_noc_s_7/S00_INIS]
   connect_bd_intf_net -intf_net S_AXILITE_INI_1 [get_bd_intf_ports S_AXILITE_INI] [get_bd_intf_pins axi_noc_0/S00_INI]
   connect_bd_intf_net -intf_net axi_noc_0_M00_AXI [get_bd_intf_pins axi_noc_0/M00_AXI] [get_bd_intf_pins smartconnect_0/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_0_M_AXI [get_bd_intf_ports HBM_AXI_00] [get_bd_intf_pins axi_register_slice_0/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_10_M_AXI [get_bd_intf_ports HBM_AXI_10] [get_bd_intf_pins axi_register_slice_10/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_11_M_AXI [get_bd_intf_ports HBM_AXI_11] [get_bd_intf_pins axi_register_slice_11/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_12_M_AXI [get_bd_intf_ports HBM_AXI_12] [get_bd_intf_pins axi_register_slice_12/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_13_M_AXI [get_bd_intf_ports HBM_AXI_13] [get_bd_intf_pins axi_register_slice_13/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_14_M_AXI [get_bd_intf_ports HBM_AXI_14] [get_bd_intf_pins axi_register_slice_14/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_15_M_AXI [get_bd_intf_ports HBM_AXI_15] [get_bd_intf_pins axi_register_slice_15/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_16_M_AXI [get_bd_intf_ports HBM_AXI_16] [get_bd_intf_pins axi_register_slice_16/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_17_M_AXI [get_bd_intf_ports HBM_AXI_17] [get_bd_intf_pins axi_register_slice_17/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_18_M_AXI [get_bd_intf_ports HBM_AXI_18] [get_bd_intf_pins axi_register_slice_18/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_19_M_AXI [get_bd_intf_ports HBM_AXI_19] [get_bd_intf_pins axi_register_slice_19/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_1_M_AXI [get_bd_intf_ports HBM_AXI_01] [get_bd_intf_pins axi_register_slice_1/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_20_M_AXI [get_bd_intf_ports HBM_AXI_20] [get_bd_intf_pins axi_register_slice_20/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_21_M_AXI [get_bd_intf_ports HBM_AXI_21] [get_bd_intf_pins axi_register_slice_21/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_22_M_AXI [get_bd_intf_ports HBM_AXI_22] [get_bd_intf_pins axi_register_slice_22/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_23_M_AXI [get_bd_intf_ports HBM_AXI_23] [get_bd_intf_pins axi_register_slice_23/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_24_M_AXI [get_bd_intf_ports HBM_AXI_24] [get_bd_intf_pins axi_register_slice_24/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_25_M_AXI [get_bd_intf_ports HBM_AXI_25] [get_bd_intf_pins axi_register_slice_25/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_26_M_AXI [get_bd_intf_ports HBM_AXI_26] [get_bd_intf_pins axi_register_slice_26/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_27_M_AXI [get_bd_intf_ports HBM_AXI_27] [get_bd_intf_pins axi_register_slice_27/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_28_M_AXI [get_bd_intf_ports HBM_AXI_28] [get_bd_intf_pins axi_register_slice_28/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_29_M_AXI [get_bd_intf_ports HBM_AXI_29] [get_bd_intf_pins axi_register_slice_29/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_2_M_AXI [get_bd_intf_ports HBM_AXI_02] [get_bd_intf_pins axi_register_slice_2/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_30_M_AXI [get_bd_intf_ports HBM_AXI_30] [get_bd_intf_pins axi_register_slice_30/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_31_M_AXI [get_bd_intf_ports HBM_AXI_31] [get_bd_intf_pins axi_register_slice_31/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_32_M_AXI [get_bd_intf_ports HBM_AXI_32] [get_bd_intf_pins axi_register_slice_32/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_33_M_AXI [get_bd_intf_ports HBM_AXI_33] [get_bd_intf_pins axi_register_slice_33/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_34_M_AXI [get_bd_intf_ports HBM_AXI_34] [get_bd_intf_pins axi_register_slice_34/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_35_M_AXI [get_bd_intf_ports HBM_AXI_35] [get_bd_intf_pins axi_register_slice_35/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_36_M_AXI [get_bd_intf_ports HBM_AXI_36] [get_bd_intf_pins axi_register_slice_36/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_37_M_AXI [get_bd_intf_ports HBM_AXI_37] [get_bd_intf_pins axi_register_slice_37/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_38_M_AXI [get_bd_intf_ports HBM_AXI_38] [get_bd_intf_pins axi_register_slice_38/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_39_M_AXI [get_bd_intf_ports HBM_AXI_39] [get_bd_intf_pins axi_register_slice_39/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_3_M_AXI [get_bd_intf_ports HBM_AXI_03] [get_bd_intf_pins axi_register_slice_3/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_40_M_AXI [get_bd_intf_ports HBM_AXI_40] [get_bd_intf_pins axi_register_slice_40/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_41_M_AXI [get_bd_intf_ports HBM_AXI_41] [get_bd_intf_pins axi_register_slice_41/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_42_M_AXI [get_bd_intf_ports HBM_AXI_42] [get_bd_intf_pins axi_register_slice_42/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_43_M_AXI [get_bd_intf_ports HBM_AXI_43] [get_bd_intf_pins axi_register_slice_43/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_44_M_AXI [get_bd_intf_ports HBM_AXI_44] [get_bd_intf_pins axi_register_slice_44/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_45_M_AXI [get_bd_intf_ports HBM_AXI_45] [get_bd_intf_pins axi_register_slice_45/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_46_M_AXI [get_bd_intf_ports HBM_AXI_46] [get_bd_intf_pins axi_register_slice_46/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_47_M_AXI [get_bd_intf_ports HBM_AXI_47] [get_bd_intf_pins axi_register_slice_47/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_48_M_AXI [get_bd_intf_ports HBM_AXI_48] [get_bd_intf_pins axi_register_slice_48/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_49_M_AXI [get_bd_intf_ports HBM_AXI_49] [get_bd_intf_pins axi_register_slice_49/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_4_M_AXI [get_bd_intf_ports HBM_AXI_04] [get_bd_intf_pins axi_register_slice_4/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_50_M_AXI [get_bd_intf_ports HBM_AXI_50] [get_bd_intf_pins axi_register_slice_50/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_51_M_AXI [get_bd_intf_ports HBM_AXI_51] [get_bd_intf_pins axi_register_slice_51/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_52_M_AXI [get_bd_intf_ports HBM_AXI_52] [get_bd_intf_pins axi_register_slice_52/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_53_M_AXI [get_bd_intf_ports HBM_AXI_53] [get_bd_intf_pins axi_register_slice_53/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_54_M_AXI [get_bd_intf_ports HBM_AXI_54] [get_bd_intf_pins axi_register_slice_54/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_55_M_AXI [get_bd_intf_ports HBM_AXI_55] [get_bd_intf_pins axi_register_slice_55/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_56_M_AXI [get_bd_intf_ports HBM_AXI_56] [get_bd_intf_pins axi_register_slice_56/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_57_M_AXI [get_bd_intf_ports HBM_AXI_57] [get_bd_intf_pins axi_register_slice_57/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_58_M_AXI [get_bd_intf_ports HBM_AXI_58] [get_bd_intf_pins axi_register_slice_58/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_59_M_AXI [get_bd_intf_ports HBM_AXI_59] [get_bd_intf_pins axi_register_slice_59/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_5_M_AXI [get_bd_intf_ports HBM_AXI_05] [get_bd_intf_pins axi_register_slice_5/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_60_M_AXI [get_bd_intf_ports HBM_AXI_60] [get_bd_intf_pins axi_register_slice_60/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_61_M_AXI [get_bd_intf_ports HBM_AXI_61] [get_bd_intf_pins axi_register_slice_61/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_62_M_AXI [get_bd_intf_ports HBM_AXI_62] [get_bd_intf_pins axi_register_slice_62/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_64_M_AXI [get_bd_intf_pins axi_register_slice_64/M_AXI] [get_bd_intf_pins ddr_noc_0/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_65_M_AXI [get_bd_intf_pins axi_register_slice_65/M_AXI] [get_bd_intf_pins ddr_noc_1/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_66_M_AXI [get_bd_intf_pins axi_register_slice_66/M_AXI] [get_bd_intf_pins ddr_noc_2/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_67_M_AXI [get_bd_intf_pins axi_register_slice_67/M_AXI] [get_bd_intf_pins ddr_noc_3/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_68_M_AXI [get_bd_intf_pins axi_register_slice_68/M_AXI] [get_bd_intf_pins hbm_vnoc_00/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_69_M_AXI [get_bd_intf_pins axi_register_slice_69/M_AXI] [get_bd_intf_pins hbm_vnoc_01/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_6_M_AXI [get_bd_intf_ports HBM_AXI_06] [get_bd_intf_pins axi_register_slice_6/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_70_M_AXI [get_bd_intf_pins axi_register_slice_70/M_AXI] [get_bd_intf_pins hbm_vnoc_02/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_71_M_AXI [get_bd_intf_pins axi_register_slice_71/M_AXI] [get_bd_intf_pins hbm_vnoc_03/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_72_M_AXI [get_bd_intf_pins axi_register_slice_72/M_AXI] [get_bd_intf_pins hbm_vnoc_04/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_73_M_AXI [get_bd_intf_pins axi_register_slice_73/M_AXI] [get_bd_intf_pins hbm_vnoc_05/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_74_M_AXI [get_bd_intf_pins axi_register_slice_74/M_AXI] [get_bd_intf_pins hbm_vnoc_06/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_75_M_AXI [get_bd_intf_pins axi_register_slice_75/M_AXI] [get_bd_intf_pins hbm_vnoc_07/S00_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_7_M_AXI [get_bd_intf_ports HBM_AXI_07] [get_bd_intf_pins axi_register_slice_7/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_8_M_AXI [get_bd_intf_ports HBM_AXI_08] [get_bd_intf_pins axi_register_slice_8/M_AXI]
-  connect_bd_intf_net -intf_net axi_register_slice_9_M_AXI [get_bd_intf_ports HBM_AXI_09] [get_bd_intf_pins axi_register_slice_9/M_AXI]
   connect_bd_intf_net -intf_net dcmac_axis_noc_0_M00_INIS [get_bd_intf_ports M_DCMAC_INIS0] [get_bd_intf_pins dcmac_axis_noc_0/M00_INIS]
   connect_bd_intf_net -intf_net dcmac_axis_noc_1_M00_INIS [get_bd_intf_ports M_DCMAC_INIS1] [get_bd_intf_pins dcmac_axis_noc_1/M00_INIS]
   connect_bd_intf_net -intf_net dcmac_axis_noc_2_M00_INIS [get_bd_intf_ports M_DCMAC_INIS2] [get_bd_intf_pins dcmac_axis_noc_2/M00_INIS]
@@ -2751,88 +2438,87 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net dcmac_axis_noc_5_M00_INIS [get_bd_intf_ports M_DCMAC_INIS5] [get_bd_intf_pins dcmac_axis_noc_5/M00_INIS]
   connect_bd_intf_net -intf_net dcmac_axis_noc_6_M00_INIS [get_bd_intf_ports M_DCMAC_INIS6] [get_bd_intf_pins dcmac_axis_noc_6/M00_INIS]
   connect_bd_intf_net -intf_net dcmac_axis_noc_7_M00_INIS [get_bd_intf_ports M_DCMAC_INIS7] [get_bd_intf_pins dcmac_axis_noc_7/M00_INIS]
-  connect_bd_intf_net -intf_net ddr_bandwidth_64_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_64/S_AXI] [get_bd_intf_pins ddr_bandwidth_64/m_axi_gmem0]
-  connect_bd_intf_net -intf_net ddr_bandwidth_65_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_65/S_AXI] [get_bd_intf_pins ddr_bandwidth_65/m_axi_gmem0]
-  connect_bd_intf_net -intf_net ddr_bandwidth_66_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_66/S_AXI] [get_bd_intf_pins ddr_bandwidth_66/m_axi_gmem0]
-  connect_bd_intf_net -intf_net ddr_bandwidth_67_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_67/S_AXI] [get_bd_intf_pins ddr_bandwidth_67/m_axi_gmem0]
+  connect_bd_intf_net -intf_net ddr_bandwidth_64_m_axi_gmem0 [get_bd_intf_pins ddr_bandwidth_64/m_axi_gmem0] [get_bd_intf_pins ddr_noc_0/S00_AXI]
+  connect_bd_intf_net -intf_net ddr_bandwidth_65_m_axi_gmem0 [get_bd_intf_pins ddr_bandwidth_65/m_axi_gmem0] [get_bd_intf_pins ddr_noc_1/S00_AXI]
+  connect_bd_intf_net -intf_net ddr_bandwidth_66_m_axi_gmem0 [get_bd_intf_pins ddr_bandwidth_66/m_axi_gmem0] [get_bd_intf_pins ddr_noc_2/S00_AXI]
+  connect_bd_intf_net -intf_net ddr_bandwidth_67_m_axi_gmem0 [get_bd_intf_pins ddr_bandwidth_67/m_axi_gmem0] [get_bd_intf_pins ddr_noc_3/S00_AXI]
   connect_bd_intf_net -intf_net ddr_noc_0_M00_INI [get_bd_intf_ports M00_INI] [get_bd_intf_pins ddr_noc_0/M00_INI]
   connect_bd_intf_net -intf_net ddr_noc_1_M00_INI [get_bd_intf_ports M01_INI] [get_bd_intf_pins ddr_noc_1/M00_INI]
   connect_bd_intf_net -intf_net ddr_noc_2_M00_INI [get_bd_intf_ports M02_INI] [get_bd_intf_pins ddr_noc_2/M00_INI]
   connect_bd_intf_net -intf_net ddr_noc_3_M00_INI [get_bd_intf_ports M03_INI] [get_bd_intf_pins ddr_noc_3/M00_INI]
-  connect_bd_intf_net -intf_net hbm_bandwidth_0_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_0/S_AXI] [get_bd_intf_pins hbm_bandwidth_0/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_10_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_10/S_AXI] [get_bd_intf_pins hbm_bandwidth_10/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_11_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_11/S_AXI] [get_bd_intf_pins hbm_bandwidth_11/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_12_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_12/S_AXI] [get_bd_intf_pins hbm_bandwidth_12/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_13_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_13/S_AXI] [get_bd_intf_pins hbm_bandwidth_13/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_14_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_14/S_AXI] [get_bd_intf_pins hbm_bandwidth_14/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_15_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_15/S_AXI] [get_bd_intf_pins hbm_bandwidth_15/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_16_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_16/S_AXI] [get_bd_intf_pins hbm_bandwidth_16/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_17_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_17/S_AXI] [get_bd_intf_pins hbm_bandwidth_17/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_18_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_18/S_AXI] [get_bd_intf_pins hbm_bandwidth_18/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_19_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_19/S_AXI] [get_bd_intf_pins hbm_bandwidth_19/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_1_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_1/S_AXI] [get_bd_intf_pins hbm_bandwidth_1/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_20_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_20/S_AXI] [get_bd_intf_pins hbm_bandwidth_20/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_21_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_21/S_AXI] [get_bd_intf_pins hbm_bandwidth_21/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_22_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_22/S_AXI] [get_bd_intf_pins hbm_bandwidth_22/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_23_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_23/S_AXI] [get_bd_intf_pins hbm_bandwidth_23/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_24_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_24/S_AXI] [get_bd_intf_pins hbm_bandwidth_24/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_25_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_25/S_AXI] [get_bd_intf_pins hbm_bandwidth_25/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_26_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_26/S_AXI] [get_bd_intf_pins hbm_bandwidth_26/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_27_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_27/S_AXI] [get_bd_intf_pins hbm_bandwidth_27/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_28_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_28/S_AXI] [get_bd_intf_pins hbm_bandwidth_28/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_29_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_29/S_AXI] [get_bd_intf_pins hbm_bandwidth_29/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_2_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_2/S_AXI] [get_bd_intf_pins hbm_bandwidth_2/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_30_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_30/S_AXI] [get_bd_intf_pins hbm_bandwidth_30/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_31_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_31/S_AXI] [get_bd_intf_pins hbm_bandwidth_31/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_32_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_32/S_AXI] [get_bd_intf_pins hbm_bandwidth_32/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_33_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_33/S_AXI] [get_bd_intf_pins hbm_bandwidth_33/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_34_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_34/S_AXI] [get_bd_intf_pins hbm_bandwidth_34/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_35_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_35/S_AXI] [get_bd_intf_pins hbm_bandwidth_35/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_36_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_36/S_AXI] [get_bd_intf_pins hbm_bandwidth_36/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_37_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_37/S_AXI] [get_bd_intf_pins hbm_bandwidth_37/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_38_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_38/S_AXI] [get_bd_intf_pins hbm_bandwidth_38/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_39_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_39/S_AXI] [get_bd_intf_pins hbm_bandwidth_39/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_3_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_3/S_AXI] [get_bd_intf_pins hbm_bandwidth_3/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_40_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_40/S_AXI] [get_bd_intf_pins hbm_bandwidth_40/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_41_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_41/S_AXI] [get_bd_intf_pins hbm_bandwidth_41/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_42_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_42/S_AXI] [get_bd_intf_pins hbm_bandwidth_42/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_43_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_43/S_AXI] [get_bd_intf_pins hbm_bandwidth_43/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_44_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_44/S_AXI] [get_bd_intf_pins hbm_bandwidth_44/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_45_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_45/S_AXI] [get_bd_intf_pins hbm_bandwidth_45/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_46_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_46/S_AXI] [get_bd_intf_pins hbm_bandwidth_46/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_47_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_47/S_AXI] [get_bd_intf_pins hbm_bandwidth_47/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_48_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_48/S_AXI] [get_bd_intf_pins hbm_bandwidth_48/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_49_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_49/S_AXI] [get_bd_intf_pins hbm_bandwidth_49/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_4_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_4/S_AXI] [get_bd_intf_pins hbm_bandwidth_4/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_50_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_50/S_AXI] [get_bd_intf_pins hbm_bandwidth_50/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_51_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_51/S_AXI] [get_bd_intf_pins hbm_bandwidth_51/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_52_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_52/S_AXI] [get_bd_intf_pins hbm_bandwidth_52/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_53_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_53/S_AXI] [get_bd_intf_pins hbm_bandwidth_53/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_54_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_54/S_AXI] [get_bd_intf_pins hbm_bandwidth_54/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_55_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_55/S_AXI] [get_bd_intf_pins hbm_bandwidth_55/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_56_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_56/S_AXI] [get_bd_intf_pins hbm_bandwidth_56/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_57_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_57/S_AXI] [get_bd_intf_pins hbm_bandwidth_57/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_58_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_58/S_AXI] [get_bd_intf_pins hbm_bandwidth_58/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_59_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_59/S_AXI] [get_bd_intf_pins hbm_bandwidth_59/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_5_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_5/S_AXI] [get_bd_intf_pins hbm_bandwidth_5/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_60_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_60/S_AXI] [get_bd_intf_pins hbm_bandwidth_60/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_61_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_61/S_AXI] [get_bd_intf_pins hbm_bandwidth_61/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_62_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_62/S_AXI] [get_bd_intf_pins hbm_bandwidth_62/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_0_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_00] [get_bd_intf_pins hbm_bandwidth_0/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_10_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_10] [get_bd_intf_pins hbm_bandwidth_10/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_11_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_11] [get_bd_intf_pins hbm_bandwidth_11/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_12_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_12] [get_bd_intf_pins hbm_bandwidth_12/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_13_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_13] [get_bd_intf_pins hbm_bandwidth_13/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_14_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_14] [get_bd_intf_pins hbm_bandwidth_14/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_15_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_15] [get_bd_intf_pins hbm_bandwidth_15/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_16_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_16] [get_bd_intf_pins hbm_bandwidth_16/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_17_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_17] [get_bd_intf_pins hbm_bandwidth_17/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_18_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_18] [get_bd_intf_pins hbm_bandwidth_18/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_19_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_19] [get_bd_intf_pins hbm_bandwidth_19/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_1_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_01] [get_bd_intf_pins hbm_bandwidth_1/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_20_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_20] [get_bd_intf_pins hbm_bandwidth_20/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_21_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_21] [get_bd_intf_pins hbm_bandwidth_21/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_22_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_22] [get_bd_intf_pins hbm_bandwidth_22/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_23_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_23] [get_bd_intf_pins hbm_bandwidth_23/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_24_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_24] [get_bd_intf_pins hbm_bandwidth_24/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_25_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_25] [get_bd_intf_pins hbm_bandwidth_25/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_26_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_26] [get_bd_intf_pins hbm_bandwidth_26/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_27_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_27] [get_bd_intf_pins hbm_bandwidth_27/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_28_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_28] [get_bd_intf_pins hbm_bandwidth_28/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_29_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_29] [get_bd_intf_pins hbm_bandwidth_29/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_2_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_02] [get_bd_intf_pins hbm_bandwidth_2/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_30_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_30] [get_bd_intf_pins hbm_bandwidth_30/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_31_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_31] [get_bd_intf_pins hbm_bandwidth_31/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_32_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_32] [get_bd_intf_pins hbm_bandwidth_32/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_33_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_33] [get_bd_intf_pins hbm_bandwidth_33/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_34_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_34] [get_bd_intf_pins hbm_bandwidth_34/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_35_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_35] [get_bd_intf_pins hbm_bandwidth_35/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_36_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_36] [get_bd_intf_pins hbm_bandwidth_36/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_37_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_37] [get_bd_intf_pins hbm_bandwidth_37/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_38_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_38] [get_bd_intf_pins hbm_bandwidth_38/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_39_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_39] [get_bd_intf_pins hbm_bandwidth_39/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_3_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_03] [get_bd_intf_pins hbm_bandwidth_3/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_40_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_40] [get_bd_intf_pins hbm_bandwidth_40/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_41_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_41] [get_bd_intf_pins hbm_bandwidth_41/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_42_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_42] [get_bd_intf_pins hbm_bandwidth_42/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_43_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_43] [get_bd_intf_pins hbm_bandwidth_43/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_44_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_44] [get_bd_intf_pins hbm_bandwidth_44/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_45_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_45] [get_bd_intf_pins hbm_bandwidth_45/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_46_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_46] [get_bd_intf_pins hbm_bandwidth_46/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_47_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_47] [get_bd_intf_pins hbm_bandwidth_47/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_48_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_48] [get_bd_intf_pins hbm_bandwidth_48/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_49_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_49] [get_bd_intf_pins hbm_bandwidth_49/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_4_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_04] [get_bd_intf_pins hbm_bandwidth_4/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_50_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_50] [get_bd_intf_pins hbm_bandwidth_50/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_51_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_51] [get_bd_intf_pins hbm_bandwidth_51/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_52_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_52] [get_bd_intf_pins hbm_bandwidth_52/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_53_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_53] [get_bd_intf_pins hbm_bandwidth_53/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_54_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_54] [get_bd_intf_pins hbm_bandwidth_54/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_55_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_55] [get_bd_intf_pins hbm_bandwidth_55/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_56_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_56] [get_bd_intf_pins hbm_bandwidth_56/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_57_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_57] [get_bd_intf_pins hbm_bandwidth_57/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_58_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_58] [get_bd_intf_pins hbm_bandwidth_58/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_59_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_59] [get_bd_intf_pins hbm_bandwidth_59/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_5_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_05] [get_bd_intf_pins hbm_bandwidth_5/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_60_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_60] [get_bd_intf_pins hbm_bandwidth_60/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_61_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_61] [get_bd_intf_pins hbm_bandwidth_61/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_62_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_62] [get_bd_intf_pins hbm_bandwidth_62/m_axi_gmem0]
   connect_bd_intf_net -intf_net hbm_bandwidth_63_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_63] [get_bd_intf_pins hbm_bandwidth_63/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_64_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_68/S_AXI] [get_bd_intf_pins hbm_bandwidth_64/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_65_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_69/S_AXI] [get_bd_intf_pins hbm_bandwidth_65/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_66_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_70/S_AXI] [get_bd_intf_pins hbm_bandwidth_66/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_67_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_71/S_AXI] [get_bd_intf_pins hbm_bandwidth_67/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_68_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_72/S_AXI] [get_bd_intf_pins hbm_bandwidth_68/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_69_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_73/S_AXI] [get_bd_intf_pins hbm_bandwidth_69/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_6_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_6/S_AXI] [get_bd_intf_pins hbm_bandwidth_6/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_70_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_74/S_AXI] [get_bd_intf_pins hbm_bandwidth_70/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_71_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_75/S_AXI] [get_bd_intf_pins hbm_bandwidth_71/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_72_m_axi_gmem0 [get_bd_intf_pins traffic_virt_0/m_axi_gmem0] [get_bd_intf_pins slash2service_slice_0/S_AXI]
+  connect_bd_intf_net -intf_net hbm_bandwidth_64_m_axi_gmem0 [get_bd_intf_pins hbm_bandwidth_64/m_axi_gmem0] [get_bd_intf_pins hbm_vnoc_00/S00_AXI]
+  connect_bd_intf_net -intf_net hbm_bandwidth_65_m_axi_gmem0 [get_bd_intf_pins hbm_bandwidth_65/m_axi_gmem0] [get_bd_intf_pins hbm_vnoc_01/S00_AXI]
+  connect_bd_intf_net -intf_net hbm_bandwidth_66_m_axi_gmem0 [get_bd_intf_pins hbm_bandwidth_66/m_axi_gmem0] [get_bd_intf_pins hbm_vnoc_02/S00_AXI]
+  connect_bd_intf_net -intf_net hbm_bandwidth_67_m_axi_gmem0 [get_bd_intf_pins hbm_bandwidth_67/m_axi_gmem0] [get_bd_intf_pins hbm_vnoc_03/S00_AXI]
+  connect_bd_intf_net -intf_net hbm_bandwidth_68_m_axi_gmem0 [get_bd_intf_pins hbm_bandwidth_68/m_axi_gmem0] [get_bd_intf_pins hbm_vnoc_04/S00_AXI]
+  connect_bd_intf_net -intf_net hbm_bandwidth_69_m_axi_gmem0 [get_bd_intf_pins hbm_bandwidth_69/m_axi_gmem0] [get_bd_intf_pins hbm_vnoc_05/S00_AXI]
+  connect_bd_intf_net -intf_net hbm_bandwidth_6_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_06] [get_bd_intf_pins hbm_bandwidth_6/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_70_m_axi_gmem0 [get_bd_intf_pins hbm_bandwidth_70/m_axi_gmem0] [get_bd_intf_pins hbm_vnoc_06/S00_AXI]
+  connect_bd_intf_net -intf_net hbm_bandwidth_71_m_axi_gmem0 [get_bd_intf_pins hbm_bandwidth_71/m_axi_gmem0] [get_bd_intf_pins hbm_vnoc_07/S00_AXI]
   connect_bd_intf_net -intf_net hbm_bandwidth_72_m_axi_gmem1 [get_bd_intf_ports QDMA_SLAVE_BRIDGE] [get_bd_intf_pins traffic_virt_4/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_7_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_7/S_AXI] [get_bd_intf_pins hbm_bandwidth_7/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_8_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_8/S_AXI] [get_bd_intf_pins hbm_bandwidth_8/m_axi_gmem0]
-  connect_bd_intf_net -intf_net hbm_bandwidth_9_m_axi_gmem0 [get_bd_intf_pins axi_register_slice_9/S_AXI] [get_bd_intf_pins hbm_bandwidth_9/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_7_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_07] [get_bd_intf_pins hbm_bandwidth_7/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_8_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_08] [get_bd_intf_pins hbm_bandwidth_8/m_axi_gmem0]
+  connect_bd_intf_net -intf_net hbm_bandwidth_9_m_axi_gmem0 [get_bd_intf_ports HBM_AXI_09] [get_bd_intf_pins hbm_bandwidth_9/m_axi_gmem0]
   connect_bd_intf_net -intf_net hbm_vnoc_00_M00_INI [get_bd_intf_ports HBM_VNOC_INI_00] [get_bd_intf_pins hbm_vnoc_00/M00_INI]
   connect_bd_intf_net -intf_net hbm_vnoc_01_M00_INI [get_bd_intf_ports HBM_VNOC_INI_01] [get_bd_intf_pins hbm_vnoc_01/M00_INI]
   connect_bd_intf_net -intf_net hbm_vnoc_02_M00_INI [get_bd_intf_ports HBM_VNOC_INI_02] [get_bd_intf_pins hbm_vnoc_02/M00_INI]
@@ -2841,10 +2527,6 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net hbm_vnoc_05_M00_INI [get_bd_intf_ports HBM_VNOC_INI_05] [get_bd_intf_pins hbm_vnoc_05/M00_INI]
   connect_bd_intf_net -intf_net hbm_vnoc_06_M00_INI [get_bd_intf_ports HBM_VNOC_INI_06] [get_bd_intf_pins hbm_vnoc_06/M00_INI]
   connect_bd_intf_net -intf_net hbm_vnoc_07_M00_INI [get_bd_intf_ports HBM_VNOC_INI_07] [get_bd_intf_pins hbm_vnoc_07/M00_INI]
-  connect_bd_intf_net -intf_net slash2service_slice_0_M_AXI [get_bd_intf_ports SL_VIRT_0] [get_bd_intf_pins slash2service_slice_0/M_AXI]
-  connect_bd_intf_net -intf_net slash2service_slice_1_M_AXI [get_bd_intf_ports SL_VIRT_1] [get_bd_intf_pins slash2service_slice_1/M_AXI]
-  connect_bd_intf_net -intf_net slash2service_slice_2_M_AXI [get_bd_intf_ports SL_VIRT_2] [get_bd_intf_pins slash2service_slice_2/M_AXI]
-  connect_bd_intf_net -intf_net slash2service_slice_3_M_AXI [get_bd_intf_ports SL_VIRT_3] [get_bd_intf_pins slash2service_slice_3/M_AXI]
   connect_bd_intf_net -intf_net smartconnect_0_M00_AXI [get_bd_intf_pins hbm_bandwidth_0/s_axi_control] [get_bd_intf_pins smartconnect_0/M00_AXI]
   connect_bd_intf_net -intf_net smartconnect_0_M01_AXI [get_bd_intf_pins hbm_bandwidth_1/s_axi_control] [get_bd_intf_pins smartconnect_0/M01_AXI]
   connect_bd_intf_net -intf_net smartconnect_0_M02_AXI [get_bd_intf_pins hbm_bandwidth_2/s_axi_control] [get_bd_intf_pins smartconnect_0/M02_AXI]
@@ -2947,92 +2629,18 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net traffic_producer_5_axis_out [get_bd_intf_pins traffic_producer_5/axis_out] [get_bd_intf_pins dcmac_axis_noc_5/S00_AXIS]
   connect_bd_intf_net -intf_net traffic_producer_6_axis_out [get_bd_intf_pins traffic_producer_6/axis_out] [get_bd_intf_pins dcmac_axis_noc_6/S00_AXIS]
   connect_bd_intf_net -intf_net traffic_producer_7_axis_out [get_bd_intf_pins traffic_producer_7/axis_out] [get_bd_intf_pins dcmac_axis_noc_7/S00_AXIS]
-  connect_bd_intf_net -intf_net traffic_virt_1_m_axi_gmem0 [get_bd_intf_pins traffic_virt_1/m_axi_gmem0] [get_bd_intf_pins slash2service_slice_1/S_AXI]
-  connect_bd_intf_net -intf_net traffic_virt_2_m_axi_gmem0 [get_bd_intf_pins traffic_virt_2/m_axi_gmem0] [get_bd_intf_pins slash2service_slice_2/S_AXI]
-  connect_bd_intf_net -intf_net traffic_virt_3_m_axi_gmem0 [get_bd_intf_pins traffic_virt_3/m_axi_gmem0] [get_bd_intf_pins slash2service_slice_3/S_AXI]
+  connect_bd_intf_net -intf_net traffic_virt_0_m_axi_gmem0 [get_bd_intf_ports SL_VIRT_0] [get_bd_intf_pins traffic_virt_0/m_axi_gmem0]
+  connect_bd_intf_net -intf_net traffic_virt_1_m_axi_gmem0 [get_bd_intf_ports SL_VIRT_1] [get_bd_intf_pins traffic_virt_1/m_axi_gmem0]
+  connect_bd_intf_net -intf_net traffic_virt_2_m_axi_gmem0 [get_bd_intf_ports SL_VIRT_2] [get_bd_intf_pins traffic_virt_2/m_axi_gmem0]
+  connect_bd_intf_net -intf_net traffic_virt_3_m_axi_gmem0 [get_bd_intf_ports SL_VIRT_3] [get_bd_intf_pins traffic_virt_3/m_axi_gmem0]
 
   # Create port connections
   connect_bd_net -net clk_wizard_0_clk_out1  [get_bd_ports aclk1] \
   [get_bd_pins smartconnect_0/aclk1] \
-  [get_bd_pins axi_register_slice_0/aclk] \
-  [get_bd_pins axi_register_slice_1/aclk] \
-  [get_bd_pins axi_register_slice_2/aclk] \
-  [get_bd_pins axi_register_slice_3/aclk] \
-  [get_bd_pins axi_register_slice_4/aclk] \
-  [get_bd_pins axi_register_slice_5/aclk] \
-  [get_bd_pins axi_register_slice_6/aclk] \
-  [get_bd_pins axi_register_slice_7/aclk] \
-  [get_bd_pins axi_register_slice_8/aclk] \
-  [get_bd_pins axi_register_slice_9/aclk] \
-  [get_bd_pins axi_register_slice_10/aclk] \
-  [get_bd_pins axi_register_slice_11/aclk] \
-  [get_bd_pins axi_register_slice_12/aclk] \
-  [get_bd_pins axi_register_slice_13/aclk] \
-  [get_bd_pins axi_register_slice_14/aclk] \
-  [get_bd_pins axi_register_slice_15/aclk] \
-  [get_bd_pins axi_register_slice_16/aclk] \
-  [get_bd_pins axi_register_slice_17/aclk] \
-  [get_bd_pins axi_register_slice_18/aclk] \
-  [get_bd_pins axi_register_slice_19/aclk] \
-  [get_bd_pins axi_register_slice_20/aclk] \
-  [get_bd_pins axi_register_slice_21/aclk] \
-  [get_bd_pins axi_register_slice_22/aclk] \
-  [get_bd_pins axi_register_slice_23/aclk] \
-  [get_bd_pins axi_register_slice_24/aclk] \
-  [get_bd_pins axi_register_slice_25/aclk] \
-  [get_bd_pins axi_register_slice_26/aclk] \
-  [get_bd_pins axi_register_slice_27/aclk] \
-  [get_bd_pins axi_register_slice_28/aclk] \
-  [get_bd_pins axi_register_slice_29/aclk] \
-  [get_bd_pins axi_register_slice_30/aclk] \
-  [get_bd_pins axi_register_slice_31/aclk] \
-  [get_bd_pins axi_register_slice_32/aclk] \
-  [get_bd_pins axi_register_slice_33/aclk] \
-  [get_bd_pins axi_register_slice_34/aclk] \
-  [get_bd_pins axi_register_slice_35/aclk] \
-  [get_bd_pins axi_register_slice_36/aclk] \
-  [get_bd_pins axi_register_slice_37/aclk] \
-  [get_bd_pins axi_register_slice_38/aclk] \
-  [get_bd_pins axi_register_slice_39/aclk] \
-  [get_bd_pins axi_register_slice_40/aclk] \
-  [get_bd_pins axi_register_slice_41/aclk] \
-  [get_bd_pins axi_register_slice_42/aclk] \
-  [get_bd_pins axi_register_slice_43/aclk] \
-  [get_bd_pins axi_register_slice_44/aclk] \
-  [get_bd_pins axi_register_slice_45/aclk] \
-  [get_bd_pins axi_register_slice_46/aclk] \
-  [get_bd_pins axi_register_slice_47/aclk] \
-  [get_bd_pins axi_register_slice_48/aclk] \
-  [get_bd_pins axi_register_slice_49/aclk] \
-  [get_bd_pins axi_register_slice_50/aclk] \
-  [get_bd_pins axi_register_slice_51/aclk] \
-  [get_bd_pins axi_register_slice_52/aclk] \
-  [get_bd_pins axi_register_slice_53/aclk] \
-  [get_bd_pins axi_register_slice_54/aclk] \
-  [get_bd_pins axi_register_slice_55/aclk] \
-  [get_bd_pins axi_register_slice_56/aclk] \
-  [get_bd_pins axi_register_slice_57/aclk] \
-  [get_bd_pins axi_register_slice_58/aclk] \
-  [get_bd_pins axi_register_slice_59/aclk] \
-  [get_bd_pins axi_register_slice_60/aclk] \
-  [get_bd_pins axi_register_slice_61/aclk] \
-  [get_bd_pins axi_register_slice_62/aclk] \
-  [get_bd_pins axi_register_slice_64/aclk] \
-  [get_bd_pins axi_register_slice_65/aclk] \
-  [get_bd_pins axi_register_slice_66/aclk] \
-  [get_bd_pins axi_register_slice_67/aclk] \
   [get_bd_pins ddr_noc_0/aclk0] \
   [get_bd_pins ddr_noc_3/aclk0] \
   [get_bd_pins ddr_noc_2/aclk0] \
   [get_bd_pins ddr_noc_1/aclk0] \
-  [get_bd_pins axi_register_slice_68/aclk] \
-  [get_bd_pins axi_register_slice_69/aclk] \
-  [get_bd_pins axi_register_slice_70/aclk] \
-  [get_bd_pins axi_register_slice_71/aclk] \
-  [get_bd_pins axi_register_slice_72/aclk] \
-  [get_bd_pins axi_register_slice_73/aclk] \
-  [get_bd_pins axi_register_slice_74/aclk] \
-  [get_bd_pins axi_register_slice_75/aclk] \
   [get_bd_pins hbm_vnoc_00/aclk0] \
   [get_bd_pins hbm_vnoc_01/aclk0] \
   [get_bd_pins hbm_vnoc_02/aclk0] \
@@ -3141,10 +2749,6 @@ proc create_root_design { parentCell } {
   [get_bd_pins hbm_bandwidth_7/ap_clk] \
   [get_bd_pins hbm_bandwidth_8/ap_clk] \
   [get_bd_pins hbm_bandwidth_9/ap_clk] \
-  [get_bd_pins slash2service_slice_0/aclk] \
-  [get_bd_pins slash2service_slice_1/aclk] \
-  [get_bd_pins slash2service_slice_2/aclk] \
-  [get_bd_pins slash2service_slice_3/aclk] \
   [get_bd_pins traffic_virt_0/ap_clk] \
   [get_bd_pins traffic_virt_1/ap_clk] \
   [get_bd_pins traffic_virt_2/ap_clk] \
@@ -3157,81 +2761,6 @@ proc create_root_design { parentCell } {
   [get_bd_pins smartconnect_5/aclk1] \
   [get_bd_pins axi_noc_0/aclk0]
   connect_bd_net -net proc_sys_reset_0_peripheral_aresetn  [get_bd_ports ap_rst_n] \
-  [get_bd_pins axi_register_slice_0/aresetn] \
-  [get_bd_pins axi_register_slice_1/aresetn] \
-  [get_bd_pins axi_register_slice_2/aresetn] \
-  [get_bd_pins axi_register_slice_3/aresetn] \
-  [get_bd_pins axi_register_slice_4/aresetn] \
-  [get_bd_pins axi_register_slice_5/aresetn] \
-  [get_bd_pins axi_register_slice_6/aresetn] \
-  [get_bd_pins axi_register_slice_7/aresetn] \
-  [get_bd_pins axi_register_slice_8/aresetn] \
-  [get_bd_pins axi_register_slice_9/aresetn] \
-  [get_bd_pins axi_register_slice_10/aresetn] \
-  [get_bd_pins axi_register_slice_11/aresetn] \
-  [get_bd_pins axi_register_slice_12/aresetn] \
-  [get_bd_pins axi_register_slice_13/aresetn] \
-  [get_bd_pins axi_register_slice_14/aresetn] \
-  [get_bd_pins axi_register_slice_15/aresetn] \
-  [get_bd_pins axi_register_slice_16/aresetn] \
-  [get_bd_pins axi_register_slice_17/aresetn] \
-  [get_bd_pins axi_register_slice_18/aresetn] \
-  [get_bd_pins axi_register_slice_19/aresetn] \
-  [get_bd_pins axi_register_slice_20/aresetn] \
-  [get_bd_pins axi_register_slice_21/aresetn] \
-  [get_bd_pins axi_register_slice_22/aresetn] \
-  [get_bd_pins axi_register_slice_23/aresetn] \
-  [get_bd_pins axi_register_slice_24/aresetn] \
-  [get_bd_pins axi_register_slice_25/aresetn] \
-  [get_bd_pins axi_register_slice_26/aresetn] \
-  [get_bd_pins axi_register_slice_27/aresetn] \
-  [get_bd_pins axi_register_slice_28/aresetn] \
-  [get_bd_pins axi_register_slice_29/aresetn] \
-  [get_bd_pins axi_register_slice_30/aresetn] \
-  [get_bd_pins axi_register_slice_31/aresetn] \
-  [get_bd_pins axi_register_slice_32/aresetn] \
-  [get_bd_pins axi_register_slice_33/aresetn] \
-  [get_bd_pins axi_register_slice_34/aresetn] \
-  [get_bd_pins axi_register_slice_35/aresetn] \
-  [get_bd_pins axi_register_slice_36/aresetn] \
-  [get_bd_pins axi_register_slice_37/aresetn] \
-  [get_bd_pins axi_register_slice_38/aresetn] \
-  [get_bd_pins axi_register_slice_39/aresetn] \
-  [get_bd_pins axi_register_slice_40/aresetn] \
-  [get_bd_pins axi_register_slice_41/aresetn] \
-  [get_bd_pins axi_register_slice_42/aresetn] \
-  [get_bd_pins axi_register_slice_43/aresetn] \
-  [get_bd_pins axi_register_slice_44/aresetn] \
-  [get_bd_pins axi_register_slice_45/aresetn] \
-  [get_bd_pins axi_register_slice_46/aresetn] \
-  [get_bd_pins axi_register_slice_47/aresetn] \
-  [get_bd_pins axi_register_slice_48/aresetn] \
-  [get_bd_pins axi_register_slice_49/aresetn] \
-  [get_bd_pins axi_register_slice_50/aresetn] \
-  [get_bd_pins axi_register_slice_51/aresetn] \
-  [get_bd_pins axi_register_slice_52/aresetn] \
-  [get_bd_pins axi_register_slice_53/aresetn] \
-  [get_bd_pins axi_register_slice_54/aresetn] \
-  [get_bd_pins axi_register_slice_55/aresetn] \
-  [get_bd_pins axi_register_slice_56/aresetn] \
-  [get_bd_pins axi_register_slice_57/aresetn] \
-  [get_bd_pins axi_register_slice_58/aresetn] \
-  [get_bd_pins axi_register_slice_59/aresetn] \
-  [get_bd_pins axi_register_slice_60/aresetn] \
-  [get_bd_pins axi_register_slice_61/aresetn] \
-  [get_bd_pins axi_register_slice_62/aresetn] \
-  [get_bd_pins axi_register_slice_64/aresetn] \
-  [get_bd_pins axi_register_slice_65/aresetn] \
-  [get_bd_pins axi_register_slice_66/aresetn] \
-  [get_bd_pins axi_register_slice_67/aresetn] \
-  [get_bd_pins axi_register_slice_68/aresetn] \
-  [get_bd_pins axi_register_slice_69/aresetn] \
-  [get_bd_pins axi_register_slice_70/aresetn] \
-  [get_bd_pins axi_register_slice_71/aresetn] \
-  [get_bd_pins axi_register_slice_72/aresetn] \
-  [get_bd_pins axi_register_slice_73/aresetn] \
-  [get_bd_pins axi_register_slice_74/aresetn] \
-  [get_bd_pins axi_register_slice_75/aresetn] \
   [get_bd_pins traffic_producer_0/ap_rst_n] \
   [get_bd_pins traffic_producer_1/ap_rst_n] \
   [get_bd_pins traffic_producer_2/ap_rst_n] \
@@ -3316,10 +2845,6 @@ proc create_root_design { parentCell } {
   [get_bd_pins hbm_bandwidth_7/ap_rst_n] \
   [get_bd_pins hbm_bandwidth_8/ap_rst_n] \
   [get_bd_pins hbm_bandwidth_9/ap_rst_n] \
-  [get_bd_pins slash2service_slice_0/aresetn] \
-  [get_bd_pins slash2service_slice_1/aresetn] \
-  [get_bd_pins slash2service_slice_2/aresetn] \
-  [get_bd_pins slash2service_slice_3/aresetn] \
   [get_bd_pins traffic_virt_0/ap_rst_n] \
   [get_bd_pins traffic_virt_1/ap_rst_n] \
   [get_bd_pins traffic_virt_2/ap_rst_n] \
