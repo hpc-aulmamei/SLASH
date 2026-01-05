@@ -1,9 +1,13 @@
-
+# Clone /slash into {{ slash_bd_name }}
 set cur_design [current_bd_design]
-create_bd_design -boundary_from_container [get_bd_cells /slash] slash_user
+create_bd_design -boundary_from_container [get_bd_cells /slash] {{ slash_bd_name }}
 current_bd_design $cur_design
-set_property -dict [list CONFIG.LIST_SYNTH_BD {slash_base.bd:slash_user.bd} CONFIG.LIST_SIM_BD {slash_base.bd:slash_user.bd}] [get_bd_cells /slash]
-current_bd_design slash_user
+set_property -dict [list \
+  CONFIG.LIST_SYNTH_BD {slash_base.bd:{{ slash_bd_name }}.bd} \
+  CONFIG.LIST_SIM_BD   {slash_base.bd:{{ slash_bd_name }}.bd} \
+] [get_bd_cells /slash]
+current_bd_design {{ slash_bd_name }}
+
 update_compile_order -fileset sources_1
 # Create instance: ddr_noc_0, and set properties
   set ddr_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_0 ]
