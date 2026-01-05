@@ -2,6 +2,7 @@
 import argparse
 from collections import OrderedDict
 from pathlib import Path
+import re
 
 from emit.kernel_ctx import build_kernel_add_context
 from emit.smartconnect_ctx import build_axilite_smartconnect_context
@@ -29,6 +30,16 @@ from parser.config_parser import (
 )
 from core.bd_ports import load_bd_ports_from_file
 from core.port import PortType
+
+def _sanitize_bd_name(s: str) -> str:
+    # BD names: keep letters/digits/underscore; don’t start with a digit
+    s2 = re.sub(r'[^A-Za-z0-9_]+', '_', s.strip())
+    if not s2:
+        s2 = "proj"
+    if s2[0].isdigit():
+        s2 = "_" + s2
+    return s2
+
 
 def _collect_used_targets(ctx: dict) -> set[str]:
     used: set[str] = set()
@@ -182,8 +193,18 @@ def main():
                     help="Path to write rendered service layer Tcl (e.g., build/service_layer.tcl)")
     ap.add_argument("--proj-root", default=None,
                    help="Project root (defaults to parent of src/).")
-    args = ap.parse_args()
+    ap.add_argument("-p", "--project", required=True, help="Project name to suffix TCLs and BD clones.")
 
+    args = ap.parse_args()
+    project = _sanitize_bd_name(args.project)
+    default_slash_out = f"../results/{project}/bd/slash_{project}.tcl"
+    default_service_out = f"../results/{project}/bd/service_layer_{project}.tcl"
+    # If user didn’t override --out / --service-out, generate suffixed names:
+    if args.out == "slash.tcl":
+        args.out = default_slash_out
+    if args.service_out == "service_layer_gen.tcl":
+        args.service_out = default_service_out
+    
     # 0) Load BD ports and print
     bd = load_bd_ports_from_file(args.bd_ports)
     print_bd_ports(bd)
@@ -243,9 +264,11 @@ def main():
     )
 )
     #ctx.update(build_axi_terminators_context(bd, used_targets))
-
+    ctx["project_name"]   = project
+    ctx["slash_bd_name"]  = f"slash_{project}"
     template_path = Path(args.template)   # resources/slash.tcl
     out_path = Path(args.out)             # slash.tcl
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     render_template(
         template_dir=template_path.parent,
         template_name=template_path.name,
@@ -261,7 +284,8 @@ def main():
     svc_ctx.update(build_service_noc_axis_ctx(cfg.network))
     svc_ctx.update(paths_ctx)                                 # absolute paths for dcmac sources
 
-
+    svc_ctx["project_name"]          = project
+    svc_ctx["service_layer_bd_name"] = f"service_layer_{project}"
     # --- Render service-layer Tcl ---
     svc_template = Path(args.service_template)
     svc_out = Path(args.service_out)
