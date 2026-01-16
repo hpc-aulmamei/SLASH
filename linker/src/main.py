@@ -4,25 +4,28 @@ from collections import OrderedDict
 from pathlib import Path
 import re
 
-from emit.kernel_ctx import build_kernel_add_context
-from emit.smartconnect_ctx import build_axilite_smartconnect_context
-from emit.hbm_ctx import build_hbm_smartconnect_context
-from emit.ddr_ctx import build_ddr_smartconnect_context
-from emit.mem_ctx import build_mem_smartconnect_context
+from emit.hw.user_region.kernel_ctx import build_kernel_add_context
+from emit.hw.user_region.smartconnect_ctx import build_axilite_smartconnect_context
+from emit.hw.user_region.hbm_ctx import build_hbm_smartconnect_context
+from emit.hw.user_region.ddr_ctx import build_ddr_smartconnect_context
+from emit.hw.user_region.mem_ctx import build_mem_smartconnect_context
 from emit.render import render_template
-from emit.virt_ctx import build_virt_smartconnect_context
-from emit.terminator_ctx import build_axi_terminators_context
-from emit.terminator_ctx import build_ddr_noc_terminators
-from emit.terminator_ctx import build_mem_noc_terminators
+from emit.hw.user_region.virt_ctx import build_virt_smartconnect_context
+from emit.hw.user_region.terminator_ctx import build_axi_terminators_context
+from emit.hw.user_region.terminator_ctx import build_ddr_noc_terminators
+from emit.hw.user_region.terminator_ctx import build_mem_noc_terminators
+from emit.hw.user_region.terminator_ctx import build_virt_noc_terminators
+from emit.hw.user_region.terminator_ctx import build_host_noc_terminator
 from parser.component_parser import parse_component_xml
-from emit.network_ctx import build_network_axis_context
-from emit.stream_ctx import build_stream_connect_context
-from emit.host_ctx import build_host_smartconnect_context
-from emit.addr_ctx import build_axilite_address_context
-from emit.param_ctx import build_data_width_param_context
+from emit.hw.service_region.network_ctx import build_network_axis_context
+from emit.hw.service_region.stream_ctx import build_stream_connect_context
+from emit.hw.user_region.host_ctx import build_host_smartconnect_context
+from emit.hw.user_region.addr_ctx import build_axilite_address_context
+from emit.hw.user_region.param_ctx import build_data_width_param_context
+from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 
 # Service layer
-from emit.service_layer_ctx import *
+from emit.hw.service_region.service_layer_ctx import *
 
 from parser.config_parser import (
     parse_connectivity_file,
@@ -40,35 +43,39 @@ def _sanitize_bd_name(s: str) -> str:
         s2 = "_" + s2
     return s2
 
-
 def _collect_used_targets(ctx: dict) -> set[str]:
     used: set[str] = set()
 
-    # HBM uses ports
-    for item in ctx.get("hbm_direct", []):
-        used.add(item["dst_port"])
-    for item in ctx.get("hbm_smart_roots", []):
-        used.add(item["dst_port"])
+    # HBM uses BD ports (HBM_AXI_XX) via root MI -> port
+    for o in ctx.get("hbm_root_out", []):
+        used.add(o["dst_port"])   # e.g., HBM_AXI_00
 
     # DDR uses NoC pins
     for item in ctx.get("ddr_direct", []):
-        used.add(item["dst_pin"])
+        used.add(item["dst_pin"])     # e.g., /ddr_noc_0/S00_AXI
     for item in ctx.get("ddr_smart_roots", []):
         used.add(item["dst_pin"])
 
-    # MEM uses NoC pins
+    # MEM (VNOC) uses NoC pins
     for item in ctx.get("mem_direct", []):
-        used.add(item["dst_pin"])
+        used.add(item["dst_pin"])     # e.g., /hbm_vnoc_00/S00_AXI
     for item in ctx.get("mem_smart_roots", []):
         used.add(item["dst_pin"])
 
-    # VIRT uses ports (like HBM)
+    # VIRT now also uses NoC pins (noc_virt_00..03/S00_AXI)
     for item in ctx.get("virt_direct", []):
         used.add(item["dst_pin"])
     for item in ctx.get("virt_smart_roots", []):
         used.add(item["dst_pin"])
 
+    # HOST (QDMA bridge) uses NoC pin
+    for item in ctx.get("host_direct", []):
+        used.add(item["dst_pin"])
+    for item in ctx.get("host_smart_roots", []):
+        used.add(item["dst_pin"])
+
     return used
+
 
 # --- add this helper somewhere in main.py ---
 def print_memory_maps(k):
@@ -191,19 +198,34 @@ def main():
                 help="Path to service layer Jinja2 template (e.g., resources/service_layer.tcl)")
     ap.add_argument("--service-out", required=False, default="service_layer_gen.tcl",
                     help="Path to write rendered service layer Tcl (e.g., build/service_layer.tcl)")
+    ap.add_argument("--system-map-template", required=False, default="../resources/system_map.xml",
+                    help="Path to system_map.xml Jinja2 template.")
+    ap.add_argument("--system-map-out", required=False, default="system_map.xml",
+                    help="Path to write system_map.xml (default: ../results/<project>/system_map.xml).")
     ap.add_argument("--proj-root", default=None,
                    help="Project root (defaults to parent of src/).")
     ap.add_argument("-p", "--project", required=True, help="Project name to suffix TCLs and BD clones.")
+    ap.add_argument("--clock-hz", required=False, type=int,
+                    help="System clock frequency in Hz for system_map.xml (default: from [clock], else 200000000).")
+    ap.add_argument("--emit-sw-emu", action="store_true",
+                    help="Generate sw_emu tb.cpp (ZMQ HLS simulation server).")
+    ap.add_argument("--tb-template", default="../resources/sw_emu/tb.cpp",
+                    help="Path to tb.cpp Jinja2 template.")
+    ap.add_argument("--tb-out", default=None,
+                    help="Output tb.cpp path (default: ../results/<project>/sw_emu/tb.cpp).")
 
     args = ap.parse_args()
     project = _sanitize_bd_name(args.project)
     default_slash_out = f"../results/{project}/bd/slash_{project}.tcl"
     default_service_out = f"../results/{project}/bd/service_layer_{project}.tcl"
+    default_system_map_out = f"../results/{project}/system_map.xml"
     # If user didn’t override --out / --service-out, generate suffixed names:
     if args.out == "slash.tcl":
         args.out = default_slash_out
     if args.service_out == "service_layer_gen.tcl":
         args.service_out = default_service_out
+    if args.system_map_out == "system_map.xml":
+        args.system_map_out = default_system_map_out
     
     # 0) Load BD ports and print
     bd = load_bd_ports_from_file(args.bd_ports)
@@ -211,13 +233,18 @@ def main():
 
     # 1) Parse kernels
     kernel_library = {}
+    kernel_compxml_by_type = {}
+
     print("\nLoading kernels:")
     for kpath in args.kernels:
         kfile = Path(kpath)
         if not kfile.exists():
             raise FileNotFoundError(f"Kernel file not found: {kfile}")
+
         k = parse_component_xml(kfile)
         kernel_library[k.name] = k
+        kernel_compxml_by_type[k.name] = kfile.resolve()
+
         print_kernel(k)
 
     # 2) Parse connectivity config
@@ -227,6 +254,28 @@ def main():
     # 3) Make instances & stream edges
     instances, streams = apply_config_to_instances(cfg, kernel_library)
     print_instances(instances, streams)
+    # --- sw_emu: generate tb.cpp (ZMQ HLS sim server) ---
+    if args.emit_sw_emu:
+        from emit.sw_emu.tb_ctx import build_tb_context, infer_sol1_json_from_component_xml
+
+        kernel_sol1_by_type = {}
+        for ktype, comp_xml in kernel_compxml_by_type.items():
+            kernel_sol1_by_type[ktype] = infer_sol1_json_from_component_xml(Path(comp_xml))
+
+        tb_ctx = build_tb_context(instances, streams, kernel_sol1_by_type)
+
+        tb_template = Path(args.tb_template)  # default: ../resources/sw_emu/tb.cpp.j2
+        tb_out = Path(args.tb_out) if args.tb_out else Path(f"../results/{project}/sw_emu/tb.cpp")
+        tb_out.parent.mkdir(parents=True, exist_ok=True)
+
+        render_template(
+            template_dir=tb_template.parent,
+            template_name=tb_template.name,
+            out_path=tb_out,
+            context=tb_ctx,
+        )
+        print(f"Rendered sw_emu tb.cpp to {tb_out}")
+
 
     # 4) Build context for kernel adds (+clocks/resets) and render
     ctx = build_kernel_add_context(instances)
@@ -247,22 +296,29 @@ def main():
 
     used_targets = _collect_used_targets(ctx)
 
+    for s in ctx.get("hbm_sc_sinks", []):
+        used_targets.add(s["dst"])
+
     terms_generic = build_axi_terminators_context(bd, used_targets)  # HBM/VIRT BD ports only
     terms_ddr_noc = build_ddr_noc_terminators(used_targets, num_ddr=4, noc_pin_fmt="/ddr_noc_{index}/S00_AXI")
     terms_mem_noc = build_mem_noc_terminators(used_targets, num_mem=8, noc_pin_fmt="/hbm_vnoc_0{index}/S00_AXI")
+    terms_virt_noc = build_virt_noc_terminators(used_targets, num_virt=4, noc_pin_fmt="/noc_virt_0{index}/S00_AXI")
+    terms_host_noc = build_host_noc_terminator(used_targets)
+
     ctx["axi_terminators"] = (
         terms_generic.get("axi_terminators", [])
         + terms_ddr_noc.get("axi_terminators", [])
         + terms_mem_noc.get("axi_terminators", [])
+        + terms_virt_noc.get("axi_terminators", [])
+        + terms_host_noc.get("axi_terminators", [])
     )
-    ctx.update(
-    build_axilite_address_context(
+    axilite_ctx = build_axilite_address_context(
         instances,
         addr_space="S_AXILITE_INI",
         base_offset=0x0202_0000_0000,
         min_align=0x0001_0000,
     )
-)
+    ctx.update(axilite_ctx)
     #ctx.update(build_axi_terminators_context(bd, used_targets))
     ctx["project_name"]   = project
     ctx["slash_bd_name"]  = f"slash_{project}"
@@ -276,6 +332,25 @@ def main():
         context=ctx,
     )    
     print(f"\nRendered Tcl to {out_path}")
+
+    clock_hz = resolve_system_map_clock(args.clock_hz, instances)
+    system_map_ctx = build_system_map_context(
+        instances,
+        axilite_ctx.get("axilite_addr", []),
+        clock_hz=clock_hz,
+        platform="Emulation" if args.emit_sw_emu else "Hardware",
+        network=getattr(cfg, "network", None),
+    )
+    system_map_template = Path(args.system_map_template)
+    system_map_out = Path(args.system_map_out)
+    system_map_out.parent.mkdir(parents=True, exist_ok=True)
+    render_template(
+        template_dir=system_map_template.parent,
+        template_name=system_map_template.name,
+        out_path=system_map_out,
+        context=system_map_ctx,
+    )
+    print(f"Rendered system map to {system_map_out}")
 
     paths_ctx = compute_paths(Path(args.proj_root).resolve() if args.proj_root else None)
     svc_ctx = {}
