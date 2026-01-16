@@ -2,10 +2,11 @@
 from __future__ import annotations
 from typing import Dict, List, Set
 import re
+from xml import dom
 from core.port import PortType
 from core.bd_ports import BlockDesignPorts, BdPort
 
-_RX_SKIP_TOP = re.compile(r"^(M\d{2}_INI|HBM_VNOC_INI_\d{2})$", re.IGNORECASE)
+_RX_SKIP_TOP = re.compile(r"^(M\d{2}_INI|HBM_VNOC_INI_\d{2}|HBM_AXI_\d{2})$", re.IGNORECASE)
 
 def _is_bd_port(p: BdPort) -> bool:
     """True if destination is a *BD interface port* (not a NoC/pin path)."""
@@ -13,16 +14,20 @@ def _is_bd_port(p: BdPort) -> bool:
 
 def _want_generic_term(p: BdPort) -> bool:
     """
-    Only terminate HBM & VIRT BD ports here.
-    Skip DDR/MEM top ports (Mxx_INI, HBM_VNOC_INI_xx) – they get NoC-side terminators.
+    Only terminate VIRT BD ports here.
+    Skip HBM (handled by hbm_sc_terminators), and skip DDR/MEM (they use NoC-side terminators).
     """
     if p.ptype != PortType.AXI4FULL:
         return False
     dom = (p.domain or "").upper()
-    if dom not in {"HBM", "VIRT"}:
-        return False
+
+    if dom in ("VIRT", "HOST"):
+        return False  # VIRT/HOST use NoC-side terminators no
+
+    # Must be a true BD port (not a NoC path)
     if not _is_bd_port(p):
         return False
+
     rtl = (p.rtl_name or p.name)
     if _RX_SKIP_TOP.match(rtl):
         return False
@@ -51,7 +56,6 @@ def build_axi_terminators_context(
             terms.append({
                 "name": f"{base_name}_{seq}",
                 "dst": dst,
-                "dst_kind": "port",  # generic covers only BD ports
             })
             seq += 1
 
@@ -74,7 +78,6 @@ def build_ddr_noc_terminators(
         axi_terms.append({
             "name": f"{base_name}_{seq}",
             "dst": dst,
-            "dst_kind": "pin",
         })
         seq += 1
     return {"axi_terminators": axi_terms}
@@ -96,7 +99,50 @@ def build_mem_noc_terminators(
         axi_terms.append({
             "name": f"{base_name}_{seq}",
             "dst": dst,
-            "dst_kind": "pin",
         })
         seq += 1
     return {"axi_terminators": axi_terms}
+
+
+def build_virt_noc_terminators(
+    used_targets: set[str],
+    *,
+    num_virt: int = 4,
+    noc_pin_fmt: str = "/noc_virt_0{index}/S00_AXI",
+    base_name: str = "axi_register_slice_virtterm",
+) -> dict:
+    """Terminate unused VIRT NoC pins (/noc_virt_0X/S00_AXI)."""
+    axi_terms: List[dict] = []
+    seq = 0
+    for i in range(num_virt):
+        dst = noc_pin_fmt.format(index=i)
+        if dst in used_targets:
+            continue
+        axi_terms.append({
+            "name": f"{base_name}_{seq}",
+            "dst":  dst,  # template uses t.dst
+            "clk": "clk_wizard_0/clk_out1",
+            "rst": "proc_sys_reset_0/peripheral_aresetn",
+        })
+        seq += 1
+    return {"axi_terminators": axi_terms}
+
+def build_host_noc_terminator(
+    used_targets: set[str],
+    *,
+    noc_pin: str = "/qdma_slave_bridge_noc/S00_AXI",
+    base_name: str = "axi_register_slice_hostterm",
+) -> dict:
+    """
+    Terminate the HOST (QDMA slave bridge) NoC sink if unused.
+    """
+    if noc_pin in used_targets:
+        return {"axi_terminators": []}
+    return {
+        "axi_terminators": [{
+            "name": f"{base_name}_0",
+            "dst":  noc_pin,  # template expects t.dst
+            "clk": "clk_wizard_0/clk_out1",
+            "rst": "proc_sys_reset_0/peripheral_aresetn",
+        }]
+    }
