@@ -86,15 +86,14 @@ def build_service_axilite_ctx(net) -> Dict[str, Any]:
         "sl_have_xbar": num_mi > 0,
 
         # properties
-        "sl_num_clks": 2,
+        "sl_num_clks": 1,
         "sl_num_si": 1,
         "sl_num_mi": num_mi,
 
         # wiring
-        "sl_si_src_if": "axi_noc_0/M00_AXI",   # top-level service_layer AXI-Lite interface
-        "sl_clk0": "aclk0",            # service_layer clock pins
-        "sl_clk1": "aclk1",
-        "sl_rstn": "ap_rst_n",
+        "sl_si_src_if": "clk_sc/M01_AXI",   # top-level service_layer AXI-Lite interface
+        "sl_clk0": "clk_wizard_0/clk_out1",            # service_layer clock pins
+        "sl_rstn": "proc_sys_reset_0/peripheral_aresetn",
 
         # MI endpoints and qsfp blocks for clk/rst tie-off
         "sl_mi_targets": mi_targets,       # e.g. ["qsfp_0_n_1/s_axi", "qsfp_2_n_3/s_axi"]
