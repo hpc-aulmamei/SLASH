@@ -1301,21 +1301,43 @@ proc create_qsfp_hierarchy { dcmac_index dual_dcmac} {
   create_hier_cell_qsfp [current_bd_instance .] ${qsfp_hier_name} ${dcmac_index} ${dual_dcmac}
   save_bd_design
 
-  set qsfp_gt0_4x [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:gt_rtl:1.0 "qsfp${new_index}_4x" ]
-
-  set qsfp_gt_clk_name [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 "qsfp${new_index}_322mhz" ]
-  set_property -dict [ list \
-    CONFIG.FREQ_HZ {322265625} \
-  ] $qsfp_gt_clk_name
-  save_bd_design
-
-  connect_bd_intf_net [get_bd_intf_ports ${qsfp_gt0_4x}] [get_bd_intf_pins ${qsfp_hier_name}/qsfp_gt0]
-  if { ${dual_dcmac} == "1" } {
-    set qsfp_gt1_4x [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:gt_rtl:1.0 "qsfp[expr {$new_index + 1}]_4x" ]
-    connect_bd_intf_net [get_bd_intf_ports ${qsfp_gt1_4x}] [get_bd_intf_pins ${qsfp_hier_name}/qsfp_gt1]
+proc get_or_create_bd_intf_port {name mode vlnv} {
+  set p [get_bd_intf_ports -quiet $name]
+  if {[llength $p] == 0} {
+    return [create_bd_intf_port -mode $mode -vlnv $vlnv $name]
   }
-  connect_bd_intf_net [get_bd_intf_ports ${qsfp_gt_clk_name}] [get_bd_intf_pins ${qsfp_hier_name}/qsfp_clk_322mhz]
-  save_bd_design
+  return [lindex $p 0]
+}
+
+# -----------------------------
+# qsfp${new_index}_4x  (GT)
+# -----------------------------
+set qsfp_gt0_name "qsfp${new_index}_4x"
+set qsfp_gt0_4x   [get_or_create_bd_intf_port $qsfp_gt0_name Master "xilinx.com:interface:gt_rtl:1.0"]
+
+# -----------------------------
+# qsfp${new_index}_322mhz (diff clock)
+# -----------------------------
+set qsfp_gt_clk_port_name "qsfp${new_index}_322mhz"
+set qsfp_gt_clk_name      [get_or_create_bd_intf_port $qsfp_gt_clk_port_name Slave "xilinx.com:interface:diff_clock_rtl:1.0"]
+
+# Apply the clock property
+set_property -dict [list CONFIG.FREQ_HZ {322265625}] $qsfp_gt_clk_name
+
+save_bd_design
+
+# Connect using the *object handles* you already have
+connect_bd_intf_net $qsfp_gt0_4x     [get_bd_intf_pins ${qsfp_hier_name}/qsfp_gt0]
+
+if { $dual_dcmac == "1" } {
+  set qsfp_gt1_name "qsfp[expr {$new_index + 1}]_4x"
+  set qsfp_gt1_4x   [get_or_create_bd_intf_port $qsfp_gt1_name Master "xilinx.com:interface:gt_rtl:1.0"]
+  connect_bd_intf_net $qsfp_gt1_4x   [get_bd_intf_pins ${qsfp_hier_name}/qsfp_gt1]
+}
+
+connect_bd_intf_net $qsfp_gt_clk_name [get_bd_intf_pins ${qsfp_hier_name}/qsfp_clk_322mhz]
+save_bd_design
+
   
   foreach pcie_noc {CPM_PCIE_NOC_0 CPM_PCIE_NOC_1} {
     assign_bd_address -offset [expr {0x020302000000 + ${offset_increment}}] -range 256K -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/DCMAC_subsys/dcmac_${dcmac_index}_core/s_axi/Reg] -force
