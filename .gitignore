@@ -56,3 +56,6 @@ Thumbs.db
 
 .clang-format
 .cache
+
+__pycache__/
+*.pyc
