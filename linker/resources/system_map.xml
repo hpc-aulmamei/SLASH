@@ -1,0 +1,29 @@
+<SystemMap>
+  <Platform>{{ platform }}</Platform>
+  <ClockFrequency>{{ clock_hz }}</ClockFrequency>
+  <ServiceLayer>
+    <Ethernet enabled="{{ "true" if service_layer.eth_enabled else "false" }}">
+{% for idx in service_layer.eth_indices %}
+      <eth index="{{ idx }}" />
+{% endfor %}
+    </Ethernet>
+    <VIRT>
+{% for v in service_layer.virt %}
+      <interface index="{{ v.index }}" connection="{{ v.connection }}" />
+{% endfor %}
+    </VIRT>
+  </ServiceLayer>
+{% for k in kernels %}
+  <Kernel>
+    <Name>{{ k.name }}</Name>
+    <BaseAddress>{{ k.base_addr }}</BaseAddress>
+    <Range>{{ k.range }}</Range>
+{% for r in k.registers %}
+    <register offset="{{ r.offset }}" name="{{ r.name }}" access="{{ r.access }}" description="{{ r.description }}" range="{{ r.range }}" />
+{% endfor %}
+{% for c in k.connections %}
+    <connection port="{{ c.port }}" target="{{ c.target }}" />
+{% endfor %}
+  </Kernel>
+{% endfor %}
+</SystemMap>
