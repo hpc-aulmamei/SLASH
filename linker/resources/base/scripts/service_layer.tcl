@@ -279,7 +279,6 @@ set DUAL_QSFP_DCMAC1 0
 
 
 proc create_root_design { parentCell } {
-
   variable script_folder
   variable design_name
 
@@ -487,20 +486,6 @@ proc create_root_design { parentCell } {
    CONFIG.INI_STRATEGY {load} \
    ] $S_AXILITE_INI
 
-  # set qsfp0_4x [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:gt_rtl:1.0 qsfp0_4x ]
-
-  # set qsfp0_322mhz [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 qsfp0_322mhz ]
-  # set_property -dict [ list \
-  #  CONFIG.FREQ_HZ {322265625} \
-  #  ] $qsfp0_322mhz
-
-  # set qsfp2_4x [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:gt_rtl:1.0 qsfp2_4x ]
-
-  # set qsfp2_322mhz [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 qsfp2_322mhz ]
-  # set_property -dict [ list \
-  #  CONFIG.FREQ_HZ {322265625} \
-  #  ] $qsfp2_322mhz
-
   set S_VIRT_00 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:inimm_rtl:1.0 S_VIRT_00 ]
   set_property -dict [ list \
    CONFIG.COMPUTED_STRATEGY {load} \
@@ -537,15 +522,28 @@ proc create_root_design { parentCell } {
    CONFIG.INI_STRATEGY {driver} \
    ] $M_QDMA_SLV_BRIDGE
 
+  set qsfp0_4x [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:gt_rtl:1.0 qsfp0_4x ]
+
+  set qsfp0_322mhz [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 qsfp0_322mhz ]
+  set_property -dict [ list \
+   CONFIG.FREQ_HZ {322265625} \
+   ] $qsfp0_322mhz
+
+  set qsfp2_4x [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:gt_rtl:1.0 qsfp2_4x ]
+
+  set qsfp2_322mhz [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:diff_clock_rtl:1.0 qsfp2_322mhz ]
+  set_property -dict [ list \
+   CONFIG.FREQ_HZ {322265625} \
+   ] $qsfp2_322mhz
+
 
   # Create ports
-  set static_region_clk [ create_bd_port -dir I -type clk -freq_hz 100000000 static_region_clk ]
+  set service_clk [ create_bd_port -dir I -type clk -freq_hz 300000000 service_clk ]
   set_property -dict [ list \
-   CONFIG.ASSOCIATED_RESET {ap_rst_n} \
+   CONFIG.ASSOCIATED_RESET {arstn} \
    CONFIG.CLK_DOMAIN {bd_4885_pspmc_0_0_pl0_ref_clk} \
- ] $static_region_clk
-  set ap_rst_n [ create_bd_port -dir I -type rst ap_rst_n ]
-
+ ] $service_clk
+  set arstn [ create_bd_port -dir I -type rst arstn ]
 
   # Create instance: dummy_noc_0, and set properties
   set dummy_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_noc:1.0 dummy_noc_0 ]
@@ -1188,7 +1186,7 @@ proc create_root_design { parentCell } {
   #### DCMAC entry points ####
   add_dcmac_inst
 
-  # Create instance: smartconnect_1, and set properties
+   # Create instance: smartconnect_1, and set properties
   set smartconnect_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_1 ]
   set_property -dict [list \
     CONFIG.NUM_CLKS {1} \
@@ -1218,26 +1216,6 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ASSOCIATED_BUSIF {M00_AXI} \
  ] [get_bd_pins /axi_noc_0/aclk0]
-
-  # Create instance: clk_wizard_0, and set properties
-  set clk_wizard_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wizard:1.0 clk_wizard_0 ]
-  set_property -dict [list \
-    CONFIG.CLKOUT_DRIVES {BUFG,BUFG,BUFG,BUFG,BUFG,BUFG,BUFG} \
-    CONFIG.CLKOUT_DYN_PS {None,None,None,None,None,None,None} \
-    CONFIG.CLKOUT_GROUPING {Auto,Auto,Auto,Auto,Auto,Auto,Auto} \
-    CONFIG.CLKOUT_MATCHED_ROUTING {false,false,false,false,false,false,false} \
-    CONFIG.CLKOUT_PORT {clk_out1,clk_out2,clk_out3,clk_out4,clk_out5,clk_out6,clk_out7} \
-    CONFIG.CLKOUT_REQUESTED_DUTY_CYCLE {50.000,50.000,50.000,50.000,50.000,50.000,50.000} \
-    CONFIG.CLKOUT_REQUESTED_OUT_FREQUENCY {300,300,100.000,100.000,100.000,100.000,100.000} \
-    CONFIG.CLKOUT_REQUESTED_PHASE {0.000,0.000,0.000,0.000,0.000,0.000,0.000} \
-    CONFIG.CLKOUT_USED {true,false,false,false,false,false,false} \
-    CONFIG.PRIM_IN_FREQ {100} \
-    CONFIG.USE_DYN_RECONFIG {true} \
-  ] $clk_wizard_0
-
-
-  # Create instance: proc_sys_reset_0, and set properties
-  set proc_sys_reset_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 proc_sys_reset_0 ]
 
   # Create instance: noc_virt_0, and set properties
   set noc_virt_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_0 ]
@@ -1358,15 +1336,6 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
  ] [get_bd_pins /noc_virt_4/aclk0]
-
-
-  # Create instance: smartconnect_2, and set properties
-  set smartconnect_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_2 ]
-  set_property -dict [list \
-    CONFIG.NUM_CLKS {2} \
-    CONFIG.NUM_MI {2} \
-    CONFIG.NUM_SI {1} \
-  ] $smartconnect_2
 
   # Create instance: axi_noc_1, and set properties
   set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_1 ]
@@ -1538,7 +1507,6 @@ proc create_root_design { parentCell } {
   # Create instance: axi_register_slice_9, and set properties
   set axi_register_slice_9 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_9 ]
 
-
   # Create interface connections
   connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins dummy_noc_m_0/M00_INIS] [get_bd_intf_ports M_DCMAC_INIS0]
   connect_bd_intf_net -intf_net Conn2 [get_bd_intf_pins dummy_noc_m_1/M00_INIS] [get_bd_intf_ports M_DCMAC_INIS1]
@@ -1568,7 +1536,7 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net axi4_full_passthrough_1_m_axi1 [get_bd_intf_pins axi4_full_passthrough_2/m_axi] [get_bd_intf_pins axi_register_slice_5/S_AXI]
   connect_bd_intf_net -intf_net axi4_full_passthrough_1_m_axi2 [get_bd_intf_pins axi4_full_passthrough_3/m_axi] [get_bd_intf_pins axi_register_slice_7/S_AXI]
   connect_bd_intf_net -intf_net axi4_full_passthrough_1_m_axi3 [get_bd_intf_pins axi4_full_passthrough_4/m_axi] [get_bd_intf_pins axi_register_slice_9/S_AXI]
-  connect_bd_intf_net -intf_net axi_noc_0_M00_AXI [get_bd_intf_pins axi_noc_0/M00_AXI] [get_bd_intf_pins smartconnect_2/S00_AXI]
+  connect_bd_intf_net -intf_net axi_noc_0_M00_AXI [get_bd_intf_pins axi_noc_0/M00_AXI] [get_bd_intf_pins smartconnect_0/S00_AXI]
   connect_bd_intf_net -intf_net axi_noc_1_M00_AXI [get_bd_intf_pins axi_register_slice_0/S_AXI] [get_bd_intf_pins axi_noc_1/M00_AXI]
   connect_bd_intf_net -intf_net axi_noc_1_M00_INI [get_bd_intf_ports M_VIRT_0] [get_bd_intf_pins noc_virt_0/M00_INI]
   connect_bd_intf_net -intf_net axi_noc_2_M00_AXI [get_bd_intf_pins axi_register_slice_2/S_AXI] [get_bd_intf_pins axi_noc_2/M00_AXI]
@@ -1629,8 +1597,6 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net smartconnect_1_M00_AXI [get_bd_intf_pins smartconnect_1/M00_AXI] [get_bd_intf_pins eth_7/s_axi_control]
   connect_bd_intf_net -intf_net smartconnect_1_M01_AXI [get_bd_intf_pins smartconnect_1/M01_AXI] [get_bd_intf_pins qsfp_0_n_1/s_axi]
   connect_bd_intf_net -intf_net smartconnect_1_M02_AXI [get_bd_intf_pins smartconnect_1/M02_AXI] [get_bd_intf_pins qsfp_2_n_3/s_axi]
-  connect_bd_intf_net -intf_net smartconnect_2_M00_AXI [get_bd_intf_pins clk_wizard_0/s_axi_lite] [get_bd_intf_pins smartconnect_2/M00_AXI]
-  connect_bd_intf_net -intf_net smartconnect_2_M01_AXI [get_bd_intf_pins smartconnect_2/M01_AXI] [get_bd_intf_pins smartconnect_0/S00_AXI]
   connect_bd_intf_net -intf_net traffic_producer_1_axis_out [get_bd_intf_pins traffic_producer_1/axis_out] [get_bd_intf_pins dummy_noc_m_1/S00_AXIS]
   connect_bd_intf_net -intf_net traffic_producer_2_axis_out [get_bd_intf_pins traffic_producer_2/axis_out] [get_bd_intf_pins dummy_noc_m_2/S00_AXIS]
   connect_bd_intf_net -intf_net traffic_producer_3_axis_out [get_bd_intf_pins traffic_producer_3/axis_out] [get_bd_intf_pins dummy_noc_m_3/S00_AXIS]
@@ -1639,11 +1605,7 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net traffic_producer_7_axis_out [get_bd_intf_pins traffic_producer_7/axis_out] [get_bd_intf_pins dummy_noc_m_7/S00_AXIS]
 
   # Create port connections
-  connect_bd_net -net ap_rst_n_2  [get_bd_ports ap_rst_n] \
-  [get_bd_pins proc_sys_reset_0/ext_reset_in] \
-  [get_bd_pins clk_wizard_0/s_axi_aresetn]
-  connect_bd_net -net clk_wizard_0_clk_out1  [get_bd_pins clk_wizard_0/clk_out1] \
-  [get_bd_pins proc_sys_reset_0/slowest_sync_clk] \
+  connect_bd_net -net clk_wizard_0_clk_out1  [get_bd_ports service_clk] \
   [get_bd_pins dummy_noc_0/aclk0] \
   [get_bd_pins dummy_noc_1/aclk0] \
   [get_bd_pins dummy_noc_2/aclk0] \
@@ -1687,7 +1649,6 @@ proc create_root_design { parentCell } {
   [get_bd_pins qsfp_2_n_3/ap_clk] \
   [get_bd_pins smartconnect_1/aclk] \
   [get_bd_pins axi_noc_0/aclk0] \
-  [get_bd_pins smartconnect_2/aclk] \
   [get_bd_pins noc_virt_0/aclk0] \
   [get_bd_pins axi_noc_1/aclk0] \
   [get_bd_pins axi4_full_passthrough_0/aclk] \
@@ -1713,13 +1674,7 @@ proc create_root_design { parentCell } {
   [get_bd_pins noc_virt_3/aclk0] \
   [get_bd_pins noc_virt_2/aclk0] \
   [get_bd_pins noc_virt_4/aclk0]
-  connect_bd_net -net clk_wizard_0_locked  [get_bd_pins clk_wizard_0/locked] \
-  [get_bd_pins proc_sys_reset_0/dcm_locked]
-  connect_bd_net -net proc_sys_reset_0_interconnect_aresetn  [get_bd_pins proc_sys_reset_0/interconnect_aresetn] \
-  [get_bd_pins smartconnect_1/aresetn] \
-  [get_bd_pins smartconnect_0/aresetn] \
-  [get_bd_pins smartconnect_2/aresetn]
-  connect_bd_net -net proc_sys_reset_0_peripheral_aresetn  [get_bd_pins proc_sys_reset_0/peripheral_aresetn] \
+  connect_bd_net -net proc_sys_reset_0_peripheral_aresetn  [get_bd_ports arstn] \
   [get_bd_pins traffic_producer_1/ap_rst_n] \
   [get_bd_pins traffic_producer_2/ap_rst_n] \
   [get_bd_pins traffic_producer_3/ap_rst_n] \
@@ -1750,11 +1705,9 @@ proc create_root_design { parentCell } {
   [get_bd_pins axi_register_slice_6/aresetn] \
   [get_bd_pins axi_register_slice_9/aresetn] \
   [get_bd_pins axi4_full_passthrough_4/aresetn] \
-  [get_bd_pins axi_register_slice_8/aresetn]
-  connect_bd_net -net static_region_clk_1  [get_bd_ports static_region_clk] \
-  [get_bd_pins clk_wizard_0/clk_in1] \
-  [get_bd_pins smartconnect_2/aclk1] \
-  [get_bd_pins clk_wizard_0/s_axi_aclk]
+  [get_bd_pins axi_register_slice_8/aresetn] \
+  [get_bd_pins smartconnect_1/aresetn] \
+  [get_bd_pins smartconnect_0/aresetn]
   connect_bd_net -net xlconstant_0_dout  [get_bd_pins xlconstant_0/dout] \
   [get_bd_pins dummy_noc_1/M00_AXIS_tready] \
   [get_bd_pins dummy_noc_2/M00_AXIS_tready] \
@@ -1785,7 +1738,6 @@ proc create_root_design { parentCell } {
   # assign_bd_address -offset 0x020303040200 -range 0x00000100 -with_name SEG_axi_gpio_monitor_Reg_1 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/control_intf/axi_gpio_monitor/S_AXI/Reg] -force
   # assign_bd_address -offset 0x020302040600 -range 0x00000100 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_0_n_1/control_intf/axi_gpio_reset_txrx/S_AXI/Reg] -force
   # assign_bd_address -offset 0x020303040600 -range 0x00000100 -with_name SEG_axi_gpio_reset_txrx_Reg_1 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/control_intf/axi_gpio_reset_txrx/S_AXI/Reg] -force
-  assign_bd_address -offset 0x020307FF0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs clk_wizard_0/s_axi_lite/Reg] -force
   assign_bd_address -offset 0x020302000000 -range 0x00040000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_0_n_1/DCMAC_subsys/dcmac_0_core/s_axi/Reg] -force
   assign_bd_address -offset 0x020303000000 -range 0x00040000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/DCMAC_subsys/dcmac_1_core/s_axi/Reg] -force
   assign_bd_address -offset 0x020300000000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs eth_0/s_axi_control/Reg] -force
@@ -1820,7 +1772,6 @@ proc create_root_design { parentCell } {
   set_property USAGE memory [get_bd_addr_segs SL2NOC_5/Reg]
   set_property USAGE memory [get_bd_addr_segs SL2NOC_6/Reg]
   set_property USAGE memory [get_bd_addr_segs SL2NOC_7/Reg]
-
 
 
   # Restore current instance

@@ -70,9 +70,9 @@ def build_hbm_smartconnect_context(
 
         # Root SC config: 2 clocks (aclk, aclk1), 1 SI, 1 MI
         root_name = f"{base_name}_{h_idx:02d}"
-        clk0 = "clk_wizard_0/clk_out1"
+        clk0 = "user_clk"
         clk1 = "[get_bd_ports static_region_clk]"
-        rst  = "proc_sys_reset_0/peripheral_aresetn"
+        rst  = "arstn"
 
         hbm_root_create.append({
             "name": root_name,

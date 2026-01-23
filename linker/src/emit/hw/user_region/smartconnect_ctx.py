@@ -8,7 +8,7 @@ from core.port import PortType
 def build_axilite_smartconnect_context(
     instances: Dict[str, KernelInstance],
     *,
-    si_bd_port: str = "clk_sc/M01_AXI",
+    si_bd_port: str = "axi_noc_0/M00_AXI",
     max_mi: int = 16,
     chain_slot: int = 15,
     base_name: str = "smartconnect",

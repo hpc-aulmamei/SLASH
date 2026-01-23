@@ -33,7 +33,7 @@ def compute_paths(proj_root: Path | None = None) -> Dict[str, Any]:
     """
     if proj_root is None:
         # main.py is <root>/src/main.py  -> go up two levels
-        proj_root = Path(__file__).resolve().parents[2]
+        proj_root = Path(__file__).resolve().parents[4]
 
     dcmac_dir = proj_root / "resources" / "dcmac"
     dcmac_tcl = dcmac_dir / "tcl" / "dcmac.tcl"
@@ -91,9 +91,9 @@ def build_service_axilite_ctx(net) -> Dict[str, Any]:
         "sl_num_mi": num_mi,
 
         # wiring
-        "sl_si_src_if": "clk_sc/M01_AXI",   # top-level service_layer AXI-Lite interface
-        "sl_clk0": "clk_wizard_0/clk_out1",            # service_layer clock pins
-        "sl_rstn": "proc_sys_reset_0/peripheral_aresetn",
+        "sl_si_src_if": "axi_noc_0/M00_AXI",   # top-level service_layer AXI-Lite interface
+        "sl_clk0": "service_clk",            # service_layer clock pins
+        "sl_rstn": "arstn",
 
         # MI endpoints and qsfp blocks for clk/rst tie-off
         "sl_mi_targets": mi_targets,       # e.g. ["qsfp_0_n_1/s_axi", "qsfp_2_n_3/s_axi"]

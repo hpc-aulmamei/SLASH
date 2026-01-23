@@ -121,8 +121,8 @@ def build_virt_noc_terminators(
         axi_terms.append({
             "name": f"{base_name}_{seq}",
             "dst":  dst,  # template uses t.dst
-            "clk": "clk_wizard_0/clk_out1",
-            "rst": "proc_sys_reset_0/peripheral_aresetn",
+            "clk": "user_clk",
+            "rst": "arstn",
         })
         seq += 1
     return {"axi_terminators": axi_terms}
@@ -142,7 +142,7 @@ def build_host_noc_terminator(
         "axi_terminators": [{
             "name": f"{base_name}_0",
             "dst":  noc_pin,  # template expects t.dst
-            "clk": "clk_wizard_0/clk_out1",
-            "rst": "proc_sys_reset_0/peripheral_aresetn",
+            "clk": "user_clk",
+            "rst": "arstn",
         }]
     }

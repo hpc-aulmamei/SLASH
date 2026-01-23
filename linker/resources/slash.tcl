@@ -715,24 +715,7 @@ update_compile_order -fileset sources_1
    CONFIG.ASSOCIATED_BUSIF {M00_AXI} \
  ] [get_bd_pins /axi_noc_0/aclk0]
   {% endraw %}
-  # Create instance: clk_wizard_0, and set properties
-  set clk_wizard_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wizard:1.0 clk_wizard_0 ]
-  set_property -dict [list \
-    CONFIG.CLKOUT_DRIVES {BUFG,BUFG,BUFG,BUFG,BUFG,BUFG,BUFG} \
-    CONFIG.CLKOUT_DYN_PS {None,None,None,None,None,None,None} \
-    CONFIG.CLKOUT_GROUPING {Auto,Auto,Auto,Auto,Auto,Auto,Auto} \
-    CONFIG.CLKOUT_MATCHED_ROUTING {false,false,false,false,false,false,false} \
-    CONFIG.CLKOUT_PORT {clk_out1,clk_out2,clk_out3,clk_out4,clk_out5,clk_out6,clk_out7} \
-    CONFIG.CLKOUT_REQUESTED_DUTY_CYCLE {50.000,50.000,50.000,50.000,50.000,50.000,50.000} \
-    CONFIG.CLKOUT_REQUESTED_OUT_FREQUENCY {400,100.000,100.000,100.000,100.000,100.000,100.000} \
-    CONFIG.CLKOUT_REQUESTED_PHASE {0.000,0.000,0.000,0.000,0.000,0.000,0.000} \
-    CONFIG.CLKOUT_USED {true,false,false,false,false,false,false} \
-    CONFIG.USE_DYN_RECONFIG {true} \
-  ] $clk_wizard_0
 
-
-  # Create instance: proc_sys_reset_0, and set properties
-  set proc_sys_reset_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 proc_sys_reset_0 ]
 
   # Create instance: noc_virt_00, and set properties
   set noc_virt_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_00 ]
@@ -848,13 +831,7 @@ update_compile_order -fileset sources_1
    CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
  ] [get_bd_pins /qdma_slave_bridge_noc/aclk0]
 
-  # Create instance: clk_sc, and set properties
-  set clk_sc [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 clk_sc ]
-  set_property -dict [list \
-    CONFIG.NUM_CLKS {2} \
-    CONFIG.NUM_MI {2} \
-    CONFIG.NUM_SI {1} \
-  ] $clk_sc
+
 
 
   # Create interface connections
@@ -867,7 +844,6 @@ update_compile_order -fileset sources_1
   connect_bd_intf_net -intf_net S00_INIS_6_1 [get_bd_intf_ports S_DCMAC_INIS6] [get_bd_intf_pins dcmac_axis_noc_s_6/S00_INIS]
   connect_bd_intf_net -intf_net S00_INIS_7_1 [get_bd_intf_ports S_DCMAC_INIS7] [get_bd_intf_pins dcmac_axis_noc_s_7/S00_INIS]
   connect_bd_intf_net -intf_net S_AXILITE_INI_1 [get_bd_intf_ports S_AXILITE_INI] [get_bd_intf_pins axi_noc_0/S00_INI]
-  connect_bd_intf_net -intf_net axi_noc_0_M00_AXI [get_bd_intf_pins axi_noc_0/M00_AXI] [get_bd_intf_pins clk_sc/S00_AXI]
   connect_bd_intf_net -intf_net axi_noc_1_M00_INI [get_bd_intf_ports QDMA_SLAVE_BRIDGE_0] [get_bd_intf_pins qdma_slave_bridge_noc/M00_INI]
   connect_bd_intf_net -intf_net dcmac_axis_noc_0_M00_INIS [get_bd_intf_ports M_DCMAC_INIS0] [get_bd_intf_pins dcmac_axis_noc_0/M00_INIS]
   connect_bd_intf_net -intf_net dcmac_axis_noc_1_M00_INIS [get_bd_intf_ports M_DCMAC_INIS1] [get_bd_intf_pins dcmac_axis_noc_1/M00_INIS]
@@ -893,13 +869,9 @@ update_compile_order -fileset sources_1
   connect_bd_intf_net -intf_net noc_virt_01_M00_INI [get_bd_intf_ports SL_VIRT_01] [get_bd_intf_pins noc_virt_01/M00_INI]
   connect_bd_intf_net -intf_net noc_virt_02_M00_INI [get_bd_intf_ports SL_VIRT_02] [get_bd_intf_pins noc_virt_02/M00_INI]
   connect_bd_intf_net -intf_net noc_virt_03_M00_INI [get_bd_intf_ports SL_VIRT_03] [get_bd_intf_pins noc_virt_03/M00_INI]
-  connect_bd_intf_net -intf_net smartconnect_6_M00_AXI [get_bd_intf_pins clk_wizard_0/s_axi_lite] [get_bd_intf_pins clk_sc/M00_AXI]
 
   # Create port connections
-  connect_bd_net -net arstn_1  [get_bd_ports arstn] \
-  [get_bd_pins proc_sys_reset_0/ext_reset_in] \
-  [get_bd_pins clk_wizard_0/s_axi_aresetn]
-  connect_bd_net -net clk_wizard_0_clk_out1  [get_bd_pins clk_wizard_0/clk_out1] \
+  connect_bd_net -net user_clk_net  [get_bd_pins user_clk] \
   [get_bd_pins ddr_noc_0/aclk0] \
   [get_bd_pins ddr_noc_3/aclk0] \
   [get_bd_pins ddr_noc_2/aclk0] \
@@ -928,22 +900,14 @@ update_compile_order -fileset sources_1
   [get_bd_pins dcmac_axis_noc_s_5/aclk0] \
   [get_bd_pins dcmac_axis_noc_s_6/aclk0] \
   [get_bd_pins dcmac_axis_noc_s_7/aclk0] \
-  [get_bd_pins proc_sys_reset_0/slowest_sync_clk] \
   [get_bd_pins noc_virt_00/aclk0] \
   [get_bd_pins noc_virt_01/aclk0] \
   [get_bd_pins noc_virt_02/aclk0] \
   [get_bd_pins noc_virt_03/aclk0] \
   [get_bd_pins qdma_slave_bridge_noc/aclk0] \
-  [get_bd_pins axi_noc_0/aclk0] \
-  [get_bd_pins clk_sc/aclk]
-  connect_bd_net -net clk_wizard_0_locked  [get_bd_pins clk_wizard_0/locked] \
-  [get_bd_pins proc_sys_reset_0/dcm_locked]
-  connect_bd_net -net proc_sys_reset_0_interconnect_aresetn  [get_bd_pins proc_sys_reset_0/interconnect_aresetn] \
-  [get_bd_pins clk_sc/aresetn]
-  connect_bd_net -net refclk_1  [get_bd_ports refclk] \
-  [get_bd_pins clk_wizard_0/clk_in1] \
-  [get_bd_pins clk_sc/aclk1] \
-  [get_bd_pins clk_wizard_0/s_axi_aclk]
+  [get_bd_pins axi_noc_0/aclk0]
+
+
   connect_bd_net -net xlconstant_0_dout  [get_bd_pins xlconstant_0/dout] \
   [get_bd_pins dcmac_axis_noc_s_0/M00_AXIS_tready] \
   [get_bd_pins dcmac_axis_noc_s_1/M00_AXIS_tready] \
@@ -953,9 +917,6 @@ update_compile_order -fileset sources_1
   [get_bd_pins dcmac_axis_noc_s_5/M00_AXIS_tready] \
   [get_bd_pins dcmac_axis_noc_s_6/M00_AXIS_tready] \
   [get_bd_pins dcmac_axis_noc_s_7/M00_AXIS_tready]
-
-  # Create address segments
-  assign_bd_address -offset 0x020207FF0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs clk_wizard_0/s_axi_lite/Reg] -force
 
 
 # === Instantiate kernel IPs ===
@@ -971,12 +932,12 @@ set_property {{ p.param }} {{ "{" ~ p.value ~ "}" }} [get_bd_cells {{ p.inst }}]
 
 # === Connect kernel clocks to aclk1 ===
 {% for c in clocks %}
-connect_bd_net [get_bd_pins {{ c.src_pin }}] [get_bd_pins clk_wizard_0/clk_out1]
+connect_bd_net [get_bd_pins {{ c.src_pin }}] [get_bd_pins user_clk]
 {% endfor %}
 
 # === Connect kernel resets to ap_rst_n ===
 {% for r in resets %}
-connect_bd_net [get_bd_pins {{ r.src_pin }}] [get_bd_pins proc_sys_reset_0/peripheral_aresetn]
+connect_bd_net [get_bd_pins {{ r.src_pin }}] [get_bd_pins arstn]
 {% endfor %}
 
 # === SmartConnects for AXI-Lite control ===
@@ -990,8 +951,8 @@ set_property -dict [list \
 ] ${{ sc.name }}
 
 # Clocks/Reset
-connect_bd_net [get_bd_pins {{ sc.name }}/aclk]    [get_bd_pins clk_wizard_0/clk_out1]
-connect_bd_net [get_bd_pins {{ sc.name }}/aresetn] [get_bd_pins proc_sys_reset_0/peripheral_aresetn]
+connect_bd_net [get_bd_pins {{ sc.name }}/aclk]    [get_bd_pins user_clk]
+connect_bd_net [get_bd_pins {{ sc.name }}/aresetn] [get_bd_pins arstn]
 
 # SI (slave) connection
 {% if sc.si_from.type == 'bd_port' %}
@@ -1075,8 +1036,8 @@ set_property -dict [list \
 ] ${{ n.name }}
 
 # Clocks/Reset
-connect_bd_net [get_bd_pins {{ n.name }}/aclk]    [get_bd_pins clk_wizard_0/clk_out1]
-connect_bd_net [get_bd_pins {{ n.name }}/aresetn] [get_bd_pins proc_sys_reset_0/peripheral_aresetn]
+connect_bd_net [get_bd_pins {{ n.name }}/aclk]    [get_bd_pins user_clk]
+connect_bd_net [get_bd_pins {{ n.name }}/aresetn] [get_bd_pins arstn]
 
 # SIs into this SmartConnect
 {% for si in n.si %}
@@ -1108,8 +1069,8 @@ set_property -dict [list \
 ] ${{ n.name }}
 
 # Clocks/Reset
-connect_bd_net [get_bd_pins {{ n.name }}/aclk]    [get_bd_pins clk_wizard_0/clk_out1]
-connect_bd_net [get_bd_pins {{ n.name }}/aresetn] [get_bd_pins proc_sys_reset_0/peripheral_aresetn]
+connect_bd_net [get_bd_pins {{ n.name }}/aclk]    [get_bd_pins user_clk]
+connect_bd_net [get_bd_pins {{ n.name }}/aresetn] [get_bd_pins arstn]
 
 # SIs into this SmartConnect
 {% for si in n.si %}
@@ -1139,8 +1100,8 @@ set_property -dict [list \
 ] ${{ n.name }}
 
 # Clock / Reset
-connect_bd_net [get_bd_pins {{ n.name }}/aclk]    [get_bd_pins clk_wizard_0/clk_out1]
-connect_bd_net [get_bd_pins {{ n.name }}/aresetn] [get_bd_pins proc_sys_reset_0/peripheral_aresetn]
+connect_bd_net [get_bd_pins {{ n.name }}/aclk]    [get_bd_pins user_clk]
+connect_bd_net [get_bd_pins {{ n.name }}/aresetn] [get_bd_pins arstn]
 
 # SI fan-in
 {% for si in n.si %}
@@ -1178,9 +1139,9 @@ connect_bd_intf_net [get_bd_intf_pins {{ e.src_pin }}] [get_bd_intf_pins {{ e.ds
 # {{ t.name }} -> {{ t.dst }}
 set {{ t.name }} [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 {{ t.name }} ]
 
-# Clock / Reset (defaults to clk_wizard_0/clk_out1 and proc_sys_reset_0/peripheral_aresetn if not provided)
-connect_bd_net [get_bd_pins {{ t.name }}/aclk]    [get_bd_pins {{ t.clk|default('clk_wizard_0/clk_out1') }}]
-connect_bd_net [get_bd_pins {{ t.name }}/aresetn] [get_bd_pins {{ t.rst|default('proc_sys_reset_0/peripheral_aresetn') }}]
+# Clock / Reset (defaults to user_clk and arstn if not provided)
+connect_bd_net [get_bd_pins {{ t.name }}/aclk]    [get_bd_pins {{ t.clk|default('user_clk') }}]
+connect_bd_net [get_bd_pins {{ t.name }}/aresetn] [get_bd_pins {{ t.rst|default('arstn') }}]
 
 # Leave S_AXI unconnected on purpose
 
@@ -1204,8 +1165,8 @@ set_property -dict [list \
   CONFIG.NUM_MI   {1} \
   CONFIG.NUM_SI   {{ "{" ~ n.num_si ~ "}" }} \
 ] ${{ n.name }}
-connect_bd_net [get_bd_pins {{ n.name }}/aclk]    [get_bd_pins clk_wizard_0/clk_out1]
-connect_bd_net [get_bd_pins {{ n.name }}/aresetn] [get_bd_pins proc_sys_reset_0/peripheral_aresetn]
+connect_bd_net [get_bd_pins {{ n.name }}/aclk]    [get_bd_pins user_clk]
+connect_bd_net [get_bd_pins {{ n.name }}/aresetn] [get_bd_pins arstn]
 {% for si in n.si %}
 connect_bd_intf_net \
   [get_bd_intf_pins {{ si.src }}] \
