@@ -135,8 +135,6 @@ xilinx.com:ip:axi_noc:1.1\
 xilinx.com:ip:axis_noc:1.0\
 xilinx.com:hls:traffic_producer:1.0\
 xilinx.com:ip:xlconstant:1.1\
-xilinx.com:ip:clk_wizard:1.0\
-xilinx.com:ip:proc_sys_reset:5.0\
 "
 
    set list_ips_missing ""
@@ -204,6 +202,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -216,6 +215,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -228,6 +228,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -240,6 +241,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -252,6 +254,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -264,6 +267,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -276,6 +280,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -288,6 +293,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -300,6 +306,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -312,6 +319,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -324,6 +332,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -336,6 +345,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -348,6 +358,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -360,6 +371,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -372,6 +384,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -384,6 +397,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -396,6 +410,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -408,6 +423,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -420,6 +436,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -432,6 +449,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -444,6 +462,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -456,6 +475,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -468,6 +488,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -480,6 +501,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -492,6 +514,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -504,6 +527,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -516,6 +540,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -528,6 +553,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -540,6 +566,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -552,6 +579,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -564,6 +592,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -576,6 +605,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -588,6 +618,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -600,6 +631,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -612,6 +644,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -624,6 +657,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -636,6 +670,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -648,6 +683,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -660,6 +696,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -672,6 +709,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -684,6 +722,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -696,6 +735,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -708,6 +748,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -720,6 +761,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -732,6 +774,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -744,6 +787,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -756,6 +800,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -768,6 +813,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -780,6 +826,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -792,6 +839,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -804,6 +852,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -816,6 +865,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -828,6 +878,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -840,6 +891,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -852,6 +904,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -864,6 +917,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -876,6 +930,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -888,6 +943,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -900,6 +956,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -912,6 +969,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -924,6 +982,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -936,6 +995,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -948,6 +1008,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -960,6 +1021,7 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
+   CONFIG.FREQ_HZ {400000000} \
    CONFIG.HAS_BURST {0} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
@@ -1136,7 +1198,7 @@ proc create_root_design { parentCell } {
    CONFIG.ASSOCIATED_BUSIF {HBM_AXI_63:HBM_AXI_62:HBM_AXI_61:HBM_AXI_60:HBM_AXI_59:HBM_AXI_58:HBM_AXI_57:HBM_AXI_56:HBM_AXI_55:HBM_AXI_54:HBM_AXI_53:HBM_AXI_52:HBM_AXI_51:HBM_AXI_50:HBM_AXI_49:HBM_AXI_48:HBM_AXI_47:HBM_AXI_46:HBM_AXI_45:HBM_AXI_44:HBM_AXI_43:HBM_AXI_42:HBM_AXI_41:HBM_AXI_40:HBM_AXI_39:HBM_AXI_38:HBM_AXI_37:HBM_AXI_36:HBM_AXI_35:HBM_AXI_34:HBM_AXI_33:HBM_AXI_32:HBM_AXI_31:HBM_AXI_30:HBM_AXI_29:HBM_AXI_28:HBM_AXI_27:HBM_AXI_26:HBM_AXI_25:HBM_AXI_24:HBM_AXI_23:HBM_AXI_22:HBM_AXI_21:HBM_AXI_20:HBM_AXI_19:HBM_AXI_18:HBM_AXI_17:HBM_AXI_16:HBM_AXI_15:HBM_AXI_14:HBM_AXI_13:HBM_AXI_12:HBM_AXI_11:HBM_AXI_10:HBM_AXI_09:HBM_AXI_08:HBM_AXI_07:HBM_AXI_06:HBM_AXI_05:HBM_AXI_04:HBM_AXI_03:HBM_AXI_02:HBM_AXI_01:HBM_AXI_00} \
    CONFIG.CLK_DOMAIN {top_clk_wizard_0_0_clk_out1} \
  ] $static_region_clk
-  set refclk [ create_bd_port -dir I -type clk -freq_hz 100000000 refclk ]
+  set user_clk [ create_bd_port -dir I -type clk -freq_hz 400000000 user_clk ]
 
   # Create instance: ddr_bandwidth_64, and set properties
   set ddr_bandwidth_64 [ create_bd_cell -type ip -vlnv xilinx.com:hls:hbm_bandwidth:1.0 ddr_bandwidth_64 ]
@@ -2326,25 +2388,6 @@ proc create_root_design { parentCell } {
    CONFIG.ASSOCIATED_BUSIF {M00_AXI} \
  ] [get_bd_pins /axi_noc_0/aclk0]
 
-  # Create instance: clk_wizard_0, and set properties
-  set clk_wizard_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wizard:1.0 clk_wizard_0 ]
-  set_property -dict [list \
-    CONFIG.CLKOUT_DRIVES {BUFG,BUFG,BUFG,BUFG,BUFG,BUFG,BUFG} \
-    CONFIG.CLKOUT_DYN_PS {None,None,None,None,None,None,None} \
-    CONFIG.CLKOUT_GROUPING {Auto,Auto,Auto,Auto,Auto,Auto,Auto} \
-    CONFIG.CLKOUT_MATCHED_ROUTING {false,false,false,false,false,false,false} \
-    CONFIG.CLKOUT_PORT {clk_out1,clk_out2,clk_out3,clk_out4,clk_out5,clk_out6,clk_out7} \
-    CONFIG.CLKOUT_REQUESTED_DUTY_CYCLE {50.000,50.000,50.000,50.000,50.000,50.000,50.000} \
-    CONFIG.CLKOUT_REQUESTED_OUT_FREQUENCY {400,100.000,100.000,100.000,100.000,100.000,100.000} \
-    CONFIG.CLKOUT_REQUESTED_PHASE {0.000,0.000,0.000,0.000,0.000,0.000,0.000} \
-    CONFIG.CLKOUT_USED {true,false,false,false,false,false,false} \
-    CONFIG.USE_DYN_RECONFIG {true} \
-  ] $clk_wizard_0
-
-
-  # Create instance: proc_sys_reset_0, and set properties
-  set proc_sys_reset_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 proc_sys_reset_0 ]
-
   # Create instance: hbm_sc_00, and set properties
   set hbm_sc_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 hbm_sc_00 ]
   set_property -dict [list \
@@ -2971,15 +3014,6 @@ proc create_root_design { parentCell } {
    CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
  ] [get_bd_pins /axi_noc_1/aclk0]
 
-  # Create instance: smartconnect_6, and set properties
-  set smartconnect_6 [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 smartconnect_6 ]
-  set_property -dict [list \
-    CONFIG.NUM_CLKS {2} \
-    CONFIG.NUM_MI {2} \
-    CONFIG.NUM_SI {1} \
-  ] $smartconnect_6
-
-
   # Create interface connections
   connect_bd_intf_net -intf_net S00_INIS_0_1 [get_bd_intf_ports S_DCMAC_INIS0] [get_bd_intf_pins dcmac_axis_noc_s_0/S00_INIS]
   connect_bd_intf_net -intf_net S00_INIS_1_1 [get_bd_intf_ports S_DCMAC_INIS1] [get_bd_intf_pins dcmac_axis_noc_s_1/S00_INIS]
@@ -2990,7 +3024,7 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net S00_INIS_6_1 [get_bd_intf_ports S_DCMAC_INIS6] [get_bd_intf_pins dcmac_axis_noc_s_6/S00_INIS]
   connect_bd_intf_net -intf_net S00_INIS_7_1 [get_bd_intf_ports S_DCMAC_INIS7] [get_bd_intf_pins dcmac_axis_noc_s_7/S00_INIS]
   connect_bd_intf_net -intf_net S_AXILITE_INI_1 [get_bd_intf_ports S_AXILITE_INI] [get_bd_intf_pins axi_noc_0/S00_INI]
-  connect_bd_intf_net -intf_net axi_noc_0_M00_AXI [get_bd_intf_pins axi_noc_0/M00_AXI] [get_bd_intf_pins smartconnect_6/S00_AXI]
+  connect_bd_intf_net -intf_net axi_noc_0_M00_AXI [get_bd_intf_pins axi_noc_0/M00_AXI] [get_bd_intf_pins smartconnect_0/S00_AXI]
   connect_bd_intf_net -intf_net axi_noc_1_M00_INI [get_bd_intf_ports QDMA_SLAVE_BRIDGE_0] [get_bd_intf_pins axi_noc_1/M00_INI]
   connect_bd_intf_net -intf_net dcmac_axis_noc_0_M00_INIS [get_bd_intf_ports M_DCMAC_INIS0] [get_bd_intf_pins dcmac_axis_noc_0/M00_INIS]
   connect_bd_intf_net -intf_net dcmac_axis_noc_1_M00_INIS [get_bd_intf_ports M_DCMAC_INIS1] [get_bd_intf_pins dcmac_axis_noc_1/M00_INIS]
@@ -3250,8 +3284,6 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net smartconnect_5_M11_AXI [get_bd_intf_pins traffic_virt_2/s_axi_control] [get_bd_intf_pins smartconnect_5/M11_AXI]
   connect_bd_intf_net -intf_net smartconnect_5_M12_AXI [get_bd_intf_pins traffic_virt_3/s_axi_control] [get_bd_intf_pins smartconnect_5/M12_AXI]
   connect_bd_intf_net -intf_net smartconnect_5_M13_AXI [get_bd_intf_pins traffic_virt_4/s_axi_control] [get_bd_intf_pins smartconnect_5/M13_AXI]
-  connect_bd_intf_net -intf_net smartconnect_6_M00_AXI [get_bd_intf_pins clk_wizard_0/s_axi_lite] [get_bd_intf_pins smartconnect_6/M00_AXI]
-  connect_bd_intf_net -intf_net smartconnect_6_M01_AXI [get_bd_intf_pins smartconnect_6/M01_AXI] [get_bd_intf_pins smartconnect_0/S00_AXI]
   connect_bd_intf_net -intf_net traffic_producer_0_axis_out [get_bd_intf_pins traffic_producer_0/axis_out] [get_bd_intf_pins dcmac_axis_noc_0/S00_AXIS]
   connect_bd_intf_net -intf_net traffic_producer_1_axis_out [get_bd_intf_pins traffic_producer_1/axis_out] [get_bd_intf_pins dcmac_axis_noc_1/S00_AXIS]
   connect_bd_intf_net -intf_net traffic_producer_2_axis_out [get_bd_intf_pins traffic_producer_2/axis_out] [get_bd_intf_pins dcmac_axis_noc_2/S00_AXIS]
@@ -3267,10 +3299,7 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net traffic_virt_4_m_axi_gmem0 [get_bd_intf_pins axi_noc_1/S00_AXI] [get_bd_intf_pins traffic_virt_4/m_axi_gmem0]
 
   # Create port connections
-  connect_bd_net -net arstn_1  [get_bd_ports arstn] \
-  [get_bd_pins proc_sys_reset_0/ext_reset_in] \
-  [get_bd_pins clk_wizard_0/s_axi_aresetn]
-  connect_bd_net -net clk_wizard_0_clk_out1  [get_bd_pins clk_wizard_0/clk_out1] \
+  connect_bd_net -net clk_wizard_0_clk_out1  [get_bd_ports user_clk] \
   [get_bd_pins ddr_noc_0/aclk0] \
   [get_bd_pins ddr_noc_3/aclk0] \
   [get_bd_pins ddr_noc_2/aclk0] \
@@ -3395,7 +3424,6 @@ proc create_root_design { parentCell } {
   [get_bd_pins smartconnect_3/aclk] \
   [get_bd_pins smartconnect_4/aclk] \
   [get_bd_pins smartconnect_5/aclk] \
-  [get_bd_pins proc_sys_reset_0/slowest_sync_clk] \
   [get_bd_pins hbm_sc_00/aclk] \
   [get_bd_pins hbm_sc_01/aclk] \
   [get_bd_pins hbm_sc_02/aclk] \
@@ -3465,19 +3493,14 @@ proc create_root_design { parentCell } {
   [get_bd_pins noc_virt_02/aclk0] \
   [get_bd_pins noc_virt_03/aclk0] \
   [get_bd_pins axi_noc_1/aclk0] \
-  [get_bd_pins axi_noc_0/aclk0] \
-  [get_bd_pins smartconnect_6/aclk]
-  connect_bd_net -net clk_wizard_0_locked  [get_bd_pins clk_wizard_0/locked] \
-  [get_bd_pins proc_sys_reset_0/dcm_locked]
-  connect_bd_net -net proc_sys_reset_0_interconnect_aresetn  [get_bd_pins proc_sys_reset_0/interconnect_aresetn] \
+  [get_bd_pins axi_noc_0/aclk0]
+  connect_bd_net -net proc_sys_reset_0_interconnect_aresetn  [get_bd_ports arstn] \
   [get_bd_pins smartconnect_0/aresetn] \
   [get_bd_pins smartconnect_1/aresetn] \
   [get_bd_pins smartconnect_2/aresetn] \
   [get_bd_pins smartconnect_3/aresetn] \
   [get_bd_pins smartconnect_4/aresetn] \
   [get_bd_pins smartconnect_5/aresetn] \
-  [get_bd_pins smartconnect_6/aresetn]
-  connect_bd_net -net proc_sys_reset_0_peripheral_aresetn  [get_bd_pins proc_sys_reset_0/peripheral_aresetn] \
   [get_bd_pins traffic_producer_0/ap_rst_n] \
   [get_bd_pins traffic_producer_1/ap_rst_n] \
   [get_bd_pins traffic_producer_2/ap_rst_n] \
@@ -3631,10 +3654,6 @@ proc create_root_design { parentCell } {
   [get_bd_pins hbm_sc_61/aresetn] \
   [get_bd_pins hbm_sc_62/aresetn] \
   [get_bd_pins hbm_sc_63/aresetn]
-  connect_bd_net -net refclk_1  [get_bd_ports refclk] \
-  [get_bd_pins clk_wizard_0/clk_in1] \
-  [get_bd_pins smartconnect_6/aclk1] \
-  [get_bd_pins clk_wizard_0/s_axi_aclk]
   connect_bd_net -net static_region_clk_1  [get_bd_ports static_region_clk] \
   [get_bd_pins hbm_sc_00/aclk1] \
   [get_bd_pins hbm_sc_01/aclk1] \
@@ -3792,7 +3811,6 @@ proc create_root_design { parentCell } {
   assign_bd_address -offset 0x00000000 -range 0x00010000000000000000 -with_name SEG_SL_VIRT_2_Reg -target_address_space [get_bd_addr_spaces traffic_virt_2/Data_m_axi_gmem0] [get_bd_addr_segs SL_VIRT_02/Reg] -force
   assign_bd_address -offset 0x00000000 -range 0x00010000000000000000 -with_name SEG_SL_VIRT_3_Reg -target_address_space [get_bd_addr_spaces traffic_virt_3/Data_m_axi_gmem0] [get_bd_addr_segs SL_VIRT_03/Reg] -force
   assign_bd_address -offset 0x00000000 -range 0x00010000000000000000 -with_name SEG_QDMA_SLAVE_BRIDGE_Reg -target_address_space [get_bd_addr_spaces traffic_virt_4/Data_m_axi_gmem0] [get_bd_addr_segs QDMA_SLAVE_BRIDGE_0/Reg] -force
-  assign_bd_address -offset 0x020207FF0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs clk_wizard_0/s_axi_lite/Reg] -force
   assign_bd_address -offset 0x020200480000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ddr_bandwidth_64/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200490000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ddr_bandwidth_65/s_axi_control/Reg] -force
   assign_bd_address -offset 0x0202004A0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ddr_bandwidth_66/s_axi_control/Reg] -force
