@@ -2,16 +2,24 @@
 set cur_design [current_bd_design]
 create_bd_design -boundary_from_container [get_bd_cells /slash] {{ slash_bd_name }}
 current_bd_design $cur_design
+set synth_list [get_property CONFIG.LIST_SYNTH_BD [get_bd_cells /slash]]
+set sim_list   [get_property CONFIG.LIST_SIM_BD   [get_bd_cells /slash]]
+
+set synth_list [string trim "${synth_list}:{{ slash_bd_name }}.bd"]
+set sim_list   [string trim "${sim_list}:{{ slash_bd_name }}.bd"]
+
 set_property -dict [list \
-  CONFIG.LIST_SYNTH_BD {slash_base.bd:{{ slash_bd_name }}.bd} \
-  CONFIG.LIST_SIM_BD   {slash_base.bd:{{ slash_bd_name }}.bd} \
+  CONFIG.LIST_SYNTH_BD $synth_list \
+  CONFIG.LIST_SIM_BD   $sim_list \
 ] [get_bd_cells /slash]
+
 current_bd_design {{ slash_bd_name }}
+
 
 update_compile_order -fileset sources_1
 
  # Create instance: ddr_noc_0, and set properties
-  set ddr_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_0 ]
+  set ddr_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -33,7 +41,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /ddr_noc_0/aclk0]
 
   # Create instance: ddr_noc_1, and set properties
-  set ddr_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_1 ]
+  set ddr_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_1 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -55,7 +63,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /ddr_noc_1/aclk0]
 
   # Create instance: ddr_noc_2, and set properties
-  set ddr_noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_2 ]
+  set ddr_noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_2 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -77,7 +85,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /ddr_noc_2/aclk0]
 
   # Create instance: ddr_noc_3, and set properties
-  set ddr_noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_3 ]
+  set ddr_noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_3 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -99,7 +107,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /ddr_noc_3/aclk0]
 
   # Create instance: hbm_vnoc_00, and set properties
-  set hbm_vnoc_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_00 ]
+  set hbm_vnoc_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_00 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -123,7 +131,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /hbm_vnoc_00/aclk0]
 
   # Create instance: hbm_vnoc_01, and set properties
-  set hbm_vnoc_01 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_01 ]
+  set hbm_vnoc_01 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_01 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -147,7 +155,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /hbm_vnoc_01/aclk0]
 
   # Create instance: hbm_vnoc_02, and set properties
-  set hbm_vnoc_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_02 ]
+  set hbm_vnoc_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_02 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -171,7 +179,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /hbm_vnoc_02/aclk0]
 
   # Create instance: hbm_vnoc_03, and set properties
-  set hbm_vnoc_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_03 ]
+  set hbm_vnoc_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_03 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -195,7 +203,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /hbm_vnoc_03/aclk0]
 
   # Create instance: hbm_vnoc_04, and set properties
-  set hbm_vnoc_04 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_04 ]
+  set hbm_vnoc_04 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_04 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -219,7 +227,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /hbm_vnoc_04/aclk0]
 
   # Create instance: hbm_vnoc_05, and set properties
-  set hbm_vnoc_05 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_05 ]
+  set hbm_vnoc_05 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_05 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -243,7 +251,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /hbm_vnoc_05/aclk0]
 
   # Create instance: hbm_vnoc_06, and set properties
-  set hbm_vnoc_06 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_06 ]
+  set hbm_vnoc_06 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_06 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -267,7 +275,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /hbm_vnoc_06/aclk0]
 
   # Create instance: hbm_vnoc_07, and set properties
-  set hbm_vnoc_07 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_07 ]
+  set hbm_vnoc_07 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_07 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -694,7 +702,7 @@ update_compile_order -fileset sources_1
   set xlconstant_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 xlconstant_0 ]
 
   # Create instance: axi_noc_0, and set properties
-  set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_0 ]
+  set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_NSI {1} \
     CONFIG.NUM_SI {0} \
@@ -718,7 +726,7 @@ update_compile_order -fileset sources_1
 
 
   # Create instance: noc_virt_00, and set properties
-  set noc_virt_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_00 ]
+  set noc_virt_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_00 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -741,7 +749,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /noc_virt_00/aclk0]
 
   # Create instance: noc_virt_01, and set properties
-  set noc_virt_01 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_01 ]
+  set noc_virt_01 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_01 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -764,7 +772,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /noc_virt_01/aclk0]
 
   # Create instance: noc_virt_02, and set properties
-  set noc_virt_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_02 ]
+  set noc_virt_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_02 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -787,7 +795,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /noc_virt_02/aclk0]
 
   # Create instance: noc_virt_03, and set properties
-  set noc_virt_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_03 ]
+  set noc_virt_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_03 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -810,7 +818,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /noc_virt_03/aclk0]
 
   # Create instance: qdma_slave_bridge_noc, and set properties
-  set qdma_slave_bridge_noc [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 qdma_slave_bridge_noc ]
+  set qdma_slave_bridge_noc [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc qdma_slave_bridge_noc ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -1192,6 +1200,6 @@ assign_bd_address
 validate_bd_design
 save_bd_design
 
-current_bd_design [get_bd_designs top]
-validate_bd_design
-save_bd_design
+# current_bd_design [get_bd_designs top]
+# validate_bd_design
+# save_bd_design

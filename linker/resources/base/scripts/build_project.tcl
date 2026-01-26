@@ -29,18 +29,23 @@ proc build_project {{proj_name "user"}} {
   # Parent impl run remains 'impl_1'
   set_property PR_CONFIGURATION config_1 [get_runs impl_1]
   set_property strategy Congestion_SSI_SpreadLogic_high [get_runs impl_1]
-  # Child run renamed to '<project_name>_impl_1'
+  set_property STEPS.OPT_DESIGN.TCL.POST         [get_files *opt.post.tcl]                [get_runs impl_1]
+  set_property STEPS.PLACE_DESIGN.TCL.PRE        [get_files *place.pre.tcl]               [get_runs impl_1]
+  set_property STEPS.WRITE_DEVICE_IMAGE.TCL.PRE  [get_files *write_device_image.pre.tcl]  [get_runs impl_1]
+  
+# Child run renamed to '<project_name>_impl_1'
   create_run $child_run -parent_run impl_1 \
     -flow {Vivado Advanced Implementation 2024} \
     -pr_config $cfg2_name
-
+  set_property strategy Congestion_SSI_SpreadLogic_high [get_runs $child_run]
+  write_hw_platform -force -fixed -minimal "../results/${proj_name}/top.xsa"
   # Launch and wait
   launch_runs impl_1 $child_run -to_step write_bitstream -jobs 8
   wait_on_run $child_run
   puts "INFO: Implementation complete for run '$child_run'."
   puts "INFO: Generating resource utilization report ..."
   open_run $child_run
-  report_utilization -hierarchical -hierarchical_depth 3 -hierarchical_percentages -file report_utilization_${proj_name}.txt
+  report_utilization -hierarchical -hierarchical_depth 3 -hierarchical_percentages -file "../results/${proj_name}/report_utilization_${proj_name}.txt"
   
 }
 
@@ -64,10 +69,14 @@ proc build_new_config {{proj_name "user"}} {
   create_run $child_run -parent_run impl_1 \
     -flow {Vivado Advanced Implementation 2024} \
     -pr_config $cfg2_name
+  set_property strategy Congestion_SSI_SpreadLogic_high [get_runs $child_run]
 
   # Launch and wait
   launch_runs $child_run -to_step write_bitstream -jobs 8
   wait_on_run $child_run
   puts "INFO: Implementation complete for run '$child_run'."
+  puts "INFO: Generating resource utilization report ..."
+  open_run $child_run
+  report_utilization -hierarchical -hierarchical_depth 3 -hierarchical_percentages -file "../results/${proj_name}/report_utilization_${proj_name}.txt"
 }
 

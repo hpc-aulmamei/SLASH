@@ -20,7 +20,7 @@ set script_folder [_tcl::get_script_folder]
 ################################################################
 # Check if script is running in correct Vivado version.
 ################################################################
-set scripts_vivado_version 2024.2
+set scripts_vivado_version 2025.1
 set current_vivado_version [version -short]
 
 if { [string first $scripts_vivado_version $current_vivado_version] == -1 } {
@@ -136,21 +136,21 @@ set bCheckIPsPassed 1
 set bCheckIPs 1
 if { $bCheckIPs == 1 } {
    set list_check_ips "\ 
-xilinx.com:ip:clk_wizard:1.0\
-xilinx.com:ip:proc_sys_reset:5.0\
-xilinx.com:ip:dfx_decoupler:1.0\
-xilinx.com:ip:axi_noc:1.1\
-xilinx.com:ip:util_vector_logic:2.0\
-xilinx.com:ip:versal_cips:3.4\
-xilinx.com:ip:axis_noc:1.0\
-xilinx.com:ip:smartconnect:1.0\
-xilinx.com:ip:hw_discovery:1.0\
-xilinx.com:ip:shell_utils_uuid_rom:2.0\
-xilinx.com:ip:smbus:1.1\
-xilinx.com:ip:cmd_queue:2.0\
-xilinx.com:ip:axi_gpio:2.0\
-xilinx.com:ip:xlconcat:2.1\
-xilinx.com:ip:util_reduced_logic:2.0\
+xilinx.com:ip:clk_wizard:*\
+xilinx.com:ip:proc_sys_reset:*\
+xilinx.com:ip:dfx_decoupler:*\
+xilinx.com:ip:axi_noc:*\
+xilinx.com:ip:util_vector_logic:*\
+xilinx.com:ip:versal_cips:*\
+xilinx.com:ip:axis_noc:*\
+xilinx.com:ip:smartconnect:*\
+xilinx.com:ip:hw_discovery:*\
+xilinx.com:ip:shell_utils_uuid_rom:*\
+xilinx.com:ip:smbus:*\
+xilinx.com:ip:cmd_queue:*\
+xilinx.com:ip:axi_gpio:*\
+xilinx.com:ip:xlconcat:*\
+xilinx.com:ip:util_reduced_logic:*\
 "
 
    set list_ips_missing ""
@@ -670,7 +670,7 @@ proc create_hier_cell_clk_rst_shell { parentCell nameHier } {
   create_bd_pin -dir O -from 0 -to 0 -type rst slash_arstn
 
   # Create instance: axi_noc_0, and set properties
-  set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_0 ]
+  set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_NSI {1} \
     CONFIG.NUM_SI {0} \
@@ -835,7 +835,7 @@ proc create_hier_cell_virt_noc { parentCell nameHier } {
   # Create pins
 
   # Create instance: axi_noc_0, and set properties
-  set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_0 ]
+  set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -854,7 +854,7 @@ proc create_hier_cell_virt_noc { parentCell nameHier } {
  ] [get_bd_intf_pins /static_region/virt_noc/axi_noc_0/S00_INI]
 
   # Create instance: axi_noc_1, and set properties
-  set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_1 ]
+  set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_1 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -873,7 +873,7 @@ proc create_hier_cell_virt_noc { parentCell nameHier } {
  ] [get_bd_intf_pins /static_region/virt_noc/axi_noc_1/S00_INI]
 
   # Create instance: axi_noc_2, and set properties
-  set axi_noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_2 ]
+  set axi_noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_2 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -892,7 +892,7 @@ proc create_hier_cell_virt_noc { parentCell nameHier } {
  ] [get_bd_intf_pins /static_region/virt_noc/axi_noc_2/S00_INI]
 
   # Create instance: axi_noc_3, and set properties
-  set axi_noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_3 ]
+  set axi_noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_3 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -911,7 +911,7 @@ proc create_hier_cell_virt_noc { parentCell nameHier } {
  ] [get_bd_intf_pins /static_region/virt_noc/axi_noc_3/S00_INI]
 
   # Create instance: axi_noc_4, and set properties
-  set axi_noc_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_4 ]
+  set axi_noc_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_4 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -2050,7 +2050,7 @@ proc create_hier_cell_noc { parentCell nameHier } {
   create_bd_pin -dir I -type clk aclk6
 
   # Create instance: axi_noc_mc_ddr4_0, and set properties
-  set axi_noc_mc_ddr4_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_mc_ddr4_0 ]
+  set axi_noc_mc_ddr4_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_mc_ddr4_0 ]
   set_property -dict [list \
     CONFIG.CONTROLLERTYPE {DDR4_SDRAM} \
     CONFIG.MC_CHAN_REGION1 {DDR_CH1} \
@@ -2087,7 +2087,7 @@ proc create_hier_cell_noc { parentCell nameHier } {
  ] [get_bd_intf_pins /static_region/noc/axi_noc_mc_ddr4_0/S01_INI]
 
   # Create instance: axi_noc_cips, and set properties
-  set axi_noc_cips [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_cips ]
+  set axi_noc_cips [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_cips ]
   set_property -dict [list \
     CONFIG.HBM_CHNL0_CONFIG {HBM_REORDER_EN FALSE HBM_MAINTAIN_COHERENCY TRUE HBM_Q_AGE_LIMIT 0x7F HBM_CLOSE_PAGE_REORDER FALSE HBM_LOOKAHEAD_PCH TRUE HBM_COMMAND_PARITY FALSE HBM_DQ_WR_PARITY FALSE HBM_DQ_RD_PARITY\
 FALSE HBM_RD_DBI TRUE HBM_WR_DBI TRUE HBM_REFRESH_MODE SINGLE_BANK_REFRESH HBM_PC0_PRE_DEFINED_ADDRESS_MAP USER_DEFINED_ADDRESS_MAP HBM_PC1_PRE_DEFINED_ADDRESS_MAP USER_DEFINED_ADDRESS_MAP HBM_PC0_USER_DEFINED_ADDRESS_MAP\
@@ -2746,7 +2746,7 @@ HBM_PC0_WRITE_RATE 25.000 HBM_PC1_WRITE_RATE 25.000 HBM_PC0_PHY_ACTIVE ENABLED H
  ] [get_bd_pins /static_region/noc/axi_noc_cips/aclk6]
 
   # Create instance: axi_noc_mc_ddr4_1, and set properties
-  set axi_noc_mc_ddr4_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_mc_ddr4_1 ]
+  set axi_noc_mc_ddr4_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_mc_ddr4_1 ]
   set_property -dict [list \
     CONFIG.CONTROLLERTYPE {DDR4_SDRAM} \
     CONFIG.MC0_CONFIG_NUM {config21} \
@@ -3695,7 +3695,7 @@ PRESENT 0} ARLOCK {WIDTH 0 PRESENT 0} ARCACHE {WIDTH 0 PRESENT 0} ARPROT {WIDTH 
   create_hier_cell_dcmac_noc $hier_obj dcmac_noc
 
   # Create instance: axi_noc_1, and set properties
-  set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_1 ]
+  set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_1 ]
   set_property -dict [list \
     CONFIG.NUM_CLKS {2} \
     CONFIG.NUM_NSI {1} \

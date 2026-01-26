@@ -20,7 +20,7 @@ set script_folder [_tcl::get_script_folder]
 ################################################################
 # Check if script is running in correct Vivado version.
 ################################################################
-set scripts_vivado_version 2024.2
+set scripts_vivado_version 2025.1
 set current_vivado_version [version -short]
 
 if { [string first $scripts_vivado_version $current_vivado_version] == -1 } {
@@ -131,8 +131,8 @@ if { $bCheckIPs == 1 } {
    set list_check_ips "\ 
 xilinx.com:hls:hbm_bandwidth:1.0\
 xilinx.com:ip:smartconnect:1.0\
-xilinx.com:ip:axi_noc:1.1\
-xilinx.com:ip:axis_noc:1.0\
+xilinx.com:ip:axi_noc:*\
+xilinx.com:ip:axis_noc:*\
 xilinx.com:hls:traffic_producer:1.0\
 xilinx.com:ip:xlconstant:1.1\
 "
@@ -1550,7 +1550,7 @@ proc create_root_design { parentCell } {
 
 
   # Create instance: ddr_noc_0, and set properties
-  set ddr_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_0 ]
+  set ddr_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -1572,7 +1572,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /ddr_noc_0/aclk0]
 
   # Create instance: ddr_noc_1, and set properties
-  set ddr_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_1 ]
+  set ddr_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_1 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -1594,7 +1594,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /ddr_noc_1/aclk0]
 
   # Create instance: ddr_noc_2, and set properties
-  set ddr_noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_2 ]
+  set ddr_noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_2 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -1616,7 +1616,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /ddr_noc_2/aclk0]
 
   # Create instance: ddr_noc_3, and set properties
-  set ddr_noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_3 ]
+  set ddr_noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_3 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -1678,7 +1678,7 @@ proc create_root_design { parentCell } {
 
 
   # Create instance: hbm_vnoc_00, and set properties
-  set hbm_vnoc_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_00 ]
+  set hbm_vnoc_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_00 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1702,7 +1702,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_00/aclk0]
 
   # Create instance: hbm_vnoc_01, and set properties
-  set hbm_vnoc_01 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_01 ]
+  set hbm_vnoc_01 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_01 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1726,7 +1726,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_01/aclk0]
 
   # Create instance: hbm_vnoc_02, and set properties
-  set hbm_vnoc_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_02 ]
+  set hbm_vnoc_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_02 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1750,7 +1750,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_02/aclk0]
 
   # Create instance: hbm_vnoc_03, and set properties
-  set hbm_vnoc_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_03 ]
+  set hbm_vnoc_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_03 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1774,7 +1774,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_03/aclk0]
 
   # Create instance: hbm_vnoc_04, and set properties
-  set hbm_vnoc_04 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_04 ]
+  set hbm_vnoc_04 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_04 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1798,7 +1798,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_04/aclk0]
 
   # Create instance: hbm_vnoc_05, and set properties
-  set hbm_vnoc_05 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_05 ]
+  set hbm_vnoc_05 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_05 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1822,7 +1822,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_05/aclk0]
 
   # Create instance: hbm_vnoc_06, and set properties
-  set hbm_vnoc_06 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_06 ]
+  set hbm_vnoc_06 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_06 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1846,7 +1846,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_06/aclk0]
 
   # Create instance: hbm_vnoc_07, and set properties
-  set hbm_vnoc_07 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_07 ]
+  set hbm_vnoc_07 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_07 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -2367,7 +2367,7 @@ proc create_root_design { parentCell } {
 
 
   # Create instance: axi_noc_0, and set properties
-  set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_0 ]
+  set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_NSI {1} \
     CONFIG.NUM_SI {0} \
@@ -2901,7 +2901,7 @@ proc create_root_design { parentCell } {
 
 
   # Create instance: noc_virt_00, and set properties
-  set noc_virt_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_00 ]
+  set noc_virt_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_00 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -2924,7 +2924,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /noc_virt_00/aclk0]
 
   # Create instance: qdma_slave_bridge_noc, and set properties
-  set qdma_slave_bridge_noc [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 qdma_slave_bridge_noc ]
+  set qdma_slave_bridge_noc [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc qdma_slave_bridge_noc ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -2947,7 +2947,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /qdma_slave_bridge_noc/aclk0]
 
   # Create instance: noc_virt_02, and set properties
-  set noc_virt_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_02 ]
+  set noc_virt_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_02 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -2970,7 +2970,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /noc_virt_02/aclk0]
 
   # Create instance: noc_virt_03, and set properties
-  set noc_virt_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_03 ]
+  set noc_virt_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_03 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -2993,7 +2993,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /noc_virt_03/aclk0]
 
   # Create instance: axi_noc_1, and set properties
-  set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_1 ]
+  set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_1 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \

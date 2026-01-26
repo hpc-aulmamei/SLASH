@@ -70,4 +70,5 @@ set_property NOC_HIGH_ID_MIN 49 [get_pblocks pblock_service_layer]
 set_property NOC_HIGH_ID_MAX 48 [get_pblocks pblock_slash]
 set_property NOC_HIGH_ID_MIN 31 [get_pblocks pblock_slash]
 
- 
+ #set_false_path -reset_path -from [get_pins {top_i/static_region/clk_rst_shell/proc_sys_reset_0/U0/ACTIVE_LOW_PR_OUT_DFF[0].FDRE_PER_N/C}]
+ #set_false_path -reset_path -from [get_pins {top_i/static_region/clk_rst_shell/proc_sys_reset_1/U0/ACTIVE_LOW_PR_OUT_DFF[0].FDRE_PER_N/C}]
