@@ -18,7 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-TARGET=ip
 DEVICE=xcv80-lsva4737-2MHP-e-S
 
 INCREMENT_BUILD_DIR=build_increment.$(DEVICE)
@@ -28,13 +27,21 @@ all: $(INCREMENT_BUILD_DIR) $(ACCUMULATE_BUILD_DIR)
 
 $(INCREMENT_BUILD_DIR):
 	if [ ! -d "$(INCREMENT_BUILD_DIR)" ]; then \
-        vitis_hls build.tcl -tclargs $(TARGET) $(DEVICE) increment; \
+		mkdir -p "$(INCREMENT_BUILD_DIR)"; \
+		cp -f increment.cpp "$(INCREMENT_BUILD_DIR)/increment.cpp"; \
+		cd "$(INCREMENT_BUILD_DIR)" && \
+		  v++ -c --mode hls --config ../increment.cfg --work_dir . && \
+		  vitis-run --mode hls --package --config ../increment.cfg --work_dir . ; \
 	fi
 
 $(ACCUMULATE_BUILD_DIR):
 	if [ ! -d "$(ACCUMULATE_BUILD_DIR)" ]; then \
-        vitis_hls build.tcl -tclargs $(TARGET) $(DEVICE) accumulate; \
+		mkdir -p "$(ACCUMULATE_BUILD_DIR)"; \
+		cp -f accumulate.cpp "$(ACCUMULATE_BUILD_DIR)/accumulate.cpp"; \
+		cd "$(ACCUMULATE_BUILD_DIR)" && \
+		  v++ -c --mode hls --config ../accumulate.cfg --work_dir . && \
+		  vitis-run --mode hls --package --config ../accumulate.cfg --work_dir . ; \
 	fi
 
 clean:
-	rm -rf $(INCREMENT_BUILD_DIR) $(ACCUMULATE_BUILD_DIR) vitis_hls.log
+	rm -rf $(INCREMENT_BUILD_DIR) $(ACCUMULATE_BUILD_DIR) *.log
