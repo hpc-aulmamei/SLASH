@@ -2,7 +2,7 @@
 import argparse
 
 from emit.hw.tcl_gen import generate_tcl
-from emit.hw.project_gen import create_build_project
+from emit.hw.project_gen import create_build_project, generate_image
 
 def main():
     ap = argparse.ArgumentParser(
@@ -40,12 +40,12 @@ def main():
                     help="Optional IP repository path (string, stored for project generation).")
 
     args = ap.parse_args()
-    generate_tcl(args)
-    if not args.emit_sw_emu:
-        create_build_project(
-            project_name=args.project,
-            ip_repository=args.ip_repository,
-        )
-
+    # generate_tcl(args)
+    # if not args.emit_sw_emu:
+    #     create_build_project(
+    #         project_name=args.project,
+    #         ip_repository=args.ip_repository,
+    #     )
+    generate_image(project_name=args.project)
 if __name__ == "__main__":
     main()

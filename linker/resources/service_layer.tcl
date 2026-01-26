@@ -1,15 +1,22 @@
 set cur_design [current_bd_design]
 create_bd_design -boundary_from_container [get_bd_cells /service_layer] {{ service_layer_bd_name }}
 current_bd_design $cur_design
+set synth_list [get_property CONFIG.LIST_SYNTH_BD [get_bd_cells /service_layer]]
+set sim_list   [get_property CONFIG.LIST_SIM_BD   [get_bd_cells /service_layer]]
+
+set synth_list [string trim "${synth_list}:{{ service_layer_bd_name }}.bd"]
+set sim_list   [string trim "${sim_list}:{{ service_layer_bd_name }}.bd"]
+
 set_property -dict [list \
-  CONFIG.LIST_SYNTH_BD {service_layer.bd:{{ service_layer_bd_name }}.bd} \
-  CONFIG.LIST_SIM_BD   {service_layer.bd:{{ service_layer_bd_name }}.bd} \
+  CONFIG.LIST_SYNTH_BD $synth_list \
+  CONFIG.LIST_SIM_BD   $sim_list \
 ] [get_bd_cells /service_layer]
+
 current_bd_design {{ service_layer_bd_name }}
 
 update_compile_order -fileset sources_1
 
-    set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_0 ]
+    set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_NSI {1} \
     CONFIG.NUM_SI {0} \
@@ -432,7 +439,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /dummy_noc_m_7/aclk0]
 
 # Create instance: sl2noc_0, and set properties
-  set sl2noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 sl2noc_0 ]
+  set sl2noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc sl2noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -451,7 +458,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /sl2noc_0/aclk0]
 
   # Create instance: sl2noc_1, and set properties
-  set sl2noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 sl2noc_1 ]
+  set sl2noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc sl2noc_1 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -470,7 +477,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /sl2noc_1/aclk0]
 
   # Create instance: sl2noc_2, and set properties
-  set sl2noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 sl2noc_2 ]
+  set sl2noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc sl2noc_2 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -489,7 +496,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /sl2noc_2/aclk0]
 
   # Create instance: sl2noc_3, and set properties
-  set sl2noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 sl2noc_3 ]
+  set sl2noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc sl2noc_3 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -508,7 +515,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /sl2noc_3/aclk0]
 
   # Create instance: sl2noc_4, and set properties
-  set sl2noc_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 sl2noc_4 ]
+  set sl2noc_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc sl2noc_4 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -527,7 +534,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /sl2noc_4/aclk0]
 
   # Create instance: sl2noc_5, and set properties
-  set sl2noc_5 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 sl2noc_5 ]
+  set sl2noc_5 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc sl2noc_5 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -546,7 +553,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /sl2noc_5/aclk0]
 
   # Create instance: sl2noc_6, and set properties
-  set sl2noc_6 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 sl2noc_6 ]
+  set sl2noc_6 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc sl2noc_6 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -565,7 +572,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /sl2noc_6/aclk0]
 
   # Create instance: sl2noc_7, and set properties
-  set sl2noc_7 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 sl2noc_7 ]
+  set sl2noc_7 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc sl2noc_7 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -585,7 +592,7 @@ update_compile_order -fileset sources_1
 
 
    # Create instance: noc_virt_0, and set properties
-    set noc_virt_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_0 ]
+    set noc_virt_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_0 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -609,7 +616,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /noc_virt_0/aclk0]
 
   # Create instance: noc_virt_1, and set properties
-  set noc_virt_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_1 ]
+  set noc_virt_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_1 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -633,7 +640,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /noc_virt_1/aclk0]
 
   # Create instance: noc_virt_2, and set properties
-  set noc_virt_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_2 ]
+  set noc_virt_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_2 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -657,7 +664,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /noc_virt_2/aclk0]
 
   # Create instance: noc_virt_3, and set properties
-  set noc_virt_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_3 ]
+  set noc_virt_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_3 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -681,7 +688,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /noc_virt_3/aclk0]
 
   # Create instance: noc_virt_4, and set properties
-  set noc_virt_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_4 ]
+  set noc_virt_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_4 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -707,7 +714,7 @@ update_compile_order -fileset sources_1
 
   
     # Create instance: axi_noc_1, and set properties
-  set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_1 ]
+  set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_1 ]
   set_property -dict [list \
     CONFIG.MI_SIDEBAND_PINS {} \
     CONFIG.NUM_NSI {1} \
@@ -741,7 +748,7 @@ update_compile_order -fileset sources_1
   set axi_register_slice_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_1 ]
 
   # Create instance: axi_noc_2, and set properties
-  set axi_noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_2 ]
+  set axi_noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_2 ]
   set_property -dict [list \
     CONFIG.MI_SIDEBAND_PINS {} \
     CONFIG.NUM_NSI {1} \
@@ -764,7 +771,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /axi_noc_2/aclk0]
 
   # Create instance: axi_noc_3, and set properties
-  set axi_noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_3 ]
+  set axi_noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_3 ]
   set_property -dict [list \
     CONFIG.MI_SIDEBAND_PINS {} \
     CONFIG.NUM_NSI {1} \
@@ -787,7 +794,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /axi_noc_3/aclk0]
 
   # Create instance: axi_noc_4, and set properties
-  set axi_noc_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_4 ]
+  set axi_noc_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_4 ]
   set_property -dict [list \
     CONFIG.MI_SIDEBAND_PINS {} \
     CONFIG.NUM_NSI {1} \
@@ -810,7 +817,7 @@ update_compile_order -fileset sources_1
  ] [get_bd_pins /axi_noc_4/aclk0]
 
   # Create instance: axi_noc_5, and set properties
-  set axi_noc_5 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_5 ]
+  set axi_noc_5 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_5 ]
   set_property -dict [list \
     CONFIG.MI_SIDEBAND_PINS {} \
     CONFIG.NUM_NSI {1} \
@@ -1213,8 +1220,8 @@ assign_bd_address -offset 0x00000000 -range 0x00010000000000000000 -target_addre
 assign_bd_address
 validate_bd_design
 save_bd_design
-current_bd_design [get_bd_designs top]
-validate_bd_design
-save_bd_design
+# current_bd_design [get_bd_designs top]
+# validate_bd_design
+# save_bd_design
 
 # ===== End Service Layer =====
