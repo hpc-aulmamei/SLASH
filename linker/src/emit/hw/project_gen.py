@@ -1,10 +1,32 @@
-# project_gen.py
+# ##################################################################################################
+#  The MIT License (MIT)
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
+# 
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+#  and associated documentation files (the "Software"), to deal in the Software without restriction,
+#  including without limitation the rights to use, copy, modify, merge, publish, distribute,
+#  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+# 
+#  The above copyright notice and this permission notice shall be included in all copies or
+#  substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# ##################################################################################################
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 import shutil
 import subprocess
 from typing import Optional
+from emit.metadata.report_util import convert_report_utilization_to_xml
+
+logger = logging.getLogger(__name__)
 
 
 def _default_create_project_tcl() -> Path:
@@ -41,6 +63,9 @@ def create_build_project(
 def generate_image(project_name: str, workdir: Optional[Path] = None) -> None:
     impl_dir = _default_pdi_dir() / "slash.runs" / f"{project_name}_impl_1"
     dest_dir = _default_results_dir() / "results" / project_name / "images"
+    logger.info("Generating PDI images for project %s", project_name)
+    logger.info("PDI source dir: %s", impl_dir)
+    logger.info("PDI destination dir: %s", dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     pdi_files = [
@@ -52,4 +77,18 @@ def generate_image(project_name: str, workdir: Optional[Path] = None) -> None:
         src = impl_dir / filename
         if not src.exists():
             raise FileNotFoundError(f"Expected image file not found: {src}")
-        shutil.copy2(src, dest_dir / filename)
+        dest = dest_dir / filename
+        logger.info("Copying PDI image: %s -> %s", src, dest)
+        shutil.copy2(src, dest)
+    logger.info("PDI image generation complete for %s", project_name)
+
+def generate_util_report(project_name: str) -> None:
+    report_dir = _default_results_dir() / "results" / project_name
+
+    report_file = report_dir / f"report_utilization_{project_name}.txt"
+    xml_file = report_dir / f"report_utilization_{project_name}.xml"
+    logger.info("Generating utilization report XML for project %s", project_name)
+    logger.info("Utilization report input: %s", report_file)
+    logger.info("Utilization report output: %s", xml_file)
+    convert_report_utilization_to_xml(report_file, xml_file)
+    logger.info("Utilization report XML generation complete for %s", project_name)
