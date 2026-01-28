@@ -1,5 +1,25 @@
-# tcl_gen.py
+# ##################################################################################################
+#  The MIT License (MIT)
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
+# 
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+#  and associated documentation files (the "Software"), to deal in the Software without restriction,
+#  including without limitation the rights to use, copy, modify, merge, publish, distribute,
+#  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+# 
+#  The above copyright notice and this permission notice shall be included in all copies or
+#  substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# ##################################################################################################
+
 from pathlib import Path
+import logging
 import re
 
 from emit.render import render_template
@@ -26,8 +46,15 @@ from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
 from core.bd_ports import load_bd_ports_from_file
 
+logger = logging.getLogger(__name__)
+
 
 def _sanitize_bd_name(s: str) -> str:
+    """! @brief Sanitize a name for use as a block design identifier.
+
+    @param s Raw name string.
+    @return Sanitized name (letters/digits/underscore, non-digit prefix).
+    """
     # BD names: keep letters/digits/underscore; don’t start with a digit
     s2 = re.sub(r"[^A-Za-z0-9_]+", "_", s.strip())
     if not s2:
@@ -38,6 +65,11 @@ def _sanitize_bd_name(s: str) -> str:
 
 
 def _collect_used_targets(ctx: dict) -> set[str]:
+    """! @brief Collect used NoC/BD targets from a rendered context.
+
+    @param ctx Render context dictionary.
+    @return Set of target names/pins that are already used.
+    """
     used: set[str] = set()
 
     # HBM uses BD ports (HBM_AXI_XX) via root MI -> port
@@ -72,6 +104,10 @@ def _collect_used_targets(ctx: dict) -> set[str]:
 
 
 def print_memory_maps(k):
+    """! @brief Print memory map details for a kernel.
+
+    @param k Kernel object with memory_maps metadata.
+    """
     if not getattr(k, "memory_maps", None):
         print("  (no memory maps)")
         return
@@ -96,6 +132,10 @@ def print_memory_maps(k):
 
 
 def print_kernel(k):
+    """! @brief Print a kernel summary to stdout.
+
+    @param k Kernel object to print.
+    """
     print(f"\nKernel: {k.name}")
     for p in k.ports.values():
         print(f"  - {p.name:24s} {p.ptype.name:9s} width={p.width}")
@@ -103,6 +143,10 @@ def print_kernel(k):
 
 
 def print_cfg(cfg):
+    """! @brief Print connectivity config summary to stdout.
+
+    @param cfg Connectivity config object.
+    """
     print("\n[connectivity] nk entries:")
     if cfg.nk:
         for nk in cfg.nk:
@@ -133,6 +177,11 @@ def print_cfg(cfg):
 
 
 def print_instances(instances, stream_edges):
+    """! @brief Print instantiated kernels and stream edges to stdout.
+
+    @param instances Mapping of instance name to instance object.
+    @param stream_edges Stream edge list.
+    """
     print("\nInstances created:")
     if not instances:
         print("  (none)")
@@ -161,6 +210,10 @@ def print_instances(instances, stream_edges):
 
 
 def print_bd_ports(bd):
+    """! @brief Print block design ports to stdout.
+
+    @param bd Block design ports container.
+    """
     print("\nBlock Design Ports:")
     if not bd.ports:
         print("  (none)")
@@ -175,6 +228,10 @@ def print_bd_ports(bd):
 
 
 def generate_tcl(args) -> None:
+    """! @brief Generate Tcl and system map artifacts from inputs.
+
+    @param args Parsed CLI arguments.
+    """
     project = _sanitize_bd_name(args.project)
     default_slash_out = f"../results/{project}/bd/slash_{project}.tcl"
     default_service_out = f"../results/{project}/bd/service_layer_{project}.tcl"
@@ -195,7 +252,7 @@ def generate_tcl(args) -> None:
     kernel_library = {}
     kernel_compxml_by_type = {}
 
-    print("\nLoading kernels:")
+    logger.info("Loading kernels")
     for kpath in args.kernels:
         kfile = Path(kpath)
         if not kfile.exists():
@@ -234,7 +291,7 @@ def generate_tcl(args) -> None:
             out_path=tb_out,
             context=tb_ctx,
         )
-        print(f"Rendered sw_emu tb.cpp to {tb_out}")
+        logger.info("Rendered sw_emu tb.cpp to %s", tb_out)
 
     # 4) Build context for kernel adds (+clocks/resets) and render
     ctx = build_kernel_add_context(instances)
@@ -289,7 +346,7 @@ def generate_tcl(args) -> None:
         out_path=out_path,
         context=ctx,
     )
-    print(f"\nRendered Tcl to {out_path}")
+    logger.info("Rendered Tcl to %s", out_path)
 
     clock_hz = resolve_system_map_clock(args.clock_hz, instances)
     system_map_ctx = build_system_map_context(
@@ -308,7 +365,7 @@ def generate_tcl(args) -> None:
         out_path=system_map_out,
         context=system_map_ctx,
     )
-    print(f"Rendered system map to {system_map_out}")
+    logger.info("Rendered system map to %s", system_map_out)
 
     paths_ctx = compute_paths(Path(args.proj_root).resolve() if args.proj_root else None)
     svc_ctx = {}
@@ -330,4 +387,4 @@ def generate_tcl(args) -> None:
         context=svc_ctx,
     )
 
-    print(f"Rendered service layer Tcl to {svc_out}")
+    logger.info("Rendered service layer Tcl to %s", svc_out)

@@ -1,10 +1,36 @@
-# main.py
+# ##################################################################################################
+#  The MIT License (MIT)
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
+# 
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+#  and associated documentation files (the "Software"), to deal in the Software without restriction,
+#  including without limitation the rights to use, copy, modify, merge, publish, distribute,
+#  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+# 
+#  The above copyright notice and this permission notice shall be included in all copies or
+#  substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# ##################################################################################################
+
 import argparse
+import logging
 
 from emit.hw.tcl_gen import generate_tcl
-from emit.hw.project_gen import create_build_project, generate_image
+from emit.hw.project_gen import create_build_project, generate_image, generate_util_report
+
+import logging
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s:%(funcName)s: %(message)s",
+    )
     ap = argparse.ArgumentParser(
         description="Parse kernels (component.xml), connectivity config, BD port map, and render Tcl."
     )
@@ -40,12 +66,14 @@ def main():
                     help="Optional IP repository path (string, stored for project generation).")
 
     args = ap.parse_args()
-    # generate_tcl(args)
+    generate_tcl(args)
     # if not args.emit_sw_emu:
     #     create_build_project(
     #         project_name=args.project,
     #         ip_repository=args.ip_repository,
     #     )
     generate_image(project_name=args.project)
+    generate_util_report(project_name=args.project)
+
 if __name__ == "__main__":
     main()
