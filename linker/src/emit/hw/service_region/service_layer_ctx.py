@@ -112,7 +112,7 @@ def build_service_axilite_ctx(net) -> Dict[str, Any]:
         # wiring
         "sl_si_src_if": "axi_noc_0/M00_AXI",   # top-level service_layer AXI-Lite interface
         "sl_clk0": "service_clk",            # service_layer clock pins
-        "sl_rstn": "arstn",
+        "sl_rstn": "ilreduced_logic_0/Res",
 
         # MI endpoints and qsfp blocks for clk/rst tie-off
         "sl_mi_targets": mi_targets,       # e.g. ["qsfp_0_n_1/s_axi", "qsfp_2_n_3/s_axi"]

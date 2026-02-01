@@ -48,6 +48,7 @@ def create_build_project(
     tcl_path: Optional[Path] = None,
     vivado_bin: str = "vivado",
     workdir: Optional[Path] = None,
+    action: Optional[str] = None,
 ) -> None:
     tcl = Path(tcl_path) if tcl_path else _default_create_project_tcl()
     if not tcl.exists():
@@ -56,6 +57,8 @@ def create_build_project(
     cmd = [vivado_bin, "-mode", "batch", "-source", str(tcl), "-tclargs", project_name]
     if ip_repository:
         cmd.append(ip_repository)
+    if action:
+        cmd.append(action)
 
     subprocess.run(cmd, cwd=str(workdir) if workdir else None, check=True)
 

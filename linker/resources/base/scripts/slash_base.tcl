@@ -1,22 +1,11 @@
-# ##################################################################################################
-#  The MIT License (MIT)
-#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
-#  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
-#  and associated documentation files (the "Software"), to deal in the Software without restriction,
-#  including without limitation the rights to use, copy, modify, merge, publish, distribute,
-#  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
-#  furnished to do so, subject to the following conditions:
-# 
-#  The above copyright notice and this permission notice shall be included in all copies or
-#  substantial portions of the Software.
-# 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
-# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-# ##################################################################################################
+
+################################################################
+# This is a generated script based on design: slash_base
+#
+# Though there are limitations about the generated script,
+# the main purpose of this utility is to make learning
+# IP Integrator Tcl commands easier.
+################################################################
 
 namespace eval _tcl {
 proc get_script_folder {} {
@@ -142,10 +131,13 @@ if { $bCheckIPs == 1 } {
    set list_check_ips "\ 
 xilinx.com:hls:hbm_bandwidth:1.0\
 xilinx.com:ip:smartconnect:1.0\
-xilinx.com:ip:axi_noc:*\
-xilinx.com:ip:axis_noc:*\
+xilinx.com:ip:axi_noc:1.1\
+xilinx.com:ip:axis_noc:1.0\
 xilinx.com:hls:traffic_producer:1.0\
 xilinx.com:ip:xlconstant:1.1\
+xilinx.com:ip:c_shift_ram:12.0\
+xilinx.com:inline_hdl:ilreduced_logic:1.0\
+xilinx.com:ip:util_ds_buf:2.2\
 "
 
    set list_ips_missing ""
@@ -214,12 +206,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_00
 
   set HBM_AXI_01 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_01 ]
@@ -227,12 +219,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_01
 
   set HBM_AXI_10 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_10 ]
@@ -240,12 +232,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_10
 
   set HBM_AXI_11 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_11 ]
@@ -253,12 +245,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_11
 
   set HBM_AXI_12 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_12 ]
@@ -266,12 +258,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_12
 
   set HBM_AXI_13 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_13 ]
@@ -279,12 +271,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_13
 
   set HBM_AXI_14 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_14 ]
@@ -292,12 +284,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_14
 
   set HBM_AXI_15 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_15 ]
@@ -305,12 +297,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_15
 
   set HBM_AXI_16 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_16 ]
@@ -318,12 +310,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_16
 
   set HBM_AXI_17 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_17 ]
@@ -331,12 +323,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_17
 
   set HBM_AXI_18 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_18 ]
@@ -344,12 +336,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_18
 
   set HBM_AXI_19 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_19 ]
@@ -357,12 +349,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_19
 
   set HBM_AXI_02 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_02 ]
@@ -370,12 +362,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_02
 
   set HBM_AXI_20 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_20 ]
@@ -383,12 +375,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_20
 
   set HBM_AXI_21 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_21 ]
@@ -396,12 +388,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_21
 
   set HBM_AXI_22 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_22 ]
@@ -409,12 +401,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_22
 
   set HBM_AXI_23 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_23 ]
@@ -422,12 +414,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_23
 
   set HBM_AXI_24 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_24 ]
@@ -435,12 +427,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_24
 
   set HBM_AXI_25 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_25 ]
@@ -448,12 +440,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_25
 
   set HBM_AXI_26 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_26 ]
@@ -461,12 +453,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_26
 
   set HBM_AXI_27 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_27 ]
@@ -474,12 +466,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_27
 
   set HBM_AXI_28 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_28 ]
@@ -487,12 +479,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_28
 
   set HBM_AXI_29 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_29 ]
@@ -500,12 +492,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_29
 
   set HBM_AXI_03 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_03 ]
@@ -513,12 +505,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_03
 
   set HBM_AXI_30 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_30 ]
@@ -526,12 +518,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_30
 
   set HBM_AXI_31 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_31 ]
@@ -539,12 +531,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_31
 
   set HBM_AXI_32 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_32 ]
@@ -552,12 +544,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_32
 
   set HBM_AXI_33 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_33 ]
@@ -565,12 +557,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_33
 
   set HBM_AXI_34 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_34 ]
@@ -578,12 +570,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_34
 
   set HBM_AXI_35 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_35 ]
@@ -591,12 +583,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_35
 
   set HBM_AXI_36 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_36 ]
@@ -604,12 +596,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_36
 
   set HBM_AXI_37 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_37 ]
@@ -617,12 +609,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_37
 
   set HBM_AXI_38 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_38 ]
@@ -630,12 +622,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_38
 
   set HBM_AXI_39 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_39 ]
@@ -643,12 +635,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_39
 
   set HBM_AXI_04 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_04 ]
@@ -656,12 +648,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_04
 
   set HBM_AXI_40 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_40 ]
@@ -669,12 +661,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_40
 
   set HBM_AXI_41 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_41 ]
@@ -682,12 +674,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_41
 
   set HBM_AXI_42 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_42 ]
@@ -695,12 +687,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_42
 
   set HBM_AXI_43 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_43 ]
@@ -708,12 +700,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_43
 
   set HBM_AXI_44 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_44 ]
@@ -721,12 +713,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_44
 
   set HBM_AXI_45 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_45 ]
@@ -734,12 +726,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_45
 
   set HBM_AXI_46 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_46 ]
@@ -747,12 +739,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_46
 
   set HBM_AXI_47 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_47 ]
@@ -760,12 +752,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_47
 
   set HBM_AXI_48 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_48 ]
@@ -773,12 +765,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_48
 
   set HBM_AXI_49 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_49 ]
@@ -786,12 +778,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_49
 
   set HBM_AXI_05 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_05 ]
@@ -799,12 +791,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_05
 
   set HBM_AXI_50 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_50 ]
@@ -812,12 +804,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_50
 
   set HBM_AXI_51 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_51 ]
@@ -825,12 +817,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_51
 
   set HBM_AXI_52 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_52 ]
@@ -838,12 +830,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_52
 
   set HBM_AXI_53 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_53 ]
@@ -851,12 +843,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_53
 
   set HBM_AXI_54 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_54 ]
@@ -864,12 +856,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_54
 
   set HBM_AXI_55 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_55 ]
@@ -877,12 +869,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_55
 
   set HBM_AXI_56 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_56 ]
@@ -890,12 +882,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_56
 
   set HBM_AXI_57 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_57 ]
@@ -903,12 +895,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_57
 
   set HBM_AXI_58 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_58 ]
@@ -916,12 +908,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_58
 
   set HBM_AXI_59 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_59 ]
@@ -929,12 +921,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_59
 
   set HBM_AXI_06 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_06 ]
@@ -942,12 +934,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_06
 
   set HBM_AXI_60 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_60 ]
@@ -955,12 +947,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_60
 
   set HBM_AXI_61 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_61 ]
@@ -968,12 +960,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_61
 
   set HBM_AXI_62 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_62 ]
@@ -981,12 +973,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_62
 
   set HBM_AXI_63 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_63 ]
@@ -994,12 +986,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_63
 
   set HBM_AXI_07 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_07 ]
@@ -1007,12 +999,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_07
 
   set HBM_AXI_08 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_08 ]
@@ -1020,12 +1012,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_08
 
   set HBM_AXI_09 [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:aximm_rtl:1.0 HBM_AXI_09 ]
@@ -1033,12 +1025,12 @@ proc create_root_design { parentCell } {
    CONFIG.ADDR_WIDTH {64} \
    CONFIG.DATA_WIDTH {256} \
    CONFIG.FREQ_HZ {400000000} \
-   CONFIG.HAS_BURST {0} \
+   CONFIG.HAS_BURST {1} \
    CONFIG.HAS_RRESP {0} \
    CONFIG.NUM_READ_OUTSTANDING {16} \
    CONFIG.NUM_WRITE_OUTSTANDING {16} \
    CONFIG.PROTOCOL {AXI4} \
-   CONFIG.READ_WRITE_MODE {WRITE_ONLY} \
+   CONFIG.READ_WRITE_MODE {READ_WRITE} \
    ] $HBM_AXI_09
 
   set M00_INI [ create_bd_intf_port -mode Master -vlnv xilinx.com:interface:inimm_rtl:1.0 M00_INI ]
@@ -1209,7 +1201,7 @@ proc create_root_design { parentCell } {
    CONFIG.ASSOCIATED_BUSIF {HBM_AXI_63:HBM_AXI_62:HBM_AXI_61:HBM_AXI_60:HBM_AXI_59:HBM_AXI_58:HBM_AXI_57:HBM_AXI_56:HBM_AXI_55:HBM_AXI_54:HBM_AXI_53:HBM_AXI_52:HBM_AXI_51:HBM_AXI_50:HBM_AXI_49:HBM_AXI_48:HBM_AXI_47:HBM_AXI_46:HBM_AXI_45:HBM_AXI_44:HBM_AXI_43:HBM_AXI_42:HBM_AXI_41:HBM_AXI_40:HBM_AXI_39:HBM_AXI_38:HBM_AXI_37:HBM_AXI_36:HBM_AXI_35:HBM_AXI_34:HBM_AXI_33:HBM_AXI_32:HBM_AXI_31:HBM_AXI_30:HBM_AXI_29:HBM_AXI_28:HBM_AXI_27:HBM_AXI_26:HBM_AXI_25:HBM_AXI_24:HBM_AXI_23:HBM_AXI_22:HBM_AXI_21:HBM_AXI_20:HBM_AXI_19:HBM_AXI_18:HBM_AXI_17:HBM_AXI_16:HBM_AXI_15:HBM_AXI_14:HBM_AXI_13:HBM_AXI_12:HBM_AXI_11:HBM_AXI_10:HBM_AXI_09:HBM_AXI_08:HBM_AXI_07:HBM_AXI_06:HBM_AXI_05:HBM_AXI_04:HBM_AXI_03:HBM_AXI_02:HBM_AXI_01:HBM_AXI_00} \
    CONFIG.CLK_DOMAIN {top_clk_wizard_0_0_clk_out1} \
  ] $static_region_clk
-  set user_clk [ create_bd_port -dir I -type clk -freq_hz 400000000 user_clk ]
+  set user_clk [ create_bd_port -dir I -type clk -freq_hz 200000000 user_clk ]
 
   # Create instance: ddr_bandwidth_64, and set properties
   set ddr_bandwidth_64 [ create_bd_cell -type ip -vlnv xilinx.com:hls:hbm_bandwidth:1.0 ddr_bandwidth_64 ]
@@ -1561,7 +1553,7 @@ proc create_root_design { parentCell } {
 
 
   # Create instance: ddr_noc_0, and set properties
-  set ddr_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_0 ]
+  set ddr_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -1583,7 +1575,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /ddr_noc_0/aclk0]
 
   # Create instance: ddr_noc_1, and set properties
-  set ddr_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_1 ]
+  set ddr_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_1 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -1605,7 +1597,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /ddr_noc_1/aclk0]
 
   # Create instance: ddr_noc_2, and set properties
-  set ddr_noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_2 ]
+  set ddr_noc_2 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_2 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -1627,7 +1619,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /ddr_noc_2/aclk0]
 
   # Create instance: ddr_noc_3, and set properties
-  set ddr_noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_3 ]
+  set ddr_noc_3 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 ddr_noc_3 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -1689,7 +1681,7 @@ proc create_root_design { parentCell } {
 
 
   # Create instance: hbm_vnoc_00, and set properties
-  set hbm_vnoc_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_00 ]
+  set hbm_vnoc_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_00 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1713,7 +1705,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_00/aclk0]
 
   # Create instance: hbm_vnoc_01, and set properties
-  set hbm_vnoc_01 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_01 ]
+  set hbm_vnoc_01 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_01 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1737,7 +1729,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_01/aclk0]
 
   # Create instance: hbm_vnoc_02, and set properties
-  set hbm_vnoc_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_02 ]
+  set hbm_vnoc_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_02 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1761,7 +1753,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_02/aclk0]
 
   # Create instance: hbm_vnoc_03, and set properties
-  set hbm_vnoc_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_03 ]
+  set hbm_vnoc_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_03 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1785,7 +1777,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_03/aclk0]
 
   # Create instance: hbm_vnoc_04, and set properties
-  set hbm_vnoc_04 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_04 ]
+  set hbm_vnoc_04 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_04 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1809,7 +1801,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_04/aclk0]
 
   # Create instance: hbm_vnoc_05, and set properties
-  set hbm_vnoc_05 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_05 ]
+  set hbm_vnoc_05 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_05 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1833,7 +1825,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_05/aclk0]
 
   # Create instance: hbm_vnoc_06, and set properties
-  set hbm_vnoc_06 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_06 ]
+  set hbm_vnoc_06 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_06 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -1857,7 +1849,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /hbm_vnoc_06/aclk0]
 
   # Create instance: hbm_vnoc_07, and set properties
-  set hbm_vnoc_07 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc hbm_vnoc_07 ]
+  set hbm_vnoc_07 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 hbm_vnoc_07 ]
   set_property -dict [list \
     CONFIG.NSI_NAMES {} \
     CONFIG.NUM_MI {0} \
@@ -2378,7 +2370,7 @@ proc create_root_design { parentCell } {
 
 
   # Create instance: axi_noc_0, and set properties
-  set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_0 ]
+  set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_NSI {1} \
     CONFIG.NUM_SI {0} \
@@ -2912,7 +2904,7 @@ proc create_root_design { parentCell } {
 
 
   # Create instance: noc_virt_00, and set properties
-  set noc_virt_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_00 ]
+  set noc_virt_00 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_00 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -2935,7 +2927,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /noc_virt_00/aclk0]
 
   # Create instance: qdma_slave_bridge_noc, and set properties
-  set qdma_slave_bridge_noc [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc qdma_slave_bridge_noc ]
+  set qdma_slave_bridge_noc [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 qdma_slave_bridge_noc ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -2958,7 +2950,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /qdma_slave_bridge_noc/aclk0]
 
   # Create instance: noc_virt_02, and set properties
-  set noc_virt_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_02 ]
+  set noc_virt_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_02 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -2981,7 +2973,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /noc_virt_02/aclk0]
 
   # Create instance: noc_virt_03, and set properties
-  set noc_virt_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_03 ]
+  set noc_virt_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 noc_virt_03 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -3004,7 +2996,7 @@ proc create_root_design { parentCell } {
  ] [get_bd_pins /noc_virt_03/aclk0]
 
   # Create instance: axi_noc_1, and set properties
-  set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_1 ]
+  set axi_noc_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc:1.1 axi_noc_1 ]
   set_property -dict [list \
     CONFIG.NUM_MI {0} \
     CONFIG.NUM_NMI {1} \
@@ -3024,6 +3016,27 @@ proc create_root_design { parentCell } {
   set_property -dict [ list \
    CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
  ] [get_bd_pins /axi_noc_1/aclk0]
+
+  # Create instance: c_shift_ram_0, and set properties
+  set c_shift_ram_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:c_shift_ram:12.0 c_shift_ram_0 ]
+  set_property -dict [list \
+    CONFIG.Depth {1} \
+    CONFIG.Width {1} \
+  ] $c_shift_ram_0
+
+
+  # Create instance: ilreduced_logic_0, and set properties
+  set ilreduced_logic_0 [ create_bd_cell -type inline_hdl -vlnv xilinx.com:inline_hdl:ilreduced_logic:1.0 ilreduced_logic_0 ]
+  set_property -dict [list \
+    CONFIG.C_OPERATION {or} \
+    CONFIG.C_SIZE {1} \
+  ] $ilreduced_logic_0
+
+
+  # Create instance: util_ds_buf_0, and set properties
+  set util_ds_buf_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:util_ds_buf:2.2 util_ds_buf_0 ]
+  set_property CONFIG.C_BUF_TYPE {BUFG_FABRIC} $util_ds_buf_0
+
 
   # Create interface connections
   connect_bd_intf_net -intf_net S00_INIS_0_1 [get_bd_intf_ports S_DCMAC_INIS0] [get_bd_intf_pins dcmac_axis_noc_s_0/S00_INIS]
@@ -3310,6 +3323,10 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net traffic_virt_4_m_axi_gmem0 [get_bd_intf_pins axi_noc_1/S00_AXI] [get_bd_intf_pins traffic_virt_4/m_axi_gmem0]
 
   # Create port connections
+  connect_bd_net -net arstn_1  [get_bd_ports arstn] \
+  [get_bd_pins c_shift_ram_0/D]
+  connect_bd_net -net c_shift_ram_0_Q  [get_bd_pins c_shift_ram_0/Q] \
+  [get_bd_pins util_ds_buf_0/BUFG_FABRIC_I]
   connect_bd_net -net clk_wizard_0_clk_out1  [get_bd_ports user_clk] \
   [get_bd_pins ddr_noc_0/aclk0] \
   [get_bd_pins ddr_noc_3/aclk0] \
@@ -3504,8 +3521,9 @@ proc create_root_design { parentCell } {
   [get_bd_pins noc_virt_02/aclk0] \
   [get_bd_pins noc_virt_03/aclk0] \
   [get_bd_pins axi_noc_1/aclk0] \
-  [get_bd_pins axi_noc_0/aclk0]
-  connect_bd_net -net proc_sys_reset_0_interconnect_aresetn  [get_bd_ports arstn] \
+  [get_bd_pins axi_noc_0/aclk0] \
+  [get_bd_pins c_shift_ram_0/CLK]
+  connect_bd_net -net proc_sys_reset_0_interconnect_aresetn  [get_bd_pins ilreduced_logic_0/Res] \
   [get_bd_pins smartconnect_0/aresetn] \
   [get_bd_pins smartconnect_1/aresetn] \
   [get_bd_pins smartconnect_2/aresetn] \
@@ -3730,6 +3748,8 @@ proc create_root_design { parentCell } {
   [get_bd_pins hbm_sc_61/aclk1] \
   [get_bd_pins hbm_sc_62/aclk1] \
   [get_bd_pins hbm_sc_63/aclk1]
+  connect_bd_net -net util_ds_buf_0_BUFG_FABRIC_O  [get_bd_pins util_ds_buf_0/BUFG_FABRIC_O] \
+  [get_bd_pins ilreduced_logic_0/Op1]
   connect_bd_net -net xlconstant_0_dout  [get_bd_pins xlconstant_0/dout] \
   [get_bd_pins dcmac_axis_noc_s_0/M00_AXIS_tready] \
   [get_bd_pins dcmac_axis_noc_s_1/M00_AXIS_tready] \
@@ -3828,11 +3848,11 @@ proc create_root_design { parentCell } {
   assign_bd_address -offset 0x0202004B0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ddr_bandwidth_67/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200000000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_0/s_axi_control/Reg] -force
   assign_bd_address -offset 0x0202000A0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_10/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x0202000C0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_11/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x0202000B0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_12/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x0202000B0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_11/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x0202000C0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_12/s_axi_control/Reg] -force
   assign_bd_address -offset 0x0202000D0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_13/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x0202000F0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_14/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x0202000E0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_15/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x0202000E0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_14/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x0202000F0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_15/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200100000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_16/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200110000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_17/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200120000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_18/s_axi_control/Reg] -force
@@ -3850,11 +3870,11 @@ proc create_root_design { parentCell } {
   assign_bd_address -offset 0x0202001D0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_29/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200020000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_2/s_axi_control/Reg] -force
   assign_bd_address -offset 0x0202001E0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_30/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x020200210000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_31/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x0202001F0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_31/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200200000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_32/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x0202001F0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_33/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x020200230000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_34/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x020200220000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_35/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x020200210000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_33/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x020200220000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_34/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x020200230000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_35/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200240000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_36/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200250000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_37/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200260000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_38/s_axi_control/Reg] -force
@@ -3865,11 +3885,11 @@ proc create_root_design { parentCell } {
   assign_bd_address -offset 0x0202002A0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_42/s_axi_control/Reg] -force
   assign_bd_address -offset 0x0202002B0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_43/s_axi_control/Reg] -force
   assign_bd_address -offset 0x0202002C0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_44/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x0202002E0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_45/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x0202002D0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_46/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x020200310000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_47/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x0202002F0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_48/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x020200300000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_49/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x0202002D0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_45/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x0202002E0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_46/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x0202002F0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_47/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x020200300000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_48/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x020200310000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_49/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200040000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_4/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200320000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_50/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200330000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_51/s_axi_control/Reg] -force
@@ -3883,8 +3903,8 @@ proc create_root_design { parentCell } {
   assign_bd_address -offset 0x0202003B0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_59/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200050000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_5/s_axi_control/Reg] -force
   assign_bd_address -offset 0x0202003C0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_60/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x0202003E0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_61/s_axi_control/Reg] -force
-  assign_bd_address -offset 0x0202003D0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_62/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x0202003D0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_61/s_axi_control/Reg] -force
+  assign_bd_address -offset 0x0202003E0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_62/s_axi_control/Reg] -force
   assign_bd_address -offset 0x0202003F0000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_63/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200400000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_64/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020200410000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs hbm_bandwidth_65/s_axi_control/Reg] -force

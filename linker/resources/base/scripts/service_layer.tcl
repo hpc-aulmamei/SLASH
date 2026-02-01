@@ -1518,6 +1518,26 @@ proc create_root_design { parentCell } {
   # Create instance: axi_register_slice_9, and set properties
   set axi_register_slice_9 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_register_slice:2.1 axi_register_slice_9 ]
 
+  # Create instance: ilreduced_logic_0, and set properties
+  set ilreduced_logic_0 [ create_bd_cell -type inline_hdl -vlnv xilinx.com:inline_hdl:ilreduced_logic:1.0 ilreduced_logic_0 ]
+  set_property -dict [list \
+    CONFIG.C_OPERATION {or} \
+    CONFIG.C_SIZE {1} \
+  ] $ilreduced_logic_0
+
+
+  # Create instance: util_ds_buf_0, and set properties
+  set util_ds_buf_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:util_ds_buf:2.2 util_ds_buf_0 ]
+  set_property CONFIG.C_BUF_TYPE {BUFG_FABRIC} $util_ds_buf_0
+
+
+  # Create instance: c_shift_ram_0, and set properties
+  set c_shift_ram_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:c_shift_ram:12.0 c_shift_ram_0 ]
+  set_property -dict [list \
+    CONFIG.Depth {1} \
+    CONFIG.Width {1} \
+  ] $c_shift_ram_0
+
   # Create interface connections
   connect_bd_intf_net -intf_net Conn1 [get_bd_intf_pins dummy_noc_m_0/M00_INIS] [get_bd_intf_ports M_DCMAC_INIS0]
   connect_bd_intf_net -intf_net Conn2 [get_bd_intf_pins dummy_noc_m_1/M00_INIS] [get_bd_intf_ports M_DCMAC_INIS1]
@@ -1616,6 +1636,11 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net traffic_producer_7_axis_out [get_bd_intf_pins traffic_producer_7/axis_out] [get_bd_intf_pins dummy_noc_m_7/S00_AXIS]
 
   # Create port connections
+  connect_bd_net -net arstn_1  [get_bd_ports arstn] \
+  [get_bd_pins c_shift_ram_0/D]
+  connect_bd_net -net c_shift_ram_0_Q  [get_bd_pins c_shift_ram_0/Q] \
+  [get_bd_pins util_ds_buf_0/BUFG_FABRIC_I]
+
   connect_bd_net -net clk_wizard_0_clk_out1  [get_bd_ports service_clk] \
   [get_bd_pins dummy_noc_0/aclk0] \
   [get_bd_pins dummy_noc_1/aclk0] \
@@ -1684,8 +1709,9 @@ proc create_root_design { parentCell } {
   [get_bd_pins axi_register_slice_8/aclk] \
   [get_bd_pins noc_virt_3/aclk0] \
   [get_bd_pins noc_virt_2/aclk0] \
-  [get_bd_pins noc_virt_4/aclk0]
-  connect_bd_net -net proc_sys_reset_0_peripheral_aresetn  [get_bd_ports arstn] \
+  [get_bd_pins noc_virt_4/aclk0] \
+  [get_bd_pins c_shift_ram_0/CLK]
+  connect_bd_net -net proc_sys_reset_0_peripheral_aresetn  [get_bd_pins ilreduced_logic_0/Res] \
   [get_bd_pins traffic_producer_1/ap_rst_n] \
   [get_bd_pins traffic_producer_2/ap_rst_n] \
   [get_bd_pins traffic_producer_3/ap_rst_n] \
@@ -1719,6 +1745,10 @@ proc create_root_design { parentCell } {
   [get_bd_pins axi_register_slice_8/aresetn] \
   [get_bd_pins smartconnect_1/aresetn] \
   [get_bd_pins smartconnect_0/aresetn]
+
+  connect_bd_net -net util_ds_buf_0_BUFG_FABRIC_O  [get_bd_pins util_ds_buf_0/BUFG_FABRIC_O] \
+  [get_bd_pins ilreduced_logic_0/Op1]
+
   connect_bd_net -net xlconstant_0_dout  [get_bd_pins xlconstant_0/dout] \
   [get_bd_pins dummy_noc_1/M00_AXIS_tready] \
   [get_bd_pins dummy_noc_2/M00_AXIS_tready] \
