@@ -1070,7 +1070,8 @@ update_compile_order -fileset sources_1
   [get_bd_pins axi_register_slice_8/aclk] \
   [get_bd_pins noc_virt_3/aclk0] \
   [get_bd_pins noc_virt_2/aclk0] \
-  [get_bd_pins noc_virt_4/aclk0] 
+  [get_bd_pins noc_virt_4/aclk0] \
+  [get_bd_pins c_shift_ram_0/CLK]
 
   connect_bd_net -net proc_sys_reset_0_peripheral_aresetn  [get_bd_pins ilreduced_logic_0/Res] \
   [get_bd_pins axi4_full_passthrough_0/aresetn] \

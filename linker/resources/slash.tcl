@@ -960,7 +960,8 @@ update_compile_order -fileset sources_1
   [get_bd_pins noc_virt_02/aclk0] \
   [get_bd_pins noc_virt_03/aclk0] \
   [get_bd_pins qdma_slave_bridge_noc/aclk0] \
-  [get_bd_pins axi_noc_0/aclk0]
+  [get_bd_pins axi_noc_0/aclk0] \
+  [get_bd_pins c_shift_ram_0/CLK]
 
 
   connect_bd_net -net xlconstant_0_dout  [get_bd_pins xlconstant_0/dout] \
