@@ -55,7 +55,7 @@ proc build_project {{proj_name "user"}} {
   
 # Child run renamed to '<project_name>_impl_1'
   create_run $child_run -parent_run impl_1 \
-    -flow {Vivado Advanced Implementation 2024} \
+    -flow {Vivado Advanced Implementation 2025} \
     -pr_config $cfg2_name
   set_property strategy Congestion_SSI_SpreadLogic_high [get_runs $child_run]
   write_hw_platform -force -fixed -minimal "../results/${proj_name}/top.xsa"
