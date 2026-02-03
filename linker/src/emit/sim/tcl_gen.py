@@ -1,0 +1,359 @@
+# ##################################################################################################
+#  The MIT License (MIT)
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
+# 
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+#  and associated documentation files (the "Software"), to deal in the Software without restriction,
+#  including without limitation the rights to use, copy, modify, merge, publish, distribute,
+#  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+# 
+#  The above copyright notice and this permission notice shall be included in all copies or
+#  substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# ##################################################################################################
+
+from __future__ import annotations
+
+from pathlib import Path
+import logging
+import re
+from typing import List, Tuple
+
+from emit.render import render_template
+from emit.hw.user_region.addr_ctx import build_axilite_address_context
+from emit.hw.service_region.stream_ctx import build_stream_connect_context
+from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
+
+from parser.component_parser import parse_component_xml
+from parser.config_parser import parse_connectivity_file, apply_config_to_instances
+from core.kernel import KernelInstance
+from core.port import PortType
+
+logger = logging.getLogger(__name__)
+
+
+def _sanitize_bd_name(s: str) -> str:
+    s2 = re.sub(r"[^A-Za-z0-9_]+", "_", s.strip())
+    if not s2:
+        s2 = "proj"
+    if s2[0].isdigit():
+        s2 = "_" + s2
+    return s2
+
+
+def _results_root() -> Path:
+    # linker/src/emit/sim -> linker/results
+    return Path(__file__).resolve().parents[3] / "results"
+
+
+def _collect_ports(
+    instances: dict[str, KernelInstance],
+) -> tuple[List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
+    axilite: List[Tuple[str, str]] = []
+    axifull: List[Tuple[str, str]] = []
+    clocks: List[Tuple[str, str]] = []
+    resets: List[Tuple[str, str]] = []
+
+    for iname in sorted(instances.keys()):
+        inst = instances[iname]
+        ports = sorted(inst.kernel.ports.values(), key=lambda p: p.name)
+        for p in ports:
+            if p.ptype == PortType.AXILITE:
+                axilite.append((iname, p.name))
+            elif p.ptype == PortType.AXI4FULL:
+                axifull.append((iname, p.name))
+            elif p.ptype == PortType.CLOCK:
+                clocks.append((iname, p.name))
+            elif p.ptype == PortType.RESET:
+                resets.append((iname, p.name))
+
+    return axilite, axifull, clocks, resets
+
+
+def _fmt_sc_slot(prefix: str, idx: int) -> str:
+    if idx < 10:
+        return f"{prefix}0{idx}_AXI"
+    return f"{prefix}{idx}_AXI"
+
+
+def _build_reduction_tree(
+    sources: List[str],
+    *,
+    max_si: int = 16,
+    max_roots: int | None = None,
+    base_name: str = "sc_red",
+) -> tuple[List[dict], List[str]]:
+    """
+    Build a SmartConnect reduction tree:
+      - leaves connect sources to node SIs
+      - each node outputs M00_AXI
+    Returns (nodes, roots) where roots are src pins feeding the final consumer.
+    """
+    if max_roots is None:
+        max_roots = max_si
+
+    if len(sources) <= max_roots:
+        return [], sources
+
+    nodes: List[dict] = []
+    level = 0
+    current = [{"src": s} for s in sources]
+    while len(current) > max_roots:
+        groups = [current[i:i+max_si] for i in range(0, len(current), max_si)]
+        next_level = []
+        for g_idx, group in enumerate(groups):
+            name = f"{base_name}_L{level}_{g_idx}"
+            node = {
+                "name": name,
+                "num_si": len(group),
+                "si": [
+                    {"slot_name": _fmt_sc_slot("S", i), "src": g["src"]}
+                    for i, g in enumerate(group)
+                ],
+            }
+            nodes.append(node)
+            next_level.append({"src": f"{name}/M00_AXI"})
+        current = next_level
+        level += 1
+
+    roots = [g["src"] for g in current]
+    return nodes, roots
+
+
+def _build_fanout_tree(
+    endpoints: List[str],
+    *,
+    max_mi: int = 16,
+    base_name: str = "axi_sc",
+    si_bd_port: str = "s_axi_ctrl",
+) -> List[dict]:
+    """
+    Build a SmartConnect fanout tree (1 SI, many MIs) with max_mi per node.
+    Returns nodes with create+connect metadata.
+    """
+    if not endpoints:
+        return []
+
+    nodes: dict[str, dict] = {}
+    child_parent: dict[str, tuple[str, int]] = {}
+
+    # Build leaf nodes that connect directly to endpoints.
+    leaves: List[str] = []
+    for idx, chunk_start in enumerate(range(0, len(endpoints), max_mi)):
+        name = f"{base_name}_L0_{idx}"
+        chunk = endpoints[chunk_start:chunk_start + max_mi]
+        mi = [{"slot_name": _fmt_sc_slot("M", i), "dst_pin": ep} for i, ep in enumerate(chunk)]
+        nodes[name] = {"name": name, "num_mi": len(mi), "mi": mi}
+        leaves.append(name)
+
+    # Build parent levels that fanout to child smartconnects.
+    level = 1
+    current = leaves
+    while len(current) > 1:
+        next_level: List[str] = []
+        for g_idx, group_start in enumerate(range(0, len(current), max_mi)):
+            group = current[group_start:group_start + max_mi]
+            name = f"{base_name}_L{level}_{g_idx}"
+            mi = []
+            for i, child in enumerate(group):
+                mi.append({"slot_name": _fmt_sc_slot("M", i), "dst_pin": f"{child}/S00_AXI"})
+                child_parent[child] = (name, i)
+            nodes[name] = {"name": name, "num_mi": len(mi), "mi": mi}
+            next_level.append(name)
+        current = next_level
+        level += 1
+
+    root = current[0]
+    for n in nodes.values():
+        if n["name"] == root:
+            n["si_from"] = {"type": "bd_port", "name": si_bd_port}
+        else:
+            parent, slot = child_parent[n["name"]]
+            n["si_from"] = {"type": "smartconnect", "prev": parent, "prev_slot_name": _fmt_sc_slot("M", slot)}
+
+    # Stable order: root first, then others by name
+    ordered = [nodes[root]] + [n for k, n in sorted(nodes.items()) if k != root]
+    return ordered
+
+
+def _classify_mem_targets(instances: dict[str, KernelInstance]) -> tuple[List[str], List[str]]:
+    mem0: List[str] = []
+    mem1: List[str] = []
+    for iname in sorted(instances.keys()):
+        inst = instances[iname]
+        mem_map = inst.params.get("mem_sp", {})
+        for p in inst.kernel.ports_of_type(PortType.AXI4FULL):
+            tgt = mem_map.get(p.name, {"domain": "MEM"})
+            domain = (tgt.get("domain") or "MEM").upper()
+            ep = f"{iname}/{p.name}"
+            if domain == "DDR":
+                mem1.append(ep)
+            else:
+                mem0.append(ep)
+    return mem0, mem1
+
+
+def generate_sim_tcl(args) -> None:
+    args.sim_out = getattr(args, "sim_out", "run_pre.tcl")
+    args.sim_template = getattr(args, "sim_template", "../resources/sim/sim_prj.tcl")
+    args.sim_mem = getattr(args, "sim_mem", "../resources/sim/sim_mem.v")
+    args.system_map_out = getattr(args, "system_map_out", "system_map.xml")
+    args.system_map_template = getattr(args, "system_map_template", "../resources/system_map.xml")
+
+    project = _sanitize_bd_name(args.project)
+    results_root = _results_root()
+    sim_root = results_root / project / "sim"
+    sim_root.mkdir(parents=True, exist_ok=True)
+
+    default_sim_out = sim_root / "run_pre.tcl"
+    if args.sim_out == "run_pre.tcl":
+        args.sim_out = str(default_sim_out)
+    default_system_map_out = sim_root / "system_map.xml"
+    if args.system_map_out == "system_map.xml":
+        args.system_map_out = str(default_system_map_out)
+
+    # 1) Parse kernels
+    kernel_library = {}
+    for kpath in args.kernels:
+        kfile = Path(kpath)
+        if not kfile.exists():
+            raise FileNotFoundError(f"Kernel file not found: {kfile}")
+        k = parse_component_xml(kfile)
+        kernel_library[k.name] = k
+
+    # 2) Parse connectivity config
+    cfg = parse_connectivity_file(args.cfg)
+
+    # 3) Make instances & stream edges
+    instances, streams = apply_config_to_instances(cfg, kernel_library)
+
+    # 4) Build template context
+    axilite_ports, axifull_ports, clock_ports, reset_ports = _collect_ports(instances)
+
+    kernels_ctx = []
+    for iname in sorted(instances.keys()):
+        inst = instances[iname]
+        vlnv = inst.kernel.vlnv or f"xilinx.com:hls:{inst.kernel.name}:1.0"
+        kernels_ctx.append({"name": iname, "vlnv": vlnv})
+
+    axilite_endpoints = [f"{iname}/{pname}" for iname, pname in axilite_ports]
+    axilite_sc_ctx = _build_fanout_tree(
+        axilite_endpoints,
+        max_mi=16,
+        base_name="axi_sc",
+        si_bd_port="s_axi_ctrl",
+    )
+
+    mem0_sources, mem1_sources = _classify_mem_targets(instances)
+    mem_reduce_nodes, mem_roots = _build_reduction_tree(
+        mem0_sources,
+        max_si=16,
+        max_roots=15,
+        base_name="mem_sc_red",
+    )
+    mem_ddr_reduce_nodes, mem_ddr_roots = _build_reduction_tree(
+        mem1_sources,
+        max_si=16,
+        max_roots=15,
+        base_name="mem_sc_ddr_red",
+    )
+    mem_roots_ctx = [
+        {"slot_name": _fmt_sc_slot("S", idx + 1), "src_pin": src}
+        for idx, src in enumerate(mem_roots)
+    ]
+    mem_sc_num_si = 1 + len(mem_roots_ctx)
+    mem_ddr_roots_ctx = [
+        {"slot_name": _fmt_sc_slot("S", idx + 1), "src_pin": src}
+        for idx, src in enumerate(mem_ddr_roots)
+    ]
+    mem_ddr_sc_num_si = 1 + len(mem_ddr_roots_ctx)
+
+    stream_ctx = build_stream_connect_context(instances, streams)
+    axis_streams_ctx = []
+    for s in stream_ctx.get("axis_streams", []):
+        axis_streams_ctx.append({
+            "src_pin": s["src_pin"],
+            "dst_pin": s["dst_pin"],
+            "net_name": s["src_pin"].replace("/", "_"),
+        })
+
+    axilite_ctx = build_axilite_address_context(
+        instances,
+        addr_space="S_AXILITE_INI",
+        base_offset=0x0202_0000_0000,
+        min_align=0x0001_0000,
+    )
+    axilite_addr_ctx = []
+    for item in axilite_ctx.get("axilite_addr", []):
+        axilite_addr_ctx.append({
+            "inst": item["inst"],
+            "busif": item["busif"],
+            "segment": item.get("segment", "Reg"),
+            "offset_hex": f"0x{item['offset']:X}",
+            "range_hex": f"0x{item['range']:X}",
+        })
+
+    # 5) Render sim_prj.tcl template
+    sim_template = Path(args.sim_template)
+    sim_out = Path(args.sim_out)
+    sim_out.parent.mkdir(parents=True, exist_ok=True)
+
+    sim_mem_src = Path(args.sim_mem)
+    sim_mem_dst = sim_root / "sim_mem.v"
+    if sim_mem_src.exists():
+        sim_mem_dst.write_text(sim_mem_src.read_text(encoding="utf-8"), encoding="utf-8")
+    else:
+        raise FileNotFoundError(f"sim_mem.v not found: {sim_mem_src}")
+
+    render_template(
+        template_dir=sim_template.parent,
+        template_name=sim_template.name,
+        out_path=sim_out,
+        context={
+            "sim_root": str(sim_root.resolve()),
+            "sim_prj_dir": str((sim_root / "sim_prj").resolve()),
+            "ip_repo_path": str((sim_root / "iprepo").resolve()),
+            "sim_mem_path": str(sim_mem_dst.resolve()),
+            "bd_name": "top",
+            "part": "xcv80-lsva4737-2MHP-e-S",
+            "kernels": kernels_ctx,
+            "axilite_scs": axilite_sc_ctx,
+            "mem_reduce_nodes": mem_reduce_nodes,
+            "mem_roots": mem_roots_ctx,
+            "mem_sc_num_si": mem_sc_num_si,
+            "mem_ddr_reduce_nodes": mem_ddr_reduce_nodes,
+            "mem_ddr_roots": mem_ddr_roots_ctx,
+            "mem_ddr_sc_num_si": mem_ddr_sc_num_si,
+            "clock_ports": [f"{iname}/{pname}" for iname, pname in clock_ports],
+            "reset_ports": [f"{iname}/{pname}" for iname, pname in reset_ports],
+            "axis_streams": axis_streams_ctx,
+            "axilite_addr": axilite_addr_ctx,
+        },
+    )
+    logger.info("Rendered simulation Tcl to %s", sim_out)
+
+    # 6) Render system map (same as HW but marked as Simulation)
+    clock_hz = resolve_system_map_clock(args.clock_hz, instances)
+    system_map_ctx = build_system_map_context(
+        instances,
+        axilite_ctx.get("axilite_addr", []),
+        clock_hz=clock_hz,
+        platform="Simulation",
+        network=getattr(cfg, "network", None),
+    )
+    system_map_template = Path(args.system_map_template)
+    system_map_out = Path(args.system_map_out)
+    system_map_out.parent.mkdir(parents=True, exist_ok=True)
+    render_template(
+        template_dir=system_map_template.parent,
+        template_name=system_map_template.name,
+        out_path=system_map_out,
+        context=system_map_ctx,
+    )
+    logger.info("Rendered system map to %s", system_map_out)

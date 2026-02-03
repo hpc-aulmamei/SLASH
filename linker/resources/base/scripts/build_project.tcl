@@ -76,6 +76,11 @@ proc build_new_config {{proj_name "user"}} {
   set slash_user_inst       "slash_${proj_name}_inst_0"
   set service_user_inst     "service_layer_${proj_name}_inst_0"
 
+  set existing_cfg2 [get_pr_configurations -quiet $cfg2_name]
+  if {[llength $existing_cfg2] > 0} {
+    delete_pr_configurations $cfg2_name
+  }
+
   puts "INFO: Building new PR configuration for proj_name='$proj_name'"
 
   # Project/user configuration
