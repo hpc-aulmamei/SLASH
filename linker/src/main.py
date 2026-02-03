@@ -26,13 +26,24 @@ import sys
 import threading
 import time
 from pathlib import Path
+import shutil
 
 from emit.hw.tcl_gen import generate_tcl
 from emit.hw.project_gen import create_build_project, generate_image, generate_util_report
+from emit.sim.tcl_gen import generate_sim_tcl
+from emit.sim.project_gen import create_sim_project, build_sim_project
 
 from emit.metadata.prog_image import build_vbin
 
-LINKER_STEPS = (
+HW_STEPS = (
+    "create_project",
+    "generate_tcl",
+    "create_hw_project",
+    "build_hw_project",
+    "create_metadata",
+)
+
+SIM_STEPS = (
     "create_project",
     "generate_tcl",
     "create_hw_project",
@@ -41,21 +52,42 @@ LINKER_STEPS = (
 )
 
 
+def _stage_key(platform: str) -> str:
+    return "sim_stage" if platform == "sim" else "hw_stage"
+
+
+def _steps_for_platform(platform: str) -> tuple[str, ...]:
+    return SIM_STEPS if platform == "sim" else HW_STEPS
+
+
 def _linker_info_path(project_name: str) -> Path:
     return Path(__file__).resolve().parents[1] / "results" / project_name / ".linker_info.json"
 
 
 def _save_linker_info(args: argparse.Namespace, stage: str) -> Path:
-    if stage not in LINKER_STEPS:
-        raise ValueError(f"Unknown stage '{stage}'. Expected one of: {', '.join(LINKER_STEPS)}")
+    steps = _steps_for_platform(args.platform)
+    if stage not in steps:
+        raise ValueError(f"Unknown stage '{stage}'. Expected one of: {', '.join(steps)}")
 
     out_path = _linker_info_path(args.project)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     args_payload = {k: v for k, v in vars(args).items() if k not in {"command", "func"}}
-    payload = {
-        "stage": stage,
-        "args": args_payload,
-    }
+
+    payload: dict = {}
+    if out_path.exists():
+        with out_path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+
+    # Merge args to avoid clobbering stored config when stage subcommands are used.
+    merged_args = dict(payload.get("args", {}))
+    for k, v in args_payload.items():
+        if v is None and k in merged_args:
+            continue
+        merged_args[k] = v
+    payload["args"] = merged_args
+    payload[_stage_key(args.platform)] = stage
+    payload["stage"] = stage  # legacy field
+
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
     return out_path
@@ -66,8 +98,12 @@ def _load_linker_info(path: Path) -> dict:
         payload = json.load(f)
     if "args" not in payload:
         raise ValueError(f"Missing 'args' in linker info: {path}")
-    if "stage" not in payload:
-        raise ValueError(f"Missing 'stage' in linker info: {path}")
+    # Back-compat: if only legacy "stage" exists, mirror to hw/sim stage.
+    if "hw_stage" not in payload and "sim_stage" not in payload and "stage" in payload:
+        payload["hw_stage"] = payload["stage"]
+        payload["sim_stage"] = payload["stage"]
+    if "hw_stage" not in payload and "sim_stage" not in payload and "stage" not in payload:
+        raise ValueError(f"Missing stage in linker info: {path}")
     return payload
 
 
@@ -143,19 +179,21 @@ def _run_step(label: str, func) -> None:
         )
 
 
-def _stage_index(stage: str) -> int:
-    if stage not in LINKER_STEPS:
-        raise ValueError(f"Unknown stage '{stage}'. Expected one of: {', '.join(LINKER_STEPS)}")
-    return LINKER_STEPS.index(stage)
+def _stage_index(stage: str, platform: str) -> int:
+    steps = _steps_for_platform(platform)
+    if stage not in steps:
+        raise ValueError(f"Unknown stage '{stage}'. Expected one of: {', '.join(steps)}")
+    return steps.index(stage)
 
 
-def _require_stage(payload: dict, required_stage: str, path: Path) -> None:
-    current = payload.get("stage")
+def _require_stage(payload: dict, required_stage: str, path: Path, platform: str) -> None:
+    current = payload.get(_stage_key(platform))
     if current is None:
-        raise ValueError(f"Missing 'stage' in linker info: {path}")
-    if _stage_index(current) < _stage_index(required_stage):
+        raise ValueError(f"Missing stage for platform '{platform}' in linker info: {path}")
+    if _stage_index(current, platform) < _stage_index(required_stage, platform):
         raise ValueError(
-            f"Linker info stage '{current}' is before required stage '{required_stage}' in {path}"
+            f"Linker info {platform} stage '{current}' is before required stage "
+            f"'{required_stage}' in {path}"
         )
 
 
@@ -163,6 +201,8 @@ def _add_common_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--cfg", required=True, help="Path to connectivity config file (e.g., config.cfg).")
     ap.add_argument("--kernels", required=True, nargs="+",
                     help="List of component.xml files to load as kernel types.")
+    ap.add_argument("--platform", choices=["hw", "sim"], default="hw",
+                    help="Target platform (hw or sim).")
     ap.add_argument("--bd-ports", required=False, default="../resources/bd_ports.txt",
                     help="Path to BD ports mapping file (logical:rtl TYPE [width]).")
     ap.add_argument("--template", default="../resources/slash.tcl",
@@ -173,6 +213,12 @@ def _add_common_args(ap: argparse.ArgumentParser) -> None:
                 help="Path to service layer Jinja2 template (e.g., resources/service_layer.tcl)")
     ap.add_argument("--service-out", required=False, default="service_layer_gen.tcl",
                     help="Path to write rendered service layer Tcl (e.g., build/service_layer.tcl)")
+    ap.add_argument("--sim-template", default="../resources/sim/sim_prj.tcl",
+                    help="Path to simulation Tcl template.")
+    ap.add_argument("--sim-out", default="run_pre.tcl",
+                    help="Path to write simulation Tcl (default: results/<project>/sim/run_pre.tcl).")
+    ap.add_argument("--sim-mem", default="../resources/sim/sim_mem.v",
+                    help="Path to sim_mem.v for simulation project.")
     ap.add_argument("--system-map-template", required=False, default="../resources/system_map.xml",
                     help="Path to system_map.xml Jinja2 template.")
     ap.add_argument("--system-map-out", required=False, default="system_map.xml",
@@ -196,6 +242,16 @@ def _add_linker_info_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("-p", "--project", required=True, help="Project name to locate linker info.")
     ap.add_argument("--linker-info", default=None,
                     help="Optional path to .linker_info.json (overrides results/<project> lookup).")
+    ap.add_argument("--platform", choices=["hw", "sim"], default=None,
+                    help="Override platform for this stage (hw or sim).")
+    ap.add_argument("--sim", dest="platform", action="store_const", const="sim",
+                    help="Shorthand for --platform sim.")
+
+
+def _resolve_platform(payload: dict, args: argparse.Namespace) -> str:
+    if getattr(args, "platform", None):
+        return args.platform
+    return payload.get("args", {}).get("platform", "hw")
 
 
 def _stage_init(args: argparse.Namespace) -> None:
@@ -205,50 +261,75 @@ def _stage_init(args: argparse.Namespace) -> None:
 def _stage_generate_tcl(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
     payload = _load_linker_info(info_path)
-    _require_stage(payload, required_stage="create_project", path=info_path)
+    platform = _resolve_platform(payload, args)
+    _require_stage(payload, required_stage="create_project", path=info_path, platform=platform)
     info_args = argparse.Namespace(**payload["args"])
-    generate_tcl(info_args)
+    info_args.platform = platform
+    if info_args.platform == "sim":
+        generate_sim_tcl(info_args)
+    else:
+        generate_tcl(info_args)
     _save_linker_info(info_args, stage="generate_tcl")
 
 
 def _stage_create_hw_project(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
     payload = _load_linker_info(info_path)
-    _require_stage(payload, required_stage="generate_tcl", path=info_path)
+    platform = _resolve_platform(payload, args)
+    _require_stage(payload, required_stage="generate_tcl", path=info_path, platform=platform)
     info_args = argparse.Namespace(**payload["args"])
-    create_build_project(
-        project_name=info_args.project,
-        ip_repository=info_args.ip_repository,
-        action="create",
-    )
+    info_args.platform = platform
+    if info_args.platform == "sim":
+        create_sim_project(
+            project_name=info_args.project,
+            component_xmls=info_args.kernels,
+            sim_tcl=Path(info_args.sim_out),
+        )
+    else:
+        create_build_project(
+            project_name=info_args.project,
+            ip_repository=info_args.ip_repository,
+            action="create",
+        )
     _save_linker_info(info_args, stage="create_hw_project")
 
 
 def _stage_build_hw_project(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
     payload = _load_linker_info(info_path)
-    _require_stage(payload, required_stage="create_hw_project", path=info_path)
+    platform = _resolve_platform(payload, args)
+    _require_stage(payload, required_stage="create_hw_project", path=info_path, platform=platform)
     info_args = argparse.Namespace(**payload["args"])
-    create_build_project(
-        project_name=info_args.project,
-        ip_repository=info_args.ip_repository,
-        action="build",
-    )
+    info_args.platform = platform
+    if info_args.platform == "sim":
+        build_sim_project(project_name=info_args.project)
+    else:
+        create_build_project(
+            project_name=info_args.project,
+            ip_repository=info_args.ip_repository,
+            action="build",
+        )
     _save_linker_info(info_args, stage="build_hw_project")
 
 
 def _stage_create_metadata(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
     payload = _load_linker_info(info_path)
-    _require_stage(payload, required_stage="build_hw_project", path=info_path)
+    platform = _resolve_platform(payload, args)
+    _require_stage(payload, required_stage="build_hw_project", path=info_path, platform=platform)
     info_args = argparse.Namespace(**payload["args"])
-    generate_image(project_name=info_args.project)
-    generate_util_report(project_name=info_args.project)
-    build_vbin(project_name=info_args.project)
+    info_args.platform = platform
+    if info_args.platform == "sim":
+        pass
+    else:
+        generate_image(project_name=info_args.project)
+        generate_util_report(project_name=info_args.project)
+        build_vbin(project_name=info_args.project)
     _save_linker_info(info_args, stage="create_metadata")
 
 
 _STAGE_FUNCS = {
+    "create_project": _stage_init,
     "generate_tcl": _stage_generate_tcl,
     "create_hw_project": _stage_create_hw_project,
     "build_hw_project": _stage_build_hw_project,
@@ -262,17 +343,16 @@ def _run_from_last_to_target(args: argparse.Namespace, target_stage: str) -> Non
 
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
     payload = _load_linker_info(info_path)
-    current_stage = payload.get("stage")
-    if current_stage not in LINKER_STEPS:
+    platform = _resolve_platform(payload, args)
+    current_stage = payload.get(_stage_key(platform))
+    steps = _steps_for_platform(platform)
+    if current_stage not in steps:
         raise ValueError(f"Invalid or missing stage in linker info: {info_path}")
 
-    current_idx = _stage_index(current_stage)
-    target_idx = _stage_index(target_stage)
+    current_idx = _stage_index(current_stage, platform)
+    target_idx = _stage_index(target_stage, platform)
 
-    if target_idx <= current_idx:
-        stages_to_run = [target_stage]
-    else:
-        stages_to_run = list(LINKER_STEPS[current_idx + 1:target_idx + 1])
+    stages_to_run = list(steps[:target_idx + 1])
 
     for stage in stages_to_run:
         func = _STAGE_FUNCS.get(stage)
@@ -281,12 +361,29 @@ def _run_from_last_to_target(args: argparse.Namespace, target_stage: str) -> Non
         _run_step(stage, lambda f=func: f(args))
 
 
+def _clean_outputs(args: argparse.Namespace) -> None:
+    project_dir = _linker_info_path(args.project).parent
+    platform = args.platform or "hw"
+    if platform == "sim":
+        sim_dir = project_dir / "sim"
+        if sim_dir.exists():
+            shutil.rmtree(sim_dir, ignore_errors=True)
+        return
+    # hw: remove generated BD and images if present
+    bd_dir = project_dir / "bd"
+    images_dir = project_dir / "images"
+    if bd_dir.exists():
+        shutil.rmtree(bd_dir, ignore_errors=True)
+    if images_dir.exists():
+        shutil.rmtree(images_dir, ignore_errors=True)
+
+
 def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s:%(funcName)s: %(message)s",
     )
-    if len(sys.argv) > 1 and sys.argv[1] in {"init", "generate_tcl", "create_hw_project", "build_hw_project", "create_metadata"}:
+    if len(sys.argv) > 1 and sys.argv[1] in {"init", "generate_tcl", "create_hw_project", "build_hw_project", "create_metadata", "clean"}:
         ap = argparse.ArgumentParser(
             description="Linker stages (use linker info to resume)."
         )
@@ -312,9 +409,15 @@ def main():
         _add_linker_info_args(ap_meta)
         ap_meta.set_defaults(func=_stage_create_metadata)
 
+        ap_clean = sub.add_parser("clean", help="Remove build outputs for a project.")
+        _add_linker_info_args(ap_clean)
+        ap_clean.set_defaults(func=_clean_outputs)
+
         args = ap.parse_args()
         if args.command == "init":
             _run_step("init", lambda: args.func(args))
+        elif args.command == "clean":
+            _run_step("clean", lambda: args.func(args))
         else:
             _run_from_last_to_target(args, args.command)
     else:
@@ -325,19 +428,33 @@ def main():
         args = ap.parse_args()
         _run_step("create_project", lambda: _save_linker_info(args, stage="create_project"))
         def _do_generate_tcl() -> None:
-            generate_tcl(args)
+            if args.platform == "sim":
+                generate_sim_tcl(args)
+            else:
+                generate_tcl(args)
             _save_linker_info(args, stage="generate_tcl")
         _run_step("generate_tcl", _do_generate_tcl)
         def _do_build_all() -> None:
-            create_build_project(
-            project_name=args.project,
-            ip_repository=args.ip_repository,
-            action="all")
+            if args.platform == "sim":
+                create_sim_project(
+                    project_name=args.project,
+                    component_xmls=args.kernels,
+                    sim_tcl=Path(args.sim_out),
+                )
+                build_sim_project(project_name=args.project)
+            else:
+                create_build_project(
+                project_name=args.project,
+                ip_repository=args.ip_repository,
+                action="all")
         _run_step("build", _do_build_all)
         def _do_create_metadata() -> None:
-            generate_image(project_name=args.project)
-            generate_util_report(project_name=args.project)
-            build_vbin(project_name=args.project)
+            if args.platform == "sim":
+                pass
+            else:
+                generate_image(project_name=args.project)
+                generate_util_report(project_name=args.project)
+                build_vbin(project_name=args.project)
             _save_linker_info(args, stage="create_metadata")
         _run_step("create_metadata", _do_create_metadata)
 

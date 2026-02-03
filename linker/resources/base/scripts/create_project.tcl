@@ -95,7 +95,6 @@ if {![file exists $proj_exists]} {
   source [file normalize [file join $src_dir "enable_dfx_bdc.tcl"]]
 
   # --- source the **generated** BDs from the linker ---
-  # @TODO: find a way to rebuild if they already exist?
   if {![file exists $slash_gen_tcl]} {
     error "Missing generated SLASH BD Tcl: $slash_gen_tcl"
   }
@@ -132,6 +131,26 @@ if {![file exists $proj_exists]} {
 
     update_ip_catalog
     open_bd_design "$src_dir/../build/slash.srcs/sources_1/bd/top/top.bd"
+    set impl_run [get_runs -quiet "${project_name}_impl_1"]
+    if {[llength $impl_run] > 0} {
+      puts "Removing stale design for project '$project_name' ..."
+      set project_build_dir [file normalize [file join $src_dir ".." "build"]]
+      set bd_service_dir [file normalize [file join $project_build_dir "slash.srcs" "sources_1" "bd" "service_layer_${project_name}"]]
+      set bd_slash_dir [file normalize [file join $project_build_dir "slash.srcs" "sources_1" "bd" "slash_${project_name}"]]
+
+      remove_files [list \
+        [file normalize [file join $bd_service_dir "service_layer_${project_name}.bd"]] \
+        [file normalize [file join $bd_slash_dir "slash_${project_name}.bd"]] \
+      ]
+
+      file delete -force $bd_service_dir
+      file delete -force [file normalize [file join $project_build_dir "slash.gen" "sources_1" "bd" "service_layer_${project_name}"]]
+      file delete -force $bd_slash_dir
+      file delete -force [file normalize [file join $project_build_dir "slash.gen" "sources_1" "bd" "slash_${project_name}"]]
+
+      delete_runs "${project_name}_impl_1"
+    }
+    
     set slash_gen_tcl   [file normalize [file join $src_dir ".." ".." ".." "results" $project_name "bd" "slash_${project_name}.tcl"]]
     set service_gen_tcl [file normalize [file join $src_dir ".." ".." ".." "results" $project_name "bd" "service_layer_${project_name}.tcl"]]
     if {![file exists $slash_gen_tcl]} {
@@ -183,6 +202,16 @@ if {![file exists $proj_exists]} {
         set_property needs_refresh false $impl_runs
       }
       # Launch OOC synth for new BDs
+      set slash_prev_synth_run [get_runs -quiet slash_${project_name}_inst_0_synth_1]
+      if {[llength $slash_prev_synth_run] > 0} {
+        reset_runs $slash_prev_synth_run
+      }
+
+      set service_layer_prev_synth_run [get_runs -quiet service_layer_${project_name}_inst_0_synth_1]
+      if {[llength $service_layer_prev_synth_run] > 0} {
+        reset_runs $service_layer_prev_synth_run
+      }
+      
       launch_runs "slash_${project_name}_inst_0_synth_1" -jobs 8
       wait_on_run "slash_${project_name}_inst_0_synth_1"
       launch_runs "service_layer_${project_name}_inst_0_synth_1" -jobs 8
