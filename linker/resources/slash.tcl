@@ -974,6 +974,10 @@ update_compile_order -fileset sources_1
   [get_bd_pins dcmac_axis_noc_s_6/M00_AXIS_tready] \
   [get_bd_pins dcmac_axis_noc_s_7/M00_AXIS_tready]
 
+# === Import kernel IP repos ===
+set existing_repos [get_property ip_repo_paths [current_project]]
+set_property ip_repo_paths [concat $existing_repos {{ kernel_ip_paths | join(" ") }}] [current_project]
+update_ip_catalog 
 
 # === Instantiate kernel IPs ===
 {% for name, inst in instances.items() %}

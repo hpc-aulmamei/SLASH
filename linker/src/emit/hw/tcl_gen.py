@@ -18,6 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
+from collections import OrderedDict
 from pathlib import Path
 import logging
 import re
@@ -264,11 +265,15 @@ def generate_tcl(args) -> None:
 
         print_kernel(k)
 
-    # 2) Parse connectivity config
+    # 2) Add the paths to the kernel IP repositories
+    ctx = OrderedDict()
+    ctx["kernel_ip_paths"] = [path.parent for path in kernel_compxml_by_type.values()]
+
+    # 3) Parse connectivity config
     cfg = parse_connectivity_file(args.cfg)
     print_cfg(cfg)
 
-    # 3) Make instances & stream edges
+    # 4) Make instances & stream edges
     instances, streams = apply_config_to_instances(cfg, kernel_library)
     print_instances(instances, streams)
     # --- sw_emu: generate tb.cpp (ZMQ HLS sim server) ---
@@ -293,8 +298,8 @@ def generate_tcl(args) -> None:
         )
         logger.info("Rendered sw_emu tb.cpp to %s", tb_out)
 
-    # 4) Build context for kernel adds (+clocks/resets) and render
-    ctx = build_kernel_add_context(instances)
+    # 5) Build context for kernel adds (+clocks/resets) and render
+    ctx.update(build_kernel_add_context(instances))
     ctx.update(build_data_width_param_context(instances))
     ctx.update(build_axilite_smartconnect_context(instances))
     ctx.update(build_hbm_smartconnect_context(instances, bd, max_si=16))
