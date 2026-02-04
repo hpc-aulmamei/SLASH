@@ -19,28 +19,40 @@
 # ##################################################################################################
 
 from __future__ import annotations
-from collections import OrderedDict
-from typing import Dict
-from core.kernel import KernelInstance
+from dataclasses import dataclass, field
+from typing import Dict, Optional
+
 from core.port import PortType
 
-def build_kernel_add_context(instances: Dict[str, KernelInstance]) -> dict:
+
+@dataclass(frozen=True)
+class Bus:
     """
-    Context for your Jinja template:
-      - instances: OrderedDict[name -> KernelInstance]
-      - clocks:    [{"src_pin": "<inst>/<pin>"} ...]
+    Represents a bus interface, including a logical->physical port map.
     """
-    ordered = OrderedDict((name, instances[name]) for name in sorted(instances.keys()))
+    name: str
+    ptype: PortType
+    width: Optional[int] = None
+    logical_to_physical: Dict[str, str] = field(default_factory=dict)
 
-    clocks = []
-    resets = []
-    for name, inst in ordered.items():
-        for p in inst.kernel.ports_of_type(PortType.CLOCK):
-            phys = inst.kernel.bus_physical_port(p.name) or p.name
-            clocks.append({"src_pin": f"{inst.name}/{phys}"})
+    def __post_init__(self):
+        if self.ptype in {PortType.CLOCK, PortType.RESET, PortType.INTERRUPT}:
+            object.__setattr__(self, "width", 1)
 
-        for p in inst.kernel.ports_of_type(PortType.RESET):
-            phys = inst.kernel.bus_physical_port(p.name) or p.name
-            resets.append({"src_pin": f"{inst.name}/{phys}"})
+    def physical_port(self, logical: Optional[str] = None) -> Optional[str]:
+        """Return a physical port name for the given logical port (or best default)."""
+        if not self.logical_to_physical:
+            return None
+        if logical:
+            return self.logical_to_physical.get(logical)
+        if len(self.logical_to_physical) == 1:
+            return next(iter(self.logical_to_physical.values()))
+        for key in ("CLK", "RESET", "RST", "INT", "IRQ"):
+            if key in self.logical_to_physical:
+                return self.logical_to_physical[key]
+        for _, val in self.logical_to_physical.items():
+            return val
+        return None
 
-    return {"instances": ordered, "clocks": clocks, "resets": resets}
+    def __repr__(self) -> str:
+        return f"<Bus {self.name} ({self.ptype.name}, width={self.width})>"
