@@ -28,6 +28,8 @@ from emit.metadata.report_util import convert_report_utilization_to_xml
 
 logger = logging.getLogger(__name__)
 
+AVED_DESIGN_NAME = "amd_v80_gen5x8_25.1"
+
 
 def _default_create_project_tcl() -> Path:
     # linker/src/emit/hw -> linker/resources/base/scripts/create_project.tcl
@@ -40,6 +42,54 @@ def _default_pdi_dir() -> Path:
 def _default_results_dir() -> Path:
     # linker/src/emit/hw -> linker/results
     return Path(__file__).resolve().parents[3]
+
+
+def _copy_checked(src: Path, dest: Path) -> None:
+    if not src.exists():
+        raise FileNotFoundError(f"Expected file not found: {src}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+
+
+def generate_base_pdi_with_aved(project_name: str, workdir: Optional[Path] = None) -> None:
+    linker_root = _default_results_dir()
+    results_base_dir = linker_root / "results" / "base"
+    if results_base_dir.exists():
+        logger.info("results/base already exists. Skipping AVED fallback build.")
+        return
+
+    aved_root = linker_root / "submodules" / "AVED"
+    aved_hw_dir = aved_root / "hw" / AVED_DESIGN_NAME
+    aved_build_dir = aved_hw_dir / "build"
+    aved_fpt_dir = aved_hw_dir / "fpt"
+    aved_fw_profile_hal = aved_root / "fw" / "AMC" / "src" / "profiles" / "v80" / "profile_hal.h"
+
+    static_top_wrapper_pdi = (
+        linker_root / "resources" / "base" / "build" / "slash.runs" / "impl_1" / "top_wrapper.pdi"
+    )
+    aved_build_script = linker_root / "resources" / "aved" / "build_all.sh"
+    aved_profile_hal_src = linker_root / "resources" / "aved" / "profile_hal.h"
+    aved_pdi_combine_src = linker_root / "resources" / "aved" / "pdi_combine.bif"
+    xsa_src = linker_root / "results" / project_name / "top.xsa"
+
+    logger.info("results/base not found. Starting AVED fallback build for %s", project_name)
+    aved_build_dir.mkdir(parents=True, exist_ok=True)
+
+    _copy_checked(static_top_wrapper_pdi, aved_build_dir / "top_wrapper.pdi")
+    _copy_checked(aved_build_script, aved_hw_dir / "build_all.sh")
+    _copy_checked(aved_profile_hal_src, aved_fw_profile_hal)
+    _copy_checked(aved_pdi_combine_src, aved_fpt_dir / "pdi_combine.bif")
+    _copy_checked(xsa_src, aved_build_dir / f"{AVED_DESIGN_NAME}.xsa")
+
+    logger.info("Running AVED build script in %s", aved_hw_dir)
+    subprocess.run(["bash", "build_all.sh"], cwd=str(aved_hw_dir), check=True)
+
+    aved_pdi = aved_hw_dir / f"{AVED_DESIGN_NAME}.pdi"
+    if not aved_pdi.exists():
+        raise FileNotFoundError(f"Expected AVED output not found: {aved_pdi}")
+    results_base_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(aved_pdi, results_base_dir / f"{AVED_DESIGN_NAME}.pdi")
+    logger.info("AVED fallback complete. Generated %s", results_base_dir / f"{AVED_DESIGN_NAME}.pdi")
 
 
 def create_build_project(
