@@ -24,14 +24,18 @@ from enum import Enum, auto
 from typing import Optional
 
 
-class PortType(Enum):
-    """Enumerates the supported port types in the design."""
+class BusType(Enum):
+    """Enumerates the supported bus/interface types in the design."""
     CLOCK = auto()
     RESET = auto()
     AXILITE = auto()
     AXI4FULL = auto()
     AXIS = auto()
     INTERRUPT = auto()  # present, but currently unused
+
+
+# Backward-compatible alias used across the codebase.
+PortType = BusType
 
 
 @dataclass(frozen=True)
@@ -42,12 +46,17 @@ class Port:
     For CLOCK, RESET, and INTERRUPT, width is forced to 1.
     """
     name: str
-    ptype: PortType
+    ptype: BusType
     width: Optional[int] = None
 
     def __post_init__(self):
-        if self.ptype in {PortType.CLOCK, PortType.RESET, PortType.INTERRUPT}:
+        if self.ptype in {BusType.CLOCK, BusType.RESET, BusType.INTERRUPT}:
             object.__setattr__(self, "width", 1)
+
+    @property
+    def btype(self) -> BusType:
+        """Preferred IP-XACT terminology."""
+        return self.ptype
 
     def __repr__(self) -> str:
         return f"<Port {self.name} ({self.ptype.name}, width={self.width})>"

@@ -24,6 +24,7 @@ from typing import Dict, Optional, List
 import xml.etree.ElementTree as ET
 
 from core.port import Port, PortType
+from core.bus import Bus
 from core.kernel import Kernel
 from core.regs import MemoryMap, AddressBlock, Register, RegField  # NEW
 
@@ -66,6 +67,22 @@ def _bus_type(busif: ET.Element) -> tuple[str, str, str, str]:
         b.get(f"{{{NS['spirit']}}}version", ""),
     )
 
+def _port_maps(busif: ET.Element) -> Dict[str, str]:
+    mapping: Dict[str, str] = {}
+    for pm in busif.findall("spirit:portMaps/spirit:portMap", NS):
+        l_name = _text(pm.find("spirit:logicalPort/spirit:name", NS))
+        p_name = _text(pm.find("spirit:physicalPort/spirit:name", NS))
+        if l_name and p_name:
+            mapping[l_name] = p_name
+    return mapping
+
+
+def _logical_to_ports(logical_to_name: Dict[str, str], ptype: PortType) -> Dict[str, Port]:
+    mapped: Dict[str, Port] = {}
+    for logical, physical in logical_to_name.items():
+        mapped[logical] = Port(name=physical, ptype=ptype)
+    return mapped
+
 def _to_port_type(bus_vendor: str, bus_lib: str, bus_name: str,
                   params: Dict[str, str], is_slave: bool) -> Optional[PortType]:
     key = (bus_vendor, bus_lib, bus_name)
@@ -101,7 +118,7 @@ def _aximm_width_from_params(params: Dict[str, str]) -> Optional[int]:
         return int(dw)
     return None
 
-# ---------- NEW: memory map parsing ----------
+# ---------- memory map parsing ----------
 
 def _parse_fields(reg_el: ET.Element) -> List[RegField]:
     fields: List[RegField] = []
@@ -184,6 +201,7 @@ def parse_component_xml(path: str | Path) -> Kernel:
 
     kernel_name = k_name
     ports: Dict[str, Port] = {}
+    buses: Dict[str, Bus] = {}
 
     for busif in root.findall("spirit:busInterfaces/spirit:busInterface", NS):
         busif_name = _text(busif.find("spirit:name", NS))
@@ -196,6 +214,7 @@ def parse_component_xml(path: str | Path) -> Kernel:
         if ptype is None:
             continue
 
+        port_maps = _port_maps(busif)
         width: Optional[int] = None
         if ptype == PortType.AXIS:
             width = _axis_width_from_params(params)
@@ -204,8 +223,22 @@ def parse_component_xml(path: str | Path) -> Kernel:
         else:
             width = 1
 
-        ports[busif_name] = Port(name=busif_name, ptype=ptype, width=width)
+        bus = Bus(
+            name=busif_name,
+            ptype=ptype,
+            width=width,
+            logical_to_physical=_logical_to_ports(port_maps, ptype),
+        )
+        buses[busif_name] = bus
 
-    memory_maps = _parse_memory_maps(root)  # NEW
+        # AXI-style interfaces are addressed by bus-interface name in TCL.
+        # Signal-style interfaces (clock/reset/interrupt) are addressed by pin name.
+        port_name = busif_name
+        if ptype in {PortType.CLOCK, PortType.RESET, PortType.INTERRUPT}:
+            port_name = bus.physical_port_name() or busif_name
 
-    return Kernel(name=kernel_name, ports=ports, vlnv=vlnv, memory_maps=memory_maps)
+        ports[port_name] = Port(name=port_name, ptype=ptype, width=width)
+
+    memory_maps = _parse_memory_maps(root)
+
+    return Kernel(name=kernel_name, ports=ports, buses=buses, vlnv=vlnv, memory_maps=memory_maps)

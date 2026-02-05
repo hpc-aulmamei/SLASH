@@ -69,9 +69,11 @@ def _collect_ports(
             elif p.ptype == PortType.AXI4FULL:
                 axifull.append((iname, p.name))
             elif p.ptype == PortType.CLOCK:
-                clocks.append((iname, p.name))
+                phys = inst.kernel.bus_physical_port(p.name) or p.name
+                clocks.append((iname, phys))
             elif p.ptype == PortType.RESET:
-                resets.append((iname, p.name))
+                phys = inst.kernel.bus_physical_port(p.name) or p.name
+                resets.append((iname, phys))
 
     return axilite, axifull, clocks, resets
 
