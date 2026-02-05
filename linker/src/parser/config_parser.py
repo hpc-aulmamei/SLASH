@@ -26,7 +26,7 @@ import re
 
 from core.kernel import Kernel, KernelInstance
 from core.connectivity import *
-from core.port import PortType, Port
+from core.port import BusType, Port
 
 # -----------------------------
 # Network model (local)
@@ -258,7 +258,7 @@ def apply_config_to_instances(
             raise KeyError(f"[connectivity] sp refers to unknown instance '{sp.inst}'.")
         inst = instances[sp.inst]
         canon_port = _resolve_port_name_for_kernel(inst.kernel, sp.port)
-        if inst.kernel.port(canon_port).ptype != PortType.AXI4FULL:
+        if inst.kernel.port(canon_port).ptype != BusType.AXI4FULL:
             raise ValueError(
                 f"[connectivity] sp '{sp.inst}.{sp.port}' is not an AXI4FULL port on kernel '{inst.kernel.name}'."
             )
@@ -268,7 +268,7 @@ def apply_config_to_instances(
     # 4) Per-instance fallback: fill ONLY the missing AXI4FULL ports with MEM (round-robin later)
     for inst in instances.values():
         mem_map: Dict[str, dict] = inst.params.setdefault("mem_sp", {})
-        axi_full_ports = [p.name for p in inst.kernel.ports_of_type(PortType.AXI4FULL)]
+        axi_full_ports = [p.name for p in inst.kernel.ports_of_type(BusType.AXI4FULL)]
         for pname in axi_full_ports:
             if pname not in mem_map:
                 mem_map[pname] = {"domain": "MEM", "index": ""}

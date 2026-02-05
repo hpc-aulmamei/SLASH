@@ -21,7 +21,7 @@
 from __future__ import annotations
 from typing import Dict, List, Optional
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 
 def _align_up(x: int, a: int) -> int:
     return (x + (a - 1)) & ~(a - 1)
@@ -75,7 +75,7 @@ def build_axilite_address_context(
     for iname in sorted(instances.keys()):
         inst = instances[iname]
         # For each AXI-Lite interface on this kernel
-        for p in inst.kernel.ports_of_type(PortType.AXILITE):
+        for p in inst.kernel.ports_of_type(BusType.AXILITE):
             # Decide the range from memory maps (or fallback)
             rg = _range_for_axilite(inst, p.name, default_range=min_align)
             # Hardware address windows should be aligned to their size (and at least min_align)

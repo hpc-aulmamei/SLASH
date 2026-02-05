@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Tuple
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 
 # eth_<i>.(tx0|tx1|rx0|rx1)
 _ETH_EP_RE = re.compile(r"^eth_(\d+)\.(tx0|tx1|rx0|rx1)$", re.IGNORECASE)
@@ -102,7 +102,7 @@ def build_network_axis_context(
             # robust port resolution
             src_port = _resolve_port_name(src_inst.kernel, s.src_port)
             src_p = src_inst.kernel.port(src_port)
-            if src_p.ptype != PortType.AXIS:
+            if src_p.ptype != BusType.AXIS:
                 raise ValueError(f"{s.src_inst}.{src_port} is not AXIS (got {src_p.ptype.name})")
 
             eth_idx, lane_name = _parse_eth_endpoint(f"{s.dst_inst}.{s.dst_port}")
@@ -126,7 +126,7 @@ def build_network_axis_context(
             dst_inst = instances[s.dst_inst]
             dst_port = _resolve_port_name(dst_inst.kernel, s.dst_port)
             dst_p = dst_inst.kernel.port(dst_port)
-            if dst_p.ptype != PortType.AXIS:
+            if dst_p.ptype != BusType.AXIS:
                 raise ValueError(f"{s.dst_inst}.{dst_port} is not AXIS (got {dst_p.ptype.name})")
 
             eth_idx, lane_name = _parse_eth_endpoint(f"{s.src_inst}.{s.src_port}")

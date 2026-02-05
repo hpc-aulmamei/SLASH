@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 from core.bd_ports import BlockDesignPorts
 
 def build_host_smartconnect_context(
@@ -47,7 +47,7 @@ def build_host_smartconnect_context(
         mem_sp = inst.params.get("mem_sp", {})
         for k_port, tgt in mem_sp.items():
             if (str(tgt.get("domain", "")).upper() == "HOST"
-                and inst.kernel.port(k_port).ptype == PortType.AXI4FULL):
+                and inst.kernel.port(k_port).ptype == BusType.AXI4FULL):
                 host_sources.append(f"{inst.name}/{k_port}")
 
     host_direct: List[dict] = []

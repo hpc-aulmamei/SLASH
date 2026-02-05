@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 
 def build_ddr_smartconnect_context(
     instances: Dict[str, KernelInstance],
@@ -47,7 +47,7 @@ def build_ddr_smartconnect_context(
         mem_sp = inst.params.get("mem_sp", {})
         for k_port, tgt in mem_sp.items():
             if tgt.get("domain") == "DDR" and tgt.get("index") is not None:
-                if inst.kernel.port(k_port).ptype == PortType.AXI4FULL:
+                if inst.kernel.port(k_port).ptype == BusType.AXI4FULL:
                     by_ddr[int(tgt["index"])].append(f"{inst.name}/{k_port}")
 
     ddr_direct: List[dict] = []

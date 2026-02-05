@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Dict, Optional, List
 import xml.etree.ElementTree as ET
 
-from core.port import Port, PortType
+from core.port import Port, BusType
 from core.bus import Bus
 from core.kernel import Kernel
 from core.regs import MemoryMap, AddressBlock, Register, RegField  # NEW
@@ -77,32 +77,32 @@ def _port_maps(busif: ET.Element) -> Dict[str, str]:
     return mapping
 
 
-def _logical_to_ports(logical_to_name: Dict[str, str], ptype: PortType) -> Dict[str, Port]:
+def _logical_to_ports(logical_to_name: Dict[str, str], ptype: BusType) -> Dict[str, Port]:
     mapped: Dict[str, Port] = {}
     for logical, physical in logical_to_name.items():
         mapped[logical] = Port(name=physical, ptype=ptype)
     return mapped
 
 def _to_port_type(bus_vendor: str, bus_lib: str, bus_name: str,
-                  params: Dict[str, str], is_slave: bool) -> Optional[PortType]:
+                  params: Dict[str, str], is_slave: bool) -> Optional[BusType]:
     key = (bus_vendor, bus_lib, bus_name)
 
     if key == ("xilinx.com", "interface", "axis"):
-        return PortType.AXIS
+        return BusType.AXIS
 
     if key == ("xilinx.com", "interface", "aximm"):
         if params.get("PROTOCOL", "").strip().upper() == "AXI4LITE":
-            return PortType.AXILITE
+            return BusType.AXILITE
         if is_slave:
-            return PortType.AXILITE
-        return PortType.AXI4FULL
+            return BusType.AXILITE
+        return BusType.AXI4FULL
 
     if key == ("xilinx.com", "signal", "clock"):
-        return PortType.CLOCK
+        return BusType.CLOCK
     if key == ("xilinx.com", "signal", "reset"):
-        return PortType.RESET
+        return BusType.RESET
     if key == ("xilinx.com", "signal", "interrupt"):
-        return PortType.INTERRUPT
+        return BusType.INTERRUPT
 
     return None
 
@@ -216,9 +216,9 @@ def parse_component_xml(path: str | Path) -> Kernel:
 
         port_maps = _port_maps(busif)
         width: Optional[int] = None
-        if ptype == PortType.AXIS:
+        if ptype == BusType.AXIS:
             width = _axis_width_from_params(params)
-        elif ptype in (PortType.AXILITE, PortType.AXI4FULL):
+        elif ptype in (BusType.AXILITE, BusType.AXI4FULL):
             width = _aximm_width_from_params(params)
         else:
             width = 1
@@ -234,7 +234,7 @@ def parse_component_xml(path: str | Path) -> Kernel:
         # AXI-style interfaces are addressed by bus-interface name in TCL.
         # Signal-style interfaces (clock/reset/interrupt) are addressed by pin name.
         port_name = busif_name
-        if ptype in {PortType.CLOCK, PortType.RESET, PortType.INTERRUPT}:
+        if ptype in {BusType.CLOCK, BusType.RESET, BusType.INTERRUPT}:
             port_name = bus.physical_port_name() or busif_name
 
         ports[port_name] = Port(name=port_name, ptype=ptype, width=width)

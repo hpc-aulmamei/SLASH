@@ -33,7 +33,7 @@ from emit.metadata.system_map_ctx import build_system_map_context, resolve_syste
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +64,14 @@ def _collect_ports(
         inst = instances[iname]
         ports = sorted(inst.kernel.ports.values(), key=lambda p: p.name)
         for p in ports:
-            if p.ptype == PortType.AXILITE:
+            if p.ptype == BusType.AXILITE:
                 axilite.append((iname, p.name))
-            elif p.ptype == PortType.AXI4FULL:
+            elif p.ptype == BusType.AXI4FULL:
                 axifull.append((iname, p.name))
-            elif p.ptype == PortType.CLOCK:
+            elif p.ptype == BusType.CLOCK:
                 phys = inst.kernel.bus_physical_port(p.name) or p.name
                 clocks.append((iname, phys))
-            elif p.ptype == PortType.RESET:
+            elif p.ptype == BusType.RESET:
                 phys = inst.kernel.bus_physical_port(p.name) or p.name
                 resets.append((iname, phys))
 
@@ -190,7 +190,7 @@ def _classify_mem_targets(instances: dict[str, KernelInstance]) -> tuple[List[st
     for iname in sorted(instances.keys()):
         inst = instances[iname]
         mem_map = inst.params.get("mem_sp", {})
-        for p in inst.kernel.ports_of_type(PortType.AXI4FULL):
+        for p in inst.kernel.ports_of_type(BusType.AXI4FULL):
             tgt = mem_map.get(p.name, {"domain": "MEM"})
             domain = (tgt.get("domain") or "MEM").upper()
             ep = f"{iname}/{p.name}"

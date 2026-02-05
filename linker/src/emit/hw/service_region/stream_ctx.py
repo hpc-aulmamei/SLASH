@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 
 _ETH_EP_RE = re.compile(r"^eth_(\d+)\.(tx0|tx1|rx0|rx1)$", re.IGNORECASE)
 _port_norm = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())
@@ -76,9 +76,9 @@ def build_stream_connect_context(
         src_p = src_inst.kernel.port(src_port)
         dst_p = dst_inst.kernel.port(dst_port)
 
-        if src_p.ptype != PortType.AXIS:
+        if src_p.ptype != BusType.AXIS:
             raise ValueError(f"stream_connect: {s.src_inst}.{src_port} is not AXIS (got {src_p.ptype.name})")
-        if dst_p.ptype != PortType.AXIS:
+        if dst_p.ptype != BusType.AXIS:
             raise ValueError(f"stream_connect: {s.dst_inst}.{dst_port} is not AXIS (got {dst_p.ptype.name})")
 
         out.append({

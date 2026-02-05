@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Dict, List
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 
 def build_axilite_smartconnect_context(
     instances: Dict[str, KernelInstance],
@@ -52,7 +52,7 @@ def build_axilite_smartconnect_context(
     ordered = OrderedDict((name, instances[name]) for name in sorted(instances.keys()))
     endpoints: List[str] = []
     for inst in ordered.values():
-        for p in sorted((pp for pp in inst.kernel.ports.values() if pp.ptype == PortType.AXILITE), key=lambda x: x.name):
+        for p in sorted((pp for pp in inst.kernel.ports.values() if pp.ptype == BusType.AXILITE), key=lambda x: x.name):
             endpoints.append(f"{inst.name}/{p.name}")
 
     N = len(endpoints)

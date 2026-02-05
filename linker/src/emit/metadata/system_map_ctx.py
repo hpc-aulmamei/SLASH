@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 from core.regs import AddressBlock
 
 DEFAULT_CLOCK_HZ = 200_000_000
@@ -123,7 +123,7 @@ def _assign_mem_indices(
         for k_port, tgt in mem_sp.items():
             if tgt.get("domain") != "MEM":
                 continue
-            if inst.kernel.port(k_port).ptype != PortType.AXI4FULL:
+            if inst.kernel.port(k_port).ptype != BusType.AXI4FULL:
                 continue
             idx = _coerce_optional_int(tgt.get("index"))
             if idx is not None and not (0 <= idx < num_mem_ports):
@@ -202,7 +202,7 @@ def build_system_map_context(
 
         connections: List[dict] = []
         mem_sp = inst.params.get("mem_sp", {}) or {}
-        for port in inst.kernel.ports_of_type(PortType.AXI4FULL):
+        for port in inst.kernel.ports_of_type(BusType.AXI4FULL):
             tgt = mem_sp.get(port.name)
             if not tgt:
                 continue
