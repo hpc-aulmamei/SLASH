@@ -23,16 +23,18 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, Optional, List
 
 from core.port import Port, PortType
+from core.bus import Bus
 from core.regs import MemoryMap
 
 @dataclass(frozen=True)
 class Kernel:
     """
     Generic kernel/IP *type* definition.
-    Contains only port definitions — not instance-specific data.
+    Contains bus and port definitions — not instance-specific data.
     """
     name: str
     ports: Dict[str, Port] = field(default_factory=dict)
+    buses: Dict[str, Bus] = field(default_factory=dict)
     vlnv: Optional[str] = None
     memory_maps: List[MemoryMap] = field(default_factory=list)   # NEW
 
@@ -46,6 +48,24 @@ class Kernel:
     def ports_of_type(self, ptype: PortType) -> Iterable[Port]:
         """Iterate over all ports of a given type."""
         return (p for p in self.ports.values() if p.ptype == ptype)
+
+    def bus(self, name: str) -> Bus:
+        """Retrieve a bus by name."""
+        try:
+            return self.buses[name]
+        except KeyError as e:
+            raise KeyError(f"Kernel '{self.name}' has no bus named '{name}'.") from e
+
+    def buses_of_type(self, ptype: PortType) -> Iterable[Bus]:
+        """Iterate over all buses of a given type."""
+        return (b for b in self.buses.values() if b.ptype == ptype)
+
+    def bus_physical_port(self, bus_name: str, logical: Optional[str] = None) -> Optional[str]:
+        """Return a physical port for a bus (or None if unknown)."""
+        bus = self.buses.get(bus_name)
+        if bus is None:
+            return None
+        return bus.physical_port(logical=logical)
 
     @staticmethod
     def from_spec(name: str, spec: Dict[str, Dict]) -> "Kernel":
@@ -69,12 +89,14 @@ class Kernel:
         }
 
         ports: Dict[str, Port] = {}
+        buses: Dict[str, Bus] = {}
         for pname, attrs in spec.items():
             ptype = type_map[attrs["ptype"].strip().upper()]
             width = attrs.get("width")
             ports[pname] = Port(name=pname, ptype=ptype, width=width)
+            buses[pname] = Bus(name=pname, ptype=ptype, width=width)
 
-        return Kernel(name=name, ports=ports)
+        return Kernel(name=name, ports=ports, buses=buses)
 
 
 @dataclass
