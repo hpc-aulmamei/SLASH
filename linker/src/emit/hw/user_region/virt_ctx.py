@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 from core.bd_ports import BlockDesignPorts
 
 def build_virt_smartconnect_context(
@@ -50,7 +50,7 @@ def build_virt_smartconnect_context(
             if (tgt.get("domain") == "VIRT"
                 and tgt.get("index") is not None
                 and 0 <= int(tgt["index"]) < num_virt):
-                if inst.kernel.port(k_port).ptype == PortType.AXI4FULL:
+                if inst.kernel.port(k_port).ptype == BusType.AXI4FULL:
                     by_virt[int(tgt["index"])].append(f"{inst.name}/{k_port}")
 
     virt_direct: List[dict] = []

@@ -21,7 +21,7 @@
 from __future__ import annotations
 from typing import Dict, List
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 
 def _param_name_for_busif(busif: str) -> str:
     # HLS/packager convention: C_<IFNAME>_DATA_WIDTH
@@ -57,7 +57,7 @@ def build_data_width_param_context(
                 p = inst.kernel.port(busif)
             except KeyError:
                 continue
-            if p.ptype != PortType.AXI4FULL:
+            if p.ptype != BusType.AXI4FULL:
                 continue
 
             # Decide width

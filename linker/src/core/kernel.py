@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, Optional, List
 
-from core.port import Port, PortType
+from core.port import Port, BusType
 from core.bus import Bus
 from core.regs import MemoryMap
 
@@ -45,7 +45,7 @@ class Kernel:
         except KeyError as e:
             raise KeyError(f"Kernel '{self.name}' has no port named '{name}'.") from e
 
-    def ports_of_type(self, ptype: PortType) -> Iterable[Port]:
+    def ports_of_type(self, ptype: BusType) -> Iterable[Port]:
         """Iterate over all ports of a given type."""
         return (p for p in self.ports.values() if p.ptype == ptype)
 
@@ -56,7 +56,7 @@ class Kernel:
         except KeyError as e:
             raise KeyError(f"Kernel '{self.name}' has no bus named '{name}'.") from e
 
-    def buses_of_type(self, ptype: PortType) -> Iterable[Bus]:
+    def buses_of_type(self, ptype: BusType) -> Iterable[Bus]:
         """Iterate over all buses of a given type."""
         return (b for b in self.buses.values() if b.ptype == ptype)
 
@@ -85,12 +85,12 @@ class Kernel:
             }
         """
         type_map = {
-            "CLOCK": PortType.CLOCK,
-            "RESET": PortType.RESET,
-            "AXILITE": PortType.AXILITE,
-            "AXI4FULL": PortType.AXI4FULL,
-            "AXIS": PortType.AXIS,
-            "INTERRUPT": PortType.INTERRUPT,
+            "CLOCK": BusType.CLOCK,
+            "RESET": BusType.RESET,
+            "AXILITE": BusType.AXILITE,
+            "AXI4FULL": BusType.AXI4FULL,
+            "AXIS": BusType.AXIS,
+            "INTERRUPT": BusType.INTERRUPT,
         }
 
         ports: Dict[str, Port] = {}

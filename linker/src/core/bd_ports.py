@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, Optional, List, Tuple
 import re
 
-from core.port import PortType
+from core.port import BusType
 
 
 # -----------------------------
@@ -37,7 +37,7 @@ class BdPort:
 
     Attributes:
         name:      Logical name used by your tool (e.g., "HBM0", "DDR0", "VIRT0", "MEM", "clock", "reset").
-        ptype:     PortType (AXI4FULL, AXILITE, AXIS, CLOCK, RESET, INTERRUPT).
+        ptype:     BusType (AXI4FULL, AXILITE, AXIS, CLOCK, RESET, INTERRUPT).
         rtl_name:  Actual BD interface/pin name in Vivado (e.g., "HBM_AXI_00", "M00_INI", "VIRT_AXI_00", "ap_clk").
         width:     Optional data width (AXI/AXIS). For CLOCK/RESET/INTERRUPT, this is forced to 1.
         domain:    Optional grouping, inferred from logical name for memory ports ("HBM", "DDR", "VIRT", "MEM").
@@ -45,7 +45,7 @@ class BdPort:
                    For MEM lines, usually None (MEM acts as a multi-entry wildcard).
     """
     name: str
-    ptype: PortType
+    ptype: BusType
     rtl_name: Optional[str] = None
     width: Optional[int] = None
     domain: Optional[str] = None
@@ -93,7 +93,7 @@ class BlockDesignPorts:
             raise KeyError(f"BD port '{name}' not found.")
         return lst
 
-    def iter_type(self, ptype: PortType):
+    def iter_type(self, ptype: BusType):
         """Iterate all BdPort entries of a given type across all logical names."""
         for lst in self.ports.values():
             for p in lst:
@@ -147,18 +147,18 @@ class BlockDesignPorts:
 # -----------------------------
 
 _TYPE_MAP = {
-    "AXI4FULL": PortType.AXI4FULL,
-    "AXILITE":  PortType.AXILITE,
-    "AXIS":     PortType.AXIS,
-    "CLOCK":    PortType.CLOCK,
-    "RESET":    PortType.RESET,
-    "INTERRUPT":PortType.INTERRUPT,
+    "AXI4FULL": BusType.AXI4FULL,
+    "AXILITE":  BusType.AXILITE,
+    "AXIS":     BusType.AXIS,
+    "CLOCK":    BusType.CLOCK,
+    "RESET":    BusType.RESET,
+    "INTERRUPT":BusType.INTERRUPT,
 }
 
 # HBM / DDR / VIRT with trailing index, e.g. HBM12, DDR3, VIRT2
 _RE_LOGICAL_MEM = re.compile(r"^(HBM|DDR|VIRT)(\d+)$", re.IGNORECASE)
 
-def _parse_ptype(s: str) -> PortType:
+def _parse_ptype(s: str) -> BusType:
     try:
         return _TYPE_MAP[s.strip().upper()]
     except KeyError:
@@ -236,7 +236,7 @@ def load_bd_ports_from_file(path: str) -> BlockDesignPorts:
             width = _parse_width(parts[1]) if len(parts) == 2 else None
 
             # Force scalar width for these types
-            if ptype in (PortType.CLOCK, PortType.RESET, PortType.INTERRUPT):
+            if ptype in (BusType.CLOCK, BusType.RESET, BusType.INTERRUPT):
                 width = 1
 
             domain, index = _infer_domain_index(logical)

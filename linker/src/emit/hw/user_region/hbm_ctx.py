@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List, Optional
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 from core.bd_ports import BlockDesignPorts
 
 def _to_int_or_none(v: Optional[object]) -> Optional[int]:
@@ -57,7 +57,7 @@ def build_hbm_smartconnect_context(
         for k_port, tgt in mem_sp.items():
             # Only care about AXI4FULL ports
             try:
-                if inst.kernel.port(k_port).ptype != PortType.AXI4FULL:
+                if inst.kernel.port(k_port).ptype != BusType.AXI4FULL:
                     continue
             except KeyError:
                 continue

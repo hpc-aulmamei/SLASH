@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Dict
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 
 def build_kernel_add_context(instances: Dict[str, KernelInstance]) -> dict:
     """
@@ -35,11 +35,11 @@ def build_kernel_add_context(instances: Dict[str, KernelInstance]) -> dict:
     clocks = []
     resets = []
     for name, inst in ordered.items():
-        for p in inst.kernel.ports_of_type(PortType.CLOCK):
+        for p in inst.kernel.ports_of_type(BusType.CLOCK):
             phys = inst.kernel.bus_physical_port(p.name) or p.name
             clocks.append({"src_pin": f"{inst.name}/{phys}"})
 
-        for p in inst.kernel.ports_of_type(PortType.RESET):
+        for p in inst.kernel.ports_of_type(BusType.RESET):
             phys = inst.kernel.bus_physical_port(p.name) or p.name
             resets.append({"src_pin": f"{inst.name}/{phys}"})
 

@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, Any
 from core.kernel import KernelInstance
-from core.port import PortType
+from core.port import BusType
 
 def _coerce_optional_int(v: Any) -> Optional[int]:
     """Return int(v) if v is not None and looks like an int (decimal or 0x..), else None."""
@@ -68,7 +68,7 @@ def build_mem_smartconnect_context(
         for k_port, tgt in mem_sp.items():
             if tgt.get("domain") == "MEM":
                 # Only AXI4FULL should be in mem_sp for memory mapping
-                if inst.kernel.port(k_port).ptype == PortType.AXI4FULL:
+                if inst.kernel.port(k_port).ptype == BusType.AXI4FULL:
                     src_pin = f"{inst.name}/{k_port}"
                     # Some configs may carry an explicit MEM index; usually None.
                     idx = _coerce_optional_int(tgt.get("index"))

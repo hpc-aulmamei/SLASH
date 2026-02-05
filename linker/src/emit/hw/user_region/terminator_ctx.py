@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import Dict, List, Set
 import re
 from xml import dom
-from core.port import PortType
+from core.port import BusType
 from core.bd_ports import BlockDesignPorts, BdPort
 
 _RX_SKIP_TOP = re.compile(r"^(M\d{2}_INI|HBM_VNOC_INI_\d{2}|HBM_AXI_\d{2})$", re.IGNORECASE)
@@ -36,7 +36,7 @@ def _want_generic_term(p: BdPort) -> bool:
     Only terminate VIRT BD ports here.
     Skip HBM (handled by hbm_sc_terminators), and skip DDR/MEM (they use NoC-side terminators).
     """
-    if p.ptype != PortType.AXI4FULL:
+    if p.ptype != BusType.AXI4FULL:
         return False
     dom = (p.domain or "").upper()
 

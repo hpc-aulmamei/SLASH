@@ -33,11 +33,6 @@ class BusType(Enum):
     AXIS = auto()
     INTERRUPT = auto()  # present, but currently unused
 
-
-# Backward-compatible alias used across the codebase.
-PortType = BusType
-
-
 @dataclass(frozen=True)
 class Port:
     """
