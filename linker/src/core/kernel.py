@@ -60,12 +60,17 @@ class Kernel:
         """Iterate over all buses of a given type."""
         return (b for b in self.buses.values() if b.ptype == ptype)
 
-    def bus_physical_port(self, bus_name: str, logical: Optional[str] = None) -> Optional[str]:
-        """Return a physical port for a bus (or None if unknown)."""
+    def bus_physical(self, bus_name: str, logical: Optional[str] = None) -> Optional[Port]:
+        """Return a physical Port object for a bus (or None if unknown)."""
         bus = self.buses.get(bus_name)
         if bus is None:
             return None
         return bus.physical_port(logical=logical)
+
+    def bus_physical_port(self, bus_name: str, logical: Optional[str] = None) -> Optional[str]:
+        """Return a physical port for a bus (or None if unknown)."""
+        p = self.bus_physical(bus_name, logical=logical)
+        return p.name if p is not None else None
 
     @staticmethod
     def from_spec(name: str, spec: Dict[str, Dict]) -> "Kernel":

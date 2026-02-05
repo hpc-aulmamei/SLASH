@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
-from core.port import PortType
+from core.port import BusType, Port
 
 
 @dataclass(frozen=True)
@@ -31,16 +31,21 @@ class Bus:
     Represents a bus interface, including a logical->physical port map.
     """
     name: str
-    ptype: PortType
+    ptype: BusType
     width: Optional[int] = None
-    logical_to_physical: Dict[str, str] = field(default_factory=dict)
+    logical_to_physical: Dict[str, Port] = field(default_factory=dict)
 
     def __post_init__(self):
-        if self.ptype in {PortType.CLOCK, PortType.RESET, PortType.INTERRUPT}:
+        if self.ptype in {BusType.CLOCK, BusType.RESET, BusType.INTERRUPT}:
             object.__setattr__(self, "width", 1)
 
-    def physical_port(self, logical: Optional[str] = None) -> Optional[str]:
-        """Return a physical port name for the given logical port (or best default)."""
+    @property
+    def btype(self) -> BusType:
+        """Preferred IP-XACT terminology."""
+        return self.ptype
+
+    def physical_port(self, logical: Optional[str] = None) -> Optional[Port]:
+        """Return a physical Port object for the given logical port (or best default)."""
         if not self.logical_to_physical:
             return None
         if logical:
@@ -53,6 +58,11 @@ class Bus:
         for _, val in self.logical_to_physical.items():
             return val
         return None
+
+    def physical_port_name(self, logical: Optional[str] = None) -> Optional[str]:
+        """Convenience wrapper to return only the physical port name."""
+        p = self.physical_port(logical=logical)
+        return p.name if p is not None else None
 
     def __repr__(self) -> str:
         return f"<Bus {self.name} ({self.ptype.name}, width={self.width})>"
