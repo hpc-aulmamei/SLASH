@@ -29,7 +29,12 @@ from pathlib import Path
 import shutil
 
 from emit.hw.tcl_gen import generate_tcl
-from emit.hw.project_gen import create_build_project, generate_image, generate_util_report
+from emit.hw.project_gen import (
+    create_build_project,
+    generate_base_pdi_with_aved,
+    generate_image,
+    generate_util_report,
+)
 from emit.sim.tcl_gen import generate_sim_tcl
 from emit.sim.project_gen import create_sim_project, build_sim_project
 
@@ -309,6 +314,7 @@ def _stage_build_hw_project(args: argparse.Namespace) -> None:
             ip_repository=info_args.ip_repository,
             action="build",
         )
+        generate_base_pdi_with_aved(project_name=info_args.project)
     _save_linker_info(info_args, stage="build_hw_project")
 
 
@@ -447,6 +453,7 @@ def main():
                 project_name=args.project,
                 ip_repository=args.ip_repository,
                 action="all")
+                generate_base_pdi_with_aved(project_name=args.project)
         _run_step("build", _do_build_all)
         def _do_create_metadata() -> None:
             if args.platform == "sim":

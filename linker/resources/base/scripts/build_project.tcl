@@ -31,6 +31,7 @@ proc build_project {{proj_name "user"}} {
 
   # Ensure top BD is generated
   generate_target all [get_files "top.bd"]
+  write_hw_platform -force -fixed -minimal "../results/${proj_name}/top.xsa"
 
   # Static/base configuration
   create_pr_configuration -name config_1 \
@@ -58,7 +59,6 @@ proc build_project {{proj_name "user"}} {
     -flow {Vivado Advanced Implementation 2025} \
     -pr_config $cfg2_name
   set_property strategy Congestion_SSI_SpreadLogic_high [get_runs $child_run]
-  write_hw_platform -force -fixed -minimal "../results/${proj_name}/top.xsa"
   # Launch and wait
   launch_runs impl_1 $child_run -to_step write_bitstream -jobs 8
   wait_on_run $child_run
