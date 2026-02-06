@@ -70,3 +70,11 @@ build_sim(
   CFG        "${CFG_FILE}"
   KERNELS    ${KERNELS}
 )
+
+build_emu(
+  TARGET     emu
+  LINKER_DIR "${SLASH_LINKER_DIR}"
+  EXAMPLE    "${EXAMPLE_NAME}"
+  CFG        "${CFG_FILE}"
+  KERNELS    ${KERNELS}
+)

@@ -250,7 +250,6 @@ def generate_tcl(args) -> None:
 
     # 1) Parse kernels
     kernel_library = {}
-    kernel_compxml_by_type = {}
 
     logger.info("Loading kernels")
     for kpath in args.kernels:
@@ -260,7 +259,6 @@ def generate_tcl(args) -> None:
 
         k = parse_component_xml(kfile)
         kernel_library[k.name] = k
-        kernel_compxml_by_type[k.name] = kfile.resolve()
 
         print_kernel(k)
 
@@ -271,27 +269,6 @@ def generate_tcl(args) -> None:
     # 3) Make instances & stream edges
     instances, streams = apply_config_to_instances(cfg, kernel_library)
     print_instances(instances, streams)
-    # --- sw_emu: generate tb.cpp (ZMQ HLS sim server) ---
-    if args.emit_sw_emu:
-        from emit.sw_emu.tb_ctx import build_tb_context, infer_sol1_json_from_component_xml
-
-        kernel_sol1_by_type = {}
-        for ktype, comp_xml in kernel_compxml_by_type.items():
-            kernel_sol1_by_type[ktype] = infer_sol1_json_from_component_xml(Path(comp_xml))
-
-        tb_ctx = build_tb_context(instances, streams, kernel_sol1_by_type)
-
-        tb_template = Path(args.tb_template)  # default: ../resources/sw_emu/tb.cpp.j2
-        tb_out = Path(args.tb_out) if args.tb_out else Path(f"../results/{project}/sw_emu/tb.cpp")
-        tb_out.parent.mkdir(parents=True, exist_ok=True)
-
-        render_template(
-            template_dir=tb_template.parent,
-            template_name=tb_template.name,
-            out_path=tb_out,
-            context=tb_ctx,
-        )
-        logger.info("Rendered sw_emu tb.cpp to %s", tb_out)
 
     # 4) Build context for kernel adds (+clocks/resets) and render
     ctx = build_kernel_add_context(instances)
@@ -353,7 +330,7 @@ def generate_tcl(args) -> None:
         instances,
         axilite_ctx.get("axilite_addr", []),
         clock_hz=clock_hz,
-        platform="Emulation" if args.emit_sw_emu else "Hardware",
+        platform="Hardware",
         network=getattr(cfg, "network", None),
     )
     system_map_template = Path(args.system_map_template)

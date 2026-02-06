@@ -29,16 +29,36 @@ def infer_sol1_json_from_component_xml(component_xml: Path) -> Path:
     """
     Given:
       .../sol1/impl/ip/component.xml
-    Return:
-      .../sol1/sol1_data.json
+      .../hls/impl/ip/component.xml
+    Return (preferred order):
+      .../hls_data.json (alongside the solution dir)
+      .../hls/hls_data.json (sibling to sol1)
+      .../sol1_data.json (legacy)
     """
     p = component_xml.resolve()
-    # ip -> impl -> sol1
-    sol1_dir = p.parents[2]
-    sol1_json = sol1_dir / "sol1_data.json"
-    if not sol1_json.exists():
-        raise FileNotFoundError(f"Cannot find sol1_data.json inferred from {p} -> {sol1_json}")
-    return sol1_json
+    # ip -> impl -> <solution>
+    sol_dir = p.parents[2]
+
+    # Prefer new HLS metadata if present in the solution dir.
+    hls_json = sol_dir / "hls_data.json"
+    if hls_json.exists():
+        return hls_json
+
+    # Some flows keep hls_data.json in a sibling "hls" dir when component lives in "sol1".
+    if sol_dir.name != "hls":
+        sibling_hls = sol_dir.parent / "hls" / "hls_data.json"
+        if sibling_hls.exists():
+            return sibling_hls
+
+    # Legacy fallback.
+    sol1_json = sol_dir / "sol1_data.json"
+    if sol1_json.exists():
+        return sol1_json
+
+    raise FileNotFoundError(
+        "Cannot find HLS metadata inferred from "
+        f"{p} -> tried: {hls_json}, {sol_dir.parent / 'hls' / 'hls_data.json'}, {sol1_json}"
+    )
 
 
 def _norm_stream_type(src: str) -> str:
@@ -104,7 +124,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
     """
     instances: from apply_config_to_instances(), name -> Instance(kernel=KernelType,...)
     streams: list of edges, each with .src_inst .src_port .dst_inst .dst_port (your parser types)
-    kernel_sol1_by_type: kernel-type-name -> sol1_data.json Path
+    kernel_sol1_by_type: kernel-type-name -> HLS metadata json Path (hls_data.json / sol1_data.json)
     """
 
     # Load HLS metadata per kernel type
@@ -112,7 +132,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
     for ktype, sol1p in kernel_sol1_by_type.items():
         hls_meta[ktype] = parse_sol1_data(sol1p)
 
-    # Prototypes: generated from Top + Args (since sol1_data.json doesn't store full prototype)
+    # Prototypes: generated from Top + Args (metadata doesn't store full prototype)
     prototypes = []
     for ktype, meta in hls_meta.items():
         sig = [f'{a["cppType"]} {a["name"]}' for a in meta["Args"]]
@@ -162,7 +182,6 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
         decode_blocks = []
         call_args = []
 
-        # IMPORTANT: this matches your old behavior: argN is only for non-stream args
         argN = 0
         for a in meta["Args"]:
             cpp_t = a["cppType"]
@@ -192,8 +211,8 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
 
         function_calls.append(
             {
-                "inst": inst_name,        # runtime uses instance name ("dma_0")
-                "top": meta["Top"],       # actual HLS top ("dma")
+                "inst": inst_name,
+                "top": meta["Top"],
                 "decode_blocks": decode_blocks,
                 "call_args": call_args,
             }

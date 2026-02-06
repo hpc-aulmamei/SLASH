@@ -18,15 +18,23 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." REALPATH)
+find_program(VITIS_BINARY
+  NAMES vitis
+  PATHS ${VITIS_ROOT_DIR} ENV XILINX_VITIS ENV VITIS_HOME ENV VITIS
+  PATH_SUFFIXES bin
+)
 
-set(REPO_ROOT "${REPO_ROOT}" CACHE PATH "Repo root" FORCE)
+if(NOT VITIS_BINARY)
+  message(FATAL_ERROR "Vitis not found. Set XILINX_VITIS or VITIS_HOME (or add vitis to PATH).")
+endif()
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
+get_filename_component(_vitis_bin_dir "${VITIS_BINARY}" DIRECTORY)
+get_filename_component(VITIS_ROOT_DIR "${_vitis_bin_dir}" DIRECTORY)
 
-list(APPEND CMAKE_MODULE_PATH "${REPO_ROOT}/cmake")
-include(SlashHw)
-include(SlashSim)
-include(SlashEmu)
+set(VITIS_INCLUDE_DIR "${VITIS_ROOT_DIR}/include")
+if(NOT EXISTS "${VITIS_INCLUDE_DIR}")
+  message(FATAL_ERROR "Vitis include dir not found: ${VITIS_INCLUDE_DIR}")
+endif()
 
-set(SLASH_LINKER_DIR "${REPO_ROOT}/linker" CACHE PATH "Linker dir")
+set(VITIS_FOUND TRUE)
+message(STATUS "Found Vitis at ${VITIS_ROOT_DIR}.")
