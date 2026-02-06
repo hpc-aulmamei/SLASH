@@ -47,15 +47,34 @@ get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
 include("${REPO_ROOT}/cmake/ExampleInit.cmake")
 
 set(EXAMPLE_NAME "example")
+set(HLS_DEVICE "xcv80-lsva4737-2MHP-e-S")
 set(CFG_FILE "${CMAKE_CURRENT_LIST_DIR}/config.cfg")
-set(IP_REPO  "${CMAKE_CURRENT_LIST_DIR}/hls")
+
+# Build HLS kernels up front (configure-time) so kernel paths exist before linker setup.
+set(HLS_BUILD_DIR "${CMAKE_CURRENT_LIST_DIR}/hls")
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" -S "${HLS_BUILD_DIR}" -B "${HLS_BUILD_DIR}" -DDEVICE=${HLS_DEVICE}
+  RESULT_VARIABLE _hls_cfg_res
+)
+if(NOT _hls_cfg_res EQUAL 0)
+  message(FATAL_ERROR "Failed to configure HLS build (${_hls_cfg_res}).")
+endif()
+execute_process(
+  COMMAND "${CMAKE_COMMAND}" --build "${HLS_BUILD_DIR}" --target hls
+  RESULT_VARIABLE _hls_build_res
+)
+if(NOT _hls_build_res EQUAL 0)
+  message(FATAL_ERROR "Failed to build HLS kernels (${_hls_build_res}).")
+endif()
+
+set(IP_REPO  "${HLS_BUILD_DIR}")
 set(KERNELS
-  "${CMAKE_CURRENT_LIST_DIR}/hls/build_accumulate.xcv80-lsva4737-2MHP-e-S/hls/impl/ip/component.xml"
-  "${CMAKE_CURRENT_LIST_DIR}/hls/build_increment.xcv80-lsva4737-2MHP-e-S/hls/impl/ip/component.xml"
+  "${HLS_BUILD_DIR}/build_accumulate.${HLS_DEVICE}/hls/impl/ip/component.xml"
+  "${HLS_BUILD_DIR}/build_increment.${HLS_DEVICE}/hls/impl/ip/component.xml"
 )
 
 build_hw(
-  TARGET     build_hw
+  TARGET     hw
   LINKER_DIR "${SLASH_LINKER_DIR}"
   EXAMPLE    "${EXAMPLE_NAME}"
   CFG        "${CFG_FILE}"
