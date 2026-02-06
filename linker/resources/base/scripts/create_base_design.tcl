@@ -22,7 +22,9 @@ set src_dir [file dirname [file normalize [info script]]]
 
 create_project "slash" "$src_dir/../build" -part xcv80-lsva4737-2MHP-e-S -force
 
-set_property ip_repo_paths [file normalize [file join $src_dir ".." "iprepo"]] [current_project]
+set previous_ip_repo_paths [get_property ip_repo_paths [current_project]]
+set slash_ip_repo_path [file normalize [file join $src_dir ".." "iprepo"]]
+set_property ip_repo_paths [concat $previous_ip_repo_paths $slash_ip_repo_path] [current_project]
 update_ip_catalog
 
 # Base shell / containers
@@ -30,3 +32,5 @@ source [file normalize [file join $src_dir "slash_base.tcl"]]
 source [file normalize [file join $src_dir "service_layer.tcl"]]
 source [file normalize [file join $src_dir "top.tcl"]]
 source [file normalize [file join $src_dir "enable_dfx_bdc.tcl"]]
+
+archive_project -exclude_run_results -force $src_dir/slash_base.zip
