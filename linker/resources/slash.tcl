@@ -1251,7 +1251,3 @@ assign_bd_address -offset {{ "0x%012X"|format(a.offset) }} -range {{ "0x%08X"|fo
 assign_bd_address
 validate_bd_design
 save_bd_design
-
-# current_bd_design [get_bd_designs top]
-# validate_bd_design
-# save_bd_design
