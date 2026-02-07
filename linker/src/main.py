@@ -535,6 +535,7 @@ def main():
                 ip_repository=args.ip_repository,
                 action="all")
                 generate_base_pdi_with_aved(project_name=args.project)
+            _save_linker_info(args, stage="build_hw_project")
         _run_step("build", _do_build_all)
         def _do_create_metadata() -> None:
             if args.platform == "sim":

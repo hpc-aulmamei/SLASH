@@ -82,7 +82,7 @@ proc build_new_config {{proj_name "user"}} {
   }
 
   puts "INFO: Building new PR configuration for proj_name='$proj_name'"
-
+  write_hw_platform -force -fixed -minimal "../results/${proj_name}/top.xsa"
   # Project/user configuration
   create_pr_configuration -name $cfg2_name \
     -partitions [list \
