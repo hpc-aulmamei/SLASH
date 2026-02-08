@@ -31,6 +31,7 @@ import shutil
 from emit.hw.tcl_gen import generate_tcl
 from emit.hw.project_gen import (
     create_build_project,
+    clean_hw_project,
     generate_base_pdi_with_aved,
     generate_image,
     generate_util_report,
@@ -259,8 +260,6 @@ def _add_common_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("-p", "--project", required=True, help="Project name to suffix TCLs and BD clones.")
     ap.add_argument("--clock-hz", required=False, type=int,
                     help="System clock frequency in Hz for system_map.xml (default: from [clock], else 200000000).")
-    ap.add_argument("--emit-sw-emu", action="store_true",
-                    help="DEPRECATED: use --platform emu (generates sw_emu tb.cpp).")
     ap.add_argument("--tb-template", default="../resources/sw_emu/tb.cpp",
                     help="Path to tb.cpp Jinja2 template.")
     ap.add_argument("--tb-out", default=None,
@@ -287,20 +286,7 @@ def _resolve_platform(payload: dict, args: argparse.Namespace) -> str:
     payload_args = payload.get("args", {})
     if payload_args.get("platform"):
         return payload_args["platform"]
-    if payload_args.get("emit_sw_emu"):
-        return "emu"
     return "hw"
-
-
-def _apply_legacy_emu_flag(args: argparse.Namespace) -> None:
-    if not getattr(args, "emit_sw_emu", False):
-        return
-    if getattr(args, "platform", None) and args.platform != "emu":
-        raise ValueError(
-            "Conflicting options: --emit-sw-emu is deprecated and implies --platform emu. "
-            "Remove --emit-sw-emu or set --platform emu."
-        )
-    args.platform = "emu"
 
 
 def _stage_init(args: argparse.Namespace) -> None:
@@ -435,24 +421,25 @@ def _run_from_last_to_target(args: argparse.Namespace, target_stage: str) -> Non
 
 def _clean_outputs(args: argparse.Namespace) -> None:
     project_dir = _linker_info_path(args.project).parent
-    platform = args.platform or "hw"
-    if platform == "sim":
-        sim_dir = project_dir / "sim"
-        if sim_dir.exists():
-            shutil.rmtree(sim_dir, ignore_errors=True)
-        return
-    if platform == "emu":
-        sw_emu_dir = project_dir / "sw_emu"
-        if sw_emu_dir.exists():
-            shutil.rmtree(sw_emu_dir, ignore_errors=True)
-        return
-    # hw: remove generated BD and images if present
-    bd_dir = project_dir / "bd"
-    images_dir = project_dir / "images"
-    if bd_dir.exists():
-        shutil.rmtree(bd_dir, ignore_errors=True)
-    if images_dir.exists():
-        shutil.rmtree(images_dir, ignore_errors=True)
+    platform = args.platform
+    if platform is None:
+        info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+        if info_path.exists():
+            payload = _load_linker_info(info_path)
+            platform = _resolve_platform(payload, args)
+        else:
+            platform = "unknown"
+
+    if project_dir.exists():
+        shutil.rmtree(project_dir, ignore_errors=True)
+
+    if platform == "hw":
+        clean_hw_project(project_name=args.project)
+    elif platform == "unknown":
+        linker_root = Path(__file__).resolve().parents[1]
+        project_xpr = linker_root / "resources" / "base" / "build" / "slash.xpr"
+        if project_xpr.exists():
+            clean_hw_project(project_name=args.project)
 
 
 def main():
@@ -491,7 +478,6 @@ def main():
         ap_clean.set_defaults(func=_clean_outputs)
 
         args = ap.parse_args()
-        _apply_legacy_emu_flag(args)
         if args.command == "init":
             _run_step("init", lambda: args.func(args))
         elif args.command == "clean":
@@ -504,7 +490,6 @@ def main():
         )
         _add_common_args(ap)
         args = ap.parse_args()
-        _apply_legacy_emu_flag(args)
         _run_step("create_project", lambda: _save_linker_info(args, stage="create_project"))
         def _do_generate_tcl() -> None:
             if args.platform == "sim":
