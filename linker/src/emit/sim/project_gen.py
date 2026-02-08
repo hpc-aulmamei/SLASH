@@ -94,7 +94,19 @@ def create_sim_project(
     if not tcl.exists():
         raise FileNotFoundError(f"Simulation TCL not found: {tcl}")
 
-    cmd = [vivado_bin, "-mode", "tcl", "-source", str(tcl)]
+    log_path = _results_root() / project_name / "vivado.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        vivado_bin,
+        "-mode",
+        "tcl",
+        "-nojournal",
+        "-log",
+        str(log_path),
+        "-source",
+        str(tcl),
+    ]
     subprocess.run(cmd, cwd=str(sim_root), check=True)
 
 
