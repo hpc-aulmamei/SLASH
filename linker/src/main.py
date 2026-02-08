@@ -217,6 +217,42 @@ def _stage_index(stage: str, platform: str) -> int:
         raise ValueError(f"Unknown stage '{stage}'. Expected one of: {', '.join(steps)}")
     return steps.index(stage)
 
+def _stage_requirements(stage: str) -> list[str]:
+    if stage in {"init", "clean"}:
+        return []
+    steps = _steps_for_platform("hw")
+    if stage not in steps:
+        return []
+    idx = steps.index(stage)
+    return list(steps[:idx])
+
+
+def _format_stage_requirements(stage: str) -> str:
+    req = _stage_requirements(stage)
+    if not req:
+        return "Requires prior stages: none"
+    return "Requires prior stages: " + " -> ".join(req)
+
+
+def _stage_help_block(stage: str) -> str:
+    lines = [f"Stage: {stage}", _format_stage_requirements(stage)]
+    if stage == "init":
+        lines.append("Writes/updates .linker_info.json with current args.")
+    elif stage == "clean":
+        lines.append("Removes results for the project; does not require prior stages.")
+    else:
+        lines.append("Uses linker info to resume and validates required stage(s).")
+    return "\n".join(lines)
+
+
+def _all_stage_help_block() -> str:
+    stages = ["init", "generate_tcl", "create_hw_project", "build_hw_project", "create_metadata", "clean"]
+    lines = ["Stages:"]
+    for stage in stages:
+        lines.append(f"  {stage}: {_format_stage_requirements(stage)}")
+    lines.append("Use `main.py <stage> --help` for details.")
+    return "\n".join(lines)
+
 
 def _require_stage(payload: dict, required_stage: str, path: Path, platform: str) -> None:
     current = payload.get(_stage_key(platform))
@@ -449,31 +485,69 @@ def main():
     )
     if len(sys.argv) > 1 and sys.argv[1] in {"init", "generate_tcl", "create_hw_project", "build_hw_project", "create_metadata", "clean"}:
         ap = argparse.ArgumentParser(
-            description="Linker stages (use linker info to resume)."
+            description="Linker stages (use linker info to resume).",
+            epilog=_all_stage_help_block(),
+            formatter_class=argparse.RawTextHelpFormatter,
         )
         sub = ap.add_subparsers(dest="command", required=True)
 
-        ap_init = sub.add_parser("init", help="Save linker args and initialize stage state.")
+        ap_init = sub.add_parser(
+            "init",
+            help="Save linker args and initialize stage state.",
+            description="Initialize linker state for staged execution.",
+            epilog=_stage_help_block("init"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_common_args(ap_init)
         ap_init.set_defaults(func=_stage_init)
 
-        ap_gen = sub.add_parser("generate_tcl", help="Generate Tcl from saved linker args.")
+        ap_gen = sub.add_parser(
+            "generate_tcl",
+            help="Generate Tcl from saved linker args.",
+            description="Generate Tcl using previously saved linker args.",
+            epilog=_stage_help_block("generate_tcl"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_linker_info_args(ap_gen)
         ap_gen.set_defaults(func=_stage_generate_tcl)
 
-        ap_create = sub.add_parser("create_hw_project", help="Create hardware project from generated Tcl.")
+        ap_create = sub.add_parser(
+            "create_hw_project",
+            help="Create hardware project from generated Tcl.",
+            description="Create hardware project using generated Tcl.",
+            epilog=_stage_help_block("create_hw_project"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_linker_info_args(ap_create)
         ap_create.set_defaults(func=_stage_create_hw_project)
 
-        ap_build = sub.add_parser("build_hw_project", help="Build hardware project from existing design.")
+        ap_build = sub.add_parser(
+            "build_hw_project",
+            help="Build hardware project from existing design.",
+            description="Build hardware project from an existing design.",
+            epilog=_stage_help_block("build_hw_project"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_linker_info_args(ap_build)
         ap_build.set_defaults(func=_stage_build_hw_project)
 
-        ap_meta = sub.add_parser("create_metadata", help="Generate images/utilization/vbin artifacts.")
+        ap_meta = sub.add_parser(
+            "create_metadata",
+            help="Generate images/utilization/vbin artifacts.",
+            description="Generate images, utilization, and vbin artifacts.",
+            epilog=_stage_help_block("create_metadata"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_linker_info_args(ap_meta)
         ap_meta.set_defaults(func=_stage_create_metadata)
 
-        ap_clean = sub.add_parser("clean", help="Remove build outputs for a project.")
+        ap_clean = sub.add_parser(
+            "clean",
+            help="Remove build outputs for a project.",
+            description="Remove build outputs for a project.",
+            epilog=_stage_help_block("clean"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_linker_info_args(ap_clean)
         ap_clean.set_defaults(func=_clean_outputs)
 
@@ -486,7 +560,9 @@ def main():
             _run_from_last_to_target(args, args.command)
     else:
         ap = argparse.ArgumentParser(
-            description="Parse kernels (component.xml), connectivity config, BD port map, and render Tcl."
+            description="Parse kernels (component.xml), connectivity config, BD port map, and render Tcl.",
+            epilog=_all_stage_help_block(),
+            formatter_class=argparse.RawTextHelpFormatter,
         )
         _add_common_args(ap)
         args = ap.parse_args()
