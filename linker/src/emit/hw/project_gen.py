@@ -108,7 +108,21 @@ def create_build_project(
     if not tcl.exists():
         raise FileNotFoundError(f"create_project.tcl not found: {tcl}")
 
-    cmd = [vivado_bin, "-mode", "batch", "-source", str(tcl), "-tclargs", project_name]
+    log_path = Path(__file__).resolve().parents[3] / "results" / project_name / "vivado.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        vivado_bin,
+        "-mode",
+        "batch",
+        "-nojournal",
+        "-log",
+        str(log_path),
+        "-source",
+        str(tcl),
+        "-tclargs",
+        project_name,
+    ]
     if ip_repository:
         cmd.append(ip_repository)
     if action:
