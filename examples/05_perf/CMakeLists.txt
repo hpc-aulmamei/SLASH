@@ -24,7 +24,7 @@ project(00_axilite LANGUAGES NONE)
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
 include("${REPO_ROOT}/cmake/ProjectInit.cmake")
 
-set(SLASH_PROJECT "example")
+set(SLASH_PROJECT "perf")
 set(CFG_FILE "${CMAKE_CURRENT_LIST_DIR}/config.cfg")
 
 set(HLS_BUILD_DIR "${CMAKE_CURRENT_LIST_DIR}/hls")

@@ -24,7 +24,7 @@ project(00_axilite LANGUAGES NONE)
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
 include("${REPO_ROOT}/cmake/ProjectInit.cmake")
 
-set(SLASH_PROJECT "chain")
+set(SLASH_PROJECT "dcmac")
 set(CFG_FILE "${CMAKE_CURRENT_LIST_DIR}/config.cfg")
 
 set(HLS_BUILD_DIR "${CMAKE_CURRENT_LIST_DIR}/hls")
@@ -44,18 +44,3 @@ build_hw(
   IP_REPO    "${IP_REPO}"
 )
 
-build_sim(
-  TARGET     sim
-  LINKER_DIR "${SLASH_LINKER_DIR}"
-  PROJECT    "${SLASH_PROJECT}"
-  CFG        "${CFG_FILE}"
-  KERNELS    ${KERNELS}
-)
-
-build_emu(
-  TARGET     emu
-  LINKER_DIR "${SLASH_LINKER_DIR}"
-  PROJECT    "${SLASH_PROJECT}"
-  CFG        "${CFG_FILE}"
-  KERNELS    ${KERNELS}
-)
