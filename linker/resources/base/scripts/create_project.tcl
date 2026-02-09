@@ -164,7 +164,8 @@ if {![file exists $proj_exists]} {
     source $service_gen_tcl
     current_bd_design [get_bd_designs top]
     
-    generate_target all [get_files "top.bd"]
+    generate_target all [get_files "slash_${project_name}.bd"]
+    generate_target all [get_files "service_layer_${project_name}.bd"]
     current_bd_design [get_bd_designs top]
     save_bd_design
   }
