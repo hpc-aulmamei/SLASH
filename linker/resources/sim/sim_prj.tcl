@@ -48,10 +48,6 @@ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 mem
 set_property -dict [list CONFIG.ADDR_WIDTH 64] [get_bd_intf_ports mem]
 set_property -dict [list CONFIG.READ_WRITE_MODE READ_WRITE] [get_bd_intf_ports mem]
 set_property -dict [list CONFIG.DATA_WIDTH 64] [get_bd_intf_ports mem]
-create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:aximm_rtl:1.0 mem_ddr
-set_property -dict [list CONFIG.ADDR_WIDTH 64] [get_bd_intf_ports mem_ddr]
-set_property -dict [list CONFIG.READ_WRITE_MODE READ_WRITE] [get_bd_intf_ports mem_ddr]
-set_property -dict [list CONFIG.DATA_WIDTH 64] [get_bd_intf_ports mem_ddr]
 
 create_bd_cell -type ip -vlnv xilinx.com:ip:axi_bram_ctrl:4.1 bram_ctrl
 set_property -dict [list CONFIG.SINGLE_PORT_BRAM {0} CONFIG.DATA_WIDTH {64} CONFIG.ECC_TYPE {0} CONFIG.READ_LATENCY {50}] [get_bd_cells bram_ctrl]
@@ -97,31 +93,20 @@ connect_bd_intf_net [get_bd_intf_pins {{ sc.name }}/{{ mi.slot_name }}] [get_bd_
 {% endfor %}
 {% endfor %}
 
-# --- Memory SmartConnect root ---
+# --- Unified Memory SmartConnect root (mem port + kernel masters -> memories) ---
 set mem_sc [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect mem_sc ]
 set_property -dict [list \
   CONFIG.NUM_SI {{ "{" ~ mem_sc_num_si ~ "}" }} \
-  CONFIG.NUM_MI {1} \
+  CONFIG.NUM_MI {2} \
 ] [get_bd_cells mem_sc]
 connect_bd_net [get_bd_ports clk] [get_bd_pins mem_sc/aclk]
 connect_bd_net [get_bd_ports rst] [get_bd_pins mem_sc/aresetn]
 
 connect_bd_intf_net [get_bd_intf_pins mem_sc/M00_AXI] [get_bd_intf_pins bram_ctrl/S_AXI]
 connect_bd_intf_net [get_bd_intf_pins mem_sc/S00_AXI] [get_bd_intf_ports mem]
+connect_bd_intf_net [get_bd_intf_pins mem_sc/M01_AXI] [get_bd_intf_pins bram_ctrl_ddr/S_AXI]
 connect_bd_net [get_bd_ports clk] [get_bd_pins bram_ctrl/s_axi_aclk]
 connect_bd_net [get_bd_ports rst] [get_bd_pins bram_ctrl/s_axi_aresetn]
-
-# --- DDR Memory SmartConnect root ---
-set mem_sc_ddr [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect mem_sc_ddr ]
-set_property -dict [list \
-  CONFIG.NUM_SI {{ "{" ~ mem_ddr_sc_num_si ~ "}" }} \
-  CONFIG.NUM_MI {1} \
-] [get_bd_cells mem_sc_ddr]
-connect_bd_net [get_bd_ports clk] [get_bd_pins mem_sc_ddr/aclk]
-connect_bd_net [get_bd_ports rst] [get_bd_pins mem_sc_ddr/aresetn]
-
-connect_bd_intf_net [get_bd_intf_pins mem_sc_ddr/M00_AXI] [get_bd_intf_pins bram_ctrl_ddr/S_AXI]
-connect_bd_intf_net [get_bd_intf_pins mem_sc_ddr/S00_AXI] [get_bd_intf_ports mem_ddr]
 connect_bd_net [get_bd_ports clk] [get_bd_pins bram_ctrl_ddr/s_axi_aclk]
 connect_bd_net [get_bd_ports rst] [get_bd_pins bram_ctrl_ddr/s_axi_aresetn]
 
@@ -141,24 +126,6 @@ connect_bd_intf_net [get_bd_intf_pins {{ n.name }}/{{ si.slot_name }}] [get_bd_i
 
 {% for root in mem_roots %}
 connect_bd_intf_net [get_bd_intf_pins mem_sc/{{ root.slot_name }}] [get_bd_intf_pins {{ root.src_pin }}]
-{% endfor %}
-
-# --- DDR AXI-Full reduction tree (fan-in) ---
-{% for n in mem_ddr_reduce_nodes %}
-set {{ n.name }} [ create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect {{ n.name }} ]
-set_property -dict [list \
-  CONFIG.NUM_SI {{ "{" ~ n.num_si ~ "}" }} \
-  CONFIG.NUM_MI {1} \
-] [get_bd_cells {{ n.name }}]
-connect_bd_net [get_bd_ports clk] [get_bd_pins {{ n.name }}/aclk]
-connect_bd_net [get_bd_ports rst] [get_bd_pins {{ n.name }}/aresetn]
-{% for si in n.si %}
-connect_bd_intf_net [get_bd_intf_pins {{ n.name }}/{{ si.slot_name }}] [get_bd_intf_pins {{ si.src }}]
-{% endfor %}
-{% endfor %}
-
-{% for root in mem_ddr_roots %}
-connect_bd_intf_net [get_bd_intf_pins mem_sc_ddr/{{ root.slot_name }}] [get_bd_intf_pins {{ root.src_pin }}]
 {% endfor %}
 
 # --- Clocks / resets to kernels ---

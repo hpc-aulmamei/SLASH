@@ -19,7 +19,6 @@
 # ##################################################################################################
 
 include_guard(GLOBAL)
-find_package(Vitis REQUIRED)
 
 function(build_hls)
   set(oneValueArgs TARGET CPP CFG DEVICE OUT_DIR)
@@ -46,13 +45,31 @@ function(build_hls)
   endif()
 
   if("${BHL_OUT_DIR}" STREQUAL "")
-    set(BHL_OUT_DIR "${CMAKE_CURRENT_LIST_DIR}")
+    set(BHL_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
   endif()
 
   get_filename_component(_stem "${_cpp}" NAME_WE)
   set(_build_dir "${BHL_OUT_DIR}/build_${_stem}.${BHL_DEVICE}")
-  set(_stamp "${_build_dir}/.hls_stamp")
+  set(_component_xml "${_build_dir}/hls/impl/ip/component.xml")
+  set(_cfg_out "${_build_dir}/${_stem}.cfg")
   file(MAKE_DIRECTORY "${_build_dir}")
+
+  set(_rewrite_cfg_script "${CMAKE_CURRENT_BINARY_DIR}/${BHL_TARGET}_rewrite_cfg.cmake")
+  file(WRITE "${_rewrite_cfg_script}" [=[
+if(NOT DEFINED INPUT OR NOT DEFINED OUTPUT OR NOT DEFINED DEVICE)
+  message(FATAL_ERROR "rewrite_cfg: requires -DINPUT= -DOUTPUT= -DDEVICE=")
+endif()
+
+file(READ "\${INPUT}" _txt)
+
+if(_txt MATCHES "(^|\n)part=[^\n]*")
+  string(REGEX REPLACE "(^|\n)part=[^\n]*" "\\1part=\${DEVICE}" _txt "\${_txt}")
+else()
+  set(_txt "part=\${DEVICE}\n\n\${_txt}")
+endif()
+
+file(WRITE "\${OUTPUT}" "\${_txt}")
+]=])
 
   find_program(VPP_EXECUTABLE NAMES v++)
   if(NOT VPP_EXECUTABLE)
@@ -65,21 +82,90 @@ function(build_hls)
   endif()
 
   add_custom_command(
-    OUTPUT "${_stamp}"
+    OUTPUT "${_component_xml}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${_build_dir}"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_cpp}" "${_build_dir}/${_stem}.cpp"
-    COMMAND "${VPP_EXECUTABLE}" -c --mode hls --config "${_cfg}" --work_dir .
-    COMMAND "${VITIS_RUN_EXECUTABLE}" --mode hls --package --config "${_cfg}" --work_dir .
-    COMMAND "${CMAKE_COMMAND}" -E touch "${_stamp}"
+    COMMAND "${CMAKE_COMMAND}" -DINPUT="${_cfg}" -DOUTPUT="${_cfg_out}" -DDEVICE="${BHL_DEVICE}" -P "${_rewrite_cfg_script}"
+    COMMAND "${VPP_EXECUTABLE}" -c --mode hls --config "${_cfg_out}" --work_dir .
+    COMMAND "${VITIS_RUN_EXECUTABLE}" --mode hls --package --config "${_cfg_out}" --work_dir .
     WORKING_DIRECTORY "${_build_dir}"
-    DEPENDS "${_cpp}" "${_cfg}"
+    DEPENDS "${_cpp}" "${_cfg}" "${_rewrite_cfg_script}"
     COMMENT "HLS build: ${_stem}"
     VERBATIM
   )
 
-  add_custom_target("${BHL_TARGET}" DEPENDS "${_stamp}")
+  add_custom_target("${BHL_TARGET}" DEPENDS "${_component_xml}")
   set_property(TARGET "${BHL_TARGET}" PROPERTY HLS_BUILD_DIR "${_build_dir}")
+  set_property(TARGET "${BHL_TARGET}" PROPERTY HLS_COMPONENT_XML "${_component_xml}")
   set("${BHL_TARGET}_BUILD_DIR" "${_build_dir}" PARENT_SCOPE)
+  set("${BHL_TARGET}_COMPONENT_XML" "${_component_xml}" PARENT_SCOPE)
+endfunction()
+
+function(build_hls_dir)
+  set(oneValueArgs TARGET ROOT DEVICE OUT_DIR OUT_IP_REPO OUT_KERNELS)
+  set(multiValueArgs KERNELS)
+  cmake_parse_arguments(BHLD "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  if(NOT BHLD_TARGET)
+    message(FATAL_ERROR "build_hls_dir(): TARGET is required")
+  endif()
+  if(NOT BHLD_ROOT)
+    message(FATAL_ERROR "build_hls_dir(): ROOT is required")
+  endif()
+  if(NOT BHLD_DEVICE)
+    message(FATAL_ERROR "build_hls_dir(): DEVICE is required")
+  endif()
+  if(NOT BHLD_KERNELS)
+    message(FATAL_ERROR "build_hls_dir(): KERNELS is required (e.g., KERNELS increment accumulate)")
+  endif()
+
+  get_filename_component(_root "${BHLD_ROOT}" REALPATH)
+  if(NOT IS_DIRECTORY "${_root}")
+    message(FATAL_ERROR "build_hls_dir(): ROOT is not a directory: '${_root}'")
+  endif()
+
+  if("${BHLD_OUT_DIR}" STREQUAL "")
+    set(BHLD_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/${BHLD_TARGET}")
+  endif()
+  file(MAKE_DIRECTORY "${BHLD_OUT_DIR}")
+
+  set(_kernel_targets "")
+  set(_kernel_xmls "")
+
+  foreach(k IN LISTS BHLD_KERNELS)
+    set(_cpp "${_root}/${k}.cpp")
+    set(_cfg "${_root}/${k}.cfg")
+
+    if(NOT EXISTS "${_cpp}")
+      message(FATAL_ERROR "build_hls_dir(): CPP not found for kernel '${k}': '${_cpp}'")
+    endif()
+    if(NOT EXISTS "${_cfg}")
+      message(FATAL_ERROR "build_hls_dir(): CFG not found for kernel '${k}': '${_cfg}'")
+    endif()
+
+    set(_t "${BHLD_TARGET}_${k}")
+    string(REGEX REPLACE "[^A-Za-z0-9_]+" "_" _t "${_t}")
+
+    build_hls(
+      TARGET  "${_t}"
+      CPP     "${_cpp}"
+      CFG     "${_cfg}"
+      DEVICE  "${BHLD_DEVICE}"
+      OUT_DIR "${BHLD_OUT_DIR}"
+    )
+
+    list(APPEND _kernel_targets "${_t}")
+    list(APPEND _kernel_xmls "${${_t}_COMPONENT_XML}")
+  endforeach()
+
+  add_custom_target("${BHLD_TARGET}" DEPENDS ${_kernel_targets})
+
+  if(NOT "${BHLD_OUT_IP_REPO}" STREQUAL "")
+    set("${BHLD_OUT_IP_REPO}" "${BHLD_OUT_DIR}" PARENT_SCOPE)
+  endif()
+  if(NOT "${BHLD_OUT_KERNELS}" STREQUAL "")
+    set("${BHLD_OUT_KERNELS}" "${_kernel_xmls}" PARENT_SCOPE)
+  endif()
 endfunction()
 
 function(build_hls_clean)

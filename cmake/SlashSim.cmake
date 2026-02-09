@@ -23,7 +23,7 @@ include(FindVivado)
 
 function(build_sim)
   set(options USE_SYMLINK)
-  set(oneValueArgs TARGET LINKER_DIR EXAMPLE CFG OUT_DIR SIM_TEMPLATE SIM_MEM SIM_OUT SYSTEM_MAP_OUT)
+  set(oneValueArgs TARGET LINKER_DIR PROJECT CFG OUT_DIR SIM_TEMPLATE SIM_MEM SIM_OUT SYSTEM_MAP_OUT)
   set(multiValueArgs KERNELS)
   cmake_parse_arguments(BSIM "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -31,7 +31,7 @@ function(build_sim)
     message(FATAL_ERROR "build_sim(): TARGET is required")
   endif()
 
-  foreach(req LINKER_DIR EXAMPLE CFG)
+  foreach(req LINKER_DIR PROJECT CFG)
     if("${BSIM_${req}}" STREQUAL "")
       message(FATAL_ERROR "build_sim(): ${req} is required")
     endif()
@@ -110,17 +110,17 @@ function(build_sim)
     set(_py "python3")
   endif()
 
-  set(_sim_root "${BSIM_LINKER_DIR}/results/${BSIM_EXAMPLE}/sim")
+  set(_sim_root "${BSIM_LINKER_DIR}/results/${BSIM_PROJECT}/sim")
   set(_src_vpp "${_sim_root}/vpp_sim")
   set(_src_xsim "${_sim_root}/xsim.dir")
   set(_src_system_map "${_sim_root}/system_map.xml")
-  set(_src_vbin "${_sim_root}/${BSIM_EXAMPLE}_sim.vbin")
+  set(_src_vbin "${_sim_root}/${BSIM_PROJECT}_sim.vbin")
 
   set(_dst_vpp "${BSIM_OUT_DIR}/vpp_sim")
   set(_dst_xsim "${BSIM_OUT_DIR}/xsim.dir")
   set(_dst_system_map "${BSIM_OUT_DIR}/system_map.xml")
-  set(_dst_vbin "${BSIM_OUT_DIR}/${BSIM_EXAMPLE}_sim.vbin")
-  set(_stamp "${BSIM_OUT_DIR}/.${BSIM_EXAMPLE}_sim.stamp")
+  set(_dst_vbin "${BSIM_OUT_DIR}/${BSIM_PROJECT}_sim.vbin")
+  set(_stamp "${BSIM_OUT_DIR}/.${BSIM_PROJECT}_sim.stamp")
 
   if(BSIM_USE_SYMLINK)
     set(_publish_vbin_cmd "${CMAKE_COMMAND}" -E create_symlink "${_src_vbin}" "${_dst_vbin}")
@@ -157,7 +157,7 @@ function(build_sim)
     # Run linker init (simulation platform)
     COMMAND "${_py}" "${_main_py}"
             init
-            -p "${BSIM_EXAMPLE}"
+            -p "${BSIM_PROJECT}"
             --cfg "${BSIM_CFG}"
             --kernels ${BSIM_KERNELS}
             ${_sim_args}
@@ -165,7 +165,7 @@ function(build_sim)
     # Build simulation project
     COMMAND "${_py}" "${_main_py}"
             build_hw_project
-            -p "${BSIM_EXAMPLE}"
+            -p "${BSIM_PROJECT}"
             --sim
 
     COMMAND "${CMAKE_COMMAND}" -E echo "Publishing SIM vbin:"
@@ -184,7 +184,7 @@ function(build_sim)
       ${BSIM_KERNELS}
       ${_extra_deps}
 
-    COMMENT "SLASH SIM build: ${BSIM_EXAMPLE} -> ${BSIM_OUT_DIR}"
+    COMMENT "SLASH SIM build: ${BSIM_PROJECT} -> ${BSIM_OUT_DIR}"
     VERBATIM
   )
 

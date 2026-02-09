@@ -18,6 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
+include_guard(GLOBAL)
+
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." REALPATH)
 
 set(REPO_ROOT "${REPO_ROOT}" CACHE PATH "Repo root" FORCE)

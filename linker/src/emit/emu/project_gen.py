@@ -141,7 +141,7 @@ def package_emu_artifacts(
     if not vpp_emu.exists():
         raise FileNotFoundError(f"vpp_emu not found: {vpp_emu}")
 
-    out_name = output_name or f"{project_name}_emu.vrtbin"
+    out_name = output_name or f"{project_name}_emu.vbin"
     out_path = project_root / out_name
     if out_path.exists():
         out_path.unlink()
@@ -150,5 +150,5 @@ def package_emu_artifacts(
         tf.add(system_map, arcname="system_map.xml")
         tf.add(vpp_emu, arcname="vpp_emu")
 
-    logger.info("Emulation vrtbin in %s", out_path)
+    logger.info("Emulation vbin in %s", out_path)
     return out_path
