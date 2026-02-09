@@ -51,25 +51,9 @@ function(build_hls)
   get_filename_component(_stem "${_cpp}" NAME_WE)
   set(_build_dir "${BHL_OUT_DIR}/build_${_stem}.${BHL_DEVICE}")
   set(_component_xml "${_build_dir}/hls/impl/ip/component.xml")
-  set(_cfg_out "${_build_dir}/${_stem}.cfg")
+  # Copy the cfg next to the build outputs so relative paths inside the cfg keep working.
+  set(_cfg_local "${_build_dir}/${_stem}.cfg")
   file(MAKE_DIRECTORY "${_build_dir}")
-
-  set(_rewrite_cfg_script "${CMAKE_CURRENT_BINARY_DIR}/${BHL_TARGET}_rewrite_cfg.cmake")
-  file(WRITE "${_rewrite_cfg_script}" [=[
-if(NOT DEFINED INPUT OR NOT DEFINED OUTPUT OR NOT DEFINED DEVICE)
-  message(FATAL_ERROR "rewrite_cfg: requires -DINPUT= -DOUTPUT= -DDEVICE=")
-endif()
-
-file(READ "\${INPUT}" _txt)
-
-if(_txt MATCHES "(^|\n)part=[^\n]*")
-  string(REGEX REPLACE "(^|\n)part=[^\n]*" "\\1part=\${DEVICE}" _txt "\${_txt}")
-else()
-  set(_txt "part=\${DEVICE}\n\n\${_txt}")
-endif()
-
-file(WRITE "\${OUTPUT}" "\${_txt}")
-]=])
 
   find_program(VPP_EXECUTABLE NAMES v++)
   if(NOT VPP_EXECUTABLE)
@@ -85,11 +69,11 @@ file(WRITE "\${OUTPUT}" "\${_txt}")
     OUTPUT "${_component_xml}"
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${_build_dir}"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_cpp}" "${_build_dir}/${_stem}.cpp"
-    COMMAND "${CMAKE_COMMAND}" -DINPUT="${_cfg}" -DOUTPUT="${_cfg_out}" -DDEVICE="${BHL_DEVICE}" -P "${_rewrite_cfg_script}"
-    COMMAND "${VPP_EXECUTABLE}" -c --mode hls --config "${_cfg_out}" --work_dir .
-    COMMAND "${VITIS_RUN_EXECUTABLE}" --mode hls --package --config "${_cfg_out}" --work_dir .
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_cfg}" "${_cfg_local}"
+    COMMAND "${VPP_EXECUTABLE}" -c --mode hls --config "${_cfg_local}" --work_dir .
+    COMMAND "${VITIS_RUN_EXECUTABLE}" --mode hls --package --config "${_cfg_local}" --work_dir .
     WORKING_DIRECTORY "${_build_dir}"
-    DEPENDS "${_cpp}" "${_cfg}" "${_rewrite_cfg_script}"
+    DEPENDS "${_cpp}" "${_cfg}"
     COMMENT "HLS build: ${_stem}"
     VERBATIM
   )
@@ -192,6 +176,7 @@ function(build_hls_clean)
     "${BHLC_ROOT}/CMakeFiles"
     "${BHLC_ROOT}/cmake_install.cmake"
     "${BHLC_ROOT}/Makefile"
+    "${BHLC_ROOT}/*_rewrite_cfg.cmake"
     "${BHLC_ROOT}/${BHLC_TARGET}.cmake"
   )
   if(BHLC_EXTRA_GLOBS)
