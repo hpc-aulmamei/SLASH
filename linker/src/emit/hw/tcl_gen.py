@@ -48,6 +48,8 @@ from core.bd_ports import load_bd_ports_from_file
 
 logger = logging.getLogger(__name__)
 
+_RX_SRC_PIN_RE = re.compile(r"^/?dcmac_axis_noc_s_(\d+)/M00_AXIS$")
+
 
 def _sanitize_bd_name(s: str) -> str:
     """! @brief Sanitize a name for use as a block design identifier.
@@ -284,6 +286,18 @@ def generate_tcl(args) -> None:
         "axis_to_fabric":   net_ctx["axis_to_fabric"],   # inst.AXIS -> /dcmac_axis_noc_k/S00_AXIS
         "axis_from_fabric": net_ctx["axis_from_fabric"], # /dcmac_axis_noc_s_k/M00_AXIS -> inst.AXIS
     })
+    used_rx_slots: set[int] = set()
+    for e in net_ctx.get("axis_from_fabric", []):
+        m = _RX_SRC_PIN_RE.match(str(e.get("src_pin", "")).strip())
+        if m:
+            used_rx_slots.add(int(m.group(1)))
+
+    # Tie-off RX NoC tready only for unused RX slots (0..7).
+    # If no RX is used, we tie all 8.
+    dcmac_rx_tready_tie_slots = [i for i in range(8) if i not in used_rx_slots]
+    ctx["dcmac_rx_tready_tie_pins"] = [
+        f"dcmac_axis_noc_s_{i}/M00_AXIS_tready" for i in dcmac_rx_tready_tie_slots
+    ]
 
     ctx.update(build_stream_connect_context(instances, net_ctx["streams_leftover"]))
 
