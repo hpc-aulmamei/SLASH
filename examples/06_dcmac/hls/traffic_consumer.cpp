@@ -18,37 +18,31 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <ap_int.h>
-#include <stdint.h>
+#include "ap_axi_sdata.h"
+#include "ap_int.h"
+#include "hls_stream.h"
 
-#define DATA_WIDTH 256
-typedef ap_uint<DATA_WIDTH> uint256_t;
-#define LENGTH 0x1000000
+#define DWIDTH 512
+#define TDWIDTH 3
 
-extern "C" void perf(
-    uint256_t* hbm_ptr,
-    ap_uint<32> wr,
-    ap_uint<32>& out_acc
-) {
-#pragma HLS INTERFACE m_axi port=hbm_ptr offset=slave bundle=gmem0 max_read_burst_length=64 max_write_burst_length=64 depth=536870912
-#pragma HLS INTERFACE s_axilite port=hbm_ptr   bundle=control
-#pragma HLS INTERFACE s_axilite port=wr        bundle=control
-#pragma HLS INTERFACE s_axilite port=out_acc        bundle=control
-#pragma HLS INTERFACE s_axilite port=return    bundle=control
+typedef ap_axiu<DWIDTH, 1, 1, TDWIDTH> pkt;
 
-    ap_uint<32> acc = 0;
-    if (wr == 0) {
-        for (uint32_t i = 0; i < LENGTH; i++) {
-        #pragma HLS PIPELINE II=1
-                hbm_ptr[i] = i;
+void traffic_consumer(hls::stream<pkt> &axis_in,
+                      ap_uint<32>     &rx_flits)
+{
+#pragma HLS INTERFACE mode=axis      port=axis_in depth=16
+#pragma HLS INTERFACE mode=s_axilite port=rx_flits bundle=control
+#pragma HLS INTERFACE ap_ctrl_none   port=return
+
+    ap_uint<32> rx = 0;
+    rx_flits = 0;
+
+    while (1) {
+#pragma HLS PIPELINE II=1
+        if (!axis_in.empty()) {
+            (void)axis_in.read();  // consume one beat
+            rx++;
+            rx_flits = rx;         // readable via AXI-Lite
         }
-    } else {
-        for (uint32_t i = 0; i < LENGTH; i++) {
-        #pragma HLS PIPELINE II=1
-            uint256_t val = hbm_ptr[i];
-            acc ^= val.range(31, 0);
-        }
-        out_acc = acc;
     }
 }
-

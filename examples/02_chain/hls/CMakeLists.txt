@@ -1,6 +1,6 @@
 # ##################################################################################################
 #  The MIT License (MIT)
-#  Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
 # 
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -18,61 +18,42 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-set command [lindex $argv 0]
-set device [lindex $argv 1]
-set ipname [lindex $argv 2]
+cmake_minimum_required(VERSION 3.20)
+project(00_axilite_hls LANGUAGES NONE)
 
-set do_sim 0
-set do_syn 0
-set do_export 0
-set do_cosim 0
+get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." REALPATH)
+list(APPEND CMAKE_MODULE_PATH "${REPO_ROOT}/cmake")
+include(BuildHLS)
 
-switch $command {
-    "sim" {
-        set do_sim 1
-    }
-    "syn" {
-        set do_syn 1
-    }
-    "ip" {
-        set do_syn 1
-        set do_export 1
-    }
-    "cosim" {
-        set do_syn 1
-        set do_cosim 1
-    }
-    "all" {
-        set do_sim 1
-        set do_syn 1
-        set do_export 1
-        set do_cosim 1
-    }
-    default {
-        puts "Unrecognized command"
-        exit
-    }
-}
+set(DEVICE "xcv80-lsva4737-2MHP-e-S" CACHE STRING "HLS device")
 
+build_hls(
+  TARGET   hls_dma_in
+  CPP      "${CMAKE_CURRENT_LIST_DIR}/dma_in.cpp"
+  CFG      "${CMAKE_CURRENT_LIST_DIR}/dma_in.cfg"
+  DEVICE   "${DEVICE}"
+  OUT_DIR  "${CMAKE_CURRENT_LIST_DIR}"
+)
 
-open_project build_${ipname}.${device}
-file copy -force $ipname.cpp build_${ipname}.${device}/$ipname.cpp
-add_files $ipname.cpp -cflags "-std=c++14"
+build_hls(
+  TARGET   hls_dma_out
+  CPP      "${CMAKE_CURRENT_LIST_DIR}/dma_out.cpp"
+  CFG      "${CMAKE_CURRENT_LIST_DIR}/dma_out.cfg"
+  DEVICE   "${DEVICE}"
+  OUT_DIR  "${CMAKE_CURRENT_LIST_DIR}"
+)
 
-set_top $ipname
+build_hls(
+  TARGET   hls_passthrough
+  CPP      "${CMAKE_CURRENT_LIST_DIR}/passthrough.cpp"
+  CFG      "${CMAKE_CURRENT_LIST_DIR}/passthrough.cfg"
+  DEVICE   "${DEVICE}"
+  OUT_DIR  "${CMAKE_CURRENT_LIST_DIR}"
+)
 
-open_solution sol1
-
-if {$do_syn} {
-    set_part $device
-    create_clock -period 2 -name default
-    config_interface -m_axi_addr64=true
-    csynth_design
-}
-
-if {$do_export} {
-    config_export -format ip_catalog
-    export_design
-}
-
-exit
+add_custom_target(hls ALL DEPENDS hls_dma_in hls_dma_out hls_passthrough)
+build_hls_clean(
+  TARGET hls_clean
+  DEVICE "${DEVICE}"
+  ROOT   "${CMAKE_CURRENT_LIST_DIR}"
+)
