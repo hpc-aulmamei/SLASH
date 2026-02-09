@@ -23,7 +23,7 @@ include_guard(GLOBAL)
 function(build_emu)
   find_package(Vitis REQUIRED)
   set(options USE_SYMLINK)
-  set(oneValueArgs TARGET LINKER_DIR EXAMPLE CFG OUT_DIR TB_TEMPLATE TB_OUT SYSTEM_MAP_OUT)
+  set(oneValueArgs TARGET LINKER_DIR PROJECT CFG OUT_DIR TB_TEMPLATE TB_OUT SYSTEM_MAP_OUT)
   set(multiValueArgs KERNELS)
   cmake_parse_arguments(BEMU "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -31,7 +31,7 @@ function(build_emu)
     message(FATAL_ERROR "build_emu(): TARGET is required")
   endif()
 
-  foreach(req LINKER_DIR EXAMPLE CFG)
+  foreach(req LINKER_DIR PROJECT CFG)
     if("${BEMU_${req}}" STREQUAL "")
       message(FATAL_ERROR "build_emu(): ${req} is required")
     endif()
@@ -110,13 +110,13 @@ function(build_emu)
     set(_py "python3")
   endif()
 
-  set(_emu_root "${BEMU_LINKER_DIR}/results/${BEMU_EXAMPLE}/sw_emu")
+  set(_emu_root "${BEMU_LINKER_DIR}/results/${BEMU_PROJECT}/sw_emu")
   set(_src_vpp "${_emu_root}/vpp_emu")
-  set(_src_system_map "${BEMU_LINKER_DIR}/results/${BEMU_EXAMPLE}/system_map.xml")
-  set(_src_vbin "${BEMU_LINKER_DIR}/results/${BEMU_EXAMPLE}/${BEMU_EXAMPLE}_emu.vrtbin")
+  set(_src_system_map "${BEMU_LINKER_DIR}/results/${BEMU_PROJECT}/system_map.xml")
+  set(_src_vbin "${BEMU_LINKER_DIR}/results/${BEMU_PROJECT}/${BEMU_PROJECT}_emu.vbin")
 
-  set(_dst_vbin "${BEMU_OUT_DIR}/${BEMU_EXAMPLE}_emu.vrtbin")
-  set(_stamp "${BEMU_OUT_DIR}/.${BEMU_EXAMPLE}_emu.stamp")
+  set(_dst_vbin "${BEMU_OUT_DIR}/${BEMU_PROJECT}_emu.vbin")
+  set(_stamp "${BEMU_OUT_DIR}/.${BEMU_PROJECT}_emu.stamp")
 
   if(BEMU_USE_SYMLINK)
     set(_publish_vbin_cmd "${CMAKE_COMMAND}" -E create_symlink "${_src_vbin}" "${_dst_vbin}")
@@ -150,7 +150,7 @@ function(build_emu)
     # Run linker init (emulation platform)
     COMMAND "${_py}" "${_main_py}"
             init
-            -p "${BEMU_EXAMPLE}"
+            -p "${BEMU_PROJECT}"
             --cfg "${BEMU_CFG}"
             --kernels ${BEMU_KERNELS}
             ${_emu_args}
@@ -158,13 +158,13 @@ function(build_emu)
     # Build emulation project (generates tb.cpp + vpp_emu)
     COMMAND "${_py}" "${_main_py}"
             build_hw_project
-            -p "${BEMU_EXAMPLE}"
+            -p "${BEMU_PROJECT}"
             --emu
 
     # Package emulation artifacts into <project>_emu.vrtbin
     COMMAND "${_py}" "${_main_py}"
             create_metadata
-            -p "${BEMU_EXAMPLE}"
+            -p "${BEMU_PROJECT}"
             --emu
 
     COMMAND "${CMAKE_COMMAND}" -E echo "Publishing EMU vbin:"
@@ -183,7 +183,7 @@ function(build_emu)
       ${BEMU_KERNELS}
       ${_extra_deps}
 
-    COMMENT "SLASH EMU build: ${BEMU_EXAMPLE} -> ${BEMU_OUT_DIR}"
+    COMMENT "SLASH EMU build: ${BEMU_PROJECT} -> ${BEMU_OUT_DIR}"
     VERBATIM
   )
 

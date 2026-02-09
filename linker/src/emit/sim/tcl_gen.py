@@ -252,29 +252,17 @@ def generate_sim_tcl(args) -> None:
         si_bd_port="s_axi_ctrl",
     )
 
-    mem0_sources, mem1_sources = _classify_mem_targets(instances)
     mem_reduce_nodes, mem_roots = _build_reduction_tree(
-        mem0_sources,
+        [f"{iname}/{pname}" for iname, pname in axifull_ports],
         max_si=16,
         max_roots=15,
         base_name="mem_sc_red",
-    )
-    mem_ddr_reduce_nodes, mem_ddr_roots = _build_reduction_tree(
-        mem1_sources,
-        max_si=16,
-        max_roots=15,
-        base_name="mem_sc_ddr_red",
     )
     mem_roots_ctx = [
         {"slot_name": _fmt_sc_slot("S", idx + 1), "src_pin": src}
         for idx, src in enumerate(mem_roots)
     ]
     mem_sc_num_si = 1 + len(mem_roots_ctx)
-    mem_ddr_roots_ctx = [
-        {"slot_name": _fmt_sc_slot("S", idx + 1), "src_pin": src}
-        for idx, src in enumerate(mem_ddr_roots)
-    ]
-    mem_ddr_sc_num_si = 1 + len(mem_ddr_roots_ctx)
 
     stream_ctx = build_stream_connect_context(instances, streams)
     axis_streams_ctx = []
@@ -329,9 +317,6 @@ def generate_sim_tcl(args) -> None:
             "mem_reduce_nodes": mem_reduce_nodes,
             "mem_roots": mem_roots_ctx,
             "mem_sc_num_si": mem_sc_num_si,
-            "mem_ddr_reduce_nodes": mem_ddr_reduce_nodes,
-            "mem_ddr_roots": mem_ddr_roots_ctx,
-            "mem_ddr_sc_num_si": mem_ddr_sc_num_si,
             "clock_ports": [f"{iname}/{pname}" for iname, pname in clock_ports],
             "reset_ports": [f"{iname}/{pname}" for iname, pname in reset_ports],
             "axis_streams": axis_streams_ctx,

@@ -23,7 +23,7 @@ include(FindVivado)
 
 function(build_hw)
   set(options USE_SYMLINK)
-  set(oneValueArgs TARGET LINKER_DIR EXAMPLE CFG IP_REPO OUT_DIR)
+  set(oneValueArgs TARGET LINKER_DIR PROJECT CFG IP_REPO OUT_DIR)
   set(multiValueArgs KERNELS)
   cmake_parse_arguments(BHW "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -31,7 +31,7 @@ function(build_hw)
     message(FATAL_ERROR "build_hw(): TARGET is required")
   endif()
 
-  foreach(req LINKER_DIR EXAMPLE CFG IP_REPO)
+  foreach(req LINKER_DIR PROJECT CFG IP_REPO)
     if("${BHW_${req}}" STREQUAL "")
       message(FATAL_ERROR "build_hw(): ${req} is required")
     endif()
@@ -115,9 +115,9 @@ function(build_hw)
   endif()
 
 
-  set(_src_vbin "${BHW_LINKER_DIR}/results/${BHW_EXAMPLE}/${BHW_EXAMPLE}_hw.vbin")
-  set(_dst_vbin "${BHW_OUT_DIR}/${BHW_EXAMPLE}_hw.vbin")
-  set(_stamp    "${BHW_OUT_DIR}/.${BHW_EXAMPLE}_linker.stamp")
+  set(_src_vbin "${BHW_LINKER_DIR}/results/${BHW_PROJECT}/${BHW_PROJECT}_hw.vbin")
+  set(_dst_vbin "${BHW_OUT_DIR}/${BHW_PROJECT}_hw.vbin")
+  set(_stamp    "${BHW_OUT_DIR}/.${BHW_PROJECT}_linker.stamp")
 
   if(BHW_USE_SYMLINK)
     set(_publish_cmd "${CMAKE_COMMAND}" -E create_symlink "${_src_vbin}" "${_dst_vbin}")
@@ -132,7 +132,7 @@ function(build_hw)
 
     # Run linker
     COMMAND "${_py}" "${_main_py}"
-            -p "${BHW_EXAMPLE}"
+            -p "${BHW_PROJECT}"
             --cfg "${BHW_CFG}"
             --kernels ${BHW_KERNELS}
             --ip-repository "${BHW_IP_REPO}"
@@ -152,7 +152,7 @@ function(build_hw)
       "${BHW_CFG}"
       ${BHW_KERNELS}
 
-    COMMENT "SLASH HW build: ${BHW_EXAMPLE} -> ${_dst_vbin}"
+    COMMENT "SLASH HW build: ${BHW_PROJECT} -> ${_dst_vbin}"
     VERBATIM
   )
 
