@@ -1779,8 +1779,8 @@ proc create_root_design { parentCell } {
   # assign_bd_address -offset 0x020303040200 -range 0x00000100 -with_name SEG_axi_gpio_monitor_Reg_1 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/control_intf/axi_gpio_monitor/S_AXI/Reg] -force
   # assign_bd_address -offset 0x020302040600 -range 0x00000100 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_0_n_1/control_intf/axi_gpio_reset_txrx/S_AXI/Reg] -force
   # assign_bd_address -offset 0x020303040600 -range 0x00000100 -with_name SEG_axi_gpio_reset_txrx_Reg_1 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/control_intf/axi_gpio_reset_txrx/S_AXI/Reg] -force
-  assign_bd_address -offset 0x020302000000 -range 0x00040000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_0_n_1/DCMAC_subsys/dcmac_0_core/s_axi/Reg] -force
-  assign_bd_address -offset 0x020303000000 -range 0x00040000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/DCMAC_subsys/dcmac_1_core/s_axi/Reg] -force
+  # assign_bd_address -offset 0x020302000000 -range 0x00040000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_0_n_1/DCMAC_subsys/dcmac_0_core/s_axi/Reg] -force
+  # assign_bd_address -offset 0x020303000000 -range 0x00040000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/DCMAC_subsys/dcmac_1_core/s_axi/Reg] -force
   assign_bd_address -offset 0x020300000000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs eth_0/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020300010000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs eth_1/s_axi_control/Reg] -force
   assign_bd_address -offset 0x020300020000 -range 0x00010000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs eth_2/s_axi_control/Reg] -force
