@@ -18,17 +18,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-TARGET=ip
-DEVICE=xcv80-lsva4737-2MHP-e-S
+all: ip/*.zip
 
-TRAFFIC_PRODUCER_BUILD_DIR=build_traffic_producer.$(DEVICE)
-
-all: $(TRAFFIC_PRODUCER_BUILD_DIR)
-
-$(TRAFFIC_PRODUCER_BUILD_DIR):
-	if [ ! -d "$(TRAFFIC_PRODUCER_BUILD_DIR)" ]; then \
-        vitis_hls build.tcl -tclargs $(TARGET) $(DEVICE) traffic_producer; \
-	fi
+ip/*.zip: *.cpp
+	v++ -c --mode hls --config traffic_producer.cfg --work_dir ip
+	vitis-run --mode hls --package --config traffic_producer.cfg --work_dir ip
 
 clean:
-	rm -rf $(TRAFFIC_PRODUCER_BUILD_DIR)
+	rm -rf ip/ .Xil *.json

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import logging
+import re
 import shutil
 import subprocess
 from typing import Optional
@@ -55,6 +56,52 @@ def _copy_checked(src: Path, dest: Path) -> None:
     shutil.copy2(src, dest)
 
 
+def _ensure_boot_device_pcie_in_bif(bif_path: Path) -> None:
+    if not bif_path.exists():
+        raise FileNotFoundError(f"Expected BIF file not found: {bif_path}")
+
+    lines = bif_path.read_text().splitlines()
+    if any(line.strip() == "boot_device { pcie }" for line in lines):
+        return
+
+    # Find id=0x2
+    pattern = re.compile(r"^(\s*)id\s*=\s*0x2\s*$")
+    for idx, line in enumerate(lines):
+        match = pattern.match(line)
+        if match:
+            lines.insert(idx + 1, f"{match.group(1)}boot_device {{ pcie }}")
+            bif_path.write_text("\n".join(lines) + "\n")
+            return
+
+    raise ValueError(f"Could not find 'id = 0x2' in BIF file: {bif_path}")
+
+
+def _generate_top_wrapper_pdi_with_bootgen(impl_dir: Path) -> Path:
+    bif_path = impl_dir / "top_wrapper.bif"
+    output_pdi = impl_dir / "top_wrapperr.pdi"
+
+    _ensure_boot_device_pcie_in_bif(bif_path)
+    logger.info("Running bootgen in %s to generate %s", impl_dir, output_pdi.name)
+    subprocess.run(
+        [
+            "bootgen",
+            "-arch",
+            "versal",
+            "-image",
+            bif_path.name,
+            "-w",
+            "-o",
+            output_pdi.name,
+        ],
+        cwd=str(impl_dir),
+        check=True,
+    )
+
+    if not output_pdi.exists():
+        raise FileNotFoundError(f"Expected bootgen output not found: {output_pdi}")
+    return output_pdi
+
+
 def generate_base_pdi_with_aved(project_name: str, workdir: Optional[Path] = None) -> None:
     linker_root = _default_results_dir()
     results_base_dir = linker_root / "results" / "base"
@@ -68,18 +115,17 @@ def generate_base_pdi_with_aved(project_name: str, workdir: Optional[Path] = Non
     aved_fpt_dir = aved_hw_dir / "fpt"
     aved_fw_profile_hal = aved_root / "fw" / "AMC" / "src" / "profiles" / "v80" / "profile_hal.h"
 
-    static_top_wrapper_pdi = (
-        linker_root / "resources" / "base" / "build" / "slash.runs" / "impl_1" / "top_wrapper.pdi"
-    )
+    static_impl_dir = linker_root / "resources" / "base" / "build" / "slash.runs" / "impl_1"
     aved_build_script = linker_root / "resources" / "aved" / "build_all.sh"
     aved_profile_hal_src = linker_root / "resources" / "aved" / "profile_hal.h"
     aved_pdi_combine_src = linker_root / "resources" / "aved" / "pdi_combine.bif"
-    xsa_src = linker_root / "results" / project_name / "top.xsa"
+    xsa_src = linker_root / "resources" / "aved" / f"{AVED_DESIGN_NAME}.xsa"
 
     logger.info("results/base not found. Starting AVED fallback build for %s", project_name)
     aved_build_dir.mkdir(parents=True, exist_ok=True)
 
-    _copy_checked(static_top_wrapper_pdi, aved_build_dir / "top_wrapper.pdi")
+    regenerated_top_wrapper_pdi = _generate_top_wrapper_pdi_with_bootgen(static_impl_dir)
+    _copy_checked(regenerated_top_wrapper_pdi, aved_build_dir / "top_wrapper.pdi")
     _copy_checked(aved_build_script, aved_hw_dir / "build_all.sh")
     _copy_checked(aved_profile_hal_src, aved_fw_profile_hal)
     _copy_checked(aved_pdi_combine_src, aved_fpt_dir / "pdi_combine.bif")
