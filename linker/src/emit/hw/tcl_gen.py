@@ -49,6 +49,8 @@ from core.bd_ports import load_bd_ports_from_file
 
 logger = logging.getLogger(__name__)
 
+_RX_SRC_PIN_RE = re.compile(r"^/?dcmac_axis_noc_s_(\d+)/M00_AXIS$")
+
 
 def _sanitize_bd_name(s: str) -> str:
     """! @brief Sanitize a name for use as a block design identifier.
@@ -251,7 +253,6 @@ def generate_tcl(args) -> None:
 
     # 1) Parse kernels
     kernel_library = {}
-    kernel_compxml_by_type = {}
 
     logger.info("Loading kernels")
     for kpath in args.kernels:
@@ -261,7 +262,6 @@ def generate_tcl(args) -> None:
 
         k = parse_component_xml(kfile)
         kernel_library[k.name] = k
-        kernel_compxml_by_type[k.name] = kfile.resolve()
 
         print_kernel(k)
 
@@ -276,27 +276,6 @@ def generate_tcl(args) -> None:
     # 4) Make instances & stream edges
     instances, streams = apply_config_to_instances(cfg, kernel_library)
     print_instances(instances, streams)
-    # --- sw_emu: generate tb.cpp (ZMQ HLS sim server) ---
-    if args.emit_sw_emu:
-        from emit.sw_emu.tb_ctx import build_tb_context, infer_sol1_json_from_component_xml
-
-        kernel_sol1_by_type = {}
-        for ktype, comp_xml in kernel_compxml_by_type.items():
-            kernel_sol1_by_type[ktype] = infer_sol1_json_from_component_xml(Path(comp_xml))
-
-        tb_ctx = build_tb_context(instances, streams, kernel_sol1_by_type)
-
-        tb_template = Path(args.tb_template)  # default: ../resources/sw_emu/tb.cpp.j2
-        tb_out = Path(args.tb_out) if args.tb_out else Path(f"../results/{project}/sw_emu/tb.cpp")
-        tb_out.parent.mkdir(parents=True, exist_ok=True)
-
-        render_template(
-            template_dir=tb_template.parent,
-            template_name=tb_template.name,
-            out_path=tb_out,
-            context=tb_ctx,
-        )
-        logger.info("Rendered sw_emu tb.cpp to %s", tb_out)
 
     # 5) Build context for kernel adds (+clocks/resets) and render
     ctx.update(build_kernel_add_context(instances))
@@ -312,6 +291,18 @@ def generate_tcl(args) -> None:
         "axis_to_fabric":   net_ctx["axis_to_fabric"],   # inst.AXIS -> /dcmac_axis_noc_k/S00_AXIS
         "axis_from_fabric": net_ctx["axis_from_fabric"], # /dcmac_axis_noc_s_k/M00_AXIS -> inst.AXIS
     })
+    used_rx_slots: set[int] = set()
+    for e in net_ctx.get("axis_from_fabric", []):
+        m = _RX_SRC_PIN_RE.match(str(e.get("src_pin", "")).strip())
+        if m:
+            used_rx_slots.add(int(m.group(1)))
+
+    # Tie-off RX NoC tready only for unused RX slots (0..7).
+    # If no RX is used, we tie all 8.
+    dcmac_rx_tready_tie_slots = [i for i in range(8) if i not in used_rx_slots]
+    ctx["dcmac_rx_tready_tie_pins"] = [
+        f"dcmac_axis_noc_s_{i}/M00_AXIS_tready" for i in dcmac_rx_tready_tie_slots
+    ]
 
     ctx.update(build_stream_connect_context(instances, net_ctx["streams_leftover"]))
 
@@ -358,7 +349,7 @@ def generate_tcl(args) -> None:
         instances,
         axilite_ctx.get("axilite_addr", []),
         clock_hz=clock_hz,
-        platform="Emulation" if args.emit_sw_emu else "Hardware",
+        platform="Hardware",
         network=getattr(cfg, "network", None),
     )
     system_map_template = Path(args.system_map_template)

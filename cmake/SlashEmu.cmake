@@ -19,43 +19,43 @@
 # ##################################################################################################
 
 include_guard(GLOBAL)
-include(FindVivado)
 
-function(build_sim)
+function(build_emu)
+  find_package(Vitis REQUIRED)
   set(options USE_SYMLINK)
-  set(oneValueArgs TARGET LINKER_DIR PROJECT CFG OUT_DIR SIM_TEMPLATE SIM_MEM SIM_OUT SYSTEM_MAP_OUT)
+  set(oneValueArgs TARGET LINKER_DIR PROJECT CFG OUT_DIR TB_TEMPLATE TB_OUT SYSTEM_MAP_OUT)
   set(multiValueArgs KERNELS)
-  cmake_parse_arguments(BSIM "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+  cmake_parse_arguments(BEMU "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-  if(NOT BSIM_TARGET)
-    message(FATAL_ERROR "build_sim(): TARGET is required")
+  if(NOT BEMU_TARGET)
+    message(FATAL_ERROR "build_emu(): TARGET is required")
   endif()
 
   foreach(req LINKER_DIR PROJECT CFG)
-    if("${BSIM_${req}}" STREQUAL "")
-      message(FATAL_ERROR "build_sim(): ${req} is required")
+    if("${BEMU_${req}}" STREQUAL "")
+      message(FATAL_ERROR "build_emu(): ${req} is required")
     endif()
   endforeach()
 
-  if(NOT BSIM_KERNELS)
-    message(FATAL_ERROR "build_sim(): KERNELS is required (at least one component.xml)")
+  if(NOT BEMU_KERNELS)
+    message(FATAL_ERROR "build_emu(): KERNELS is required (at least one component.xml)")
   endif()
 
-  if("${BSIM_OUT_DIR}" STREQUAL "")
-    set(BSIM_OUT_DIR "${CMAKE_BINARY_DIR}")
+  if("${BEMU_OUT_DIR}" STREQUAL "")
+    set(BEMU_OUT_DIR "${CMAKE_BINARY_DIR}")
   endif()
 
   set(_main_py "")
 
-  if(EXISTS "${BSIM_LINKER_DIR}/src/main.py")
-    set(_main_py "${BSIM_LINKER_DIR}/src/main.py")
-  elseif(EXISTS "${BSIM_LINKER_DIR}/main.py")
-    set(_main_py "${BSIM_LINKER_DIR}/main.py")
+  if(EXISTS "${BEMU_LINKER_DIR}/src/main.py")
+    set(_main_py "${BEMU_LINKER_DIR}/src/main.py")
+  elseif(EXISTS "${BEMU_LINKER_DIR}/main.py")
+    set(_main_py "${BEMU_LINKER_DIR}/main.py")
   else()
     file(GLOB_RECURSE _main_candidates
-      RELATIVE "${BSIM_LINKER_DIR}"
-      "${BSIM_LINKER_DIR}/*/main.py"
-      "${BSIM_LINKER_DIR}/main.py"
+      RELATIVE "${BEMU_LINKER_DIR}"
+      "${BEMU_LINKER_DIR}/*/main.py"
+      "${BEMU_LINKER_DIR}/main.py"
     )
 
     set(_filtered "")
@@ -70,18 +70,18 @@ function(build_sim)
     list(LENGTH _filtered _n)
     if(_n EQUAL 1)
       list(GET _filtered 0 _rel)
-      set(_main_py "${BSIM_LINKER_DIR}/${_rel}")
+      set(_main_py "${BEMU_LINKER_DIR}/${_rel}")
     elseif(_n EQUAL 0)
       message(FATAL_ERROR
-        "build_sim(): could not infer entrypoint. Expected one of:\n"
-        "  ${BSIM_LINKER_DIR}/src/main.py\n"
-        "  ${BSIM_LINKER_DIR}/main.py\n"
+        "build_emu(): could not infer entrypoint. Expected one of:\n"
+        "  ${BEMU_LINKER_DIR}/src/main.py\n"
+        "  ${BEMU_LINKER_DIR}/main.py\n"
         "and could not find any other */main.py under LINKER_DIR."
       )
     else()
       string(REPLACE ";" "\n  " _cand_pretty "${_filtered}")
       message(FATAL_ERROR
-        "build_sim(): multiple main.py candidates found under LINKER_DIR; ambiguous:\n"
+        "build_emu(): multiple main.py candidates found under LINKER_DIR; ambiguous:\n"
         "  ${_cand_pretty}\n"
         "Please keep a single entrypoint, e.g. linker/src/main.py."
       )
@@ -89,18 +89,18 @@ function(build_sim)
   endif()
 
   if(NOT EXISTS "${_main_py}")
-    message(FATAL_ERROR "build_sim(): inferred entrypoint not found: '${_main_py}'")
+    message(FATAL_ERROR "build_emu(): inferred entrypoint not found: '${_main_py}'")
   endif()
 
   get_filename_component(_main_dir "${_main_py}" DIRECTORY)
 
-  if(NOT EXISTS "${BSIM_CFG}")
-    message(FATAL_ERROR "build_sim(): CFG file not found: '${BSIM_CFG}'")
+  if(NOT EXISTS "${BEMU_CFG}")
+    message(FATAL_ERROR "build_emu(): CFG file not found: '${BEMU_CFG}'")
   endif()
 
-  foreach(k IN LISTS BSIM_KERNELS)
+  foreach(k IN LISTS BEMU_KERNELS)
     if(NOT EXISTS "${k}")
-      message(FATAL_ERROR "build_sim(): kernel component.xml not found: '${k}'")
+      message(FATAL_ERROR "build_emu(): kernel component.xml not found: '${k}'")
     endif()
   endforeach()
 
@@ -110,40 +110,33 @@ function(build_sim)
     set(_py "python3")
   endif()
 
-  set(_sim_root "${BSIM_LINKER_DIR}/results/${BSIM_PROJECT}/sim")
-  set(_src_vpp "${_sim_root}/vpp_sim")
-  set(_src_xsim "${_sim_root}/xsim.dir")
-  set(_src_system_map "${_sim_root}/system_map.xml")
-  set(_src_vbin "${_sim_root}/${BSIM_PROJECT}_sim.vbin")
+  set(_emu_root "${BEMU_LINKER_DIR}/results/${BEMU_PROJECT}/sw_emu")
+  set(_src_vpp "${_emu_root}/vpp_emu")
+  set(_src_system_map "${BEMU_LINKER_DIR}/results/${BEMU_PROJECT}/system_map.xml")
+  set(_src_vbin "${BEMU_LINKER_DIR}/results/${BEMU_PROJECT}/${BEMU_PROJECT}_emu.vbin")
 
-  set(_dst_vpp "${BSIM_OUT_DIR}/vpp_sim")
-  set(_dst_xsim "${BSIM_OUT_DIR}/xsim.dir")
-  set(_dst_system_map "${BSIM_OUT_DIR}/system_map.xml")
-  set(_dst_vbin "${BSIM_OUT_DIR}/${BSIM_PROJECT}_sim.vbin")
-  set(_stamp "${BSIM_OUT_DIR}/.${BSIM_PROJECT}_sim.stamp")
+  set(_dst_vbin "${BEMU_OUT_DIR}/${BEMU_PROJECT}_emu.vbin")
+  set(_stamp "${BEMU_OUT_DIR}/.${BEMU_PROJECT}_emu.stamp")
 
-  if(BSIM_USE_SYMLINK)
+  if(BEMU_USE_SYMLINK)
     set(_publish_vbin_cmd "${CMAKE_COMMAND}" -E create_symlink "${_src_vbin}" "${_dst_vbin}")
   else()
     set(_publish_vbin_cmd "${CMAKE_COMMAND}" -E copy_if_different "${_src_vbin}" "${_dst_vbin}")
   endif()
 
-  set(_sim_args "--platform" "sim")
-  if(NOT "${BSIM_SIM_TEMPLATE}" STREQUAL "")
-    list(APPEND _sim_args "--sim-template" "${BSIM_SIM_TEMPLATE}")
+  set(_emu_args "--platform" "emu")
+  if(NOT "${BEMU_TB_TEMPLATE}" STREQUAL "")
+    list(APPEND _emu_args "--tb-template" "${BEMU_TB_TEMPLATE}")
   endif()
-  if(NOT "${BSIM_SIM_MEM}" STREQUAL "")
-    list(APPEND _sim_args "--sim-mem" "${BSIM_SIM_MEM}")
+  if(NOT "${BEMU_TB_OUT}" STREQUAL "")
+    list(APPEND _emu_args "--tb-out" "${BEMU_TB_OUT}")
   endif()
-  if(NOT "${BSIM_SIM_OUT}" STREQUAL "")
-    list(APPEND _sim_args "--sim-out" "${BSIM_SIM_OUT}")
-  endif()
-  if(NOT "${BSIM_SYSTEM_MAP_OUT}" STREQUAL "")
-    list(APPEND _sim_args "--system-map-out" "${BSIM_SYSTEM_MAP_OUT}")
+  if(NOT "${BEMU_SYSTEM_MAP_OUT}" STREQUAL "")
+    list(APPEND _emu_args "--system-map-out" "${BEMU_SYSTEM_MAP_OUT}")
   endif()
 
   set(_extra_deps "")
-  foreach(dep IN ITEMS BSIM_SIM_TEMPLATE BSIM_SIM_MEM)
+  foreach(dep IN ITEMS BEMU_TB_TEMPLATE)
     if(NOT "${${dep}}" STREQUAL "")
       list(APPEND _extra_deps "${${dep}}")
     endif()
@@ -152,23 +145,29 @@ function(build_sim)
   add_custom_command(
     OUTPUT "${_dst_vbin}" "${_stamp}"
 
-    COMMAND "${CMAKE_COMMAND}" -E make_directory "${BSIM_OUT_DIR}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${BEMU_OUT_DIR}"
 
-    # Run linker init (simulation platform)
+    # Run linker init (emulation platform)
     COMMAND "${_py}" "${_main_py}"
             init
-            -p "${BSIM_PROJECT}"
-            --cfg "${BSIM_CFG}"
-            --kernels ${BSIM_KERNELS}
-            ${_sim_args}
+            -p "${BEMU_PROJECT}"
+            --cfg "${BEMU_CFG}"
+            --kernels ${BEMU_KERNELS}
+            ${_emu_args}
 
-    # Build simulation project
+    # Build emulation project (generates tb.cpp + vpp_emu)
     COMMAND "${_py}" "${_main_py}"
             build_hw_project
-            -p "${BSIM_PROJECT}"
-            --sim
+            -p "${BEMU_PROJECT}"
+            --emu
 
-    COMMAND "${CMAKE_COMMAND}" -E echo "Publishing SIM vbin:"
+    # Package emulation artifacts into <project>_emu.vrtbin
+    COMMAND "${_py}" "${_main_py}"
+            create_metadata
+            -p "${BEMU_PROJECT}"
+            --emu
+
+    COMMAND "${CMAKE_COMMAND}" -E echo "Publishing EMU vbin:"
     COMMAND "${CMAKE_COMMAND}" -E echo "  from ${_src_vbin}"
     COMMAND "${CMAKE_COMMAND}" -E echo "  to   ${_dst_vbin}"
     COMMAND "${CMAKE_COMMAND}" -E rm -f "${_dst_vbin}"
@@ -180,19 +179,18 @@ function(build_sim)
 
     DEPENDS
       "${_main_py}"
-      "${BSIM_CFG}"
-      ${BSIM_KERNELS}
+      "${BEMU_CFG}"
+      ${BEMU_KERNELS}
       ${_extra_deps}
 
-    COMMENT "SLASH SIM build: ${BSIM_PROJECT} -> ${BSIM_OUT_DIR}"
+    COMMENT "SLASH EMU build: ${BEMU_PROJECT} -> ${BEMU_OUT_DIR}"
     VERBATIM
   )
 
-  add_custom_target("${BSIM_TARGET}" DEPENDS "${_dst_vbin}")
+  add_custom_target("${BEMU_TARGET}" DEPENDS "${_dst_vbin}")
 
-  set_property(TARGET "${BSIM_TARGET}" PROPERTY SLASH_SIM_ROOT "${_sim_root}")
-  set_property(TARGET "${BSIM_TARGET}" PROPERTY SLASH_SIM_VPP "${_src_vpp}")
-  set_property(TARGET "${BSIM_TARGET}" PROPERTY SLASH_SIM_XSIM_DIR "${_src_xsim}")
-  set_property(TARGET "${BSIM_TARGET}" PROPERTY SLASH_SYSTEM_MAP "${_src_system_map}")
-  set_property(TARGET "${BSIM_TARGET}" PROPERTY SLASH_SIM_VBIN "${_dst_vbin}")
+  set_property(TARGET "${BEMU_TARGET}" PROPERTY SLASH_EMU_ROOT "${_emu_root}")
+  set_property(TARGET "${BEMU_TARGET}" PROPERTY SLASH_EMU_VPP "${_src_vpp}")
+  set_property(TARGET "${BEMU_TARGET}" PROPERTY SLASH_SYSTEM_MAP "${_src_system_map}")
+  set_property(TARGET "${BEMU_TARGET}" PROPERTY SLASH_EMU_VBIN "${_dst_vbin}")
 endfunction()

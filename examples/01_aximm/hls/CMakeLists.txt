@@ -1,6 +1,6 @@
 # ##################################################################################################
 #  The MIT License (MIT)
-#  Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
 # 
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -18,17 +18,34 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-TARGET=ip
-DEVICE=xcv80-lsva4737-2MHP-e-S
+cmake_minimum_required(VERSION 3.20)
+project(01_aximm_hls LANGUAGES NONE)
 
-VADD_BUILD_DIR=build_vadd.$(DEVICE)
+get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." REALPATH)
+list(APPEND CMAKE_MODULE_PATH "${REPO_ROOT}/cmake")
+include(BuildHLS)
 
-all: $(VADD_BUILD_DIR)
+set(DEVICE "xcv80-lsva4737-2MHP-e-S" CACHE STRING "HLS device")
 
-$(VADD_BUILD_DIR):
-	if [ ! -d "$(VADD_BUILD_DIR)" ]; then \
-		vitis_hls build.tcl -tclargs $(TARGET) $(DEVICE) vadd; \
-	fi
+build_hls(
+  TARGET   hls_offset
+  CPP      "${CMAKE_CURRENT_LIST_DIR}/offset.cpp"
+  CFG      "${CMAKE_CURRENT_LIST_DIR}/offset.cfg"
+  DEVICE   "${DEVICE}"
+  OUT_DIR  "${CMAKE_CURRENT_LIST_DIR}"
+)
 
-clean:
-	rm -rf $(VADD_BUILD_DIR) vitis_hls.log
+build_hls(
+  TARGET   hls_dma
+  CPP      "${CMAKE_CURRENT_LIST_DIR}/dma.cpp"
+  CFG      "${CMAKE_CURRENT_LIST_DIR}/dma.cfg"
+  DEVICE   "${DEVICE}"
+  OUT_DIR  "${CMAKE_CURRENT_LIST_DIR}"
+)
+
+add_custom_target(hls ALL DEPENDS hls_offset hls_dma)
+build_hls_clean(
+  TARGET hls_clean
+  DEVICE "${DEVICE}"
+  ROOT   "${CMAKE_CURRENT_LIST_DIR}"
+)

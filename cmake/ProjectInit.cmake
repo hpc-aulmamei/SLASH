@@ -1,6 +1,6 @@
 # ##################################################################################################
 #  The MIT License (MIT)
-#  Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
 # 
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -18,61 +18,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-set command [lindex $argv 0]
-set device [lindex $argv 1]
-set ipname [lindex $argv 2]
+include_guard(GLOBAL)
 
-set do_sim 0
-set do_syn 0
-set do_export 0
-set do_cosim 0
+get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." REALPATH)
 
-switch $command {
-    "sim" {
-        set do_sim 1
-    }
-    "syn" {
-        set do_syn 1
-    }
-    "ip" {
-        set do_syn 1
-        set do_export 1
-    }
-    "cosim" {
-        set do_syn 1
-        set do_cosim 1
-    }
-    "all" {
-        set do_sim 1
-        set do_syn 1
-        set do_export 1
-        set do_cosim 1
-    }
-    default {
-        puts "Unrecognized command"
-        exit
-    }
-}
+set(REPO_ROOT "${REPO_ROOT}" CACHE PATH "Repo root" FORCE)
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-open_project build_${ipname}.${device}
-file copy -force $ipname.cpp build_${ipname}.${device}/$ipname.cpp
-add_files $ipname.cpp -cflags "-std=c++14"
+list(APPEND CMAKE_MODULE_PATH "${REPO_ROOT}/cmake")
+include(SlashHw)
+include(SlashSim)
+include(SlashEmu)
 
-set_top $ipname
-
-open_solution sol1
-
-if {$do_syn} {
-    set_part $device
-    create_clock -period 4 -name default
-    config_interface -m_axi_addr64=true
-    csynth_design
-}
-
-if {$do_export} {
-    config_export -format ip_catalog
-    export_design
-}
-
-exit
+set(SLASH_LINKER_DIR "${REPO_ROOT}/linker" CACHE PATH "Linker dir")

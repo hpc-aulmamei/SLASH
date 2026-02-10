@@ -963,16 +963,13 @@ update_compile_order -fileset sources_1
   [get_bd_pins axi_noc_0/aclk0] \
   [get_bd_pins c_shift_ram_0/CLK]
 
-
+  # Tie-off RX tready only for unused DCMAC RX NoC slots.
+  {% if dcmac_rx_tready_tie_pins|default([]) %}
   connect_bd_net -net xlconstant_0_dout  [get_bd_pins xlconstant_0/dout] \
-  [get_bd_pins dcmac_axis_noc_s_0/M00_AXIS_tready] \
-  [get_bd_pins dcmac_axis_noc_s_1/M00_AXIS_tready] \
-  [get_bd_pins dcmac_axis_noc_s_2/M00_AXIS_tready] \
-  [get_bd_pins dcmac_axis_noc_s_3/M00_AXIS_tready] \
-  [get_bd_pins dcmac_axis_noc_s_4/M00_AXIS_tready] \
-  [get_bd_pins dcmac_axis_noc_s_5/M00_AXIS_tready] \
-  [get_bd_pins dcmac_axis_noc_s_6/M00_AXIS_tready] \
-  [get_bd_pins dcmac_axis_noc_s_7/M00_AXIS_tready]
+  {% for p in dcmac_rx_tready_tie_pins %}
+  [get_bd_pins {{ p }}]{{ " \\" if not loop.last else "" }}
+  {% endfor %}
+  {% endif %}
 
 # === Import kernel IP repos ===
 set existing_repos [get_property ip_repo_paths [current_project]]

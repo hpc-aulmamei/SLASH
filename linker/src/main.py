@@ -31,12 +31,15 @@ import shutil
 from emit.hw.tcl_gen import generate_tcl
 from emit.hw.project_gen import (
     create_build_project,
+    clean_hw_project,
     generate_base_pdi_with_aved,
     generate_image,
     generate_util_report,
 )
 from emit.sim.tcl_gen import generate_sim_tcl
+from emit.emu.tcl_gen import generate_emu_tcl
 from emit.sim.project_gen import create_sim_project, build_sim_project
+from emit.emu.project_gen import build_emu_project, package_emu_artifacts
 
 from emit.metadata.prog_image import build_vbin
 
@@ -56,13 +59,29 @@ SIM_STEPS = (
     "create_metadata",
 )
 
+EMU_STEPS = (
+    "create_project",
+    "generate_tcl",
+    "create_hw_project",
+    "build_hw_project",
+    "create_metadata",
+)
+
 
 def _stage_key(platform: str) -> str:
-    return "sim_stage" if platform == "sim" else "hw_stage"
+    if platform == "sim":
+        return "sim_stage"
+    if platform == "emu":
+        return "emu_stage"
+    return "hw_stage"
 
 
 def _steps_for_platform(platform: str) -> tuple[str, ...]:
-    return SIM_STEPS if platform == "sim" else HW_STEPS
+    if platform == "sim":
+        return SIM_STEPS
+    if platform == "emu":
+        return EMU_STEPS
+    return HW_STEPS
 
 
 def _linker_info_path(project_name: str) -> Path:
@@ -104,10 +123,18 @@ def _load_linker_info(path: Path) -> dict:
     if "args" not in payload:
         raise ValueError(f"Missing 'args' in linker info: {path}")
     # Back-compat: if only legacy "stage" exists, mirror to hw/sim stage.
-    if "hw_stage" not in payload and "sim_stage" not in payload and "stage" in payload:
+    if "hw_stage" not in payload and "sim_stage" not in payload and "emu_stage" not in payload and "stage" in payload:
         payload["hw_stage"] = payload["stage"]
         payload["sim_stage"] = payload["stage"]
-    if "hw_stage" not in payload and "sim_stage" not in payload and "stage" not in payload:
+        payload["emu_stage"] = payload["stage"]
+    if "emu_stage" not in payload:
+        if "hw_stage" in payload:
+            payload["emu_stage"] = payload["hw_stage"]
+        elif "stage" in payload:
+            payload["emu_stage"] = payload["stage"]
+    if "emu_stage" in payload and payload["emu_stage"] not in EMU_STEPS:
+        payload["emu_stage"] = "create_project"
+    if "hw_stage" not in payload and "sim_stage" not in payload and "emu_stage" not in payload and "stage" not in payload:
         raise ValueError(f"Missing stage in linker info: {path}")
     return payload
 
@@ -190,6 +217,42 @@ def _stage_index(stage: str, platform: str) -> int:
         raise ValueError(f"Unknown stage '{stage}'. Expected one of: {', '.join(steps)}")
     return steps.index(stage)
 
+def _stage_requirements(stage: str) -> list[str]:
+    if stage in {"init", "clean"}:
+        return []
+    steps = _steps_for_platform("hw")
+    if stage not in steps:
+        return []
+    idx = steps.index(stage)
+    return list(steps[:idx])
+
+
+def _format_stage_requirements(stage: str) -> str:
+    req = _stage_requirements(stage)
+    if not req:
+        return "Requires prior stages: none"
+    return "Requires prior stages: " + " -> ".join(req)
+
+
+def _stage_help_block(stage: str) -> str:
+    lines = [f"Stage: {stage}", _format_stage_requirements(stage)]
+    if stage == "init":
+        lines.append("Writes/updates .linker_info.json with current args.")
+    elif stage == "clean":
+        lines.append("Removes results for the project; does not require prior stages.")
+    else:
+        lines.append("Uses linker info to resume and validates required stage(s).")
+    return "\n".join(lines)
+
+
+def _all_stage_help_block() -> str:
+    stages = ["init", "generate_tcl", "create_hw_project", "build_hw_project", "create_metadata", "clean"]
+    lines = ["Stages:"]
+    for stage in stages:
+        lines.append(f"  {stage}: {_format_stage_requirements(stage)}")
+    lines.append("Use `main.py <stage> --help` for details.")
+    return "\n".join(lines)
+
 
 def _require_stage(payload: dict, required_stage: str, path: Path, platform: str) -> None:
     current = payload.get(_stage_key(platform))
@@ -206,8 +269,8 @@ def _add_common_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--cfg", required=True, help="Path to connectivity config file (e.g., config.cfg).")
     ap.add_argument("--kernels", required=True, nargs="+",
                     help="List of component.xml files to load as kernel types.")
-    ap.add_argument("--platform", choices=["hw", "sim"], default="hw",
-                    help="Target platform (hw or sim).")
+    ap.add_argument("--platform", choices=["hw", "sim", "emu"], default="hw",
+                    help="Target platform (hw, sim, or emu).")
     ap.add_argument("--bd-ports", required=False, default="../resources/bd_ports.txt",
                     help="Path to BD ports mapping file (logical:rtl TYPE [width]).")
     ap.add_argument("--template", default="../resources/slash.tcl",
@@ -233,8 +296,6 @@ def _add_common_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("-p", "--project", required=True, help="Project name to suffix TCLs and BD clones.")
     ap.add_argument("--clock-hz", required=False, type=int,
                     help="System clock frequency in Hz for system_map.xml (default: from [clock], else 200000000).")
-    ap.add_argument("--emit-sw-emu", action="store_true",
-                    help="Generate sw_emu tb.cpp (ZMQ HLS simulation server).")
     ap.add_argument("--tb-template", default="../resources/sw_emu/tb.cpp",
                     help="Path to tb.cpp Jinja2 template.")
     ap.add_argument("--tb-out", default=None,
@@ -247,16 +308,21 @@ def _add_linker_info_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("-p", "--project", required=True, help="Project name to locate linker info.")
     ap.add_argument("--linker-info", default=None,
                     help="Optional path to .linker_info.json (overrides results/<project> lookup).")
-    ap.add_argument("--platform", choices=["hw", "sim"], default=None,
-                    help="Override platform for this stage (hw or sim).")
+    ap.add_argument("--platform", choices=["hw", "sim", "emu"], default=None,
+                    help="Override platform for this stage (hw, sim, or emu).")
     ap.add_argument("--sim", dest="platform", action="store_const", const="sim",
                     help="Shorthand for --platform sim.")
+    ap.add_argument("--emu", dest="platform", action="store_const", const="emu",
+                    help="Shorthand for --platform emu.")
 
 
 def _resolve_platform(payload: dict, args: argparse.Namespace) -> str:
     if getattr(args, "platform", None):
         return args.platform
-    return payload.get("args", {}).get("platform", "hw")
+    payload_args = payload.get("args", {})
+    if payload_args.get("platform"):
+        return payload_args["platform"]
+    return "hw"
 
 
 def _stage_init(args: argparse.Namespace) -> None:
@@ -272,6 +338,8 @@ def _stage_generate_tcl(args: argparse.Namespace) -> None:
     info_args.platform = platform
     if info_args.platform == "sim":
         generate_sim_tcl(info_args)
+    elif info_args.platform == "emu":
+        generate_emu_tcl(info_args)
     else:
         generate_tcl(info_args)
     _save_linker_info(info_args, stage="generate_tcl")
@@ -290,6 +358,8 @@ def _stage_create_hw_project(args: argparse.Namespace) -> None:
             component_xmls=info_args.kernels,
             sim_tcl=Path(info_args.sim_out),
         )
+    elif info_args.platform == "emu":
+        pass
     else:
         create_build_project(
             project_name=info_args.project,
@@ -308,6 +378,12 @@ def _stage_build_hw_project(args: argparse.Namespace) -> None:
     info_args.platform = platform
     if info_args.platform == "sim":
         build_sim_project(project_name=info_args.project)
+    elif info_args.platform == "emu":
+        build_emu_project(
+            project_name=info_args.project,
+            component_xmls=info_args.kernels,
+            tb_cpp=Path(info_args.tb_out) if getattr(info_args, "tb_out", None) else None,
+        )
     else:
         create_build_project(
             project_name=info_args.project,
@@ -322,11 +398,14 @@ def _stage_create_metadata(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
     payload = _load_linker_info(info_path)
     platform = _resolve_platform(payload, args)
-    _require_stage(payload, required_stage="build_hw_project", path=info_path, platform=platform)
+    required_stage = "build_hw_project"
+    _require_stage(payload, required_stage=required_stage, path=info_path, platform=platform)
     info_args = argparse.Namespace(**payload["args"])
     info_args.platform = platform
     if info_args.platform == "sim":
         pass
+    elif info_args.platform == "emu":
+        package_emu_artifacts(project_name=info_args.project)
     else:
         generate_image(project_name=info_args.project)
         generate_util_report(project_name=info_args.project)
@@ -358,6 +437,15 @@ def _run_from_last_to_target(args: argparse.Namespace, target_stage: str) -> Non
     current_idx = _stage_index(current_stage, platform)
     target_idx = _stage_index(target_stage, platform)
 
+    if current_idx >= target_idx:
+        print(f"Project is already in {current_stage} state. Do you wish to rerun? Y/N.")
+        try:
+            resp = input().strip().lower()
+        except EOFError:
+            resp = ""
+        if resp not in {"y", "yes"}:
+            return
+
     stages_to_run = list(steps[:target_idx + 1])
 
     for stage in stages_to_run:
@@ -369,19 +457,25 @@ def _run_from_last_to_target(args: argparse.Namespace, target_stage: str) -> Non
 
 def _clean_outputs(args: argparse.Namespace) -> None:
     project_dir = _linker_info_path(args.project).parent
-    platform = args.platform or "hw"
-    if platform == "sim":
-        sim_dir = project_dir / "sim"
-        if sim_dir.exists():
-            shutil.rmtree(sim_dir, ignore_errors=True)
-        return
-    # hw: remove generated BD and images if present
-    bd_dir = project_dir / "bd"
-    images_dir = project_dir / "images"
-    if bd_dir.exists():
-        shutil.rmtree(bd_dir, ignore_errors=True)
-    if images_dir.exists():
-        shutil.rmtree(images_dir, ignore_errors=True)
+    platform = args.platform
+    if platform is None:
+        info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+        if info_path.exists():
+            payload = _load_linker_info(info_path)
+            platform = _resolve_platform(payload, args)
+        else:
+            platform = "unknown"
+
+    if project_dir.exists():
+        shutil.rmtree(project_dir, ignore_errors=True)
+
+    if platform == "hw":
+        clean_hw_project(project_name=args.project)
+    elif platform == "unknown":
+        linker_root = Path(__file__).resolve().parents[1]
+        project_xpr = linker_root / "resources" / "base" / "build" / "slash.xpr"
+        if project_xpr.exists():
+            clean_hw_project(project_name=args.project)
 
 
 def main():
@@ -391,31 +485,69 @@ def main():
     )
     if len(sys.argv) > 1 and sys.argv[1] in {"init", "generate_tcl", "create_hw_project", "build_hw_project", "create_metadata", "clean"}:
         ap = argparse.ArgumentParser(
-            description="Linker stages (use linker info to resume)."
+            description="Linker stages (use linker info to resume).",
+            epilog=_all_stage_help_block(),
+            formatter_class=argparse.RawTextHelpFormatter,
         )
         sub = ap.add_subparsers(dest="command", required=True)
 
-        ap_init = sub.add_parser("init", help="Save linker args and initialize stage state.")
+        ap_init = sub.add_parser(
+            "init",
+            help="Save linker args and initialize stage state.",
+            description="Initialize linker state for staged execution.",
+            epilog=_stage_help_block("init"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_common_args(ap_init)
         ap_init.set_defaults(func=_stage_init)
 
-        ap_gen = sub.add_parser("generate_tcl", help="Generate Tcl from saved linker args.")
+        ap_gen = sub.add_parser(
+            "generate_tcl",
+            help="Generate Tcl from saved linker args.",
+            description="Generate Tcl using previously saved linker args.",
+            epilog=_stage_help_block("generate_tcl"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_linker_info_args(ap_gen)
         ap_gen.set_defaults(func=_stage_generate_tcl)
 
-        ap_create = sub.add_parser("create_hw_project", help="Create hardware project from generated Tcl.")
+        ap_create = sub.add_parser(
+            "create_hw_project",
+            help="Create hardware project from generated Tcl.",
+            description="Create hardware project using generated Tcl.",
+            epilog=_stage_help_block("create_hw_project"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_linker_info_args(ap_create)
         ap_create.set_defaults(func=_stage_create_hw_project)
 
-        ap_build = sub.add_parser("build_hw_project", help="Build hardware project from existing design.")
+        ap_build = sub.add_parser(
+            "build_hw_project",
+            help="Build hardware project from existing design.",
+            description="Build hardware project from an existing design.",
+            epilog=_stage_help_block("build_hw_project"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_linker_info_args(ap_build)
         ap_build.set_defaults(func=_stage_build_hw_project)
 
-        ap_meta = sub.add_parser("create_metadata", help="Generate images/utilization/vbin artifacts.")
+        ap_meta = sub.add_parser(
+            "create_metadata",
+            help="Generate images/utilization/vbin artifacts.",
+            description="Generate images, utilization, and vbin artifacts.",
+            epilog=_stage_help_block("create_metadata"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_linker_info_args(ap_meta)
         ap_meta.set_defaults(func=_stage_create_metadata)
 
-        ap_clean = sub.add_parser("clean", help="Remove build outputs for a project.")
+        ap_clean = sub.add_parser(
+            "clean",
+            help="Remove build outputs for a project.",
+            description="Remove build outputs for a project.",
+            epilog=_stage_help_block("clean"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
         _add_linker_info_args(ap_clean)
         ap_clean.set_defaults(func=_clean_outputs)
 
@@ -428,7 +560,9 @@ def main():
             _run_from_last_to_target(args, args.command)
     else:
         ap = argparse.ArgumentParser(
-            description="Parse kernels (component.xml), connectivity config, BD port map, and render Tcl."
+            description="Parse kernels (component.xml), connectivity config, BD port map, and render Tcl.",
+            epilog=_all_stage_help_block(),
+            formatter_class=argparse.RawTextHelpFormatter,
         )
         _add_common_args(ap)
         args = ap.parse_args()
@@ -436,6 +570,8 @@ def main():
         def _do_generate_tcl() -> None:
             if args.platform == "sim":
                 generate_sim_tcl(args)
+            elif args.platform == "emu":
+                generate_emu_tcl(args)
             else:
                 generate_tcl(args)
             _save_linker_info(args, stage="generate_tcl")
@@ -448,16 +584,25 @@ def main():
                     sim_tcl=Path(args.sim_out),
                 )
                 build_sim_project(project_name=args.project)
+            elif args.platform == "emu":
+                build_emu_project(
+                    project_name=args.project,
+                    component_xmls=args.kernels,
+                    tb_cpp=Path(args.tb_out) if getattr(args, "tb_out", None) else None,
+                )
             else:
                 create_build_project(
                 project_name=args.project,
                 ip_repository=args.ip_repository,
                 action="all")
                 generate_base_pdi_with_aved(project_name=args.project)
+            _save_linker_info(args, stage="build_hw_project")
         _run_step("build", _do_build_all)
         def _do_create_metadata() -> None:
             if args.platform == "sim":
                 pass
+            elif args.platform == "emu":
+                package_emu_artifacts(project_name=args.project)
             else:
                 generate_image(project_name=args.project)
                 generate_util_report(project_name=args.project)

@@ -1,6 +1,6 @@
 # ##################################################################################################
 #  The MIT License (MIT)
-#  Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
 # 
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -18,30 +18,26 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-DEVICE=xcv80-lsva4737-2MHP-e-S
+cmake_minimum_required(VERSION 3.20)
+project(00_axilite_hls LANGUAGES NONE)
 
-INCREMENT_BUILD_DIR=build_increment.$(DEVICE)
-ACCUMULATE_BUILD_DIR=build_accumulate.$(DEVICE)
+get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." REALPATH)
+list(APPEND CMAKE_MODULE_PATH "${REPO_ROOT}/cmake")
+include(BuildHLS)
 
-all: $(INCREMENT_BUILD_DIR) $(ACCUMULATE_BUILD_DIR)
+set(DEVICE "xcv80-lsva4737-2MHP-e-S" CACHE STRING "HLS device")
 
-$(INCREMENT_BUILD_DIR):
-	if [ ! -d "$(INCREMENT_BUILD_DIR)" ]; then \
-		mkdir -p "$(INCREMENT_BUILD_DIR)"; \
-		cp -f increment.cpp "$(INCREMENT_BUILD_DIR)/increment.cpp"; \
-		cd "$(INCREMENT_BUILD_DIR)" && \
-		  v++ -c --mode hls --config ../increment.cfg --work_dir . && \
-		  vitis-run --mode hls --package --config ../increment.cfg --work_dir . ; \
-	fi
+build_hls(
+  TARGET   hls_vadd
+  CPP      "${CMAKE_CURRENT_LIST_DIR}/vadd.cpp"
+  CFG      "${CMAKE_CURRENT_LIST_DIR}/vadd.cfg"
+  DEVICE   "${DEVICE}"
+  OUT_DIR  "${CMAKE_CURRENT_LIST_DIR}"
+)
 
-$(ACCUMULATE_BUILD_DIR):
-	if [ ! -d "$(ACCUMULATE_BUILD_DIR)" ]; then \
-		mkdir -p "$(ACCUMULATE_BUILD_DIR)"; \
-		cp -f accumulate.cpp "$(ACCUMULATE_BUILD_DIR)/accumulate.cpp"; \
-		cd "$(ACCUMULATE_BUILD_DIR)" && \
-		  v++ -c --mode hls --config ../accumulate.cfg --work_dir . && \
-		  vitis-run --mode hls --package --config ../accumulate.cfg --work_dir . ; \
-	fi
-
-clean:
-	rm -rf $(INCREMENT_BUILD_DIR) $(ACCUMULATE_BUILD_DIR) *.log
+add_custom_target(hls ALL DEPENDS hls_vadd)
+build_hls_clean(
+  TARGET hls_clean
+  DEVICE "${DEVICE}"
+  ROOT   "${CMAKE_CURRENT_LIST_DIR}"
+)

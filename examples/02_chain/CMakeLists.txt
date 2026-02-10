@@ -1,6 +1,6 @@
 # ##################################################################################################
 #  The MIT License (MIT)
-#  Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
 # 
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -18,22 +18,45 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-cmake_minimum_required(VERSION 3.10)
-project(02_example)
+cmake_minimum_required(VERSION 3.20)
+project(00_axilite LANGUAGES NONE)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
+include("${REPO_ROOT}/cmake/ProjectInit.cmake")
 
-include_directories(/usr/local/vrt/include
-                    /usr/include/ami
-                    /usr/include/libxml2
-                    /usr/include/jsoncpp)
+set(SLASH_PROJECT "chain")
+set(CFG_FILE "${CMAKE_CURRENT_LIST_DIR}/config.cfg")
 
-# Define sources for the executable
-set(EXE_SOURCES 02_example.cpp)
+set(HLS_BUILD_DIR "${CMAKE_CURRENT_LIST_DIR}/hls")
+set(DEVICE "xcv80-lsva4737-2MHP-e-S")
+set(IP_REPO  "${HLS_BUILD_DIR}")
+set(KERNELS
+  "${HLS_BUILD_DIR}/build_dma_in.${DEVICE}/hls/impl/ip/component.xml"
+  "${HLS_BUILD_DIR}/build_dma_out.${DEVICE}/hls/impl/ip/component.xml"
+  "${HLS_BUILD_DIR}/build_passthrough.${DEVICE}/hls/impl/ip/component.xml"
+)
 
-# Create the executable
-add_executable(${PROJECT_NAME} ${EXE_SOURCES})
+build_hw(
+  TARGET     hw
+  LINKER_DIR "${SLASH_LINKER_DIR}"
+  PROJECT    "${SLASH_PROJECT}"
+  CFG        "${CFG_FILE}"
+  KERNELS    ${KERNELS}
+  IP_REPO    "${IP_REPO}"
+)
 
-# Link the library to the executable
-target_link_libraries(${PROJECT_NAME} vrt ami xml2 zmq jsoncpp)
+build_sim(
+  TARGET     sim
+  LINKER_DIR "${SLASH_LINKER_DIR}"
+  PROJECT    "${SLASH_PROJECT}"
+  CFG        "${CFG_FILE}"
+  KERNELS    ${KERNELS}
+)
+
+build_emu(
+  TARGET     emu
+  LINKER_DIR "${SLASH_LINKER_DIR}"
+  PROJECT    "${SLASH_PROJECT}"
+  CFG        "${CFG_FILE}"
+  KERNELS    ${KERNELS}
+)

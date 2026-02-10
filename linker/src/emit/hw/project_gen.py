@@ -35,6 +35,10 @@ def _default_create_project_tcl() -> Path:
     # linker/src/emit/hw -> linker/resources/base/scripts/create_project.tcl
     return Path(__file__).resolve().parents[3] / "resources" / "base" / "scripts" / "create_project.tcl"
 
+def _default_clean_project_tcl() -> Path:
+    # linker/src/emit/hw -> linker/resources/base/scripts/clean_project.tcl
+    return Path(__file__).resolve().parents[3] / "resources" / "base" / "scripts" / "clean_project.tcl"
+
 def _default_pdi_dir() -> Path:
     # linker/src/emit/hw -> linker/results/<project>/images
     return Path(__file__).resolve().parents[3] / "resources" / "base" / "build"
@@ -104,12 +108,50 @@ def create_build_project(
     if not tcl.exists():
         raise FileNotFoundError(f"create_project.tcl not found: {tcl}")
 
-    cmd = [vivado_bin, "-mode", "batch", "-source", str(tcl), "-tclargs", project_name]
+    log_path = Path(__file__).resolve().parents[3] / "results" / project_name / "vivado.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        vivado_bin,
+        "-mode",
+        "batch",
+        "-nojournal",
+        "-log",
+        str(log_path),
+        "-source",
+        str(tcl),
+        "-tclargs",
+        project_name,
+    ]
     if ip_repository:
         cmd.append(ip_repository)
     if action:
         cmd.append(action)
 
+    subprocess.run(cmd, cwd=str(workdir) if workdir else None, check=True)
+
+
+def clean_hw_project(
+    project_name: str,
+    tcl_path: Optional[Path] = None,
+    vivado_bin: str = "vivado",
+    workdir: Optional[Path] = None,
+) -> None:
+    tcl = Path(tcl_path) if tcl_path else _default_clean_project_tcl()
+    if not tcl.exists():
+        raise FileNotFoundError(f"clean_project.tcl not found: {tcl}")
+
+    cmd = [
+        vivado_bin,
+        "-mode",
+        "batch",
+        "-nolog",
+        "-nojournal",
+        "-source",
+        str(tcl),
+        "-tclargs",
+        project_name,
+    ]
     subprocess.run(cmd, cwd=str(workdir) if workdir else None, check=True)
 
 
