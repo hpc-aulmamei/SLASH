@@ -265,20 +265,16 @@ def generate_tcl(args) -> None:
 
         print_kernel(k)
 
-    # 2) Add the paths to the kernel IP repositories
-    ctx = OrderedDict()
-    ctx["kernel_ip_paths"] = [path.parent for path in kernel_compxml_by_type.values()]
-
-    # 3) Parse connectivity config
+    # 2) Parse connectivity config
     cfg = parse_connectivity_file(args.cfg)
     print_cfg(cfg)
 
-    # 4) Make instances & stream edges
+    # 3) Make instances & stream edges
     instances, streams = apply_config_to_instances(cfg, kernel_library)
     print_instances(instances, streams)
 
-    # 5) Build context for kernel adds (+clocks/resets) and render
-    ctx.update(build_kernel_add_context(instances))
+    # 4) Build context for kernel adds (+clocks/resets) and render
+    ctx = build_kernel_add_context(instances)
     ctx.update(build_data_width_param_context(instances))
     ctx.update(build_axilite_smartconnect_context(instances))
     ctx.update(build_hbm_smartconnect_context(instances, bd, max_si=16))

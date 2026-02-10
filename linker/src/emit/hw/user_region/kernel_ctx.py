@@ -42,5 +42,7 @@ def build_kernel_add_context(instances: Dict[str, KernelInstance]) -> dict:
         for p in inst.kernel.ports_of_type(BusType.RESET):
             phys = inst.kernel.bus_physical_port(p.name) or p.name
             resets.append({"src_pin": f"{inst.name}/{phys}"})
+    kernels = set(inst.kernel for inst in instances.values())
+    paths = [kernel.ip_dir for kernel in kernels if kernel.ip_dir]
 
-    return {"instances": ordered, "clocks": clocks, "resets": resets}
+    return {"instances": ordered, "clocks": clocks, "resets": resets, "kernel_ip_paths": paths}

@@ -190,6 +190,7 @@ def _parse_memory_maps(root: ET.Element) -> List[MemoryMap]:
 
 def parse_component_xml(path: str | Path) -> Kernel:
     path = Path(path)
+    ip_dir = path.parent
     tree = ET.parse(path)
     root = tree.getroot()
 
@@ -241,4 +242,4 @@ def parse_component_xml(path: str | Path) -> Kernel:
 
     memory_maps = _parse_memory_maps(root)
 
-    return Kernel(name=kernel_name, ports=ports, buses=buses, vlnv=vlnv, memory_maps=memory_maps)
+    return Kernel(name=kernel_name, ip_dir=ip_dir, ports=ports, buses=buses, vlnv=vlnv, memory_maps=memory_maps)

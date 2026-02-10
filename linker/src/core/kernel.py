@@ -21,6 +21,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, Optional, List
+from pathlib import Path
 
 from core.port import Port, BusType
 from core.bus import Bus
@@ -33,6 +34,7 @@ class Kernel:
     Contains bus and port definitions — not instance-specific data.
     """
     name: str
+    ip_dir: Path
     ports: Dict[str, Port] = field(default_factory=dict)
     buses: Dict[str, Bus] = field(default_factory=dict)
     vlnv: Optional[str] = None
