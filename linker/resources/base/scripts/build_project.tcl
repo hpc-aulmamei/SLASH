@@ -80,6 +80,10 @@ proc build_new_config {{proj_name "user"}} {
   if {[llength $existing_cfg2] > 0} {
     delete_pr_configurations $cfg2_name
   }
+  
+  # Ensure top BD is generated
+  generate_target all [get_files "top.bd"]
+  write_hw_platform -force -fixed -minimal "../results/${proj_name}/top.xsa"
 
   puts "INFO: Building new PR configuration for proj_name='$proj_name'"
 
