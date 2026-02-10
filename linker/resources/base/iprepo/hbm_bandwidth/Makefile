@@ -18,17 +18,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-TARGET=ip
-DEVICE=xcv80-lsva4737-2MHP-e-S
+all: ip/*.zip
 
-HBM_BANDWIDTH_BUILD_DIR=build_hbm_bandwidth.$(DEVICE)
-
-all: $(HBM_BANDWIDTH_BUILD_DIR)
-
-$(HBM_BANDWIDTH_BUILD_DIR):
-	if [ ! -d "$(HBM_BANDWIDTH_BUILD_DIR)" ]; then \
-        vitis_hls build.tcl -tclargs $(TARGET) $(DEVICE) hbm_bandwidth; \
-	fi
+ip/*.zip: *.cpp
+	v++ -c --mode hls --config hbm_bandwidth.cfg --work_dir ip
+	vitis-run --mode hls --package --config hbm_bandwidth.cfg --work_dir ip
 
 clean:
-	rm -rf $(HBM_BANDWIDTH_BUILD_DIR)
+	rm -rf ip/ .Xil *.json
