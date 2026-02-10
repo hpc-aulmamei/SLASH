@@ -22,13 +22,13 @@ TARGET=ip
 DEVICE=xcv80-lsva4737-2MHP-e-S
 
 TRAFFIC_PRODUCER_BUILD_DIR=build_traffic_producer.$(DEVICE)
+TRAFFIC_PRODUCER_ZIP=$(TRAFFIC_PRODUCER_BUILD_DIR)/traffic_producer.zip
 
-all: $(TRAFFIC_PRODUCER_BUILD_DIR)
+all: $(TRAFFIC_PRODUCER_ZIP)
 
-$(TRAFFIC_PRODUCER_BUILD_DIR):
-	if [ ! -d "$(TRAFFIC_PRODUCER_BUILD_DIR)" ]; then \
-        vitis_hls build.tcl -tclargs $(TARGET) $(DEVICE) traffic_producer; \
-	fi
+$(TRAFFIC_PRODUCER_ZIP): Makefile config.cfg traffic_producer.cpp
+	v++ -c --mode hls --config config.cfg --work_dir $(TRAFFIC_PRODUCER_BUILD_DIR)
+	vitis-run --mode hls --package --config config.cfg --work_dir $(TRAFFIC_PRODUCER_BUILD_DIR)
 
 clean:
 	rm -rf $(TRAFFIC_PRODUCER_BUILD_DIR)
