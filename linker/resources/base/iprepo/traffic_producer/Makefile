@@ -18,17 +18,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-TARGET=ip
-DEVICE=xcv80-lsva4737-2MHP-e-S
+all: ip/*.zip
 
-TRAFFIC_PRODUCER_BUILD_DIR=build_traffic_producer.$(DEVICE)
-TRAFFIC_PRODUCER_ZIP=$(TRAFFIC_PRODUCER_BUILD_DIR)/traffic_producer.zip
-
-all: $(TRAFFIC_PRODUCER_ZIP)
-
-$(TRAFFIC_PRODUCER_ZIP): Makefile config.cfg traffic_producer.cpp
-	v++ -c --mode hls --config config.cfg --work_dir $(TRAFFIC_PRODUCER_BUILD_DIR)
-	vitis-run --mode hls --package --config config.cfg --work_dir $(TRAFFIC_PRODUCER_BUILD_DIR)
+ip/*.zip: *.cpp
+	v++ -c --mode hls --config traffic_producer.cfg --work_dir ip
+	vitis-run --mode hls --package --config traffic_producer.cfg --work_dir ip
 
 clean:
-	rm -rf $(TRAFFIC_PRODUCER_BUILD_DIR)
+	rm -rf ip/ .Xil *.json

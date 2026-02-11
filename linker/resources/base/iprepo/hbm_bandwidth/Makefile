@@ -18,17 +18,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-TARGET=ip
-DEVICE=xcv80-lsva4737-2MHP-e-S
+all: ip/*.zip
 
-HBM_BANDWIDTH_BUILD_DIR=build_hbm_bandwidth.$(DEVICE)
-HBM_BANDWIDTH_ZIP=$(HBM_BANDWIDTH_BUILD_DIR)/hbm_bandwidth.zip
-
-all: $(HBM_BANDWIDTH_ZIP)
-
-$(HBM_BANDWIDTH_ZIP): Makefile config.cfg hbm_bandwidth.cpp
-	v++ -c --mode hls --config config.cfg --work_dir $(HBM_BANDWIDTH_BUILD_DIR)
-	vitis-run --mode hls --package --config config.cfg --work_dir $(HBM_BANDWIDTH_BUILD_DIR)
+ip/*.zip: *.cpp
+	v++ -c --mode hls --config hbm_bandwidth.cfg --work_dir ip
+	vitis-run --mode hls --package --config hbm_bandwidth.cfg --work_dir ip
 
 clean:
-	rm -rf $(HBM_BANDWIDTH_BUILD_DIR)
+	rm -rf ip/ .Xil *.json
