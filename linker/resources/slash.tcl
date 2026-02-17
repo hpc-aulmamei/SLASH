@@ -979,7 +979,7 @@ set {{ name }} [ create_bd_cell -type ip -vlnv {{ inst.kernel.vlnv }} {{ name }}
 
 # === Per-kernel AXI-MM data width tweaks for HBM/VIRT ===
 {% for p in data_width_params %}
-set_property {{ p.param }} {{ "{" ~ p.value ~ "}" }} [get_bd_cells {{ p.inst }}]
+#set_property {{ p.param }} {{ "{" ~ p.value ~ "}" }} [get_bd_cells {{ p.inst }}]
 {% endfor %}
 
 
