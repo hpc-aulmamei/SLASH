@@ -1359,14 +1359,12 @@ connect_bd_intf_net $qsfp_gt_clk_name [get_bd_intf_pins ${qsfp_hier_name}/qsfp_c
 save_bd_design
 
   
-  foreach pcie_noc {CPM_PCIE_NOC_0 CPM_PCIE_NOC_1} {
-    assign_bd_address -offset [expr {0x020302000000 + ${offset_increment}}] -range 256K -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/DCMAC_subsys/dcmac_${dcmac_index}_core/s_axi/Reg] -force
-    assign_bd_address -offset [expr {0x020302040000 + ${offset_increment}}] -range 256 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/control_intf/axi_gpio_gt_control/S_AXI/Reg]  -force
-    assign_bd_address -offset [expr {0x020302040200 + ${offset_increment}}] -range 256 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/control_intf/axi_gpio_monitor/S_AXI/Reg] -force
-    assign_bd_address -offset [expr {0x020302040400 + ${offset_increment}}] -range 256 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/control_intf/axi_gpio_datapath/S_AXI/Reg] -force
-    assign_bd_address -offset [expr {0x020302040600 + ${offset_increment}}] -range 256 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/control_intf/axi_gpio_reset_txrx/S_AXI/Reg] -force
-    save_bd_design
-  }
+  assign_bd_address -offset [expr {0x020302000000 + ${offset_increment}}] -range 256K -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/DCMAC_subsys/dcmac_${dcmac_index}_core/s_axi/Reg] -force
+  assign_bd_address -offset [expr {0x020302040000 + ${offset_increment}}] -range 256 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/control_intf/axi_gpio_gt_control/S_AXI/Reg]  -force
+  assign_bd_address -offset [expr {0x020302040200 + ${offset_increment}}] -range 256 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/control_intf/axi_gpio_monitor/S_AXI/Reg] -force
+  assign_bd_address -offset [expr {0x020302040400 + ${offset_increment}}] -range 256 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/control_intf/axi_gpio_datapath/S_AXI/Reg] -force
+  assign_bd_address -offset [expr {0x020302040600 + ${offset_increment}}] -range 256 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs ${qsfp_hier_name}/control_intf/axi_gpio_reset_txrx/S_AXI/Reg] -force
+  save_bd_design
 }
 
 # proc add_dcmac {} {
