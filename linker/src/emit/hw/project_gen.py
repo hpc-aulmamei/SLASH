@@ -231,5 +231,12 @@ def generate_util_report(project_name: str) -> None:
     logger.info("Generating utilization report XML for project %s", project_name)
     logger.info("Utilization report input: %s", report_file)
     logger.info("Utilization report output: %s", xml_file)
+    if not report_file.exists():
+        logger.warning(
+            "Utilization report input missing for %s (%s). Skipping XML generation.",
+            project_name,
+            report_file,
+        )
+        return
     convert_report_utilization_to_xml(report_file, xml_file)
     logger.info("Utilization report XML generation complete for %s", project_name)

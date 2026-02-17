@@ -131,7 +131,8 @@ if {![file exists $proj_exists]} {
 
     update_ip_catalog
     open_bd_design "$src_dir/../build/slash.srcs/sources_1/bd/top/top.bd"
-    set impl_run [get_runs -quiet "${project_name}_impl_1"]
+    # TODO: if either run or any of the bd exist, remove old runs, bd sources, and generated bd sources before sourcing new ones
+    set impl_run [get_runs -quiet "${project_name}_impl_1"] 
     if {[llength $impl_run] > 0} {
       puts "Removing stale design for project '$project_name' ..."
       set project_build_dir [file normalize [file join $src_dir ".." "build"]]

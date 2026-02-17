@@ -437,6 +437,7 @@ def _run_from_last_to_target(args: argparse.Namespace, target_stage: str) -> Non
     current_idx = _stage_index(current_stage, platform)
     target_idx = _stage_index(target_stage, platform)
 
+    rerun_target_only = False
     if current_idx >= target_idx:
         print(f"Project is already in {current_stage} state. Do you wish to rerun? Y/N.")
         try:
@@ -445,9 +446,13 @@ def _run_from_last_to_target(args: argparse.Namespace, target_stage: str) -> Non
             resp = ""
         if resp not in {"y", "yes"}:
             return
+        rerun_target_only = True
 
-    stages_to_run = list(steps[:target_idx + 1])
-
+    if rerun_target_only:
+        stages_to_run = [target_stage]
+    else:
+        # Resume from the next unfinished stage instead of restarting from scratch.
+        stages_to_run = list(steps[current_idx + 1:target_idx + 1])
     for stage in stages_to_run:
         func = _STAGE_FUNCS.get(stage)
         if func is None:

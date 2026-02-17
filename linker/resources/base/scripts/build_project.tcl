@@ -59,6 +59,8 @@ proc build_project {{proj_name "user"}} {
     -flow {Vivado Advanced Implementation 2025} \
     -pr_config $cfg2_name
   set_property strategy Congestion_SSI_SpreadLogic_high [get_runs $child_run]
+  set_property STEPS.OPT_DESIGN.TCL.POST [ get_files *opt.post.tcl -of [get_fileset utils_1] ] [get_runs $child_run]
+
   # Launch and wait
   launch_runs impl_1 $child_run -to_step write_bitstream -jobs 8
   wait_on_run $child_run
