@@ -106,6 +106,6 @@ proc build_new_config {{proj_name "user"}} {
   puts "INFO: Implementation complete for run '$child_run'."
   puts "INFO: Generating resource utilization report ..."
   open_run $child_run
-  report_utilization -hierarchical -hierarchical_depth 3 -hierarchical_percentages -file "../results/${proj_name}/report_utilization_${proj_name}.txt"
+  report_utilization -hierarchical -hierarchical_percentages -file "../results/${proj_name}/report_utilization_${proj_name}.txt"
 }
 
