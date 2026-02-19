@@ -23,7 +23,20 @@ proc clean_project {{project_name "user"} {src_dir ""} {design_name "slash"}} {
     set src_dir [file dirname [file normalize [info script]]]
   }
 
-  set project_build_dir [file normalize [file join $src_dir ".." "build"]]
+  # Build directory override:
+  # 1) Tcl variable `slash_hw_build_dir` (if pre-set by caller)
+  # 2) env `SLASH_HW_BUILD_DIR` (or `slash_hw_build_dir`)
+  # 3) default ../build
+  set default_project_build_dir [file normalize [file join $src_dir ".." "build"]]
+  if {[info exists slash_hw_build_dir] && $slash_hw_build_dir ne ""} {
+    set project_build_dir [file normalize $slash_hw_build_dir]
+  } elseif {[info exists ::env(SLASH_HW_BUILD_DIR)] && $::env(SLASH_HW_BUILD_DIR) ne ""} {
+    set project_build_dir [file normalize $::env(SLASH_HW_BUILD_DIR)]
+  } elseif {[info exists ::env(slash_hw_build_dir)] && $::env(slash_hw_build_dir) ne ""} {
+    set project_build_dir [file normalize $::env(slash_hw_build_dir)]
+  } else {
+    set project_build_dir $default_project_build_dir
+  }
   set project_xpr [file normalize [file join $project_build_dir "${design_name}.xpr"]]
 
   set open_projects [get_projects -quiet $design_name]

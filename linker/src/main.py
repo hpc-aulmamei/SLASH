@@ -35,6 +35,7 @@ from emit.hw.project_gen import (
     generate_base_pdi_with_aved,
     generate_image,
     generate_util_report,
+    get_hw_build_dir,
 )
 from emit.sim.tcl_gen import generate_sim_tcl
 from emit.emu.tcl_gen import generate_emu_tcl
@@ -477,8 +478,7 @@ def _clean_outputs(args: argparse.Namespace) -> None:
     if platform == "hw":
         clean_hw_project(project_name=args.project)
     elif platform == "unknown":
-        linker_root = Path(__file__).resolve().parents[1]
-        project_xpr = linker_root / "resources" / "base" / "build" / "slash.xpr"
+        project_xpr = get_hw_build_dir() / "slash.xpr"
         if project_xpr.exists():
             clean_hw_project(project_name=args.project)
 

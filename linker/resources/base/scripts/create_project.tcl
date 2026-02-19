@@ -66,6 +66,21 @@ set design_name "slash"
 set bd_slash_name        "slash_${project_name}"
 set bd_service_layer_name "service_layer_${project_name}"
 
+# Build directory override:
+# 1) Tcl variable `slash_hw_build_dir` (if pre-set by caller)
+# 2) env `SLASH_HW_BUILD_DIR` (or `slash_hw_build_dir`)
+# 3) default ../build
+set default_project_build_dir [file normalize [file join $src_dir ".." "build"]]
+if {[info exists slash_hw_build_dir] && $slash_hw_build_dir ne ""} {
+  set project_build_dir [file normalize $slash_hw_build_dir]
+} elseif {[info exists ::env(SLASH_HW_BUILD_DIR)] && $::env(SLASH_HW_BUILD_DIR) ne ""} {
+  set project_build_dir [file normalize $::env(SLASH_HW_BUILD_DIR)]
+} elseif {[info exists ::env(slash_hw_build_dir)] && $::env(slash_hw_build_dir) ne ""} {
+  set project_build_dir [file normalize $::env(slash_hw_build_dir)]
+} else {
+  set project_build_dir $default_project_build_dir
+}
+
 # Generated BD Tcl paths from the linker
 set slash_gen_tcl   [file normalize [file join $src_dir ".." ".." ".." "results" $project_name "bd" "slash_${project_name}.tcl"]]
 set service_gen_tcl [file normalize [file join $src_dir ".." ".." ".." "results" $project_name "bd" "service_layer_${project_name}.tcl"]]
@@ -75,16 +90,17 @@ puts "SLASH BD TCL:   $slash_gen_tcl"
 puts "SERVICE BD TCL: $service_gen_tcl"
 puts "IP REPOS:       $iprepos"
 puts "ACTION:         $action"
+puts "BUILD DIR:      $project_build_dir"
 
 
-set proj_exists [file normalize "${src_dir}/../build/${design_name}.xpr"]
+set proj_exists [file normalize [file join $project_build_dir "${design_name}.xpr"]]
 if {![file exists $proj_exists]} {
   if {!$do_create} {
     error "Project not found at $proj_exists. Run with action 'create' first."
   }
   lappend iprepos $default_iprepos
-  puts "INFO: Creating new project '$design_name' in '${src_dir}/../build' ..."
-  create_project $design_name "$src_dir/../build" -part xcv80-lsva4737-2MHP-e-S -force
+  puts "INFO: Creating new project '$design_name' in '$project_build_dir' ..."
+  create_project $design_name $project_build_dir -part xcv80-lsva4737-2MHP-e-S -force
   set_property ip_repo_paths $iprepos [current_project]
   update_ip_catalog
 
@@ -120,7 +136,7 @@ if {![file exists $proj_exists]} {
   }
 } else {
   puts "INFO: Project already open; not recreating."
-  open_project "$src_dir/../build/slash.xpr"
+  open_project [file normalize [file join $project_build_dir "slash.xpr"]]
 
   # insert if config already exists ... delete old sources then build the new ones
 
@@ -130,12 +146,11 @@ if {![file exists $proj_exists]} {
     set_property ip_repo_paths $iprepos [current_project]
 
     update_ip_catalog
-    open_bd_design "$src_dir/../build/slash.srcs/sources_1/bd/top/top.bd"
+    open_bd_design [file normalize [file join $project_build_dir "slash.srcs" "sources_1" "bd" "top" "top.bd"]]
     # TODO: if either run or any of the bd exist, remove old runs, bd sources, and generated bd sources before sourcing new ones
     set impl_run [get_runs -quiet "${project_name}_impl_1"] 
     if {[llength $impl_run] > 0} {
       puts "Removing stale design for project '$project_name' ..."
-      set project_build_dir [file normalize [file join $src_dir ".." "build"]]
       set bd_service_dir [file normalize [file join $project_build_dir "slash.srcs" "sources_1" "bd" "service_layer_${project_name}"]]
       set bd_slash_dir [file normalize [file join $project_build_dir "slash.srcs" "sources_1" "bd" "slash_${project_name}"]]
 

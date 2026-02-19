@@ -19,6 +19,7 @@
 # ##################################################################################################
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import logging
 import re
@@ -30,6 +31,7 @@ from emit.metadata.report_util import convert_report_utilization_to_xml
 logger = logging.getLogger(__name__)
 
 AVED_DESIGN_NAME = "amd_v80_gen5x8_25.1"
+HW_BUILD_DIR_ENV_KEYS = ("SLASH_HW_BUILD_DIR", "slash_hw_build_dir")
 
 
 def _default_create_project_tcl() -> Path:
@@ -40,9 +42,15 @@ def _default_clean_project_tcl() -> Path:
     # linker/src/emit/hw -> linker/resources/base/scripts/clean_project.tcl
     return Path(__file__).resolve().parents[3] / "resources" / "base" / "scripts" / "clean_project.tcl"
 
-def _default_pdi_dir() -> Path:
-    # linker/src/emit/hw -> linker/results/<project>/images
+def get_hw_build_dir() -> Path:
+    for key in HW_BUILD_DIR_ENV_KEYS:
+        configured_build_dir = os.getenv(key)
+        if configured_build_dir:
+            return Path(configured_build_dir).expanduser().resolve()
     return Path(__file__).resolve().parents[3] / "resources" / "base" / "build"
+
+def _default_pdi_dir() -> Path:
+    return get_hw_build_dir()
 
 def _default_results_dir() -> Path:
     # linker/src/emit/hw -> linker/results
@@ -115,7 +123,7 @@ def generate_base_pdi_with_aved(project_name: str, workdir: Optional[Path] = Non
     aved_fpt_dir = aved_hw_dir / "fpt"
     aved_fw_profile_hal = aved_root / "fw" / "AMC" / "src" / "profiles" / "v80" / "profile_hal.h"
 
-    static_impl_dir = linker_root / "resources" / "base" / "build" / "slash.runs" / "impl_1"
+    static_impl_dir = get_hw_build_dir() / "slash.runs" / "impl_1"
     aved_build_script = linker_root / "resources" / "aved" / "build_all.sh"
     aved_profile_hal_src = linker_root / "resources" / "aved" / "profile_hal.h"
     aved_pdi_combine_src = linker_root / "resources" / "aved" / "pdi_combine.bif"
