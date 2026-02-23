@@ -81,6 +81,45 @@ int slash_ctldev_close(struct slash_ctldev *ctldev)
     return ret;
 }
 
+struct slash_ioctl_device_info *slash_device_info_read(struct slash_ctldev *ctldev)
+{
+    int ret;
+    struct slash_ioctl_device_info *info;
+
+    if (ctldev == NULL) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    if (ctldev->mock) {
+        return slash_device_info_mock_read(ctldev);
+    }
+
+    info = calloc(1, sizeof(*info));
+    if (info == NULL) {
+        return NULL;
+    }
+
+    info->size = sizeof(*info);
+
+    ret = ioctl(ctldev->fd, SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO, info);
+    if (ret < 0) {
+        goto err_free_info;
+    }
+
+    return info;
+
+err_free_info:
+    free(info);
+
+    return NULL;
+}
+
+void slash_device_info_free(struct slash_ioctl_device_info *info)
+{
+    free(info);
+}
+
 struct slash_ioctl_bar_info *slash_bar_info_read(struct slash_ctldev *ctldev, int bar_number)
 {
     int ret;

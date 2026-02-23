@@ -34,6 +34,15 @@ ${CMAKE_SOURCE_DIR}/src/utils/*.cpp)
 
 add_library(vrt SHARED ${LIB_SOURCES})
 
+find_package(vrtd REQUIRED CONFIG)
+if(NOT TARGET vrtd::libvrtdpp)
+    message(FATAL_ERROR
+        "vrtd package is missing target vrtd::libvrtdpp. "
+        "Build and install vrtd first (cmake --install), then configure vrt again.")
+endif()
+
+target_link_libraries(vrt PUBLIC vrtd::libvrtdpp)
+
 set_target_properties(vrt PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 install(TARGETS vrt

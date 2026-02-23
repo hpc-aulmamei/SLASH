@@ -85,6 +85,24 @@ enum vrtd_opcode {
 
     /** Obtain a read/write file descriptor for a QDMA qpair. */
     VRTD_REQ_QDMA_QPAIR_GET_FD,
+
+    /** Perform a design writer transfer by passing an input fd via SCM_RIGHTS. */
+    VRTD_REQ_DESIGN_WRITE,
+
+    /** Get or set a clock rate for the service/user region. */
+    VRTD_REQ_CLOCK_OP,
+
+    /** Open a buffer (allocation + QDMA qpair) and return a qpair fd. */
+    VRTD_REQ_BUFFER_OPEN,
+
+    /** Close a buffer (release allocation + QDMA qpair). */
+    VRTD_REQ_BUFFER_CLOSE,
+
+    /** Query a device index by PCI BDF. */
+    VRTD_REQ_GET_DEVICE_BY_BDF,
+
+    /** Perform a PCIe hotplug operation for a device. */
+    VRTD_REQ_DEVICE_HOTPLUG_OP,
 };
 
 /**
@@ -103,7 +121,36 @@ enum vrtd_ret {
     VRTD_RET_NOEXIST, ///< Requested resource does not exist.
     VRTD_RET_INTERNAL_ERROR, ///< Internal error in the vrtd daemon. Check the vrtd log.
     VRTD_RET_AUTH_ERROR, ///< User does not have permission to execute request.
+    VRTD_RET_BUSY, ///< Requested resource is busy.
 };
+
+/**
+ * @brief Allocation types for buffer requests.
+ */
+enum vrtd_alloc_type {
+    VRTD_ALLOC_TYPE_DDR = 0,
+    VRTD_ALLOC_TYPE_HBM = 1,
+    VRTD_ALLOC_TYPE_HBM_VNOC = 2,
+};
+
+/**
+ * @brief Direction for data transfers for allocated buffer.
+ */
+enum vrtd_alloc_dir {
+    VRTD_ALLOC_DIR_BIDIRECTIONAL = 0,
+    VRTD_ALLOC_DIR_HOST_TO_DEVICE = 1,
+    VRTD_ALLOC_DIR_DEVICE_TO_HOST = 2,
+};
+
+#define VRTD_PCI_BDF_LEN 32
+
+struct vrtd_pci_info {
+    char bdf[VRTD_PCI_BDF_LEN];
+    uint16_t vendor_id;
+    uint16_t device_id;
+    uint16_t subsystem_vendor_id;
+    uint16_t subsystem_device_id;
+} __attribute__((packed));
 
 struct vrtd_req_header {
     uint16_t size; ///< Size of the request body (not including the header).
@@ -135,8 +182,21 @@ struct vrtd_req_get_device_info {
     uint32_t dev_number; ///< The device for which to get info. An index in the range [0, n).
 } __attribute__((packed));
 
-struct vrtd_resp_get_device_info {
+struct vrtd_device_info {
     char name[128]; ///< The name of the device.
+    struct vrtd_pci_info pci; ///< PCIe metadata (BDF and IDs).
+} __attribute__((packed));
+
+struct vrtd_resp_get_device_info {
+    struct vrtd_device_info info;
+} __attribute__((packed));
+
+struct vrtd_req_get_device_by_bdf {
+    char bdf[VRTD_PCI_BDF_LEN]; ///< PCI BDF string (e.g., 0000:65:00.0)
+} __attribute__((packed));
+
+struct vrtd_resp_get_device_by_bdf {
+    uint32_t dev_number; ///< Device index (0-based).
 } __attribute__((packed));
 
 struct vrtd_req_get_bar_info {
@@ -221,6 +281,94 @@ struct vrtd_req_qdma_qpair_get_fd {
 
 struct vrtd_resp_qdma_qpair_get_fd {
     uint8_t zero; ///< Placeholder; all data is carried via SCM_RIGHTS.
+} __attribute__((packed));
+
+/**
+ * @brief Request a buffer (allocation + QDMA qpair) and a qpair FD.
+ *
+ * The qpair FD is sent out-of-band via SCM_RIGHTS when
+ * @ref vrtd_resp_header::ret == VRTD_RET_OK.
+ */
+struct vrtd_req_buffer_open {
+    uint32_t dev_number; ///< Device index (0-based).
+    uint32_t alloc_type; ///< One of enum vrtd_alloc_type.
+    uint32_t alloc_dir;  ///< One of enum vrtd_alloc_dir.
+    uint64_t alloc_arg;  ///< Allocation argument (HBM region index for HBM).
+    uint64_t size;       ///< Requested size in bytes.
+} __attribute__((packed));
+
+struct vrtd_resp_buffer_open {
+    uint64_t size; ///< Allocated size in bytes (rounded up to subregion).
+    uint64_t phys_addr; ///< Device physical address of the allocation.
+} __attribute__((packed));
+
+/**
+ * @brief Request closing a buffer (release allocation + QDMA qpair).
+ */
+struct vrtd_req_buffer_close {
+    uint32_t dev_number; ///< Device index (0-based).
+    uint64_t phys_addr;  ///< Device physical address of the allocation.
+    uint64_t size;       ///< Allocated size in bytes.
+} __attribute__((packed));
+
+struct vrtd_resp_buffer_close {
+    uint8_t zero; ///< Placeholder to avoid empty-struct ABI issues.
+} __attribute__((packed));
+
+/**
+ * @brief Request a design writer transfer.
+ *
+ * The input file descriptor is sent out-of-band via SCM_RIGHTS.
+ */
+struct vrtd_req_design_write {
+    uint32_t dev_number; ///< Device index (0-based).
+} __attribute__((packed));
+
+struct vrtd_resp_design_write {
+    uint8_t zero; ///< Placeholder; all data is carried via SCM_RIGHTS.
+} __attribute__((packed));
+
+enum vrtd_device_hotplug_op {
+    VRTD_DEVICE_HOTPLUG_OP_RESCAN = 0,
+    VRTD_DEVICE_HOTPLUG_OP_REMOVE = 1,
+    VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR = 2,
+    VRTD_DEVICE_HOTPLUG_OP_HOTPLUG = 3,
+};
+
+/**
+ * @brief Request a PCIe hotplug operation for a device.
+ */
+struct vrtd_req_device_hotplug_op {
+    uint32_t dev_number; ///< Device index (0-based).
+    uint8_t op;          ///< One of vrtd_device_hotplug_op.
+} __attribute__((packed));
+
+struct vrtd_resp_device_hotplug_op {
+    uint8_t zero; ///< Placeholder to avoid empty-struct ABI issues.
+} __attribute__((packed));
+
+enum vrtd_clock_region {
+    VRTD_CLOCK_REGION_SERVICE = 0,
+    VRTD_CLOCK_REGION_USER = 1,
+};
+
+enum vrtd_clock_op {
+    VRTD_CLOCK_OP_GET = 0,
+    VRTD_CLOCK_OP_SET = 1,
+};
+
+/**
+ * @brief Request a clock operation (get/set) for a region.
+ */
+struct vrtd_req_clock_op {
+    uint32_t dev_number; ///< Device index (0-based).
+    uint32_t rate_hz;    ///< Desired rate for SET; ignored for GET.
+    uint8_t op;         ///< One of vrtd_clock_op.
+    uint8_t region;     ///< One of vrtd_clock_region.
+} __attribute__((packed));
+
+struct vrtd_resp_clock_op {
+    uint32_t rate_hz; ///< Current/achieved rate for GET/SET.
 } __attribute__((packed));
 
 #ifdef __cplusplus

@@ -24,9 +24,8 @@
 
 namespace vrt {
 
-Kernel::Kernel(ami_device* device, const std::string& name, uint64_t baseAddr, uint64_t range,
+Kernel::Kernel(const std::string& name, uint64_t baseAddr, uint64_t range,
                const std::vector<Register>& registers) {
-    this->dev = device;
     this->name = name;
     this->baseAddr = baseAddr;
     this->range = range;
@@ -38,6 +37,10 @@ Kernel::Kernel(Device& device, const std::string& kernelName)
     deviceBdf = device.getBdf();
     this->platform = device.getPlatform();
     this->server = device.getZmqServer();
+    if (this->platform == Platform::HARDWARE) {
+        const auto& vrtdDevice = device.getVrtdDevice();
+        this->vrtdBar = vrtdDevice.getBar(bar);
+    }
 }
 
 void Kernel::write(uint32_t offset, uint32_t value) {
@@ -45,15 +48,23 @@ void Kernel::write(uint32_t offset, uint32_t value) {
         utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
                            "Writing to device {} kernel: {} at offset: {x} value: {x}", deviceBdf,
                            name, offset, value);
-        uint32_t* buf = (uint32_t*)calloc(1, sizeof(uint32_t));
-        *buf = value;
-        if (buf) {
-            int ret = ami_mem_bar_write(dev, bar, baseAddr - BASE_BAR_ADDR + offset, buf[0]);
-            if (ret != AMI_STATUS_OK) {
-                throw std::runtime_error("Failed to write to device");
-            }
+        if (!vrtdBar.has_value()) {
+            throw std::runtime_error("vrtd BAR handle not initialized");
         }
-        free(buf);
+
+        auto barFile = vrtdBar->openBarFile();
+        uint64_t barStart = vrtdBar->getStartAddress();
+        if (baseAddr < barStart) {
+            throw std::runtime_error("Kernel base address below BAR start");
+        }
+        uint64_t barOffset = (baseAddr - barStart) + offset;
+        if (barOffset + sizeof(uint32_t) > barFile.getLen()) {
+            throw std::runtime_error("BAR write out of range");
+        }
+        auto ptr = barFile.getPtr<uint32_t>(vrtd::BarFile::Direction::Write,
+                                            static_cast<size_t>(barOffset));
+        *ptr = value;
+        return;
     } else if (platform == Platform::SIMULATION) {
         server->sendScalar(baseAddr + offset, value);
     }
@@ -65,16 +76,22 @@ uint32_t Kernel::read(uint32_t offset) {
             utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
                                "Reading from device {} kernel: {} at offset: {x}", deviceBdf, name,
                                offset);
-        uint32_t* buf = (uint32_t*)calloc(1, sizeof(uint32_t));
-        if (buf) {
-            int ret = ami_mem_bar_read(dev, bar, baseAddr - BASE_BAR_ADDR + offset, &buf[0]);
-            if (ret != AMI_STATUS_OK) {
-                throw std::runtime_error("Failed to read from device");
-            }
+        if (!vrtdBar.has_value()) {
+            throw std::runtime_error("vrtd BAR handle not initialized");
         }
-        uint32_t value = buf[0];
-        free(buf);
-        return value;
+
+        auto barFile = vrtdBar->openBarFile();
+        uint64_t barStart = vrtdBar->getStartAddress();
+        if (baseAddr < barStart) {
+            throw std::runtime_error("Kernel base address below BAR start");
+        }
+        uint64_t barOffset = (baseAddr - barStart) + offset;
+        if (barOffset + sizeof(uint32_t) > barFile.getLen()) {
+            throw std::runtime_error("BAR read out of range");
+        }
+        auto ptr = barFile.getPtr<uint32_t>(vrtd::BarFile::Direction::Read,
+                                            static_cast<size_t>(barOffset));
+        return *ptr;
     } else if (platform == Platform::EMULATION) {
         currentRegisterIndex = 4;
         std::size_t argIdx = 0;
@@ -96,7 +113,7 @@ uint32_t Kernel::read(uint32_t offset) {
     return 0;
 }
 
-void Kernel::setDevice(ami_device* device) { this->dev = device; }
+void Kernel::setVrtdBar(const std::optional<vrtd::Bar>& bar) { this->vrtdBar = bar; }
 
 void Kernel::wait() {
     if (platform == Platform::EMULATION) {
@@ -119,6 +136,9 @@ Kernel::~Kernel() {}
 void Kernel::setPlatform(Platform platform) { this->platform = platform; }
 
 void Kernel::writeBatch() {
+    if (platform != Platform::HARDWARE) {
+        return;
+    }
     uint32_t noOfPhysicalRegisters =
         (registers.at(registers.size() - 1).getOffset() + sizeof(uint32_t)) / sizeof(uint32_t);
     uint32_t* buf = (uint32_t*)calloc(noOfPhysicalRegisters, sizeof(uint32_t));
@@ -129,8 +149,30 @@ void Kernel::writeBatch() {
                            "Kernel {}, reg at offset {x}, value: {x}", name, i * sizeof(uint32_t),
                            buf[i]);
     }
-    ami_mem_bar_write_range(dev, bar, baseAddr - BASE_BAR_ADDR, noOfPhysicalRegisters, buf);
+    if (!vrtdBar.has_value()) {
+        free(buf);
+        throw std::runtime_error("vrtd BAR handle not initialized");
+    }
+
+    auto barFile = vrtdBar->openBarFile();
+    uint64_t barStart = vrtdBar->getStartAddress();
+    if (baseAddr < barStart) {
+        free(buf);
+        throw std::runtime_error("Kernel base address below BAR start");
+    }
+    uint64_t barOffset = baseAddr - barStart;
+    uint64_t byteCount = static_cast<uint64_t>(noOfPhysicalRegisters) * sizeof(uint32_t);
+    if (barOffset + byteCount > barFile.getLen()) {
+        free(buf);
+        throw std::runtime_error("BAR write range out of range");
+    }
+    auto ptr = barFile.getPtr<uint32_t>(vrtd::BarFile::Direction::Write,
+                                        static_cast<size_t>(barOffset));
+    for (uint32_t i = 0; i < noOfPhysicalRegisters; ++i) {
+        ptr[i] = buf[i];
+    }
     free(buf);
+    return;
 }
 std::string Kernel::getName() const { return name; }
 

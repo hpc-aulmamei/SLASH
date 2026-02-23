@@ -250,13 +250,13 @@ static int parse_file_glob(struct config_parse_state *state, const char *pattern
         return 0;
     } else if (ret != 0) {
         (void) sd_journal_print(
-            LOG_ERR,
+            LOG_WARNING,
             "Error matching pattern %s: %s",
             pattern,
             glob_err_to_string(ret)
         );
 
-        return -1;
+        return 0;
     }
 
     for (size_t i = 0; i < glob_state.gl_pathc; i++) {

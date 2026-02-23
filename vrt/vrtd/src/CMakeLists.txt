@@ -21,14 +21,19 @@
 # Library sources (list explicitly; avoid GLOB for reproducible builds)
 add_executable(vrtd
   ${CMAKE_CURRENT_SOURCE_DIR}/accept.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/allocator.c
   ${CMAKE_CURRENT_SOURCE_DIR}/auth.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/buffer.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/clock.c
   ${CMAKE_CURRENT_SOURCE_DIR}/config.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/design_writer.c
   ${CMAKE_CURRENT_SOURCE_DIR}/device.c
   ${CMAKE_CURRENT_SOURCE_DIR}/main.c
   ${CMAKE_CURRENT_SOURCE_DIR}/serve.c
   ${CMAKE_CURRENT_SOURCE_DIR}/signals.c
 )
 
+find_package(Threads REQUIRED)
 
 # C standard / properties
 set_target_properties(vrtd PROPERTIES
@@ -48,4 +53,4 @@ target_include_directories(vrtd
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(vrtd PRIVATE slash::slash systemd inih)
+target_link_libraries(vrtd PRIVATE slash::slash systemd inih Threads::Threads)

@@ -18,45 +18,49 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef VRTD_CTLDEV_H
-#define VRTD_CTLDEV_H
+#ifndef VRTD_BUFFER_H
+#define VRTD_BUFFER_H
 
-#include <stddef.h>
+#include <stdbool.h>
+#include <stdint.h>
 
-#include <slash/ctldev.h>
 #include <slash/qdma.h>
 
+#include "allocator.h"
 #include "array.h"
-#include "buffer.h"
+#include "vrtd/wire.h"
 
-struct design_writer;
-struct clock_driver;
-struct device_memory_map;
-
-struct device {
-    char *path; /* owning */
-    struct slash_ctldev *ctl;
-    struct slash_qdma *qdma;
-    struct slash_ioctl_bar_info *bar_info[6];
-    struct slash_bar_file *bar_files[6];
-    struct design_writer *design_writer;
-    struct clock_driver *clock_driver;
-    struct device_memory_map *memory_map;
-    struct buffer_ptr_array buffers;
-    
+struct buffer {
+    struct slash_qdma *qdma; /* non-owning */
+    struct device_memory_map *map; /* non-owning */
+    enum allocation_type alloc_type;
+    uint64_t alloc_arg;
+    enum vrtd_alloc_dir alloc_dir;
+    uint64_t client_id; /* owning connection id */
+    uint64_t addr;
+    uint64_t size;
+    uint32_t qid;
+    int fd;
+    bool allocation_valid;
+    bool qpair_created;
 };
 
-void cleanup_device(struct device *d);
+struct buffer *buffer_create(struct slash_qdma *qdma,
+                             struct device_memory_map *map,
+                             enum allocation_type alloc_type,
+                             enum vrtd_alloc_dir alloc_dir,
+                             uint64_t size,
+                             uint64_t alloc_arg,
+                             uint64_t client_id,
+                             const struct slash_qdma_qpair_add *qpair_params);
+void cleanup_buffer(struct buffer *buf);
 static inline
-void cleanup_devicep(struct device **d)
+void cleanup_bufferp(struct buffer **bufp)
 {
-    cleanup_device(*d);
-
-    *d = NULL;
+    cleanup_buffer(*bufp);
+    *bufp = NULL;
 }
 
-DECLARE_OWNING_PTR_ARRAY(device_ptr_array, struct device *, cleanup_device);
+DECLARE_OWNING_PTR_ARRAY(buffer_ptr_array, struct buffer *, cleanup_buffer);
 
-int devices_discover_and_open(struct device_ptr_array *devices);
-
-#endif // VRTD_CTLDEV_H
+#endif // VRTD_BUFFER_H

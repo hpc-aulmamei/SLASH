@@ -22,28 +22,62 @@
 
 #include "utils/filesystem_cache.hpp"
 
+#include <limits>
+#include <ami.h>
+#include <ami_sensor.h>
+#include <vrtd/bar.hpp>
+
 namespace vrt {
+
+namespace {
+
+std::string normalizeBdfForVrtd(const std::string& bdf) {
+    const auto firstColon = bdf.find(':');
+    const auto lastColon = bdf.rfind(':');
+    if (firstColon != std::string::npos && firstColon != lastColon) {
+        return bdf;
+    }
+    return "0000:" + bdf;
+}
+
+std::string normalizeBdfLegacy(const std::string& bdf) {
+    const auto firstColon = bdf.find(':');
+    const auto lastColon = bdf.rfind(':');
+    if (firstColon != std::string::npos && firstColon != lastColon) {
+        return bdf.substr(firstColon + 1);
+    }
+    return bdf;
+}
+
+}  // namespace
 
 Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool program,
                ProgramType programType)
-    : vrtbin(vrtbinPath, bdf), clkWiz(nullptr, "", 0, 0, 0), pcieHandler(bdf) {
-    lockPcieDevice(bdf);
-    this->bdf = bdf;
-    this->allocator = new Allocator(4096);
+    : vrtbin(vrtbinPath, bdf) {
+    this->bdf = normalizeBdfLegacy(bdf);
+    this->bdfFull = normalizeBdfForVrtd(bdf);
+    lockPcieDevice(this->bdf);
+    this->allocator = new Allocator();
     this->systemMap = this->vrtbin.getSystemMapPath();
     this->pdiPath = this->vrtbin.getPdiPath();
+    this->pdiPaths = this->vrtbin.getPdiPaths();
     this->programType = programType;
-    this->qdmaIntf = QdmaIntf(bdf);
     this->zmqServer = std::make_shared<ZmqServer>();
     findPlatform();
     if (platform == Platform::HARDWARE) {
-        createAmiDev();
+        vrtdSession = std::make_shared<vrtd::Session>();
+        vrtdDevice = vrtdSession->getDeviceByBdf(bdfFull);
         findVrtbinType();
         if (program) {
             programDevice();
         }
         parseSystemMap();
-        this->clkWiz.setRateHz(200000000, false);
+        if (vrtdDevice.has_value()) {
+            if (clockFreq > std::numeric_limits<uint32_t>::max()) {
+                throw std::runtime_error("Clock frequency from system map exceeds vrtd clock API limits");
+            }
+            vrtdDevice->setUserClockRate(static_cast<uint32_t>(clockFreq));
+        }
     } else if (platform == Platform::EMULATION) {
         parseSystemMap();
         std::string emulationExecPath = this->vrtbin.getEmulationExec() + " >/dev/null";
@@ -59,8 +93,11 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
         command["command"] = "start";
         zmqServer->sendCommand(command);
     }
-    for (auto& qdmaCon : qdmaConnections) {
-        qdmaIntfs.emplace_back(new QdmaIntf(bdf, qdmaCon.getQid()));
+    if (platform == Platform::HARDWARE && vrtdDevice.has_value()) {
+        for (auto& qdmaCon : qdmaConnections) {
+            qdmaIntfs.emplace_back(new QdmaIntf(*vrtdDevice, qdmaCon.getQid(),
+                                                qdmaCon.getDirection()));
+        }
     }
 }
 
@@ -73,11 +110,12 @@ void Device::parseSystemMap() {
     parser.parseXML();
     clockFreq = parser.getClockFrequency();
     this->platform = parser.getPlatform();
-    this->clkWiz = ClkWiz(dev, "clk_wiz", CLK_WIZ_BASE, CLK_WIZ_OFFSET, clockFreq);
-    this->clkWiz.setPlatform(platform);
     kernels = parser.getKernels();
-    for (auto& kernel : kernels) {
-        kernel.second.setDevice(dev);
+    if (platform == Platform::HARDWARE && vrtdDevice.has_value()) {
+        std::optional<vrtd::Bar> barHandle = vrtdDevice->getBar(bar);
+        for (auto& kernel : kernels) {
+            kernel.second.setVrtdBar(barHandle);
+        }
     }
     this->qdmaConnections = parser.getQdmaConnections();
 }
@@ -89,7 +127,9 @@ void Device::cleanup() {
         for (auto qdmaIntf_ : qdmaIntfs) {
             delete qdmaIntf_;
         }
-        ami_dev_delete(&dev);
+        if (dev != nullptr) {
+            ami_dev_delete(&dev);
+        }
         unlockPcieDevice(bdf);
     } else if (platform == Platform::EMULATION || platform == Platform::SIMULATION) {
         Json::Value exit;
@@ -101,205 +141,96 @@ void Device::cleanup() {
 std::string Device::getBdf() { return bdf; }
 
 void Device::programDevice() {
-    if (vrtbinType == VrtbinType::FLAT) {
-        if (programType == ProgramType::FLASH) {
-            char current_uuid[33];
-            std::string logic_uuid = vrtbin.getUUID();
-            int found_current_uuid = AMI_STATUS_ERROR;
-            found_current_uuid = ami_dev_read_uuid(dev, current_uuid);
-            if (found_current_uuid == AMI_STATUS_OK) {
-                std::string current_uuid_str(current_uuid);
-                current_uuid_str = current_uuid_str.substr(0, 32);
-                utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Current UUID: {}",
-                                   current_uuid_str);
-                utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "New UUID: {}",
-                                   logic_uuid);
-                if (current_uuid_str == logic_uuid) {
-                    utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                                       "Device already programmed with the same image");
-                    bootDevice();
-                    return;
-                }
-            }
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                               "Programming device {} in FLASH mode...This might take a while",
-                               bdf);
-            if (ami_prog_download_pdi(dev, pdiPath.c_str(), 0, 1, nullptr, false) !=
-                AMI_STATUS_OK) {
-                throw std::runtime_error("Failed to program device");
-            }
-            bootDevice();
-        } else {
-            int found_current_uuid = AMI_STATUS_ERROR;
-            char current_uuid[33];
-            std::string logic_uuid = vrtbin.getUUID();
-            found_current_uuid = ami_dev_read_uuid(dev, current_uuid);
-            if (found_current_uuid == AMI_STATUS_OK) {
-                std::string current_uuid_str(current_uuid);
-                current_uuid_str = current_uuid_str.substr(0, 32);
-                utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Current UUID: {}",
-                                   current_uuid_str);
-                utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "New UUID: {}",
-                                   logic_uuid);
-                if (current_uuid_str == logic_uuid) {
-                    utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                                       "Device already programmed with the same image");
-                    bootDevice();
-                    return;
-                }
-            }
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                               "Programming device {} in JTAG mode...This might take a while", bdf);
-            std::string cmd = JTAG_PROGRAM_PATH + pdiPath;
-            system(cmd.c_str());
-            bootDevice();
+    auto ensurePdiList = [&]() {
+        if (pdiPaths.empty() && !pdiPath.empty()) {
+            pdiPaths.push_back(pdiPath);
         }
-    } else if (vrtbinType == VrtbinType::SEGMENTED) {
+        if (pdiPaths.empty()) {
+            throw std::runtime_error("No PDI files found for programming");
+        }
+    };
+
+    if (programType == ProgramType::JTAG) {
+        utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
+                           "Programming device {} in JTAG mode...This might take a while", bdf);
+        ensurePdiList();
+        for (const auto& pdi : pdiPaths) {
+            std::string cmd = JTAG_PROGRAM_PATH + pdi;
+            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
+                               "Programming PDI via JTAG {}", pdi);
+            system(cmd.c_str());
+        }
+        bootDevice();
+        return;
+    }
+
+    if (vrtbinType == VrtbinType::SEGMENTED) {
         utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
                            "Programming device {} in SEGMENTED mode...This might take a while",
                            bdf);
-        char current_uuid[33];
-        std::string logic_uuid = vrtbin.getUUID();
-        int found_current_uuid = AMI_STATUS_ERROR;
-        found_current_uuid = ami_dev_read_uuid(dev, current_uuid);
-        if (found_current_uuid == AMI_STATUS_OK) {
-            std::string current_uuid_str(current_uuid);
-            current_uuid_str = current_uuid_str.substr(0, 32);
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Current UUID: {}",
-                               current_uuid_str);
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "New UUID: {}",
-                               logic_uuid);
-            if (current_uuid_str == logic_uuid) {
-                utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                                   "Device already programmed with the same image");
-                utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                                   "Refreshing qdma handle");
-                pcieHandler.execute(PcieDriverHandler::Command::HOTPLUG);
-                XMLParser parser(systemMap);
-                parser.parseXML();
-                auto qdmaConns = parser.getQdmaConnections();
-                std::string cmd = "sudo bash " + std::string(QDMA_SETUP_QUEUES) + bdf + " --mm 0 bi";
-                for (auto& qdmaConn : qdmaConns) {
-                    uint32_t qid = qdmaConn.getQid();
-                    std::string direction =
-                        (qdmaConn.getDirection() == StreamDirection::HOST_TO_DEVICE ? "h2c"
-                                                                                    : "c2h");
-                    cmd += " --st " + std::to_string(qid) + " --dir " + direction;
-                }
-                system(cmd.c_str());
-                return;
-            }
-        }
-        bootDevice();
+    } else {
+        utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
+                           "Programming device {} in FLASH mode...This might take a while", bdf);
     }
+
+    ensurePdiList();
+    for (const auto& pdi : pdiPaths) {
+        utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
+                           "Programming PDI via vrtd design writer {}", pdi);
+        getVrtdDevice().designWriteFile(pdi);
+    }
+
+    bootDevice();
 }
 
 void Device::bootDevice() {
     utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Booting device...");
+    auto writePmcGpio = [&]() {
+        constexpr size_t kPmcGpioOffset = 0x1040000;
+        constexpr uint32_t kPmcGpioValue = 1;
+
+        auto barHandle = getVrtdDevice().getBar(0);
+        auto barFile = barHandle.openBarFile();
+        if (kPmcGpioOffset + sizeof(uint32_t) > barFile.getLen()) {
+            throw std::runtime_error("PMC GPIO BAR write out of range");
+        }
+        auto ptr = barFile.getPtr<uint32_t>(vrtd::BarFile::Direction::Write, kPmcGpioOffset);
+        *ptr = kPmcGpioValue;
+    };
+
     if (vrtbinType == VrtbinType::FLAT) {
         if (programType == ProgramType::FLASH) {
-            int ret = ami_prog_device_boot(&dev, 1);
-            if (ret != AMI_STATUS_OK && geteuid() == 0) {  // for root users this should not matter
-                throw std::runtime_error("Failed to boot device");
-            } else {
-                utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                                   "Booting into PDI...");
-                utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
-                                   "Writing PMC GPIO...");
-                ami_mem_bar_write(dev, 0, 0x1040000, 1);
-                destroyAmiDev();
-                pcieHandler.execute(PcieDriverHandler::Command::REMOVE);
-                pcieHandler.execute(PcieDriverHandler::Command::TOGGLE_SBR);
-                usleep(5000000);
-                pcieHandler.execute(PcieDriverHandler::Command::RESCAN);
-                pcieHandler.execute(PcieDriverHandler::Command::HOTPLUG);
-                createAmiDev();
-                utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                                   "New PDI booted successfully");
-                XMLParser parser(systemMap);
-                parser.parseXML();
-                auto qdmaConns = parser.getQdmaConnections();
-                std::string cmd = "sudo bash " + std::string(QDMA_SETUP_QUEUES) + bdf + " --mm 0 bi";
-                for (auto& qdmaConn : qdmaConns) {
-                    uint32_t qid = qdmaConn.getQid();
-                    std::string direction =
-                        (qdmaConn.getDirection() == StreamDirection::HOST_TO_DEVICE ? "h2c"
-                                                                                    : "c2h");
-                    cmd += " --st " + std::to_string(qid) + " --dir " + direction;
-                }
-                system(cmd.c_str());
-                utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                                   "QDMA queues setup successfully");
-            }
+            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Booting into PDI...");
+            utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__, "Writing PMC GPIO...");
+            writePmcGpio();
+            getVrtdDevice().hotplugRemove();
+            getVrtdDevice().hotplugToggleSbr();
+            getVrtdDevice().hotplugRescan();
+            getVrtdDevice().hotplug();
         } else {
             utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Booting into PDI...");
-            destroyAmiDev();
-            pcieHandler.execute(PcieDriverHandler::Command::REMOVE);
-            pcieHandler.execute(PcieDriverHandler::Command::RESCAN);
-            pcieHandler.execute(PcieDriverHandler::Command::HOTPLUG);
-            createAmiDev();
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                               "New PDI booted successfully");
-            XMLParser parser(systemMap);
-            parser.parseXML();
-            auto qdmaConns = parser.getQdmaConnections();
-            std::string cmd = "sudo bash " + std::string(QDMA_SETUP_QUEUES) + bdf + " --mm 0 bi";
-            for (auto& qdmaConn : qdmaConns) {
-                uint32_t qid = qdmaConn.getQid();
-                std::string direction =
-                    (qdmaConn.getDirection() == StreamDirection::HOST_TO_DEVICE ? "h2c" : "c2h");
-                cmd += " --st " + std::to_string(qid) + " --dir " + direction;
-            }
-            system(cmd.c_str());
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                               "QDMA queues setup successfully");
+            getVrtdDevice().hotplugRemove();
+            getVrtdDevice().hotplugRescan();
+            getVrtdDevice().hotplug();
         }
     } else if (vrtbinType == VrtbinType::SEGMENTED) {
-        int ret = ami_prog_device_boot(
-            &dev, 1);  // make sure we are on partition one, this contains the segmented base pdi
-        if (ret != AMI_STATUS_OK && geteuid() == 0) {
-            throw std::runtime_error("Failed to boot into base segmented PDI");
-        } else {
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                               "Booting into base segmented PDI...");
-            utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__, "Writing PMC GPIO...");
-            // PMC GPIO. this is needed for reset PDI into partition 1
-            ami_mem_bar_write(dev, 0, 0x1040000, 1);
-            destroyAmiDev();
-            pcieHandler.execute(PcieDriverHandler::Command::REMOVE);
-            pcieHandler.execute(PcieDriverHandler::Command::TOGGLE_SBR);
-            usleep(5000000);
-            pcieHandler.execute(PcieDriverHandler::Command::RESCAN);
-            pcieHandler.execute(PcieDriverHandler::Command::HOTPLUG);
-            createAmiDev();
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                               "Base segmented PDI booted successfully");
-            if (ami_prog_download_pdi(dev, pdiPath.c_str(), 0, 1, nullptr, true) != AMI_STATUS_OK) {
-                throw std::runtime_error("Failed to program partial device");
-            }
-            destroyAmiDev();
-            pcieHandler.execute(PcieDriverHandler::Command::REMOVE);
-            usleep(2 * DELAY_PARTIAL_BOOT);  // enough time for the device to reset
-            pcieHandler.execute(PcieDriverHandler::Command::RESCAN);
-            pcieHandler.execute(PcieDriverHandler::Command::HOTPLUG);
-            createAmiDev();
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                               "PLD PDI booted successfully");
-            XMLParser parser(systemMap);
-            parser.parseXML();
-            auto qdmaConns = parser.getQdmaConnections();
-            std::string cmd = "sudo bash " + std::string(QDMA_SETUP_QUEUES) + bdf + " --mm 0 bi";
-            for (auto& qdmaConn : qdmaConns) {
-                uint32_t qid = qdmaConn.getQid();
-                std::string direction =
-                    (qdmaConn.getDirection() == StreamDirection::HOST_TO_DEVICE ? "h2c" : "c2h");
-                cmd += " --st " + std::to_string(qid) + " --dir " + direction;
-            }
-            system(cmd.c_str());
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                               "QDMA queues setup successfully");
-        }
+        utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
+                           "Booting segmented image into PDI...");
+        utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__, "Writing PMC GPIO...");
+        writePmcGpio();
+        getVrtdDevice().hotplugRemove();
+        getVrtdDevice().hotplugToggleSbr();
+        getVrtdDevice().hotplugRescan();
+        getVrtdDevice().hotplug();
+        getVrtdDevice().hotplugRemove();
+        usleep(2 * DELAY_PARTIAL_BOOT);  // enough time for the device to reset
+        getVrtdDevice().hotplugRescan();
+        getVrtdDevice().hotplug();
     }
+
+    utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "New PDI booted successfully");
+    XMLParser parser(systemMap);
+    parser.parseXML();
 }
 
 void Device::getNewHandle() {
@@ -328,7 +259,11 @@ void Device::createAmiDev() {
     }
 }
 
-void Device::destroyAmiDev() { ami_dev_delete(&dev); }
+void Device::destroyAmiDev() {
+    if (dev != nullptr) {
+        ami_dev_delete(&dev);
+    }
+}
 
 void Device::setFrequency(uint64_t freq) {
     if (platform == Platform::HARDWARE) {
@@ -337,13 +272,16 @@ void Device::setFrequency(uint64_t freq) {
                                "Setting frequency {}, which is higher than max frequency {}", freq,
                                clockFreq);
         }
-        clkWiz.setRateHz(200000000);
+        if (freq > std::numeric_limits<uint32_t>::max()) {
+            throw std::runtime_error("Requested frequency exceeds vrtd clock API limits");
+        }
+        getVrtdDevice().setUserClockRate(static_cast<uint32_t>(freq));
     }
 }
 
 uint64_t Device::getFrequency() {
     if (platform == Platform::HARDWARE) {
-        return clkWiz.getClockRate();
+        return getVrtdDevice().getUserClockRate();
     } else {
         return 0;
     }
@@ -356,8 +294,6 @@ uint64_t Device::getMaxFrequency() {
         return 0;
     }
 }
-
-ami_device* Device::getAmiDev() { return dev; }
 
 void Device::findVrtbinType() {
     XMLParser parser(systemMap);
@@ -378,6 +314,20 @@ std::shared_ptr<ZmqServer> Device::getZmqServer() { return zmqServer; }
 std::vector<QdmaConnection> Device::getQdmaConnections() { return qdmaConnections; }
 
 Allocator* Device::getAllocator() { return allocator; }
+
+vrtd::Device& Device::getVrtdDevice() {
+    if (!vrtdDevice.has_value()) {
+        throw std::runtime_error("vrtd device not initialized");
+    }
+    return *vrtdDevice;
+}
+
+const vrtd::Device& Device::getVrtdDevice() const {
+    if (!vrtdDevice.has_value()) {
+        throw std::runtime_error("vrtd device not initialized");
+    }
+    return *vrtdDevice;
+}
 
 std::vector<QdmaIntf*> Device::getQdmaInterfaces() { return qdmaIntfs; }
 

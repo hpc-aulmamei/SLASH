@@ -18,18 +18,43 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "driver/qdma_logic.hpp"
+#ifndef VRTD_DESIGN_WRITER_H
+#define VRTD_DESIGN_WRITER_H
 
-namespace vrt {
+#include <pthread.h>
+#include <stdbool.h>
+#include <stdint.h>
 
-QdmaLogic::QdmaLogic(const std::string& name, uint64_t baseAddr, uint64_t range)
-    : Kernel(name, baseAddr, range, std::vector<Register>{}) {}
+#include <slash/qdma.h>
 
-void QdmaLogic::setValues(uint16_t qid, uint32_t length) {
-    uint32_t regVal = 0;
-    regVal |= (qid & 0xFFF);
-    regVal |= ((length & 0xFFFF) << 12);
-    write(0x00, regVal);
+struct design_writer {
+    struct slash_qdma *qdma; /* non-owning */
+    uint32_t qid;
+    int fd;
+    bool qpair_created;
+    pthread_t thread;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    int input_fd;
+    bool busy;
+    bool stop;
+    int last_error;
+    bool thread_started;
+    bool mutex_initialized;
+    bool cond_initialized;
+};
+
+struct design_writer *design_writer_create(struct slash_qdma *qdma);
+int design_writer_submit_fd_async(struct design_writer *writer, int fd);
+int design_writer_submit_fd(struct design_writer *writer, int fd);
+int design_writer_poll_result(struct design_writer *writer, bool *done, int *last_error);
+bool design_writer_is_busy(struct design_writer *writer);
+void cleanup_design_writer(struct design_writer *writer);
+static inline
+void cleanup_design_writerp(struct design_writer **writerp)
+{
+    cleanup_design_writer(*writerp);
+    *writerp = NULL;
 }
 
-}  // namespace vrt
+#endif // VRTD_DESIGN_WRITER_H

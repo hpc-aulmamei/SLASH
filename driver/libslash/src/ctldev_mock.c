@@ -148,6 +148,26 @@ int slash_ctldev_mock_close(struct slash_ctldev *ctldev)
     return 0;
 }
 
+struct slash_ioctl_device_info *slash_device_info_mock_read(struct slash_ctldev *ctldev)
+{
+    struct slash_ioctl_device_info *info;
+
+    if (ctldev == NULL || !ctldev->mock) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    info = calloc(1, sizeof(*info));
+    if (info == NULL) {
+        return NULL;
+    }
+
+    info->size = sizeof(*info);
+    (void) snprintf(info->bdf, sizeof(info->bdf), "0000:00:00.0");
+
+    return info;
+}
+
 struct slash_ioctl_bar_info *slash_bar_info_mock_read(struct slash_ctldev *ctldev, int bar_number)
 {
     struct slash_ioctl_bar_info *bar_info;

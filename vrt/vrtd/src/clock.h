@@ -18,45 +18,46 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef VRTD_CTLDEV_H
-#define VRTD_CTLDEV_H
+#ifndef VRTD_CLOCK_H
+#define VRTD_CLOCK_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include <slash/ctldev.h>
-#include <slash/qdma.h>
 
-#include "array.h"
-#include "buffer.h"
+// BAR index used by the clock driver.
+#define CLOCK_DRIVER_BAR_NUMBER 4
 
-struct design_writer;
-struct clock_driver;
-struct device_memory_map;
+// Clock IDs: align with design/service mapping.
+#define CLOCK_DRIVER_SERVICE_REGION_CLOCK_ID 0
+#define CLOCK_DRIVER_USER_REGION_CLOCK_ID 1
 
-struct device {
-    char *path; /* owning */
-    struct slash_ctldev *ctl;
-    struct slash_qdma *qdma;
-    struct slash_ioctl_bar_info *bar_info[6];
-    struct slash_bar_file *bar_files[6];
-    struct design_writer *design_writer;
-    struct clock_driver *clock_driver;
-    struct device_memory_map *memory_map;
-    struct buffer_ptr_array buffers;
-    
+struct clock_driver {
+    struct slash_ctldev *ctl; /* non-owning */
+    struct slash_bar_file *bar; /* owning */
+    volatile uint32_t *regs;
+    size_t len;
+    uint32_t prim_in_hz;
+    uint32_t m;
+    uint32_t d;
+    uint32_t o;
+    uint32_t min_err_hz;
 };
 
-void cleanup_device(struct device *d);
+struct clock_driver *clock_driver_create(struct slash_ctldev *ctl);
+void cleanup_clock_driver(struct clock_driver *clk);
 static inline
-void cleanup_devicep(struct device **d)
+void cleanup_clock_driverp(struct clock_driver **clkp)
 {
-    cleanup_device(*d);
-
-    *d = NULL;
+    cleanup_clock_driver(*clkp);
+    *clkp = NULL;
 }
 
-DECLARE_OWNING_PTR_ARRAY(device_ptr_array, struct device *, cleanup_device);
+int clock_driver_get_service_region_rate_hz(struct clock_driver *clk, uint32_t *rate_hz_out);
+int clock_driver_set_service_region_rate_hz(struct clock_driver *clk, uint32_t *rate_hz_inout);
 
-int devices_discover_and_open(struct device_ptr_array *devices);
+int clock_driver_get_user_region_rate_hz(struct clock_driver *clk, uint32_t *rate_hz_out);
+int clock_driver_set_user_region_rate_hz(struct clock_driver *clk, uint32_t *rate_hz_inout);
 
-#endif // VRTD_CTLDEV_H
+#endif // VRTD_CLOCK_H

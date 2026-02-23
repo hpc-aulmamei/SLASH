@@ -64,7 +64,7 @@ void XMLParser::parseXML() {
             }
             auto ba = std::stoull(baseAddress, nullptr, 16);
             auto r = std::stoull(range, nullptr, 16);
-            Kernel kernel((ami_device*)nullptr, name, ba, r, registers);
+            Kernel kernel(name, ba, r, registers);
             kernels[name] = kernel;
         } else if (kernelNode->type == XML_ELEMENT_NODE &&
                    xmlStrcmp(kernelNode->name, BAD_CAST "ClockFrequency") == 0) {

@@ -42,6 +42,9 @@ struct slash_bar_file {
 struct slash_ctldev *slash_ctldev_open(const char *path);
 int slash_ctldev_close(struct slash_ctldev *ctldev);
 
+struct slash_ioctl_device_info *slash_device_info_read(struct slash_ctldev *ctldev);
+void slash_device_info_free(struct slash_ioctl_device_info *info);
+
 struct slash_ioctl_bar_info *slash_bar_info_read(struct slash_ctldev *ctldev, int bar_number);
 void slash_bar_info_free(struct slash_ioctl_bar_info *ctldev);
 
