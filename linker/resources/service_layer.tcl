@@ -18,24 +18,31 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-set cur_design [current_bd_design]
-create_bd_design -boundary_from_container [get_bd_cells /service_layer] {{ service_layer_bd_name }}
-current_bd_design $cur_design
-set synth_list [get_property CONFIG.LIST_SYNTH_BD [get_bd_cells /service_layer]]
-set sim_list   [get_property CONFIG.LIST_SIM_BD   [get_bd_cells /service_layer]]
-
-set synth_list [string trim "${synth_list}:{{ service_layer_bd_name }}.bd"]
-set sim_list   [string trim "${sim_list}:{{ service_layer_bd_name }}.bd"]
-
-set_property -dict [list \
-  CONFIG.LIST_SYNTH_BD $synth_list \
-  CONFIG.LIST_SIM_BD   $sim_list \
-] [get_bd_cells /service_layer]
-
-current_bd_design {{ service_layer_bd_name }}
-
+delete_bd_objs [get_bd_cells ]
+delete_bd_objs [get_bd_intf_nets]
+delete_bd_objs [get_bd_nets]
 update_compile_order -fileset sources_1
-
+{% raw %}
+set_property APERTURES {{0xE000_0000 256M}} [get_bd_intf_ports M_QDMA_SLV_BRIDGE]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports M_VIRT_0]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports M_VIRT_1]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports M_VIRT_2]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports M_VIRT_3]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_0]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_1]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_2]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_3]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_4]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_5]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_6]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_7]
+set_property APERTURES {{0x203_0000_0000 128M}} [get_bd_intf_ports S_AXILITE_INI]
+set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_QDMA_SLV_BRIDGE]
+set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_00]
+set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_01]
+set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_02]
+set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_03]
+{% endraw %}
     set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_NSI {1} \
@@ -1132,6 +1139,10 @@ set ::slash_dcmac_hdl  [file normalize "{{ dcmac_hdl_dir }}"]
 
 # Source the DCMAC Tcl helpers
 source $::slash_dcmac_tcl
+
+{% for vf in dcmac_hdl_files %}
+import_files -fileset sources_1 -norecurse [file normalize "{{ vf }}"]
+{% endfor %}
 
 # --- Drive DCMAC creation based on config ---
 {% if needs_dcmac %}
