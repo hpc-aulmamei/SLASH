@@ -14,4 +14,8 @@ sudo insmod /lib/modules/5.15.0-168-generic/extra/slash.ko
 
 echo 1 | sudo tee /sys/bus/pci/rescan
 
+cmake -B ../vrt/vrtd/build -S ../vrt/vrtd -GNinja
+cmake --build ../vrt/vrtd/build
+sudo cmake --install ../vrt/vrtd/build
+
 sudo systemctl start vrtd.service

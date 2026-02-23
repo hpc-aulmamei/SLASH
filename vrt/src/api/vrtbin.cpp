@@ -142,6 +142,23 @@ bool isRegularTarType(char typeflag) {
     return typeflag == REGTYPE || typeflag == AREGTYPE || typeflag == '\0';
 }
 
+std::filesystem::perms tarModeToPerms(uint64_t mode) {
+    std::filesystem::perms perms = std::filesystem::perms::none;
+    if ((mode & 0400u) != 0u) perms |= std::filesystem::perms::owner_read;
+    if ((mode & 0200u) != 0u) perms |= std::filesystem::perms::owner_write;
+    if ((mode & 0100u) != 0u) perms |= std::filesystem::perms::owner_exec;
+    if ((mode & 0040u) != 0u) perms |= std::filesystem::perms::group_read;
+    if ((mode & 0020u) != 0u) perms |= std::filesystem::perms::group_write;
+    if ((mode & 0010u) != 0u) perms |= std::filesystem::perms::group_exec;
+    if ((mode & 0004u) != 0u) perms |= std::filesystem::perms::others_read;
+    if ((mode & 0002u) != 0u) perms |= std::filesystem::perms::others_write;
+    if ((mode & 0001u) != 0u) perms |= std::filesystem::perms::others_exec;
+    if ((mode & 04000u) != 0u) perms |= std::filesystem::perms::set_uid;
+    if ((mode & 02000u) != 0u) perms |= std::filesystem::perms::set_gid;
+    if ((mode & 01000u) != 0u) perms |= std::filesystem::perms::sticky_bit;
+    return perms;
+}
+
 }  // namespace
 
 Vrtbin::Vrtbin(std::string vrtbinPath, const std::string& bdf) {
@@ -161,7 +178,6 @@ Vrtbin::Vrtbin(std::string vrtbinPath, const std::string& bdf) {
     this->tempExtractPath =
         (FilesystemCache::getCachePath() / ("vrtbin_" + sanitizeForPath(bdf))).string();
     this->systemMapPath = (metadataPath / "system_map.xml").string();
-    this->versionPath = (metadataPath / "version.json").string();
 
     extract();
     discoverPdiFiles();
@@ -175,11 +191,6 @@ Vrtbin::Vrtbin(std::string vrtbinPath, const std::string& bdf) {
     this->platform = parser.getPlatform();
     copy(tempSystemMapPath.string(), systemMapPath);
 
-    const std::filesystem::path versionJsonPath = findExtractedFile("version.json");
-    if (!versionJsonPath.empty()) {
-        copy(versionJsonPath.string(), versionPath);
-    }
-
     const std::filesystem::path reportPath = findExtractedFile("report_utilization.xml");
     if (!reportPath.empty()) {
         copy(reportPath.string(), (metadataPath / "report_utilization.xml").string());
@@ -189,7 +200,6 @@ Vrtbin::Vrtbin(std::string vrtbinPath, const std::string& bdf) {
         if (pdiPaths.empty()) {
             throw std::runtime_error("No .pdi files found in tar archive: " + vrtbinPath);
         }
-        extractUUID();
     } else if (this->platform == Platform::EMULATION) {
         const std::filesystem::path emuPath = findExtractedFile("vpp_emu");
         emulationExecPath = emuPath.empty() ? std::string() : emuPath.string();
@@ -275,6 +285,24 @@ void Vrtbin::extract() {
                                                  outPath.string());
                     }
                     streamCopy(archive, out, payloadSize);
+                    out.flush();
+                    if (!out) {
+                        throw std::runtime_error("Failed writing extracted file: " +
+                                                 outPath.string());
+                    }
+                    out.close();
+                    if (!out) {
+                        throw std::runtime_error("Failed closing extracted file: " +
+                                                 outPath.string());
+                    }
+                    std::error_code permEc;
+                    const uint64_t mode = parseOctal(header.mode, sizeof(header.mode));
+                    std::filesystem::permissions(outPath, tarModeToPerms(mode),
+                                                 std::filesystem::perm_options::replace, permEc);
+                    if (permEc) {
+                        throw std::runtime_error("Failed setting permissions on extracted file " +
+                                                 outPath.string() + ": " + permEc.message());
+                    }
                     payloadSize = 0;
                 }
             }
@@ -325,35 +353,6 @@ void Vrtbin::copy(const std::string& source, const std::string& destination) {
 std::string Vrtbin::getSystemMapPath() { return systemMapPath; }
 std::string Vrtbin::getPdiPath() { return pdiPath; }
 std::vector<std::string> Vrtbin::getPdiPaths() { return pdiPaths; }
-
-std::string Vrtbin::getUUID() { return uuid; }
-
-void Vrtbin::extractUUID() {
-    utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
-                       "Extracting UUID from version.json");
-    const std::filesystem::path versionJsonPath = findExtractedFile("version.json");
-    if (versionJsonPath.empty()) {
-        uuid = "";
-        return;
-    }
-    std::ifstream jsonFile(versionJsonPath);
-    if (!jsonFile.is_open()) {
-        uuid = "";
-        return;
-    }
-    std::string line;
-    while (std::getline(jsonFile, line)) {
-        std::size_t pos = line.find("\"logic_uuid\":");
-        if (pos != std::string::npos) {
-            std::size_t start = line.find("\"", pos + 13) + 1;
-            std::size_t end = line.find("\"", start);
-            uuid = line.substr(start, end - start);
-            break;
-        }
-    }
-    utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__, "UUID is: {}", uuid);
-    jsonFile.close();
-}
 
 std::string Vrtbin::getEmulationExec() { return emulationExecPath; }
 

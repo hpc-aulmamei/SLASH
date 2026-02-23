@@ -37,15 +37,6 @@ namespace vrt {
 class Kernel;
 
 /**
- * @brief Enum class for the different types of VRT bins.
- */
-enum class VrtbinType {
-    FLAT,
-    SEGMENTED
-    // PARTIAL when implemented
-};
-
-/**
  * @brief Class for parsing XML files to extract kernel information.
  */
 class XMLParser {
@@ -55,7 +46,6 @@ class XMLParser {
     xmlNode* workingNode;  ///< Pointer to the current working node in the XML document.
     std::map<std::string, Kernel> kernels;        ///< Map of kernel names to Kernel objects.
     uint64_t clockFrequency;                      ///< The clock frequency of the device.
-    VrtbinType vrtbinType;                        ///< The VRT bin type of the device.
     Platform platform;                            ///< The platform of the device.
     std::vector<QdmaConnection> qdmaConnections;  ///< Vector of QDMA connections.
 
@@ -89,12 +79,6 @@ class XMLParser {
      * @return The clock frequency of the device.
      */
     uint64_t getClockFrequency();
-
-    /**
-     * @brief Gets the VRT bin type of the device.
-     * @return The VRT bin type of the device.
-     */
-    VrtbinType getVrtbinType();
 
     /**
      * @brief Gets the platform of the device.

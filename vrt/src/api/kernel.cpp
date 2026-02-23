@@ -119,7 +119,8 @@ void Kernel::wait() {
     if (platform == Platform::EMULATION) {
         return;
     }
-    while (read(0x00) == 1 || read(0x00) == 0x81) {
+    // ap_ctrl_hs: wait for ap_done (CTRL[1]) instead of checking exact control word values.
+    while ((read(0x00) & 0x2u) == 0u) {
     }
 }
 

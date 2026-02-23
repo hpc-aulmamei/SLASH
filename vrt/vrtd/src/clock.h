@@ -29,9 +29,12 @@
 // BAR index used by the clock driver.
 #define CLOCK_DRIVER_BAR_NUMBER 4
 
-// Clock IDs: align with design/service mapping.
-#define CLOCK_DRIVER_SERVICE_REGION_CLOCK_ID 0
-#define CLOCK_DRIVER_USER_REGION_CLOCK_ID 1
+// Clock wizard register windows inside BAR4.
+#define CLOCK_DRIVER_USER_REGION_WIZARD_OFFSET 0x00000000u
+#define CLOCK_DRIVER_SERVICE_REGION_WIZARD_OFFSET 0x00010000u
+
+// Each wizard exposes clk_out1 as output index 0.
+#define CLOCK_DRIVER_WIZARD_CLKOUT_ID 0u
 
 struct clock_driver {
     struct slash_ctldev *ctl; /* non-owning */

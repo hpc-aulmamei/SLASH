@@ -22,9 +22,11 @@
 
 #include "utils/filesystem_cache.hpp"
 
+#include <cerrno>
+#include <cstring>
+#include <filesystem>
 #include <limits>
-#include <ami.h>
-#include <ami_sensor.h>
+#include <unistd.h>
 #include <vrtd/bar.hpp>
 
 namespace vrt {
@@ -49,6 +51,29 @@ std::string normalizeBdfLegacy(const std::string& bdf) {
     return bdf;
 }
 
+std::string shellQuote(const std::string& value) {
+    std::string quoted = "'";
+    for (char c : value) {
+        if (c == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += c;
+        }
+    }
+    quoted += "'";
+    return quoted;
+}
+
+std::string makeExecFromBinaryDirCommand(const std::string& execPath) {
+    const std::filesystem::path path(execPath);
+    const std::string dir = path.parent_path().string();
+    const std::string file = path.filename().string();
+    if (dir.empty() || file.empty()) {
+        return shellQuote(execPath);
+    }
+    return "cd " + shellQuote(dir) + " && exec ./" + shellQuote(file);
+}
+
 }  // namespace
 
 Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool program,
@@ -56,7 +81,6 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
     : vrtbin(vrtbinPath, bdf) {
     this->bdf = normalizeBdfLegacy(bdf);
     this->bdfFull = normalizeBdfForVrtd(bdf);
-    lockPcieDevice(this->bdf);
     this->allocator = new Allocator();
     this->systemMap = this->vrtbin.getSystemMapPath();
     this->pdiPath = this->vrtbin.getPdiPath();
@@ -67,7 +91,6 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
     if (platform == Platform::HARDWARE) {
         vrtdSession = std::make_shared<vrtd::Session>();
         vrtdDevice = vrtdSession->getDeviceByBdf(bdfFull);
-        findVrtbinType();
         if (program) {
             programDevice();
         }
@@ -80,15 +103,31 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
         }
     } else if (platform == Platform::EMULATION) {
         parseSystemMap();
-        std::string emulationExecPath = this->vrtbin.getEmulationExec() + " >/dev/null";
+        std::string emulationExecPath = this->vrtbin.getEmulationExec();
+        if (emulationExecPath.empty()) {
+            throw std::runtime_error("Emulation executable vpp_emu not found in vrtbin");
+        }
+        if (::access(emulationExecPath.c_str(), X_OK) != 0) {
+            throw std::runtime_error("Emulation executable is not runnable: " + emulationExecPath +
+                                     " (" + std::strerror(errno) + ")");
+        }
 
-        std::thread([emulationExecPath]() { std::system(emulationExecPath.c_str()); }).detach();
+        const std::string emuCommand = makeExecFromBinaryDirCommand(emulationExecPath);
+        std::thread([emuCommand]() { std::system(emuCommand.c_str()); }).detach();
 
     } else {
         parseSystemMap();
-        std::string simulationExecPath = this->vrtbin.getSimulationExec() + " >/dev/null";
+        std::string simulationExecPath = this->vrtbin.getSimulationExec();
+        if (simulationExecPath.empty()) {
+            throw std::runtime_error("Simulation executable vpp_sim not found in vrtbin");
+        }
+        if (::access(simulationExecPath.c_str(), X_OK) != 0) {
+            throw std::runtime_error("Simulation executable is not runnable: " +
+                                     simulationExecPath + " (" + std::strerror(errno) + ")");
+        }
 
-        std::thread([simulationExecPath]() { std::system(simulationExecPath.c_str()); }).detach();
+        const std::string simCommand = makeExecFromBinaryDirCommand(simulationExecPath);
+        std::thread([simCommand]() { std::system(simCommand.c_str()); }).detach();
         Json::Value command;
         command["command"] = "start";
         zmqServer->sendCommand(command);
@@ -101,9 +140,7 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
     }
 }
 
-Device::~Device() {
-    unlockPcieDevice(bdf);
-}
+Device::~Device() = default;
 
 void Device::parseSystemMap() {
     XMLParser parser(systemMap);
@@ -127,10 +164,6 @@ void Device::cleanup() {
         for (auto qdmaIntf_ : qdmaIntfs) {
             delete qdmaIntf_;
         }
-        if (dev != nullptr) {
-            ami_dev_delete(&dev);
-        }
-        unlockPcieDevice(bdf);
     } else if (platform == Platform::EMULATION || platform == Platform::SIMULATION) {
         Json::Value exit;
         exit["command"] = "exit";
@@ -141,127 +174,17 @@ void Device::cleanup() {
 std::string Device::getBdf() { return bdf; }
 
 void Device::programDevice() {
-    auto ensurePdiList = [&]() {
-        if (pdiPaths.empty() && !pdiPath.empty()) {
-            pdiPaths.push_back(pdiPath);
-        }
-        if (pdiPaths.empty()) {
-            throw std::runtime_error("No PDI files found for programming");
-        }
-    };
-
-    if (programType == ProgramType::JTAG) {
-        utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                           "Programming device {} in JTAG mode...This might take a while", bdf);
-        ensurePdiList();
-        for (const auto& pdi : pdiPaths) {
-            std::string cmd = JTAG_PROGRAM_PATH + pdi;
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                               "Programming PDI via JTAG {}", pdi);
-            system(cmd.c_str());
-        }
-        bootDevice();
-        return;
+    if (pdiPaths.empty() && !pdiPath.empty()) {
+        pdiPaths.push_back(pdiPath);
+    }
+    if (pdiPaths.empty()) {
+        throw std::runtime_error("No PDI files found for programming");
     }
 
-    if (vrtbinType == VrtbinType::SEGMENTED) {
-        utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                           "Programming device {} in SEGMENTED mode...This might take a while",
-                           bdf);
-    } else {
-        utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                           "Programming device {} in FLASH mode...This might take a while", bdf);
-    }
-
-    ensurePdiList();
     for (const auto& pdi : pdiPaths) {
         utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
                            "Programming PDI via vrtd design writer {}", pdi);
         getVrtdDevice().designWriteFile(pdi);
-    }
-
-    bootDevice();
-}
-
-void Device::bootDevice() {
-    utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Booting device...");
-    auto writePmcGpio = [&]() {
-        constexpr size_t kPmcGpioOffset = 0x1040000;
-        constexpr uint32_t kPmcGpioValue = 1;
-
-        auto barHandle = getVrtdDevice().getBar(0);
-        auto barFile = barHandle.openBarFile();
-        if (kPmcGpioOffset + sizeof(uint32_t) > barFile.getLen()) {
-            throw std::runtime_error("PMC GPIO BAR write out of range");
-        }
-        auto ptr = barFile.getPtr<uint32_t>(vrtd::BarFile::Direction::Write, kPmcGpioOffset);
-        *ptr = kPmcGpioValue;
-    };
-
-    if (vrtbinType == VrtbinType::FLAT) {
-        if (programType == ProgramType::FLASH) {
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Booting into PDI...");
-            utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__, "Writing PMC GPIO...");
-            writePmcGpio();
-            getVrtdDevice().hotplugRemove();
-            getVrtdDevice().hotplugToggleSbr();
-            getVrtdDevice().hotplugRescan();
-            getVrtdDevice().hotplug();
-        } else {
-            utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Booting into PDI...");
-            getVrtdDevice().hotplugRemove();
-            getVrtdDevice().hotplugRescan();
-            getVrtdDevice().hotplug();
-        }
-    } else if (vrtbinType == VrtbinType::SEGMENTED) {
-        utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__,
-                           "Booting segmented image into PDI...");
-        utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__, "Writing PMC GPIO...");
-        writePmcGpio();
-        getVrtdDevice().hotplugRemove();
-        getVrtdDevice().hotplugToggleSbr();
-        getVrtdDevice().hotplugRescan();
-        getVrtdDevice().hotplug();
-        getVrtdDevice().hotplugRemove();
-        usleep(2 * DELAY_PARTIAL_BOOT);  // enough time for the device to reset
-        getVrtdDevice().hotplugRescan();
-        getVrtdDevice().hotplug();
-    }
-
-    utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "New PDI booted successfully");
-    XMLParser parser(systemMap);
-    parser.parseXML();
-}
-
-void Device::getNewHandle() {
-    ami_device* new_dev = NULL;
-    int ret = AMI_STATUS_ERROR;
-    ret = ami_dev_find_next(&new_dev, AMI_PCI_BUS(pci_bdf), AMI_PCI_DEV(pci_bdf),
-                            AMI_PCI_FUNC(pci_bdf), NULL);
-    if (ret == AMI_STATUS_OK) {
-        if (ami_sensor_discover(new_dev) == AMI_STATUS_OK) {
-            dev = new_dev;
-        } else {
-            throw std::runtime_error("Failed to discover sensors");
-        }
-    } else {
-        throw std::runtime_error("Failed to find device");
-    }
-}
-
-void Device::createAmiDev() {
-    if (ami_dev_find(bdf.c_str(), &dev) != AMI_STATUS_OK) {
-        throw std::runtime_error("Failed to find device " + bdf);
-    }
-    ami_dev_get_pci_bdf(dev, &pci_bdf);
-    if (ami_dev_request_access(dev) != AMI_STATUS_OK) {
-        throw std::runtime_error("Failed to request elevated access to device");
-    }
-}
-
-void Device::destroyAmiDev() {
-    if (dev != nullptr) {
-        ami_dev_delete(&dev);
     }
 }
 
@@ -295,12 +218,6 @@ uint64_t Device::getMaxFrequency() {
     }
 }
 
-void Device::findVrtbinType() {
-    XMLParser parser(systemMap);
-    parser.parseXML();
-    this->vrtbinType = parser.getVrtbinType();
-}
-
 void Device::findPlatform() {
     XMLParser parser(systemMap);
     parser.parseXML();
@@ -330,31 +247,5 @@ const vrtd::Device& Device::getVrtdDevice() const {
 }
 
 std::vector<QdmaIntf*> Device::getQdmaInterfaces() { return qdmaIntfs; }
-
-void Device::lockPcieDevice(const std::string& bdf) {
-    std::string lockFile = FilesystemCache::getRuntimePath() / ("pcie_device_" + bdf + ".lock");
-    int fd = open(lockFile.c_str(), O_CREAT | O_WRONLY, 0666);
-    if (fd == -1) {
-        throw std::runtime_error("Failed to lock PCIe device " + bdf);
-    }
-    int ret = flock(fd, LOCK_EX | LOCK_NB);
-    if (ret < 0) {
-        close(fd);
-        throw std::runtime_error("Device " + bdf + " locked by another instance");
-    }
-}
-
-void Device::unlockPcieDevice(const std::string& bdf) {
-    std::string lockFile = FilesystemCache::getRuntimePath() / ("pcie_device_" + bdf + ".lock");
-    int fd = open(lockFile.c_str(), O_WRONLY, 0666);
-    if (fd == -1) {
-        throw std::runtime_error("Failed to lock PCIe device " + bdf);
-    }
-    int ret = flock(fd, LOCK_UN);
-    if (ret < 0) {
-        throw std::runtime_error("Device " + bdf + " cannot be unlocked");
-    }
-    close(fd);
-}
 
 }  // namespace vrt

@@ -71,10 +71,6 @@ void XMLParser::parseXML() {
             std::string clkFreq = (const char*)xmlNodeGetContent(kernelNode);
             this->clockFrequency = std::stoull(clkFreq);
         } else if (kernelNode->type == XML_ELEMENT_NODE &&
-                   xmlStrcmp(kernelNode->name, BAD_CAST "Type") == 0) {
-            std::string type = (const char*)xmlNodeGetContent(kernelNode);
-            this->vrtbinType = (type == "Full") ? VrtbinType::FLAT : VrtbinType::SEGMENTED;
-        } else if (kernelNode->type == XML_ELEMENT_NODE &&
                    xmlStrcmp(kernelNode->name, BAD_CAST "Platform") == 0) {
             std::string platform_ = (const char*)xmlNodeGetContent(kernelNode);
             this->platform = (platform_ == "Hardware")     ? Platform::HARDWARE
@@ -110,8 +106,6 @@ void XMLParser::parseXML() {
 std::map<std::string, Kernel> XMLParser::getKernels() { return kernels; }
 
 uint64_t XMLParser::getClockFrequency() { return this->clockFrequency; }
-
-VrtbinType XMLParser::getVrtbinType() { return this->vrtbinType; }
 
 Platform XMLParser::getPlatform() { return this->platform; }
 

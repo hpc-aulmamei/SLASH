@@ -19,7 +19,12 @@
 # ##################################################################################################
 
 cmake_minimum_required(VERSION 3.20)
-project(00_axilite LANGUAGES NONE)
+project(00_axilite LANGUAGES CXX)
+
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS "-O3")
 
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
 include("${REPO_ROOT}/cmake/ProjectInit.cmake")
@@ -59,3 +64,20 @@ build_emu(
   CFG        "${CFG_FILE}"
   KERNELS    ${KERNELS}
 )
+
+# Include directories
+include_directories(${REPO_ROOT}/vrt/include
+                    /usr/local/vrt/include
+                    /usr/local/include
+                    /usr/include/ami
+                    /usr/include/libxml2
+                    /usr/include/jsoncpp)
+
+# Define sources for the executable
+set(EXE_SOURCES 00_axilite.cpp)
+
+# Create the executable
+add_executable(${PROJECT_NAME} ${EXE_SOURCES})
+
+# Link the library to the executable
+target_link_libraries(${PROJECT_NAME} vrt vrtd vrtdpp ami xml2 zmq jsoncpp)

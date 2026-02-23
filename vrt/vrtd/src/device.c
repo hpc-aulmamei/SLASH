@@ -22,6 +22,7 @@
 
 #include "device.h"
 #include "allocator.h"
+#include "clock.h"
 #include "design_writer.h"
 
 #include <assert.h>
@@ -100,6 +101,16 @@ static int device_open(struct device *d, const char *path)
         (void) sd_journal_print(
             LOG_ERR,
             "Error creating device memory map for %s: %m",
+            path
+        );
+        return -1;
+    }
+
+    d->clock_driver = clock_driver_create(d->ctl);
+    if (d->clock_driver == NULL) {
+        (void) sd_journal_print(
+            LOG_ERR,
+            "Error creating clock driver for %s: %m",
             path
         );
         return -1;
@@ -191,6 +202,11 @@ void cleanup_device(struct device *d)
     if (d->memory_map != NULL) {
         device_memory_map_cleanup(d->memory_map);
         d->memory_map = NULL;
+    }
+
+    if (d->clock_driver != NULL) {
+        cleanup_clock_driver(d->clock_driver);
+        d->clock_driver = NULL;
     }
 
     if (d->qdma != NULL) {

@@ -47,8 +47,6 @@
 #include "utils/zmq_server.hpp"
 #include <vrtd/session.hpp>
 
-struct ami_device;
-
 namespace vrt {
 
 /**
@@ -87,7 +85,6 @@ enum class ProgramType {
 class Device {
     static constexpr uint64_t QDMA_LOGIC_BASE = 0x20100020000;  ///< Base address for QDMA logic
     static constexpr uint32_t QDMA_LOGIC_OFFSET = 0x1000;       /// Offset for QDMA logic
-    ami_device* dev = nullptr;                                  ///< Pointer to the AMI device
     uint8_t bar = 0;                                            ///< Base Address Register (BAR)
     uint64_t offset = 0;                                        ///< Offset for memory operations
     uint16_t pci_bdf = 0;     ///< PCI Bus:Device.Function identifier
@@ -101,7 +98,6 @@ class Device {
     ProgramType programType;  ///< Type of programming
     std::map<std::string, Kernel> kernels;        ///< Map of kernel names to Kernel objects
     Allocator* allocator;                         ///< Allocator object
-    VrtbinType vrtbinType;                        ///< Type of VRTBIN
     Platform platform;                            ///< Platform information
     std::shared_ptr<ZmqServer> zmqServer;         ///< ZeroMQ server object
     std::vector<QdmaConnection> qdmaConnections;  ///< Vector of QDMA connections
@@ -138,26 +134,6 @@ class Device {
      * @brief Programs the device.
      */
     void programDevice();
-
-    /**
-     * @brief Boots the device.
-     */
-    void bootDevice();
-
-    /**
-     * @brief Refreshes AMI handle for sensor access compatibility.
-     */
-    void getNewHandle();
-
-    /**
-     * @brief Creates AMI handle for sensor access compatibility.
-     */
-    void createAmiDev();
-
-    /**
-     * @brief Destroys AMI handle for sensor access compatibility.
-     */
-    void destroyAmiDev();
 
     /**
      * @brief Destructor for Device.
@@ -237,16 +213,6 @@ class Device {
      * @brief Gets the QDMA streaming interfaces.
      */
     std::vector<QdmaIntf*> getQdmaInterfaces();
-
-    /**
-     * @brief Locks pcie device, for exclusive access.
-     */
-    void lockPcieDevice(const std::string& bdf);
-
-    /**
-     * @brief Unlocks pcie device, for exclusive access.
-     */
-    void unlockPcieDevice(const std::string& bdf);
 };
 
 }  // namespace vrt
