@@ -18,27 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-<<<<<<< dev
-set cur_design [current_bd_design]
-create_bd_design -boundary_from_container [get_bd_cells /slash] {{ slash_bd_name }}
-current_bd_design $cur_design
-set synth_list [get_property CONFIG.LIST_SYNTH_BD [get_bd_cells /slash]]
-set sim_list   [get_property CONFIG.LIST_SIM_BD   [get_bd_cells /slash]]
-
-set synth_list [string trim "${synth_list}:{{ slash_bd_name }}.bd"]
-set sim_list   [string trim "${sim_list}:{{ slash_bd_name }}.bd"]
-
-set_property -dict [list \
-  CONFIG.LIST_SYNTH_BD $synth_list \
-  CONFIG.LIST_SIM_BD   $sim_list \
-] [get_bd_cells /slash]
-
-current_bd_design {{ slash_bd_name }}
-
-
-update_compile_order -fileset sources_1
-
-=======
 delete_bd_objs [get_bd_cells ]
 delete_bd_objs [get_bd_intf_nets]
 delete_bd_objs [get_bd_nets]
@@ -127,7 +106,6 @@ update_compile_order -fileset sources_1
   set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports SL_VIRT_03]
   set_property APERTURES {{0x202_0000_0000 128M}} [get_bd_intf_ports S_AXILITE_INI]
   {% endraw %}
->>>>>>> dev
  # Create instance: ddr_noc_0, and set properties
   set ddr_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_0 ]
   set_property -dict [list \
@@ -865,7 +843,6 @@ update_compile_order -fileset sources_1
     CONFIG.NUM_NMI {1} \
     CONFIG.NUM_NSI {0} \
   ] $noc_virt_01
-<<<<<<< dev
 
 
   set_property -dict [ list \
@@ -925,67 +902,6 @@ update_compile_order -fileset sources_1
  ] [get_bd_intf_pins /noc_virt_03/S00_AXI]
 
   set_property -dict [ list \
-=======
-
-
-  set_property -dict [ list \
-   CONFIG.INI_STRATEGY {driver} \
- ] [get_bd_intf_pins /noc_virt_01/M00_INI]
-
-  set_property -dict [ list \
-   CONFIG.CONNECTIONS {M00_INI {read_bw {500} write_bw {500}}} \
-   CONFIG.NOC_PARAMS {} \
-   CONFIG.CATEGORY {pl} \
- ] [get_bd_intf_pins /noc_virt_01/S00_AXI]
-
-  set_property -dict [ list \
-   CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
- ] [get_bd_pins /noc_virt_01/aclk0]
-
-  # Create instance: noc_virt_02, and set properties
-  set noc_virt_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_02 ]
-  set_property -dict [list \
-    CONFIG.NUM_MI {0} \
-    CONFIG.NUM_NMI {1} \
-    CONFIG.NUM_NSI {0} \
-  ] $noc_virt_02
-
-
-  set_property -dict [ list \
-   CONFIG.INI_STRATEGY {driver} \
- ] [get_bd_intf_pins /noc_virt_02/M00_INI]
-
-  set_property -dict [ list \
-   CONFIG.CONNECTIONS {M00_INI {read_bw {500} write_bw {500}}} \
-   CONFIG.NOC_PARAMS {} \
-   CONFIG.CATEGORY {pl} \
- ] [get_bd_intf_pins /noc_virt_02/S00_AXI]
-
-  set_property -dict [ list \
-   CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
- ] [get_bd_pins /noc_virt_02/aclk0]
-
-  # Create instance: noc_virt_03, and set properties
-  set noc_virt_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_03 ]
-  set_property -dict [list \
-    CONFIG.NUM_MI {0} \
-    CONFIG.NUM_NMI {1} \
-    CONFIG.NUM_NSI {0} \
-  ] $noc_virt_03
-
-
-  set_property -dict [ list \
-   CONFIG.INI_STRATEGY {driver} \
- ] [get_bd_intf_pins /noc_virt_03/M00_INI]
-
-  set_property -dict [ list \
-   CONFIG.CONNECTIONS {M00_INI {read_bw {500} write_bw {500}}} \
-   CONFIG.NOC_PARAMS {} \
-   CONFIG.CATEGORY {pl} \
- ] [get_bd_intf_pins /noc_virt_03/S00_AXI]
-
-  set_property -dict [ list \
->>>>>>> dev
    CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
  ] [get_bd_pins /noc_virt_03/aclk0]
 

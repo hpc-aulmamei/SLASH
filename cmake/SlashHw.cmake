@@ -1,27 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-<<<<<<< dev
-# 
-=======
 #
->>>>>>> dev
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-<<<<<<< dev
-# 
-#  The above copyright notice and this permission notice shall be included in all copies or
-#  substantial portions of the Software.
-# 
-=======
 #
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
 #
->>>>>>> dev
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -125,12 +114,6 @@ function(build_hw)
     set(_py "python3")
   endif()
 
-<<<<<<< dev
-
-  set(_src_vbin "${BHW_LINKER_DIR}/results/${BHW_PROJECT}/${BHW_PROJECT}_hw.vbin")
-  set(_dst_vbin "${BHW_OUT_DIR}/${BHW_PROJECT}_hw.vbin")
-  set(_stamp    "${BHW_OUT_DIR}/.${BHW_PROJECT}_linker.stamp")
-=======
   if(DEFINED VIVADO_BINARY AND NOT "${VIVADO_BINARY}" STREQUAL "")
     set(_vivado "${VIVADO_BINARY}")
   else()
@@ -177,7 +160,6 @@ function(build_hw)
   set(_src_vbin "${_linker_results_dir}/${BHW_PROJECT}/${BHW_PROJECT}_hw.vbin")
   set(_dst_vbin "${BHW_OUT_DIR}/${BHW_PROJECT}_hw.vbin")
   set(_final_publish_stamp "${_stamps_dir}/publish_vbin.stamp")
->>>>>>> dev
 
   if(BHW_USE_SYMLINK)
     set(_publish_cmd "${CMAKE_COMMAND}" -E create_symlink "${_src_vbin}" "${_dst_vbin}")
@@ -185,15 +167,6 @@ function(build_hw)
     set(_publish_cmd "${CMAKE_COMMAND}" -E copy_if_different "${_src_vbin}" "${_dst_vbin}")
   endif()
 
-<<<<<<< dev
-  add_custom_command(
-    OUTPUT "${_dst_vbin}" "${_stamp}"
-
-    COMMAND "${CMAKE_COMMAND}" -E make_directory "${BHW_OUT_DIR}"
-
-    # Run linker
-    COMMAND "${_py}" "${_main_py}"
-=======
   set(_env_hw "${CMAKE_COMMAND}" -E env "SLASH_HW_BUILD_DIR=${_hw_work_root}")
   set(_service_rm_extra_args "")
   if(DEFINED EN_SERVICE_LAYER AND EN_SERVICE_LAYER)
@@ -217,30 +190,10 @@ function(build_hw)
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${BHW_OUT_DIR}" "${_hw_work_root}" "${_stamps_dir}" "${_logs_dir}" "${_reports_dir}" "${_rm_artifact_dir}"
     COMMAND ${_env_hw} "${_py}" "${_main_py}"
             init
->>>>>>> dev
             -p "${BHW_PROJECT}"
             --cfg "${BHW_CFG}"
             --kernels ${BHW_KERNELS}
             --ip-repository "${BHW_IP_REPO}"
-<<<<<<< dev
-
-    COMMAND "${CMAKE_COMMAND}" -E echo "Publishing HW vbin:"
-    COMMAND "${CMAKE_COMMAND}" -E echo "  from ${_src_vbin}"
-    COMMAND "${CMAKE_COMMAND}" -E echo "  to   ${_dst_vbin}"
-    COMMAND "${CMAKE_COMMAND}" -E remove -f "${_dst_vbin}"
-    COMMAND ${_publish_cmd}
-
-    COMMAND "${CMAKE_COMMAND}" -E touch "${_stamp}"
-
-    WORKING_DIRECTORY "${_main_dir}"
-
-    DEPENDS
-      "${_main_py}"
-      "${BHW_CFG}"
-      ${BHW_KERNELS}
-
-    COMMENT "SLASH HW build: ${BHW_PROJECT} -> ${_dst_vbin}"
-=======
     COMMAND "${CMAKE_COMMAND}" -E touch "${_linker_init_stamp}"
     WORKING_DIRECTORY "${_main_dir}"
     DEPENDS "${_check_install_stamp}" "${_main_py}" "${BHW_CFG}" ${BHW_KERNELS}
@@ -358,7 +311,6 @@ function(build_hw)
     COMMAND "${CMAKE_COMMAND}" -E touch "${_final_publish_stamp}"
     DEPENDS "${_linker_create_metadata_stamp}"
     COMMENT "SLASH HW [9/9]: publish ${BHW_PROJECT}_hw.vbin"
->>>>>>> dev
     VERBATIM
   )
 
