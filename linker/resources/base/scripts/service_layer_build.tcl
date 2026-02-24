@@ -124,6 +124,7 @@ wait_on_run "${rm_name}_synth_1"
 set rm_synth_dcp [file join $rm_work_dir "${rm_proj_name}.runs" "${rm_name}_synth_1" "service_layer.dcp"]
 add_files $rm_synth_dcp
 set_property SCOPED_TO_CELLS {top_i/service_layer} [get_files $rm_synth_dcp]
+set_property strategy Congestion_SSI_SpreadLogic_high [get_runs impl_1]
 
 launch_runs impl_1 -jobs $jobs
 wait_on_run impl_1
