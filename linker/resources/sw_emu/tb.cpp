@@ -105,18 +105,76 @@ int main() {
     }
   }
 
+  bool emuManifestUsable = emuManifestLoaded && emuManifest.isObject();
+  bool emuManifestHasKernelMetadata = false;
+  bool emuManifestHasFetchMetadata = false;
+  bool emuManifestSchemaValidated = false;
+  bool requireFastExitOnExit = false;
+  size_t manifestFetchScalarRouteCount = 0;
+  size_t manifestCallableKernelCount = 0;
+  size_t manifestAutostartKernelCount = 0;
+  std::map<std::string, Json::Value> kernelManifestRegistry;
+
+  if (emuManifestLoaded && !emuManifest.isObject()) {
+    std::cerr << "[sw_emu] emu_manifest.json parsed but root is not an object; using compatibility mode" << std::endl;
+  }
+  if (emuManifestUsable) {
+    const Json::Value schema = emuManifest["manifest_schema"];
+    if (schema.isObject()) {
+      const Json::Value required = schema["required_sections"];
+      bool requiredOk = required.isArray();
+      if (requiredOk) {
+        for (const auto& name : required) {
+          if (!name.isString()) {
+            requiredOk = false;
+            break;
+          }
+          if (!emuManifest.isMember(name.asString())) {
+            requiredOk = false;
+            std::cerr << "[sw_emu] emu_manifest.json missing required section '" << name.asString()
+                      << "'; using compatibility mode where possible" << std::endl;
+            break;
+          }
+        }
+      }
+      emuManifestSchemaValidated = schema.get("version", 0).asUInt() >= 1 && requiredOk;
+    } else {
+      std::cerr << "[sw_emu] emu_manifest.json has no manifest_schema; using compatibility mode" << std::endl;
+    }
+
+    const Json::Value fetchMeta = emuManifest["fetch"];
+    if (fetchMeta.isObject()) {
+      const Json::Value fetchScalar = fetchMeta["scalar"];
+      if (fetchScalar.isArray()) {
+        emuManifestHasFetchMetadata = true;
+        manifestFetchScalarRouteCount = fetchScalar.size();
+      }
+    }
+  }
+
   bool autostartManifestHadKernels = false;
   bool launchedAutostartThreads = false;
-  if (emuManifestLoaded && emuManifest.isObject()) {
+  if (emuManifestUsable) {
     const Json::Value kernels = emuManifest["kernels"];
     if (kernels.isArray()) {
+      emuManifestHasKernelMetadata = true;
       autostartManifestHadKernels = true;
       for (const auto& k : kernels) {
         if (!k.isObject()) continue;
-        if (!k.get("autostart", false).asBool()) continue;
         std::string instance = k.get("instance", "").asString();
+        if (!instance.empty()) {
+          kernelManifestRegistry[instance] = k;
+        }
+        if (k.get("callable", false).asBool()) {
+          manifestCallableKernelCount += 1;
+        }
+        if (!k.get("autostart", false).asBool()) continue;
+        manifestAutostartKernelCount += 1;
         auto it = autostartRegistry.find(instance);
         if (it == autostartRegistry.end()) continue;
+        if (k.get("shutdown_policy", "").asString() == "fast_exit") {
+          requireFastExitOnExit = true;
+        }
         launchedAutostartThreads = true;
         std::thread(it->second).detach();
       }
@@ -126,11 +184,23 @@ int main() {
   if (!autostartManifestHadKernels) {
 {% for ac in autostart_calls %}
     // Fallback for older outputs or missing manifest.
+    requireFastExitOnExit = true;
     launchedAutostartThreads = true;
     std::thread([&]() {
       {{ ac.top }}({{ ac.call_args | join(", ") }});
     }).detach();
 {% endfor %}
+  }
+
+  if (emuManifestLoaded) {
+    std::cerr << "[sw_emu] manifest "
+              << (emuManifestUsable ? "loaded" : "compat")
+              << " schema=" << (emuManifestSchemaValidated ? "ok" : "compat")
+              << " kernels=" << kernelManifestRegistry.size()
+              << " callable=" << manifestCallableKernelCount
+              << " autostart=" << manifestAutostartKernelCount
+              << " fetch.scalar=" << manifestFetchScalarRouteCount
+              << std::endl;
   }
 
   while (true) {
@@ -205,9 +275,76 @@ int main() {
       socket.send(zmq::message_t(buffer.data(), buffer.size()), zmq::send_flags::none);
     } else if (command == "call") {
       std::string functionName = root["function"].asString();
+      bool callRejected = false;
+      std::string callRejectReason;
+
+      if (emuManifestHasKernelMetadata) {
+        auto kernelIt = kernelManifestRegistry.find(functionName);
+        if (kernelIt == kernelManifestRegistry.end()) {
+          callRejected = true;
+          callRejectReason = "unknown_function";
+        } else {
+          const Json::Value& kernelMeta = kernelIt->second;
+          if (!kernelMeta.get("callable", true).asBool()) {
+            callRejected = true;
+            callRejectReason = "kernel_not_callable";
+          } else {
+            const Json::Value expectedArgs = kernelMeta["call_args"];
+            const Json::Value providedArgs = root["args"];
+            if (expectedArgs.isArray()) {
+              if (!providedArgs.isObject()) {
+                if (expectedArgs.size() != 0) {
+                  callRejected = true;
+                  callRejectReason = "missing_args_object";
+                }
+              } else {
+                size_t providedArgCount = 0;
+                for (const auto& memberName : providedArgs.getMemberNames()) {
+                  if (memberName.rfind("arg", 0) == 0) {
+                    providedArgCount += 1;
+                  }
+                }
+                if (providedArgCount != static_cast<size_t>(expectedArgs.size())) {
+                  callRejected = true;
+                  callRejectReason = "arg_count_mismatch";
+                }
+              }
+
+              if (!callRejected) {
+                for (const auto& spec : expectedArgs) {
+                  if (!spec.isObject()) continue;
+                  std::string argKey = spec.get("arg", "").asString();
+                  std::string expectedKind = spec.get("kind", "").asString();
+                  if (argKey.empty()) continue;
+                  if (!providedArgs.isObject() || !providedArgs.isMember(argKey) || !providedArgs[argKey].isObject()) {
+                    callRejected = true;
+                    callRejectReason = "missing_" + argKey;
+                    break;
+                  }
+                  std::string actualKind = providedArgs[argKey].get("type", "").asString();
+                  if (!expectedKind.empty() && actualKind != expectedKind) {
+                    callRejected = true;
+                    callRejectReason = "arg_kind_mismatch_" + argKey;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (callRejected) {
+        std::cerr << "[sw_emu] rejecting call to '" << functionName << "': " << callRejectReason << std::endl;
+        socket.send(zmq::message_t("ERR", 3), zmq::send_flags::none);
+        continue;
+      }
+
+      bool handledCall = false;
 
 {% for fc in function_calls %}
       if (functionName == "{{ fc.inst }}") {
+        handledCall = true;
 {% for line in fc.decode_blocks %}
         {{ line }}
 {% endfor %}
@@ -215,7 +352,12 @@ int main() {
       }
 {% endfor %}
 
-      socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
+      if (handledCall) {
+        socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
+      } else {
+        std::cerr << "[sw_emu] unknown call target '" << functionName << "'" << std::endl;
+        socket.send(zmq::message_t("ERR", 3), zmq::send_flags::none);
+      }
     } else if (command == "fetch") {
       std::string type = root["type"].asString();
       Json::Value response;
@@ -225,7 +367,7 @@ int main() {
         std::string arg = root["arg"].asString();
         bool handledScalar = false;
 
-        if (emuManifestLoaded && emuManifest.isObject()) {
+        if (emuManifestHasFetchMetadata) {
           const Json::Value fetchRoutes = emuManifest["fetch"]["scalar"];
           if (fetchRoutes.isArray()) {
             for (const auto& route : fetchRoutes) {
@@ -273,7 +415,7 @@ int main() {
       socket.send(zmq::message_t(responseStr.c_str(), responseStr.size()), zmq::send_flags::none);
     } else if (command == "exit") {
       socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
-      if (launchedAutostartThreads) {
+      if (requireFastExitOnExit) {
         // Free-running autostart kernels (e.g. ap_ctrl_none stream-only kernels)
         // run in detached threads and may never return. Exiting main() would destroy
         // local hls::stream objects while those threads are still active.

@@ -205,6 +205,18 @@ def _stream_aliases_for_edge(edge, wire_name: str) -> list[str]:
     return out
 
 
+def _infer_control_mode(*, has_axilite: bool, stream_only: bool) -> str:
+    if has_axilite:
+        return "s_axilite"
+    if stream_only:
+        return "ap_ctrl_none"
+    return "unknown"
+
+
+def _call_kind_for_cpp_type(cpp_t: str) -> str:
+    return "buffer" if _is_ptr(cpp_t) else "scalar"
+
+
 def parse_sol1_data(sol1_json: Path) -> dict:
     d = json.loads(sol1_json.read_text())
     top = d["Top"]
@@ -225,6 +237,7 @@ def parse_sol1_data(sol1_json: Path) -> dict:
             {
                 "name": arg_name,
                 "index": idx,
+                "direction": info.get("direction"),
                 "srcType": src_type,
                 "cppType": cpp_type,
                 "iface": iface,
@@ -320,6 +333,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
 
         decode_blocks = []
         call_args = []
+        manifest_call_args = []
 
         argN = 0
         for a in meta["Args"]:
@@ -345,6 +359,21 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 decode_blocks.append(f'  assignValue({vname}, root["args"]["arg{argN}"]["value"]);')
                 decode_blocks.append('}')
 
+            include_in_manifest_call = True
+            if (a.get("direction") or "in") == "out" and not _is_ptr(cpp_t):
+                # VRT emu calls omit scalar/register-style outputs (read back via fetch),
+                # but still pass pointer outputs (e.g. m_axi write destinations).
+                include_in_manifest_call = False
+
+            if include_in_manifest_call:
+                manifest_call_args.append(
+                    {
+                        "arg": f"arg{argN}",
+                        "kind": _call_kind_for_cpp_type(cpp_t),
+                        "source_arg": a["name"],
+                        "cpp_type": cpp_t,
+                    }
+                )
             call_args.append(vname)
             argN += 1
 
@@ -360,7 +389,12 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
         has_axilite = any(True for _ in inst.kernel.ports_of_type(BusType.AXILITE))
         stream_only = bool(meta["Args"]) and all(_is_stream(a["cppType"]) for a in meta["Args"])
         has_missing_stream = any(arg == "/*MISSING_STREAM*/" for arg in call_args)
+        control_mode = _infer_control_mode(has_axilite=has_axilite, stream_only=stream_only)
         autostart = stream_only and not has_axilite and not has_missing_stream
+        callable_kernel = has_axilite and not has_missing_stream
+        scheduling_policy = "autostart" if autostart else "call"
+        autostart_reason = "stream_only_no_axilite" if autostart else ""
+        shutdown_policy = "fast_exit" if autostart else "normal_exit"
         if autostart:
             autostart_calls.append(
                 {
@@ -374,14 +408,39 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 "instance": inst_name,
                 "top": meta["Top"],
                 "has_axilite": has_axilite,
+                "control_mode": control_mode,
+                "callable": callable_kernel,
                 "autostart": autostart,
+                "autostart_reason": autostart_reason,
+                "scheduling_policy": scheduling_policy,
+                "shutdown_policy": shutdown_policy,
+                "missing_stream_bindings": has_missing_stream,
+                "call_arg_count": len(manifest_call_args),
+                "call_args": manifest_call_args,
                 "args": [
                     {
                         "name": a["name"],
                         "cpp_type": a["cppType"],
                         "iface": a["iface"],
+                        "direction": a.get("direction"),
                         "is_stream": _is_stream(a["cppType"]),
                         "is_pointer": _is_ptr(_strip_ref(a["cppType"])[0]),
+                        "call_arg": next(
+                            (
+                                ca["arg"]
+                                for ca in manifest_call_args
+                                if ca["source_arg"] == a["name"]
+                            ),
+                            None,
+                        ),
+                        "call_kind": next(
+                            (
+                                ca["kind"]
+                                for ca in manifest_call_args
+                                if ca["source_arg"] == a["name"]
+                            ),
+                            None,
+                        ),
                     }
                     for a in meta["Args"]
                 ],
@@ -402,6 +461,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
             prev_value_reg_name: str | None = None
             while reg_idx < len(regs):
                 reg_name = getattr(regs[reg_idx], "name", "") or ""
+                reg_off = int(getattr(regs[reg_idx], "address_offset", 0) or 0)
 
                 if _is_split_reg_name(reg_name):
                     if logical_arg_idx < len(non_stream_args):
@@ -411,6 +471,10 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                                 "arg": f"arg{fetch_arg_idx}",
                                 "kind": "var",
                                 "var": non_stream_args[logical_arg_idx]["var"],
+                                "source": "register_metadata",
+                                "register_name": reg_name,
+                                "register_offset": reg_off,
+                                "register_split": True,
                             }
                         )
                         logical_arg_idx += 1
@@ -425,6 +489,11 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                             "arg": f"arg{fetch_arg_idx}",
                             "kind": "const_u32",
                             "value": 1,
+                            "source": "register_metadata",
+                            "register_name": reg_name,
+                            "register_offset": reg_off,
+                            "synthetic": "ctrl_valid",
+                            "derived_from_register": prev_value_reg_name,
                         }
                     )
                     fetch_arg_idx += 1
@@ -438,6 +507,10 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                             "arg": f"arg{fetch_arg_idx}",
                             "kind": "var",
                             "var": non_stream_args[logical_arg_idx]["var"],
+                            "source": "register_metadata",
+                            "register_name": reg_name,
+                            "register_offset": reg_off,
+                            "register_split": False,
                         }
                     )
                     logical_arg_idx += 1
@@ -456,6 +529,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                         "arg": f"arg{idx}",
                         "kind": "var",
                         "var": arg["var"],
+                        "source": "fallback_no_register_metadata",
                     }
                 )
 
@@ -478,6 +552,18 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
             entry["var_symbol"] = c["var"]
         elif c["kind"] == "const_u32":
             entry["value"] = int(c["value"])
+        source = {"mode": c.get("source", "unknown")}
+        if isinstance(c.get("register_name"), str):
+            source["register_name"] = c["register_name"]
+        if isinstance(c.get("register_offset"), int):
+            source["register_offset"] = c["register_offset"]
+        if c.get("register_split") is not None:
+            source["register_split"] = bool(c["register_split"])
+        if isinstance(c.get("synthetic"), str):
+            source["synthetic"] = c["synthetic"]
+        if isinstance(c.get("derived_from_register"), str):
+            source["derived_from_register"] = c["derived_from_register"]
+        entry["source"] = source
         manifest_fetch_scalar.append(entry)
 
     return {
@@ -491,6 +577,11 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
         "fetch_scalar_var_symbols": fetch_scalar_var_symbols,
         "ref_vars": ref_vars,
         "emu_manifest": {
+            "manifest_schema": {
+                "name": "slash.sw_emu",
+                "version": 1,
+                "required_sections": ["kernels", "streams", "commands", "fetch"],
+            },
             "emu_protocol_version": 1,
             "kernels": manifest_kernels,
             "streams": [
@@ -503,6 +594,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
             ],
             "commands": ["populate", "stream_in", "stream_out", "call", "fetch", "exit"],
             "fetch": {
+                "schema_version": 1,
                 "scalar": manifest_fetch_scalar,
             },
         },
