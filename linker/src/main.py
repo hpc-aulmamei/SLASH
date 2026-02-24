@@ -31,7 +31,6 @@ import shutil
 from emit.hw.tcl_gen import generate_tcl
 from emit.hw.project_gen import (
     create_build_project,
-    clean_hw_project,
     generate_base_pdi_with_aved,
     generate_image,
     generate_util_report,

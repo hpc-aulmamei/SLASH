@@ -29,6 +29,8 @@
 #include <vector>
 #include <cstring>
 #include <sstream>
+#include <stdexcept>
+#include <thread>
 
 {% for p in prototypes %}
 {{ p }}
@@ -41,6 +43,22 @@ void assignValue(T& var, const Json::Value& value) {
   else if (value.isUInt()) var = static_cast<T>(value.asUInt());
   else if (value.isDouble()) var = static_cast<T>(value.asDouble());
   else throw std::runtime_error("Unsupported JSON value type");
+}
+
+template <typename T>
+Json::Value createJsonValue(const T& var) {
+  uint32_t raw = 0;
+  const size_t n = sizeof(raw) < sizeof(T) ? sizeof(raw) : sizeof(T);
+  std::memcpy(&raw, &var, n);
+  return Json::Value(raw);
+}
+
+Json::Value createJsonBuffer(const uint8_t* buffer, size_t size) {
+  Json::Value value(Json::arrayValue);
+  for (size_t i = 0; i < size; ++i) {
+    value.append(buffer[i]);
+  }
+  return value;
 }
 
 int main() {
@@ -57,6 +75,14 @@ int main() {
 
 {% for w in wires %}
   hls::stream<{{ w.ctype }}> {{ w.name }};
+{% endfor %}
+
+{% for ac in autostart_calls %}
+  // Auto-run stream-only/no-AXI-Lite kernels so dataflow-only IPs (e.g. passthrough)
+  // can participate in emulation even though VRT will never issue a "call" command.
+  std::thread([&]() {
+    {{ ac.top }}({{ ac.call_args | join(", ") }});
+  }).detach();
 {% endfor %}
 
   while (true) {
@@ -82,6 +108,45 @@ int main() {
       buffers[name] = buffer;
       bufferSizes[name] = bufferSize;
       socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
+    } else if (command == "stream_in") {
+      std::string name = root["name"].asString();
+      zmq::message_t data;
+      socket.recv(data);
+      bool handled = false;
+
+{% for s in stream_routes %}
+{% for alias in s.names %}
+      if (!handled && name == "{{ alias }}") {
+        handled = true;
+        for (size_t i = 0; i < data.size() / sizeof({{ s.ctype }}); i++) {
+          {{ s.ctype }} value;
+          memcpy(&value, static_cast<uint8_t*>(data.data()) + i * sizeof({{ s.ctype }}), sizeof({{ s.ctype }}));
+          {{ s.wire }}.write(value);
+        }
+      }
+{% endfor %}
+{% endfor %}
+
+      socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
+    } else if (command == "stream_out") {
+      std::string name = root["name"].asString();
+      size_t size = root["size"].asUInt64();
+      std::vector<uint8_t> buffer(size, 0);
+      bool handled = false;
+
+{% for s in stream_routes %}
+{% for alias in s.names %}
+      if (!handled && name == "{{ alias }}") {
+        handled = true;
+        for (size_t i = 0; i < size / sizeof({{ s.ctype }}); i++) {
+          {{ s.ctype }} value = {{ s.wire }}.read();
+          memcpy(buffer.data() + i * sizeof({{ s.ctype }}), &value, sizeof({{ s.ctype }}));
+        }
+      }
+{% endfor %}
+{% endfor %}
+
+      socket.send(zmq::message_t(buffer.data(), buffer.size()), zmq::send_flags::none);
     } else if (command == "call") {
       std::string functionName = root["function"].asString();
 
@@ -95,9 +160,37 @@ int main() {
 {% endfor %}
 
       socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
+    } else if (command == "fetch") {
+      std::string type = root["type"].asString();
+      Json::Value response;
+
+      if (type == "scalar") {
+        std::string functionName = root["function"].asString();
+        std::string arg = root["arg"].asString();
+
+{% for fc in fetch_scalar_cases %}
+        if (functionName == "{{ fc.inst }}" && arg == "{{ fc.arg }}") {
+{% if fc.kind == "var" %}
+          response = createJsonValue({{ fc.var }});
+{% elif fc.kind == "const_u32" %}
+          response = Json::Value(static_cast<Json::UInt>({{ fc.value }}));
+{% endif %}
+        }
+{% endfor %}
+      } else if (type == "buffer") {
+        std::string name = root["name"].asString();
+        if (buffers.find(name) != buffers.end()) {
+          response = createJsonBuffer(static_cast<uint8_t*>(buffers[name]), bufferSizes[name]);
+        }
+      }
+
+      std::string responseStr = Json::writeString(Json::StreamWriterBuilder(), response);
+      socket.send(zmq::message_t(responseStr.c_str(), responseStr.size()), zmq::send_flags::none);
     } else if (command == "exit") {
       socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
       break;
+    } else {
+      socket.send(zmq::message_t("ERR", 3), zmq::send_flags::none);
     }
   }
 
