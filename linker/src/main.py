@@ -51,7 +51,29 @@ HW_STEPS = (
     "create_metadata",
 )
 
+<<<<<<< dev
 SIM_STEPS = (
+=======
+from emit.hw.tcl_gen import generate_tcl
+from emit.hw.project_gen import (
+    build_service_layer_rm,
+    build_slash_rm,
+    create_build_project,
+    generate_base_pdi_with_aved,
+    generate_image,
+    generate_util_report,
+    install_abstract_shell,
+)
+from emit.sim.tcl_gen import generate_sim_tcl
+from emit.emu.tcl_gen import generate_emu_tcl
+from emit.sim.project_gen import create_sim_project, build_sim_project
+from emit.emu.project_gen import build_emu_project, package_emu_artifacts
+
+from emit.metadata.prog_image import build_vbin
+from parser.config_parser import parse_connectivity_file
+
+HW_STEPS = (
+>>>>>>> dev
     "create_project",
     "generate_tcl",
     "create_hw_project",
@@ -59,6 +81,21 @@ SIM_STEPS = (
     "create_metadata",
 )
 
+<<<<<<< dev
+EMU_STEPS = (
+=======
+SIM_STEPS = (
+>>>>>>> dev
+    "create_project",
+    "generate_tcl",
+    "create_hw_project",
+    "build_hw_project",
+    "create_metadata",
+)
+
+<<<<<<< dev
+
+=======
 EMU_STEPS = (
     "create_project",
     "generate_tcl",
@@ -68,6 +105,7 @@ EMU_STEPS = (
 )
 
 
+>>>>>>> dev
 def _stage_key(platform: str) -> str:
     if platform == "sim":
         return "sim_stage"
@@ -218,8 +256,15 @@ def _stage_index(stage: str, platform: str) -> int:
     return steps.index(stage)
 
 def _stage_requirements(stage: str) -> list[str]:
+<<<<<<< dev
     if stage in {"init", "clean"}:
         return []
+=======
+    if stage == "init":
+        return []
+    if stage == "complete_hw_build":
+        return ["create_project", "generate_tcl"]
+>>>>>>> dev
     steps = _steps_for_platform("hw")
     if stage not in steps:
         return []
@@ -238,6 +283,7 @@ def _stage_help_block(stage: str) -> str:
     lines = [f"Stage: {stage}", _format_stage_requirements(stage)]
     if stage == "init":
         lines.append("Writes/updates .linker_info.json with current args.")
+<<<<<<< dev
     elif stage == "clean":
         lines.append("Removes results for the project; does not require prior stages.")
     else:
@@ -265,6 +311,36 @@ def _require_stage(payload: dict, required_stage: str, path: Path, platform: str
         )
 
 
+=======
+    elif stage == "complete_hw_build":
+        lines.append("Marks linker build stage complete when HW build was run externally.")
+    else:
+        lines.append("Uses linker info to resume and validates required stage(s).")
+    return "\n".join(lines)
+
+
+def _all_stage_help_block() -> str:
+    stages = ["init", "generate_tcl", "create_hw_project", "build_hw_project", "create_metadata"]
+    lines = ["Stages:"]
+    for stage in stages:
+        lines.append(f"  {stage}: {_format_stage_requirements(stage)}")
+    lines.append(f"  complete_hw_build: {_format_stage_requirements('complete_hw_build')} (state-only)")
+    lines.append("Use `main.py <stage> --help` for details.")
+    return "\n".join(lines)
+
+
+def _require_stage(payload: dict, required_stage: str, path: Path, platform: str) -> None:
+    current = payload.get(_stage_key(platform))
+    if current is None:
+        raise ValueError(f"Missing stage for platform '{platform}' in linker info: {path}")
+    if _stage_index(current, platform) < _stage_index(required_stage, platform):
+        raise ValueError(
+            f"Linker info {platform} stage '{current}' is before required stage "
+            f"'{required_stage}' in {path}"
+        )
+
+
+>>>>>>> dev
 def _add_common_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--cfg", required=True, help="Path to connectivity config file (e.g., config.cfg).")
     ap.add_argument("--kernels", required=True, nargs="+",
@@ -316,6 +392,22 @@ def _add_linker_info_args(ap: argparse.ArgumentParser) -> None:
                     help="Shorthand for --platform emu.")
 
 
+<<<<<<< dev
+=======
+def _add_rm_build_args(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument("--install-dir", default="/opt/amd/slash",
+                    help="Installed shell asset directory (default: /opt/amd/slash).")
+    ap.add_argument("--vivado-bin", default="vivado",
+                    help="Vivado binary to run (default: vivado).")
+    ap.add_argument("--jobs", type=int, default=8,
+                    help="Parallel jobs for Vivado runs (default: 8).")
+    ap.add_argument("--workdir", default=None,
+                    help="Optional working directory for Vivado invocation (defaults to SLASH_HW_BUILD_DIR).")
+    ap.add_argument("--force", action="store_true",
+                    help="Force the RM build even if the cfg would normally skip it (service-layer only).")
+
+
+>>>>>>> dev
 def _resolve_platform(payload: dict, args: argparse.Namespace) -> str:
     if getattr(args, "platform", None):
         return args.platform
@@ -325,6 +417,18 @@ def _resolve_platform(payload: dict, args: argparse.Namespace) -> str:
     return "hw"
 
 
+<<<<<<< dev
+=======
+def _hw_has_enabled_eth(cfg_path: str | None) -> bool:
+    if not cfg_path:
+        return False
+    cfg = parse_connectivity_file(cfg_path)
+    net = getattr(cfg, "network", None)
+    enabled_eth = getattr(net, "enabled_eth", set()) if net is not None else set()
+    return bool(enabled_eth)
+
+
+>>>>>>> dev
 def _stage_init(args: argparse.Namespace) -> None:
     _save_linker_info(args, stage="create_project")
 
@@ -394,6 +498,64 @@ def _stage_build_hw_project(args: argparse.Namespace) -> None:
     _save_linker_info(info_args, stage="build_hw_project")
 
 
+<<<<<<< dev
+=======
+def _stage_complete_hw_build(args: argparse.Namespace) -> None:
+    info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+    payload = _load_linker_info(info_path)
+    platform = _resolve_platform(payload, args)
+    _require_stage(payload, required_stage="generate_tcl", path=info_path, platform=platform)
+    info_args = argparse.Namespace(**payload["args"])
+    info_args.platform = platform
+    _save_linker_info(info_args, stage="build_hw_project")
+
+
+def _build_service_layer_rm(args: argparse.Namespace) -> None:
+    info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+    payload = _load_linker_info(info_path)
+    platform = _resolve_platform(payload, args)
+    if platform != "hw":
+        raise ValueError("build_service_layer_rm is only supported for --platform hw")
+    _require_stage(payload, required_stage="generate_tcl", path=info_path, platform=platform)
+    info_args = argparse.Namespace(**payload["args"])
+    ip_repository = getattr(info_args, "ip_repository", None)
+    if not ip_repository:
+        raise ValueError("Missing ip_repository in linker info; run init with --ip-repository")
+    if not args.force and not _hw_has_enabled_eth(getattr(info_args, "cfg", None)):
+        print(f"INFO: No eth_* enabled in cfg for project '{info_args.project}'. Skipping service_layer RM build.")
+        return
+    build_service_layer_rm(
+        project_name=info_args.project,
+        ip_repository=ip_repository,
+        install_dir=Path(args.install_dir),
+        vivado_bin=args.vivado_bin,
+        workdir=Path(args.workdir) if args.workdir else None,
+        jobs=args.jobs,
+    )
+
+
+def _build_slash_rm(args: argparse.Namespace) -> None:
+    info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+    payload = _load_linker_info(info_path)
+    platform = _resolve_platform(payload, args)
+    if platform != "hw":
+        raise ValueError("build_slash_rm is only supported for --platform hw")
+    _require_stage(payload, required_stage="generate_tcl", path=info_path, platform=platform)
+    info_args = argparse.Namespace(**payload["args"])
+    ip_repository = getattr(info_args, "ip_repository", None)
+    if not ip_repository:
+        raise ValueError("Missing ip_repository in linker info; run init with --ip-repository")
+    build_slash_rm(
+        project_name=info_args.project,
+        ip_repository=ip_repository,
+        install_dir=Path(args.install_dir),
+        vivado_bin=args.vivado_bin,
+        workdir=Path(args.workdir) if args.workdir else None,
+        jobs=args.jobs,
+    )
+
+
+>>>>>>> dev
 def _stage_create_metadata(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
     payload = _load_linker_info(info_path)
@@ -407,7 +569,12 @@ def _stage_create_metadata(args: argparse.Namespace) -> None:
     elif info_args.platform == "emu":
         package_emu_artifacts(project_name=info_args.project)
     else:
+<<<<<<< dev
         generate_image(project_name=info_args.project)
+=======
+        include_service_layer = _hw_has_enabled_eth(getattr(info_args, "cfg", None))
+        generate_image(project_name=info_args.project, include_service_layer=include_service_layer)
+>>>>>>> dev
         generate_util_report(project_name=info_args.project)
         build_vbin(project_name=info_args.project)
     _save_linker_info(info_args, stage="create_metadata")
@@ -459,6 +626,7 @@ def _run_from_last_to_target(args: argparse.Namespace, target_stage: str) -> Non
             raise ValueError(f"Stage '{stage}' has no runnable command.")
         _run_step(stage, lambda f=func: f(args))
 
+<<<<<<< dev
 
 def _clean_outputs(args: argparse.Namespace) -> None:
     project_dir = _linker_info_path(args.project).parent
@@ -483,12 +651,30 @@ def _clean_outputs(args: argparse.Namespace) -> None:
             clean_hw_project(project_name=args.project)
 
 
+=======
+def _install(args: argparse.Namespace) -> None:
+    print("DISCLAIMER: Run this install flow only once. It will take a long time.", flush=True)
+    print("INFO: You may be prompted for sudo only at the final copy step.", flush=True)
+    install_abstract_shell(
+        project_name=args.project,
+        ip_repository=args.ip_repository,
+        install_dir=Path(args.install_dir),
+        vivado_bin=args.vivado_bin,
+        workdir=Path(args.workdir) if args.workdir else None,
+    )
+
+
+>>>>>>> dev
 def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s:%(funcName)s: %(message)s",
     )
+<<<<<<< dev
     if len(sys.argv) > 1 and sys.argv[1] in {"init", "generate_tcl", "create_hw_project", "build_hw_project", "create_metadata", "clean"}:
+=======
+    if len(sys.argv) > 1 and sys.argv[1] in {"init", "generate_tcl", "create_hw_project", "build_hw_project", "build_service_layer_rm", "build_slash_rm", "complete_hw_build", "create_metadata", "install"}:
+>>>>>>> dev
         ap = argparse.ArgumentParser(
             description="Linker stages (use linker info to resume).",
             epilog=_all_stage_help_block(),
@@ -536,6 +722,39 @@ def main():
         _add_linker_info_args(ap_build)
         ap_build.set_defaults(func=_stage_build_hw_project)
 
+<<<<<<< dev
+=======
+        ap_complete = sub.add_parser(
+            "complete_hw_build",
+            help="Mark external HW build complete and advance linker stage state.",
+            description="Mark build_hw_project stage complete when Vivado build ran outside linker.",
+            epilog=_stage_help_block("complete_hw_build"),
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
+        _add_linker_info_args(ap_complete)
+        ap_complete.set_defaults(func=_stage_complete_hw_build)
+
+        ap_service_rm = sub.add_parser(
+            "build_service_layer_rm",
+            help="Build the service-layer RM using installed shell assets and generated Tcl.",
+            description="Run service_layer_build.tcl for the project using linker info + SLASH_HW_BUILD_DIR.",
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
+        _add_linker_info_args(ap_service_rm)
+        _add_rm_build_args(ap_service_rm)
+        ap_service_rm.set_defaults(func=_build_service_layer_rm)
+
+        ap_slash_rm = sub.add_parser(
+            "build_slash_rm",
+            help="Build the slash RM using installed shell assets and generated Tcl.",
+            description="Run slash_project_build.tcl for the project using linker info + SLASH_HW_BUILD_DIR.",
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
+        _add_linker_info_args(ap_slash_rm)
+        _add_rm_build_args(ap_slash_rm)
+        ap_slash_rm.set_defaults(func=_build_slash_rm)
+
+>>>>>>> dev
         ap_meta = sub.add_parser(
             "create_metadata",
             help="Generate images/utilization/vbin artifacts.",
@@ -546,6 +765,7 @@ def main():
         _add_linker_info_args(ap_meta)
         ap_meta.set_defaults(func=_stage_create_metadata)
 
+<<<<<<< dev
         ap_clean = sub.add_parser(
             "clean",
             help="Remove build outputs for a project.",
@@ -555,12 +775,42 @@ def main():
         )
         _add_linker_info_args(ap_clean)
         ap_clean.set_defaults(func=_clean_outputs)
+=======
+        ap_install = sub.add_parser(
+            "install",
+            help="Build/install base shell artifacts and AVED PDI.",
+            description="Run create_project.tcl, install shell DCPs, then run AVED flow and install the base PDI.",
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
+        ap_install.add_argument("-p", "--project", default="abs_shell",
+                                help="Project name to pass to create_project.tcl (default: abs_shell).")
+        ap_install.add_argument("--ip-repository", required=False, default=None,
+                                help="Optional IP repository path to pass to create_project.tcl.")
+        ap_install.add_argument("--install-dir", default="/opt/amd/slash",
+                                help="Directory to install shell DCP/PDI artifacts to (default: /opt/amd/slash).")
+        ap_install.add_argument("--vivado-bin", default="vivado",
+                                help="Vivado binary to run (default: vivado).")
+        ap_install.add_argument("--workdir", default=None,
+                                help="Optional working directory for Vivado invocation.")
+        ap_install.set_defaults(func=_install)
+>>>>>>> dev
 
         args = ap.parse_args()
         if args.command == "init":
             _run_step("init", lambda: args.func(args))
+<<<<<<< dev
         elif args.command == "clean":
             _run_step("clean", lambda: args.func(args))
+=======
+        elif args.command == "build_service_layer_rm":
+            _run_step("build_service_layer_rm", lambda: args.func(args))
+        elif args.command == "build_slash_rm":
+            _run_step("build_slash_rm", lambda: args.func(args))
+        elif args.command == "complete_hw_build":
+            _run_step("complete_hw_build", lambda: args.func(args))
+        elif args.command == "install":
+            _run_step("install", lambda: args.func(args))
+>>>>>>> dev
         else:
             _run_from_last_to_target(args, args.command)
     else:

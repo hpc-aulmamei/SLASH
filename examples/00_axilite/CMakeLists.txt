@@ -22,9 +22,8 @@ cmake_minimum_required(VERSION 3.20)
 project(00_axilite LANGUAGES CXX)
 
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "-O3")
+get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
+include("${REPO_ROOT}/cmake/ProjectInit.cmake")
 
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
 include("${REPO_ROOT}/cmake/ProjectInit.cmake")
@@ -73,11 +72,22 @@ include_directories(${REPO_ROOT}/vrt/include
                     /usr/include/libxml2
                     /usr/include/jsoncpp)
 
-# Define sources for the executable
-set(EXE_SOURCES 00_axilite.cpp)
+set(HLS_BUILD_DIR "${CMAKE_CURRENT_LIST_DIR}/hls")
+set(DEVICE "xcv80-lsva4737-2MHP-e-S")
+set(IP_REPO  "${HLS_BUILD_DIR}")
+set(KERNELS
+  "${HLS_BUILD_DIR}/build_accumulate.${DEVICE}/hls/impl/ip/component.xml"
+  "${HLS_BUILD_DIR}/build_increment.${DEVICE}/hls/impl/ip/component.xml"
+)
 
-# Create the executable
-add_executable(${PROJECT_NAME} ${EXE_SOURCES})
+build_hw(
+  TARGET     hw
+  LINKER_DIR "${SLASH_LINKER_DIR}"
+  PROJECT    "${SLASH_PROJECT}"
+  CFG        "${CFG_FILE}"
+  KERNELS    ${KERNELS}
+  IP_REPO    "${IP_REPO}"
+)
 
 # Link the library to the executable
 target_link_libraries(${PROJECT_NAME} vrt vrtd vrtdpp ami xml2 zmq jsoncpp)

@@ -18,6 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
+<<<<<<< dev
 set cur_design [current_bd_design]
 create_bd_design -boundary_from_container [get_bd_cells /slash] {{ slash_bd_name }}
 current_bd_design $cur_design
@@ -37,6 +38,96 @@ current_bd_design {{ slash_bd_name }}
 
 update_compile_order -fileset sources_1
 
+=======
+delete_bd_objs [get_bd_cells ]
+delete_bd_objs [get_bd_intf_nets]
+delete_bd_objs [get_bd_nets]
+update_compile_order -fileset sources_1
+  {% raw %}
+  set_property APERTURES {{0x40_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_00]
+  set_property APERTURES {{0x40_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_01]
+  set_property APERTURES {{0x40_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_02]
+  set_property APERTURES {{0x40_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_03]
+  set_property APERTURES {{0x40_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_04]
+  set_property APERTURES {{0x40_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_05]
+  set_property APERTURES {{0x40_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_06]
+  set_property APERTURES {{0x40_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_07]
+  set_property APERTURES {{0x41_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_08]
+  set_property APERTURES {{0x41_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_09]
+  set_property APERTURES {{0x41_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_10]
+  set_property APERTURES {{0x41_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_11]
+  set_property APERTURES {{0x41_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_12]
+  set_property APERTURES {{0x41_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_13]
+  set_property APERTURES {{0x41_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_14]
+  set_property APERTURES {{0x41_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_15]
+  set_property APERTURES {{0x42_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_16]
+  set_property APERTURES {{0x42_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_17]
+  set_property APERTURES {{0x42_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_18]
+  set_property APERTURES {{0x42_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_19]
+  set_property APERTURES {{0x42_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_20]
+  set_property APERTURES {{0x42_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_21]
+  set_property APERTURES {{0x42_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_22]
+  set_property APERTURES {{0x42_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_23]
+  set_property APERTURES {{0x43_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_24]
+  set_property APERTURES {{0x43_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_25]
+  set_property APERTURES {{0x43_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_26]
+  set_property APERTURES {{0x43_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_27]
+  set_property APERTURES {{0x43_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_28]
+  set_property APERTURES {{0x43_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_29]
+  set_property APERTURES {{0x43_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_30]
+  set_property APERTURES {{0x43_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_31]
+  set_property APERTURES {{0x44_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_32]
+  set_property APERTURES {{0x44_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_33]
+  set_property APERTURES {{0x44_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_34]
+  set_property APERTURES {{0x44_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_35]
+  set_property APERTURES {{0x44_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_36]
+  set_property APERTURES {{0x44_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_37]
+  set_property APERTURES {{0x44_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_38]
+  set_property APERTURES {{0x44_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_39]
+  set_property APERTURES {{0x45_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_40]
+  set_property APERTURES {{0x45_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_41]
+  set_property APERTURES {{0x45_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_42]
+  set_property APERTURES {{0x45_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_43]
+  set_property APERTURES {{0x45_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_44]
+  set_property APERTURES {{0x45_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_45]
+  set_property APERTURES {{0x45_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_46]
+  set_property APERTURES {{0x45_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_47]
+  set_property APERTURES {{0x46_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_48]
+  set_property APERTURES {{0x46_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_49]
+  set_property APERTURES {{0x46_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_50]
+  set_property APERTURES {{0x46_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_51]
+  set_property APERTURES {{0x46_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_52]
+  set_property APERTURES {{0x46_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_53]
+  set_property APERTURES {{0x46_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_54]
+  set_property APERTURES {{0x46_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_55]
+  set_property APERTURES {{0x47_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_56]
+  set_property APERTURES {{0x47_0000_0000 1G}} [get_bd_intf_ports HBM_AXI_57]
+  set_property APERTURES {{0x47_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_58]
+  set_property APERTURES {{0x47_4000_0000 1G}} [get_bd_intf_ports HBM_AXI_59]
+  set_property APERTURES {{0x47_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_60]
+  set_property APERTURES {{0x47_8000_0000 1G}} [get_bd_intf_ports HBM_AXI_61]
+  set_property APERTURES {{0x47_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_62]
+  set_property APERTURES {{0x47_C000_0000 1G}} [get_bd_intf_ports HBM_AXI_63]
+  set_property APERTURES {{0x0 2G} {0x40_0000_0000 1G} {0x40_4000_0000 1G} {0x40_8000_0000 1G} {0x40_C000_0000 1G} {0x41_0000_0000 1G} {0x41_4000_0000 1G} {0x41_8000_0000 1G} {0x41_C000_0000 1G} {0x42_0000_0000 1G} {0x42_4000_0000 1G} {0x42_8000_0000 1G} {0x42_C000_0000 1G} {0x43_0000_0000 1G} {0x43_4000_0000 1G} {0x43_8000_0000 1G} {0x43_C000_0000 1G} {0x44_0000_0000 1G} {0x44_4000_0000 1G} {0x44_8000_0000 1G} {0x44_C000_0000 1G} {0x45_0000_0000 1G} {0x45_4000_0000 1G} {0x45_8000_0000 1G} {0x45_C000_0000 1G} {0x46_0000_0000 1G} {0x46_4000_0000 1G} {0x46_8000_0000 1G} {0x46_C000_0000 1G} {0x47_0000_0000 1G} {0x47_4000_0000 1G} {0x47_8000_0000 1G} {0x47_C000_0000 1G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports HBM_VNOC_INI_00]
+  set_property APERTURES {{0x0 2G} {0x40_0000_0000 1G} {0x40_4000_0000 1G} {0x40_8000_0000 1G} {0x40_C000_0000 1G} {0x41_0000_0000 1G} {0x41_4000_0000 1G} {0x41_8000_0000 1G} {0x41_C000_0000 1G} {0x42_0000_0000 1G} {0x42_4000_0000 1G} {0x42_8000_0000 1G} {0x42_C000_0000 1G} {0x43_0000_0000 1G} {0x43_4000_0000 1G} {0x43_8000_0000 1G} {0x43_C000_0000 1G} {0x44_0000_0000 1G} {0x44_4000_0000 1G} {0x44_8000_0000 1G} {0x44_C000_0000 1G} {0x45_0000_0000 1G} {0x45_4000_0000 1G} {0x45_8000_0000 1G} {0x45_C000_0000 1G} {0x46_0000_0000 1G} {0x46_4000_0000 1G} {0x46_8000_0000 1G} {0x46_C000_0000 1G} {0x47_0000_0000 1G} {0x47_4000_0000 1G} {0x47_8000_0000 1G} {0x47_C000_0000 1G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports HBM_VNOC_INI_01]
+  set_property APERTURES {{0x0 2G} {0x40_0000_0000 1G} {0x40_4000_0000 1G} {0x40_8000_0000 1G} {0x40_C000_0000 1G} {0x41_0000_0000 1G} {0x41_4000_0000 1G} {0x41_8000_0000 1G} {0x41_C000_0000 1G} {0x42_0000_0000 1G} {0x42_4000_0000 1G} {0x42_8000_0000 1G} {0x42_C000_0000 1G} {0x43_0000_0000 1G} {0x43_4000_0000 1G} {0x43_8000_0000 1G} {0x43_C000_0000 1G} {0x44_0000_0000 1G} {0x44_4000_0000 1G} {0x44_8000_0000 1G} {0x44_C000_0000 1G} {0x45_0000_0000 1G} {0x45_4000_0000 1G} {0x45_8000_0000 1G} {0x45_C000_0000 1G} {0x46_0000_0000 1G} {0x46_4000_0000 1G} {0x46_8000_0000 1G} {0x46_C000_0000 1G} {0x47_0000_0000 1G} {0x47_4000_0000 1G} {0x47_8000_0000 1G} {0x47_C000_0000 1G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports HBM_VNOC_INI_02]
+  set_property APERTURES {{0x0 2G} {0x40_0000_0000 1G} {0x40_4000_0000 1G} {0x40_8000_0000 1G} {0x40_C000_0000 1G} {0x41_0000_0000 1G} {0x41_4000_0000 1G} {0x41_8000_0000 1G} {0x41_C000_0000 1G} {0x42_0000_0000 1G} {0x42_4000_0000 1G} {0x42_8000_0000 1G} {0x42_C000_0000 1G} {0x43_0000_0000 1G} {0x43_4000_0000 1G} {0x43_8000_0000 1G} {0x43_C000_0000 1G} {0x44_0000_0000 1G} {0x44_4000_0000 1G} {0x44_8000_0000 1G} {0x44_C000_0000 1G} {0x45_0000_0000 1G} {0x45_4000_0000 1G} {0x45_8000_0000 1G} {0x45_C000_0000 1G} {0x46_0000_0000 1G} {0x46_4000_0000 1G} {0x46_8000_0000 1G} {0x46_C000_0000 1G} {0x47_0000_0000 1G} {0x47_4000_0000 1G} {0x47_8000_0000 1G} {0x47_C000_0000 1G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports HBM_VNOC_INI_03]
+  set_property APERTURES {{0x0 2G} {0x40_0000_0000 1G} {0x40_4000_0000 1G} {0x40_8000_0000 1G} {0x40_C000_0000 1G} {0x41_0000_0000 1G} {0x41_4000_0000 1G} {0x41_8000_0000 1G} {0x41_C000_0000 1G} {0x42_0000_0000 1G} {0x42_4000_0000 1G} {0x42_8000_0000 1G} {0x42_C000_0000 1G} {0x43_0000_0000 1G} {0x43_4000_0000 1G} {0x43_8000_0000 1G} {0x43_C000_0000 1G} {0x44_0000_0000 1G} {0x44_4000_0000 1G} {0x44_8000_0000 1G} {0x44_C000_0000 1G} {0x45_0000_0000 1G} {0x45_4000_0000 1G} {0x45_8000_0000 1G} {0x45_C000_0000 1G} {0x46_0000_0000 1G} {0x46_4000_0000 1G} {0x46_8000_0000 1G} {0x46_C000_0000 1G} {0x47_0000_0000 1G} {0x47_4000_0000 1G} {0x47_8000_0000 1G} {0x47_C000_0000 1G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports HBM_VNOC_INI_04]
+  set_property APERTURES {{0x0 2G} {0x40_0000_0000 1G} {0x40_4000_0000 1G} {0x40_8000_0000 1G} {0x40_C000_0000 1G} {0x41_0000_0000 1G} {0x41_4000_0000 1G} {0x41_8000_0000 1G} {0x41_C000_0000 1G} {0x42_0000_0000 1G} {0x42_4000_0000 1G} {0x42_8000_0000 1G} {0x42_C000_0000 1G} {0x43_0000_0000 1G} {0x43_4000_0000 1G} {0x43_8000_0000 1G} {0x43_C000_0000 1G} {0x44_0000_0000 1G} {0x44_4000_0000 1G} {0x44_8000_0000 1G} {0x44_C000_0000 1G} {0x45_0000_0000 1G} {0x45_4000_0000 1G} {0x45_8000_0000 1G} {0x45_C000_0000 1G} {0x46_0000_0000 1G} {0x46_4000_0000 1G} {0x46_8000_0000 1G} {0x46_C000_0000 1G} {0x47_0000_0000 1G} {0x47_4000_0000 1G} {0x47_8000_0000 1G} {0x47_C000_0000 1G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports HBM_VNOC_INI_05]
+  set_property APERTURES {{0x0 2G} {0x40_0000_0000 1G} {0x40_4000_0000 1G} {0x40_8000_0000 1G} {0x40_C000_0000 1G} {0x41_0000_0000 1G} {0x41_4000_0000 1G} {0x41_8000_0000 1G} {0x41_C000_0000 1G} {0x42_0000_0000 1G} {0x42_4000_0000 1G} {0x42_8000_0000 1G} {0x42_C000_0000 1G} {0x43_0000_0000 1G} {0x43_4000_0000 1G} {0x43_8000_0000 1G} {0x43_C000_0000 1G} {0x44_0000_0000 1G} {0x44_4000_0000 1G} {0x44_8000_0000 1G} {0x44_C000_0000 1G} {0x45_0000_0000 1G} {0x45_4000_0000 1G} {0x45_8000_0000 1G} {0x45_C000_0000 1G} {0x46_0000_0000 1G} {0x46_4000_0000 1G} {0x46_8000_0000 1G} {0x46_C000_0000 1G} {0x47_0000_0000 1G} {0x47_4000_0000 1G} {0x47_8000_0000 1G} {0x47_C000_0000 1G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports HBM_VNOC_INI_06]
+  set_property APERTURES {{0x0 2G} {0x40_0000_0000 1G} {0x40_4000_0000 1G} {0x40_8000_0000 1G} {0x40_C000_0000 1G} {0x41_0000_0000 1G} {0x41_4000_0000 1G} {0x41_8000_0000 1G} {0x41_C000_0000 1G} {0x42_0000_0000 1G} {0x42_4000_0000 1G} {0x42_8000_0000 1G} {0x42_C000_0000 1G} {0x43_0000_0000 1G} {0x43_4000_0000 1G} {0x43_8000_0000 1G} {0x43_C000_0000 1G} {0x44_0000_0000 1G} {0x44_4000_0000 1G} {0x44_8000_0000 1G} {0x44_C000_0000 1G} {0x45_0000_0000 1G} {0x45_4000_0000 1G} {0x45_8000_0000 1G} {0x45_C000_0000 1G} {0x46_0000_0000 1G} {0x46_4000_0000 1G} {0x46_8000_0000 1G} {0x46_C000_0000 1G} {0x47_0000_0000 1G} {0x47_4000_0000 1G} {0x47_8000_0000 1G} {0x47_C000_0000 1G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports HBM_VNOC_INI_07]
+  set_property APERTURES {{0x0 2G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports M00_INI]
+  set_property APERTURES {{0x0 2G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports M01_INI]
+  set_property APERTURES {{0x0 2G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports M02_INI]
+  set_property APERTURES {{0x0 2G} {0x500_8000_0000 2G} {0x600_0000_0000 32G}} [get_bd_intf_ports M03_INI]
+  set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports QDMA_SLAVE_BRIDGE_0]
+  set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports SL_VIRT_00]
+  set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports SL_VIRT_01]
+  set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports SL_VIRT_02]
+  set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports SL_VIRT_03]
+  set_property APERTURES {{0x202_0000_0000 128M}} [get_bd_intf_ports S_AXILITE_INI]
+  {% endraw %}
+>>>>>>> dev
  # Create instance: ddr_noc_0, and set properties
   set ddr_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc ddr_noc_0 ]
   set_property -dict [list \
@@ -774,6 +865,7 @@ update_compile_order -fileset sources_1
     CONFIG.NUM_NMI {1} \
     CONFIG.NUM_NSI {0} \
   ] $noc_virt_01
+<<<<<<< dev
 
 
   set_property -dict [ list \
@@ -833,6 +925,67 @@ update_compile_order -fileset sources_1
  ] [get_bd_intf_pins /noc_virt_03/S00_AXI]
 
   set_property -dict [ list \
+=======
+
+
+  set_property -dict [ list \
+   CONFIG.INI_STRATEGY {driver} \
+ ] [get_bd_intf_pins /noc_virt_01/M00_INI]
+
+  set_property -dict [ list \
+   CONFIG.CONNECTIONS {M00_INI {read_bw {500} write_bw {500}}} \
+   CONFIG.NOC_PARAMS {} \
+   CONFIG.CATEGORY {pl} \
+ ] [get_bd_intf_pins /noc_virt_01/S00_AXI]
+
+  set_property -dict [ list \
+   CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
+ ] [get_bd_pins /noc_virt_01/aclk0]
+
+  # Create instance: noc_virt_02, and set properties
+  set noc_virt_02 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_02 ]
+  set_property -dict [list \
+    CONFIG.NUM_MI {0} \
+    CONFIG.NUM_NMI {1} \
+    CONFIG.NUM_NSI {0} \
+  ] $noc_virt_02
+
+
+  set_property -dict [ list \
+   CONFIG.INI_STRATEGY {driver} \
+ ] [get_bd_intf_pins /noc_virt_02/M00_INI]
+
+  set_property -dict [ list \
+   CONFIG.CONNECTIONS {M00_INI {read_bw {500} write_bw {500}}} \
+   CONFIG.NOC_PARAMS {} \
+   CONFIG.CATEGORY {pl} \
+ ] [get_bd_intf_pins /noc_virt_02/S00_AXI]
+
+  set_property -dict [ list \
+   CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
+ ] [get_bd_pins /noc_virt_02/aclk0]
+
+  # Create instance: noc_virt_03, and set properties
+  set noc_virt_03 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_03 ]
+  set_property -dict [list \
+    CONFIG.NUM_MI {0} \
+    CONFIG.NUM_NMI {1} \
+    CONFIG.NUM_NSI {0} \
+  ] $noc_virt_03
+
+
+  set_property -dict [ list \
+   CONFIG.INI_STRATEGY {driver} \
+ ] [get_bd_intf_pins /noc_virt_03/M00_INI]
+
+  set_property -dict [ list \
+   CONFIG.CONNECTIONS {M00_INI {read_bw {500} write_bw {500}}} \
+   CONFIG.NOC_PARAMS {} \
+   CONFIG.CATEGORY {pl} \
+ ] [get_bd_intf_pins /noc_virt_03/S00_AXI]
+
+  set_property -dict [ list \
+>>>>>>> dev
    CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
  ] [get_bd_pins /noc_virt_03/aclk0]
 

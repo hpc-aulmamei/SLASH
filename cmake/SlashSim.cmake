@@ -149,6 +149,7 @@ function(build_sim)
     endif()
   endforeach()
 
+<<<<<<< dev
   # Ensure simulation runtime changes trigger rebuild of packaged vbin.
   file(GLOB _sim_backend_deps
     "${BSIM_LINKER_DIR}/sim/CMakeLists.txt"
@@ -157,6 +158,8 @@ function(build_sim)
     "${BSIM_LINKER_DIR}/src/emit/sim/*.py"
   )
 
+=======
+>>>>>>> dev
   add_custom_command(
     OUTPUT "${_dst_vbin}" "${_stamp}"
 
@@ -191,7 +194,10 @@ function(build_sim)
       "${BSIM_CFG}"
       ${BSIM_KERNELS}
       ${_extra_deps}
+<<<<<<< dev
       ${_sim_backend_deps}
+=======
+>>>>>>> dev
 
     COMMENT "SLASH SIM build: ${BSIM_PROJECT} -> ${BSIM_OUT_DIR}"
     VERBATIM

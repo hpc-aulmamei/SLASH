@@ -332,16 +332,30 @@ def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
     SERVICE_LAYER = "service_layer"
     SLASH = "slash"
 
+<<<<<<< dev
     if SERVICE_LAYER not in nodes:
         raise SystemExit(f"Could not find instance '{SERVICE_LAYER}' in the utilization table.")
+=======
+>>>>>>> dev
     if SLASH not in nodes:
         raise SystemExit(f"Could not find instance '{SLASH}' in the utilization table.")
 
     root = ET.Element("utilization_report")
 
+<<<<<<< dev
     sl_node = nodes[SERVICE_LAYER]
     sl_block = ET.SubElement(root, "block", name="service_layer", instance=sl_node.row.instance, pr=sl_node.row.pr_attribute)
     write_totals_attributes_from_row(ET.SubElement(sl_block, "totals"), sl_node.row)
+=======
+    if SERVICE_LAYER in nodes:
+        sl_node = nodes[SERVICE_LAYER]
+        sl_block = ET.SubElement(root, "block", name="service_layer", instance=sl_node.row.instance, pr=sl_node.row.pr_attribute)
+        write_totals_attributes_from_row(ET.SubElement(sl_block, "totals"), sl_node.row)
+    else:
+        logger.warning("Could not find instance '%s' in utilization table. Emitting zeroed service_layer block.", SERVICE_LAYER)
+        sl_block = ET.SubElement(root, "block", name="service_layer", instance=SERVICE_LAYER, pr="Reconfigurable")
+        write_totals_attributes_from_totals(ET.SubElement(sl_block, "totals"), ResourceTotals())
+>>>>>>> dev
 
     sh_node = nodes[SLASH]
     sh_block = ET.SubElement(root, "block", name="slash", instance=sh_node.row.instance, pr=sh_node.row.pr_attribute)

@@ -66,6 +66,7 @@ set design_name "slash"
 set bd_slash_name        "slash_${project_name}"
 set bd_service_layer_name "service_layer_${project_name}"
 
+<<<<<<< dev
 # Generated BD Tcl paths from the linker
 set slash_gen_tcl   [file normalize [file join $src_dir ".." ".." ".." "results" $project_name "bd" "slash_${project_name}.tcl"]]
 set service_gen_tcl [file normalize [file join $src_dir ".." ".." ".." "results" $project_name "bd" "service_layer_${project_name}.tcl"]]
@@ -78,13 +79,42 @@ puts "ACTION:         $action"
 
 
 set proj_exists [file normalize "${src_dir}/../build/${design_name}.xpr"]
+=======
+# Build directory override:
+# 1) Tcl variable `slash_hw_build_dir` (if pre-set by caller)
+# 2) env `SLASH_HW_BUILD_DIR` (or `slash_hw_build_dir`)
+# 3) default ../build
+set default_project_build_dir [file normalize [file join $src_dir ".." "build"]]
+if {[info exists slash_hw_build_dir] && $slash_hw_build_dir ne ""} {
+  set project_build_dir [file normalize $slash_hw_build_dir]
+} elseif {[info exists ::env(SLASH_HW_BUILD_DIR)] && $::env(SLASH_HW_BUILD_DIR) ne ""} {
+  set project_build_dir [file normalize $::env(SLASH_HW_BUILD_DIR)]
+} elseif {[info exists ::env(slash_hw_build_dir)] && $::env(slash_hw_build_dir) ne ""} {
+  set project_build_dir [file normalize $::env(slash_hw_build_dir)]
+} else {
+  set project_build_dir $default_project_build_dir
+}
+
+puts "PROJECT:        $project_name"
+puts "IP REPOS:       $iprepos"
+puts "ACTION:         $action"
+puts "BUILD DIR:      $project_build_dir"
+
+
+set proj_exists [file normalize [file join $project_build_dir "${design_name}.xpr"]]
+>>>>>>> dev
 if {![file exists $proj_exists]} {
   if {!$do_create} {
     error "Project not found at $proj_exists. Run with action 'create' first."
   }
   lappend iprepos $default_iprepos
+<<<<<<< dev
   puts "INFO: Creating new project '$design_name' in '${src_dir}/../build' ..."
   create_project $design_name "$src_dir/../build" -part xcv80-lsva4737-2MHP-e-S -force
+=======
+  puts "INFO: Creating new project '$design_name' in '$project_build_dir' ..."
+  create_project $design_name $project_build_dir -part xcv80-lsva4737-2MHP-e-S -force
+>>>>>>> dev
   set_property ip_repo_paths $iprepos [current_project]
   update_ip_catalog
 
@@ -94,6 +124,7 @@ if {![file exists $proj_exists]} {
   source [file normalize [file join $src_dir "top.tcl"]]
   source [file normalize [file join $src_dir "enable_dfx_bdc.tcl"]]
 
+<<<<<<< dev
   # --- source the **generated** BDs from the linker ---
   if {![file exists $slash_gen_tcl]} {
     error "Missing generated SLASH BD Tcl: $slash_gen_tcl"
@@ -222,4 +253,29 @@ if {![file exists $proj_exists]} {
   } else {
     puts "INFO: Project update complete (build skipped)."
   }
+=======
+  # Wrapper / XDC / build
+  source [file normalize [file join $src_dir "make_wrapper.tcl"]]
+  source [file normalize [file join $src_dir "add_constraints.tcl"]]
+} else {
+  puts "INFO: Project already exists; opening '$proj_exists'."
+  open_project [file normalize [file join $project_build_dir "slash.xpr"]]
+  if {$do_create} {
+    set repos [get_property ip_repo_paths [current_project]]
+    set iprepos [concat $iprepos $repos]
+    set_property ip_repo_paths $iprepos [current_project]
+    update_ip_catalog
+    puts "INFO: Project already exists; create step is a no-op for base-image flow."
+  }
+}
+
+if {$do_build} {
+  source [file normalize [file join $src_dir "build_project.tcl"]]
+  build_project $project_name
+  puts "INFO: Project build complete."
+} elseif {$do_create} {
+  puts "INFO: Project creation complete (build skipped)."
+} else {
+  puts "INFO: Build skipped."
+>>>>>>> dev
 }

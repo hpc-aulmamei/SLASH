@@ -233,6 +233,7 @@ Platform ArgParser::getPlatform() { return platform; }
 
 std::vector<std::string> ArgParser::getKernelPaths() { return kernelPaths; }
 
+<<<<<<< dev
 std::array<bool, 4> ArgParser::getNetworkInterfaces() const { return networkInterfaces; }
 
 const TclInjections &ArgParser::getTclInjections() const { return tclInjections; }
@@ -250,3 +251,6 @@ bool ArgParser::isNetworkKernel(const std::string& kernelName) {
 
     return false;
 }
+=======
+const TclInjections &ArgParser::getTclInjections() const { return tclInjections; }
+>>>>>>> dev

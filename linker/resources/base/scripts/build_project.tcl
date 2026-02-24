@@ -19,6 +19,7 @@
 # ##################################################################################################
 
 proc build_project {{proj_name "user"}} {
+<<<<<<< dev
   # Derive names
   set cfg2_name   "config_$proj_name"
   set child_run   "${proj_name}_impl_1"
@@ -32,6 +33,12 @@ proc build_project {{proj_name "user"}} {
   # Ensure top BD is generated
   generate_target all [get_files "top.bd"]
   write_hw_platform -force -fixed -minimal "../results/${proj_name}/top.xsa"
+=======
+  puts "INFO: Using proj_name='$proj_name'"
+
+  # Ensure top BD is generated
+  generate_target all [get_files "top.bd"]
+>>>>>>> dev
 
   # Static/base configuration
   create_pr_configuration -name config_1 \
@@ -40,6 +47,7 @@ proc build_project {{proj_name "user"}} {
       top_i/service_layer:service_layer_inst_0 \
     ]
 
+<<<<<<< dev
   # Project/user configuration
   create_pr_configuration -name $cfg2_name \
     -partitions [list \
@@ -47,12 +55,15 @@ proc build_project {{proj_name "user"}} {
       top_i/service_layer:$service_user_inst \
     ]
 
+=======
+>>>>>>> dev
   # Parent impl run remains 'impl_1'
   set_property PR_CONFIGURATION config_1 [get_runs impl_1]
   set_property strategy Congestion_SSI_SpreadLogic_high [get_runs impl_1]
   set_property STEPS.OPT_DESIGN.TCL.POST         [get_files *opt.post.tcl]                [get_runs impl_1]
   set_property STEPS.PLACE_DESIGN.TCL.PRE        [get_files *place.pre.tcl]               [get_runs impl_1]
   set_property STEPS.WRITE_DEVICE_IMAGE.TCL.PRE  [get_files *write_device_image.pre.tcl]  [get_runs impl_1]
+<<<<<<< dev
   
 # Child run renamed to '<project_name>_impl_1'
   create_run $child_run -parent_run impl_1 \
@@ -107,3 +118,16 @@ proc build_new_config {{proj_name "user"}} {
   report_utilization -hierarchical -hierarchical_depth 3 -hierarchical_percentages -file "../results/${proj_name}/report_utilization_${proj_name}.txt"
 }
 
+=======
+
+  # Launch and wait
+  launch_runs impl_1 -to_step write_bitstream -jobs 14
+  wait_on_run impl_1
+  open_run impl_1
+  file mkdir ../results/base
+  write_abstract_shell -cell top_i/slash -force ../results/base/abs_shell_slash.dcp
+  write_abstract_shell -cell top_i/service_layer -force ../results/base/abs_shell_service_layer.dcp
+
+  puts "INFO: Implementation complete for run 'impl_1'."
+}
+>>>>>>> dev
