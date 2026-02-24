@@ -21,6 +21,7 @@
 add_library(
     libvrtd
 
+    ${CMAKE_CURRENT_SOURCE_DIR}/buffer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/requests.c
 )
 

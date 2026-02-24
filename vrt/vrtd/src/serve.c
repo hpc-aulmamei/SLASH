@@ -18,6 +18,7 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include <sys/syslog.h>
 #define _GNU_SOURCE
 
 #include <assert.h>
@@ -29,28 +30,46 @@
 #include <systemd/sd-event.h>
 #include <systemd/sd-journal.h>
 #include <sys/epoll.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
 #include <stdio.h>
+#include <limits.h>
+#include <libgen.h>
+#include <slash/ctldev.h>
+#include <slash/hotplug.h>
 #include <slash/qdma.h>
 
 #include "array.h"
 #include "auth.h"
+#include "clock.h"
+#include "design_writer.h"
 #include "serve.h"
 #include "utils.h"
 #include "state.h"
 #include "vrtd/wire.h"
 
+#define VRTD_DEFERRED_WORK_INTERVAL_USEC (20ULL * 1000ULL)
+
 static int client_update_wanted_epoll_events(struct client *client, sd_event_source *s);
 static int client_handle_in(struct client *client);
 static int client_handle_out(struct client *client);
 static int client_handle_request(struct client *client);
+static int client_finalize_pending_design_write(struct client *client);
 static uint16_t client_handle_request_get_device_info(
     struct client *client,
     const struct vrtd_req_get_device_info *req_body,
     uint16_t req_size,
     struct vrtd_resp_get_device_info *resp_body,
+    uint16_t *resp_size
+);
+static uint16_t client_handle_request_get_device_by_bdf(
+    struct client *client,
+    const struct vrtd_req_get_device_by_bdf *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_get_device_by_bdf *resp_body,
     uint16_t *resp_size
 );
 static uint16_t client_handle_request_get_num_devices(
@@ -106,6 +125,215 @@ static uint16_t client_handle_request_qdma_qpair_get_fd(
     int *out_fd,
     bool *have_out_fd
 );
+static uint16_t client_handle_request_buffer_open(
+    struct client *client,
+    const struct vrtd_req_buffer_open *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_buffer_open *resp_body,
+    uint16_t *resp_size,
+    int *out_fd,
+    bool *have_out_fd
+);
+static uint16_t client_handle_request_buffer_close(
+    struct client *client,
+    const struct vrtd_req_buffer_close *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_buffer_close *resp_body,
+    uint16_t *resp_size
+);
+static uint16_t client_handle_request_design_write(
+    struct client *client,
+    const struct vrtd_req_design_write *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_design_write *resp_body,
+    uint16_t *resp_size
+);
+static uint16_t client_handle_request_device_hotplug_op(
+    struct client *client,
+    const struct vrtd_req_device_hotplug_op *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_device_hotplug_op *resp_body,
+    uint16_t *resp_size
+);
+static uint16_t client_handle_request_clock_op(
+    struct client *client,
+    const struct vrtd_req_clock_op *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_clock_op *resp_body,
+    uint16_t *resp_size
+);
+
+static int device_read_sysfs_bdf(const struct device *d, char out_bdf[VRTD_PCI_BDF_LEN]);
+static int device_read_pci_info(const struct device *d, struct vrtd_pci_info *out);
+static uint16_t hotplug_errno_to_vrtd_ret(int err);
+static int pci_bdf_set_function(const char *bdf, uint8_t func, char out_bdf[VRTD_PCI_BDF_LEN]);
+static uint16_t device_refresh_pf2_after_design_write(const struct device *d);
+static void cleanup_client_buffers(struct client *client);
+
+static int device_read_sysfs_bdf(const struct device *d, char out_bdf[VRTD_PCI_BDF_LEN])
+{
+    if (d == NULL || d->path == NULL || out_bdf == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    _cleanup_(cleanup_free)
+    char *path = strdup(d->path);
+    if (path == NULL) {
+        return -1;
+    }
+
+    char sysfs_link[PATH_MAX];
+    if (snprintf(sysfs_link, sizeof(sysfs_link), "/sys/class/misc/%s/device", basename(path)) >=
+        (int)sizeof(sysfs_link)) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    char resolved[PATH_MAX];
+    ssize_t n = readlink(sysfs_link, resolved, sizeof(resolved) - 1);
+    if (n < 0) {
+        return -1;
+    }
+    resolved[n] = '\0';
+
+    const char *last = strrchr(resolved, '/');
+    const char *candidate = last ? last + 1 : resolved;
+    if (*candidate == '\0') {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if (snprintf(out_bdf, VRTD_PCI_BDF_LEN, "%s", candidate) >= VRTD_PCI_BDF_LEN) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    return 0;
+}
+
+static int device_read_pci_info(const struct device *d, struct vrtd_pci_info *out)
+{
+    if (d == NULL || out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    memset(out, 0, sizeof(*out));
+
+#if defined(SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO) && defined(SLASH_PCI_BDF_LEN)
+    if (d->ctl != NULL) {
+        struct slash_ioctl_device_info info = {0};
+        info.size = sizeof(info);
+
+        if (ioctl(d->ctl->fd, SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO, &info) == 0) {
+            (void) snprintf(out->bdf, sizeof(out->bdf), "%s", info.bdf);
+            out->vendor_id = info.vendor_id;
+            out->device_id = info.device_id;
+            out->subsystem_vendor_id = info.subsystem_vendor_id;
+            out->subsystem_device_id = info.subsystem_device_id;
+            return 0;
+        }
+    }
+#endif
+
+    return device_read_sysfs_bdf(d, out->bdf);
+}
+
+static int pci_bdf_set_function(const char *bdf, uint8_t func, char out_bdf[VRTD_PCI_BDF_LEN])
+{
+    if (bdf == NULL || out_bdf == NULL || func > 7) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    size_t len = strnlen(bdf, VRTD_PCI_BDF_LEN);
+    if (len == 0 || len >= VRTD_PCI_BDF_LEN) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    const char *dot = strrchr(bdf, '.');
+    if (dot == NULL || dot == bdf || dot[1] == '\0' || dot[2] != '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    size_t prefix_len = (size_t)(dot - bdf);
+    if (prefix_len + 2 >= VRTD_PCI_BDF_LEN) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    memcpy(out_bdf, bdf, prefix_len);
+    out_bdf[prefix_len] = '.';
+    out_bdf[prefix_len + 1] = (char)('0' + func);
+    out_bdf[prefix_len + 2] = '\0';
+
+    return 0;
+}
+
+static uint16_t device_refresh_pf2_after_design_write(const struct device *d)
+{
+    struct vrtd_pci_info pci = {0};
+    if (device_read_pci_info(d, &pci) != 0 || pci.bdf[0] == '\0') {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    char pf2_bdf[VRTD_PCI_BDF_LEN] = {0};
+    if (pci_bdf_set_function(pci.bdf, 2, pf2_bdf) != 0) {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    struct slash_hotplug *hotplug = slash_hotplug_open(NULL);
+    if (hotplug == NULL) {
+        return hotplug_errno_to_vrtd_ret(errno);
+    }
+
+    int ret = slash_hotplug_remove(hotplug, pf2_bdf);
+    if (ret != 0 && errno != ENODEV) {
+        int err = errno;
+        (void) slash_hotplug_close(hotplug);
+        return hotplug_errno_to_vrtd_ret(err);
+    }
+
+    if (slash_hotplug_rescan(hotplug) != 0) {
+        int err = errno;
+        (void) slash_hotplug_close(hotplug);
+        return hotplug_errno_to_vrtd_ret(err);
+    }
+
+    if (slash_hotplug_close(hotplug) != 0) {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    return VRTD_RET_OK;
+}
+
+static void cleanup_client_buffers(struct client *client)
+{
+    if (client == NULL || client->state == NULL || client->conn_id == 0) {
+        return;
+    }
+
+    for (size_t dev_idx = 0; dev_idx < client->state->devices.len; ++dev_idx) {
+        struct device *d = client->state->devices.d[dev_idx];
+        if (d == NULL) {
+            continue;
+        }
+
+        size_t i = 0;
+        while (i < d->buffers.len) {
+            struct buffer *buf = d->buffers.d[i];
+            if (buf == NULL || buf->client_id != client->conn_id) {
+                i++;
+                continue;
+            }
+
+            buffer_ptr_array_rm_by_value(&d->buffers, buf);
+        }
+    }
+}
 
 void cleanup_client(struct client *client)
 {
@@ -113,7 +341,14 @@ void cleanup_client(struct client *client)
         return;
     }
 
+    cleanup_client_buffers(client);
+
     gid_t_array_free(&client->gids);
+
+    if (client->in_fd >= 0) {
+        (void) close(client->in_fd);
+        client->in_fd = -1;
+    }
 
     if (client->fd >= 0) {
         (void) close(client->fd);
@@ -160,7 +395,38 @@ int on_client_io(sd_event_source *s, int fd, uint32_t revents, void *user)
     ret = client_update_wanted_epoll_events(client, s);
     PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to update epoll events");
 
+    return 0;
+}
 
+int on_event_deferred_work(sd_event_source *s, uint64_t usec, void *user)
+{
+    struct vrtd *state = user;
+
+    if (state == NULL) {
+        return -1;
+    }
+
+    uint64_t next_usec = usec + VRTD_DEFERRED_WORK_INTERVAL_USEC;
+    int ret = sd_event_source_set_time(s, next_usec);
+    PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to set deferred work timer");
+
+    ret = sd_event_source_set_enabled(s, SD_EVENT_ON);
+    PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to re-enable deferred work timer");
+
+    for (size_t i = 0; i < state->clients.len; i++) {
+        struct client *client = state->clients.d[i];
+        if (client == NULL) {
+            continue;
+        }
+
+        ret = client_finalize_pending_design_write(client);
+        PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to finalize deferred design write");
+
+        if (ret == 1) {
+            ret = client_update_wanted_epoll_events(client, client->event_source);
+            PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to update epoll events for deferred response");
+        }
+    }
 
     return 0;
 }
@@ -188,17 +454,24 @@ static int client_handle_in(struct client *client)
 {
     assert(!client->have_request);
 
+    if (client->in_fd >= 0) {
+        (void) close(client->in_fd);
+        client->in_fd = -1;
+        client->have_in_fd = false;
+    }
+
     struct iovec iovec[1] = {
         { .iov_base = client->inb, .iov_len = VRTD_MSG_MAX_SIZE },
     };
 
+    char cbuf[CMSG_SPACE(sizeof(int))];
     struct msghdr msg = {
         .msg_name       = NULL,
         .msg_namelen    = 0,
         .msg_iov        = iovec,
         .msg_iovlen     = SIZEOF_ARRAY(iovec),
-        .msg_control    = NULL,
-        .msg_controllen = 0,
+        .msg_control    = cbuf,
+        .msg_controllen = sizeof(cbuf),
         .msg_flags      = 0,
     };
 
@@ -222,6 +495,35 @@ retry:
     if (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) {
         // TODO: handle error from client
         return -1;
+    }
+
+    client->in_fd = -1;
+    client->have_in_fd = false;
+    for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+         cmsg != NULL;
+         cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+        if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS) {
+            continue;
+        }
+
+        size_t data_len = cmsg->cmsg_len - CMSG_LEN(0);
+        size_t count = data_len / sizeof(int);
+        int *fds = (int *) CMSG_DATA(cmsg);
+        if (data_len < sizeof(int) || (data_len % sizeof(int)) != 0) {
+            for (size_t i = 0; i < count; ++i) {
+                (void) close(fds[i]);
+            }
+            return -1;
+        }
+        if (count != 1 || client->have_in_fd) {
+            for (size_t i = 0; i < count; ++i) {
+                (void) close(fds[i]);
+            }
+            return -1;
+        }
+
+        client->in_fd = fds[0];
+        client->have_in_fd = true;
     }
 
     struct vrtd_req_header *header = (struct vrtd_req_header *) client->inb;
@@ -310,7 +612,7 @@ static int client_handle_request(struct client *client)
     resp_header->seqno = req_header->seqno;
 
     // Separate variable for allignment reasons
-    uint16_t size;
+    uint16_t size = 0;
 
     switch (req_header->opcode) {
     case VRTD_REQ_GET_NUM_DEVICES:
@@ -330,6 +632,16 @@ static int client_handle_request(struct client *client)
                 CLIENT_IN_BODY(*client, vrtd_req_get_device_info),
                 req_header->size,
                 CLIENT_OUT_BODY(*client, vrtd_resp_get_device_info),
+                &size
+            );
+        break;
+    case VRTD_REQ_GET_DEVICE_BY_BDF:
+        resp_header->ret =
+            client_handle_request_get_device_by_bdf(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_get_device_by_bdf),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_get_device_by_bdf),
                 &size
             );
         break;
@@ -397,6 +709,58 @@ static int client_handle_request(struct client *client)
                 &client->have_out_fd
             );
         break;
+    case VRTD_REQ_BUFFER_OPEN:
+        resp_header->ret =
+            client_handle_request_buffer_open(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_buffer_open),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_buffer_open),
+                &size,
+                &client->out_fd,
+                &client->have_out_fd
+            );
+        break;
+    case VRTD_REQ_BUFFER_CLOSE:
+        resp_header->ret =
+            client_handle_request_buffer_close(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_buffer_close),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_buffer_close),
+                &size
+            );
+        break;
+    case VRTD_REQ_DESIGN_WRITE:
+        resp_header->ret =
+            client_handle_request_design_write(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_design_write),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_design_write),
+                &size
+            );
+        break;
+    case VRTD_REQ_CLOCK_OP:
+        resp_header->ret =
+            client_handle_request_clock_op(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_clock_op),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_clock_op),
+                &size
+            );
+        break;
+    case VRTD_REQ_DEVICE_HOTPLUG_OP:
+        resp_header->ret =
+            client_handle_request_device_hotplug_op(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_device_hotplug_op),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_device_hotplug_op),
+                &size
+            );
+        break;
 
     default:
         resp_header->ret = VRTD_RET_BAD_REQUEST;
@@ -405,13 +769,77 @@ static int client_handle_request(struct client *client)
         break;
     }
 
+    if (client->pending_design_write) {
+        return 0;
+    }
+
     resp_header->size = size;
+
+    if (client->have_in_fd) {
+        (void) close(client->in_fd);
+        client->in_fd = -1;
+        client->have_in_fd = false;
+    }
 
     client->have_request = false;
     client->have_response = true;
     client->have_new_response = true;
 
     return 0;
+}
+
+static int client_finalize_pending_design_write(struct client *client)
+{
+    if (client == NULL || !client->pending_design_write) {
+        return 0;
+    }
+
+    struct device *d = client->pending_design_write_device;
+    bool done = false;
+    int transfer_error = 0;
+    if (d == NULL || d->design_writer == NULL) {
+        done = true;
+        transfer_error = EIO;
+    } else {
+        int ret = design_writer_poll_result(d->design_writer, &done, &transfer_error);
+        if (ret != 0) {
+            done = true;
+            transfer_error = (errno != 0) ? errno : EIO;
+        }
+    }
+
+    if (!done) {
+        return 0;
+    }
+
+    uint16_t design_write_ret = VRTD_RET_OK;
+    if (transfer_error == 0) {
+        design_write_ret = device_refresh_pf2_after_design_write(d);
+    } else {
+        design_write_ret = VRTD_RET_INTERNAL_ERROR;
+    }
+
+    struct vrtd_req_header *req_header = CLIENT_IN_HEADER(*client);
+    struct vrtd_resp_header *resp_header = CLIENT_OUT_HEADER(*client);
+    struct vrtd_resp_design_write *resp_body = CLIENT_OUT_BODY(*client, vrtd_resp_design_write);
+
+    resp_header->seqno = req_header->seqno;
+    resp_header->ret = design_write_ret;
+
+    if (design_write_ret == VRTD_RET_OK) {
+        resp_body->zero = 0;
+        resp_header->size = sizeof(*resp_body);
+    } else {
+        resp_header->size = 0;
+    }
+
+    client->pending_design_write = false;
+    client->pending_design_write_device = NULL;
+    client->have_request = false;
+    client->have_response = true;
+    client->have_new_response = true;
+
+    return 1;
 }
 
 static uint16_t client_handle_request_get_num_devices(
@@ -437,6 +865,152 @@ static uint16_t client_handle_request_get_num_devices(
 
     resp_body->num_devices = client->state->devices.len;
     
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
+static uint16_t client_handle_request_design_write(
+    struct client *client,
+    const struct vrtd_req_design_write *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_design_write *resp_body,
+    uint16_t *resp_size
+)
+{
+    (void)resp_body;
+
+    int ret = auth_request_design_write(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL || d->design_writer == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    if (!client->have_in_fd || client->in_fd < 0) {
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    int fd = client->in_fd;
+    bool writer_busy_before = design_writer_is_busy(d->design_writer);
+    ret = design_writer_submit_fd_async(d->design_writer, fd);
+    if (ret != 0) {
+        if (writer_busy_before || design_writer_is_busy(d->design_writer)) {
+            return VRTD_RET_BUSY;
+        }
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    client->in_fd = -1;
+    client->have_in_fd = false;
+
+    client->pending_design_write = true;
+    client->pending_design_write_device = d;
+
+    *resp_size = 0;
+    return VRTD_RET_OK;
+}
+
+static uint16_t hotplug_errno_to_vrtd_ret(int err)
+{
+    switch (err) {
+    case EINVAL:
+        return VRTD_RET_INVALID_ARGUMENT;
+    case ENODEV:
+        return VRTD_RET_NOEXIST;
+    case EBUSY:
+        return VRTD_RET_BUSY;
+    case EPERM:
+    case EACCES:
+        return VRTD_RET_AUTH_ERROR;
+    default:
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+}
+
+static uint16_t client_handle_request_device_hotplug_op(
+    struct client *client,
+    const struct vrtd_req_device_hotplug_op *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_device_hotplug_op *resp_body,
+    uint16_t *resp_size
+)
+{
+    int ret = auth_request_device_hotplug_op(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct vrtd_pci_info pci = {0};
+    if (device_read_pci_info(d, &pci) != 0 || pci.bdf[0] == '\0') {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    struct slash_hotplug *hotplug = slash_hotplug_open(NULL);
+    if (hotplug == NULL) {
+        return hotplug_errno_to_vrtd_ret(errno);
+    }
+
+    switch (req_body->op) {
+    case VRTD_DEVICE_HOTPLUG_OP_RESCAN:
+        ret = slash_hotplug_rescan(hotplug);
+        break;
+    case VRTD_DEVICE_HOTPLUG_OP_REMOVE:
+        ret = slash_hotplug_remove(hotplug, pci.bdf);
+        break;
+    case VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR:
+        ret = slash_hotplug_toggle_sbr(hotplug, pci.bdf);
+        break;
+    case VRTD_DEVICE_HOTPLUG_OP_HOTPLUG:
+        ret = slash_hotplug_hotplug(hotplug, pci.bdf);
+        break;
+    default:
+        (void) slash_hotplug_close(hotplug);
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    if (ret != 0) {
+        int err = errno;
+        (void) slash_hotplug_close(hotplug);
+        return hotplug_errno_to_vrtd_ret(err);
+    }
+
+    if (slash_hotplug_close(hotplug) != 0) {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    resp_body->zero = 0;
     *resp_size = sizeof(*resp_body);
     return VRTD_RET_OK;
 }
@@ -618,6 +1192,238 @@ static uint16_t client_handle_request_qdma_qpair_get_fd(
     return VRTD_RET_OK;
 }
 
+static uint16_t client_handle_request_buffer_open(
+    struct client *client,
+    const struct vrtd_req_buffer_open *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_buffer_open *resp_body,
+    uint16_t *resp_size,
+    int *out_fd,
+    bool *have_out_fd
+)
+{
+    int ret = auth_request_buffer_open(client, req_body);
+    if (ret == -1) {
+        (void) sd_journal_print(LOG_WARNING, "Failed to authorize buffer open request: %m");
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        (void) sd_journal_print(LOG_WARNING, "Unauthorized buffer open request");
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+    *have_out_fd = false;
+
+    if (req_size < sizeof(*req_body)) {
+        (void) sd_journal_print(LOG_WARNING, "Received malformed buffer open request");
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        (void) sd_journal_print(LOG_WARNING, "Received buffer open request for non-existent device");
+        return VRTD_RET_NOEXIST;
+    }
+
+    if (req_body->size == 0) {
+        (void) sd_journal_print(LOG_WARNING, "Received buffer open request with zero size");
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL || d->qdma == NULL || d->memory_map == NULL) {
+        (void) sd_journal_print(LOG_WARNING, "Received buffer open request for non-existent or non-functional device");
+        return VRTD_RET_NOEXIST;
+    }
+
+    uint64_t client_id = client->conn_id;
+    if (client_id == 0) {
+        (void) sd_journal_print(LOG_ERR, "Invalid client connection id");
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    _cleanup_(cleanup_bufferp)
+    struct buffer *buf = buffer_create(
+        d->qdma,
+        d->memory_map,
+        (enum allocation_type) req_body->alloc_type,
+        (enum vrtd_alloc_dir) req_body->alloc_dir,
+        req_body->size,
+        req_body->alloc_arg,
+        client_id,
+        NULL
+    );
+    if (buf == NULL) {
+        if (errno == EINVAL) {
+            return VRTD_RET_INVALID_ARGUMENT;
+        }
+        if (errno == ENOMEM) {
+            return VRTD_RET_BUSY;
+        }
+
+        (void) sd_journal_print(LOG_ERR, "Failed to create buffer for buffer open request: %m");
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    if (buf->fd < 0) {
+        (void) sd_journal_print(LOG_ERR, "Buffer created without valid fd");
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    uint64_t real_size = buf->size;
+    int fd = buf->fd;
+    uint64_t phys_addr = buf->addr;
+
+    if (buffer_ptr_array_push_move(&d->buffers, &buf) != 0) {
+        (void) sd_journal_print(LOG_ERR, "Failed to add buffer to device buffer list");
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    resp_body->size = real_size;
+    resp_body->phys_addr = phys_addr;
+    *out_fd = fd;
+    *have_out_fd = true;
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
+static uint16_t client_handle_request_buffer_close(
+    struct client *client,
+    const struct vrtd_req_buffer_close *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_buffer_close *resp_body,
+    uint16_t *resp_size
+)
+{
+    int ret = auth_request_buffer_close(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    if (req_body->size == 0) {
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct buffer *found = NULL;
+    for (size_t i = 0; i < d->buffers.len; ++i) {
+        struct buffer *buf = d->buffers.d[i];
+        if (buf == NULL) {
+            continue;
+        }
+        if (buf->addr != req_body->phys_addr) {
+            continue;
+        }
+        if (buf->size != req_body->size) {
+            return VRTD_RET_INVALID_ARGUMENT;
+        }
+        if (buf->client_id != client->conn_id) {
+            return VRTD_RET_AUTH_ERROR;
+        }
+        found = buf;
+        break;
+    }
+
+    if (found == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    buffer_ptr_array_rm_by_value(&d->buffers, found);
+
+    resp_body->zero = 0;
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
+static uint16_t client_handle_request_clock_op(
+    struct client *client,
+    const struct vrtd_req_clock_op *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_clock_op *resp_body,
+    uint16_t *resp_size
+)
+{
+    int ret = auth_request_clock_op(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL || d->clock_driver == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+
+    uint32_t rate = req_body->rate_hz;
+
+    switch (req_body->region) {
+    case VRTD_CLOCK_REGION_SERVICE:
+        if (req_body->op == VRTD_CLOCK_OP_GET) {
+            if (clock_driver_get_service_region_rate_hz(d->clock_driver, &rate) != 0) {
+                return VRTD_RET_INTERNAL_ERROR;
+            }
+        } else if (req_body->op == VRTD_CLOCK_OP_SET) {
+            if (rate == 0) {
+                return VRTD_RET_INVALID_ARGUMENT;
+            }
+            if (clock_driver_set_service_region_rate_hz(d->clock_driver, &rate) != 0) {
+                return VRTD_RET_INTERNAL_ERROR;
+            }
+        } else {
+            return VRTD_RET_INVALID_ARGUMENT;
+        }
+        break;
+    case VRTD_CLOCK_REGION_USER:
+        if (req_body->op == VRTD_CLOCK_OP_GET) {
+            if (clock_driver_get_user_region_rate_hz(d->clock_driver, &rate) != 0) {
+                return VRTD_RET_INTERNAL_ERROR;
+            }
+        } else if (req_body->op == VRTD_CLOCK_OP_SET) {
+            if (rate == 0) {
+                return VRTD_RET_INVALID_ARGUMENT;
+            }
+            if (clock_driver_set_user_region_rate_hz(d->clock_driver, &rate) != 0) {
+                return VRTD_RET_INTERNAL_ERROR;
+            }
+        } else {
+            return VRTD_RET_INVALID_ARGUMENT;
+        }
+        break;
+    default:
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    resp_body->rate_hz = rate;
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
 static uint16_t client_handle_request_get_device_info(
     struct client *client,
     const struct vrtd_req_get_device_info *req_body,
@@ -643,16 +1449,70 @@ static uint16_t client_handle_request_get_device_info(
         return VRTD_RET_NOEXIST;
     }
 
+    struct device *d = client->state->devices.d[req_body->dev_number];
+
     _cleanup_(cleanup_free)
-    char *path = strdup(client->state->devices.d[req_body->dev_number]->path);
+    char *path = strdup(d->path);
     if (unlikely(path == NULL)) {
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    snprintf(resp_body->name, sizeof resp_body->name, "%s", basename(path));
+    memset(resp_body, 0, sizeof(*resp_body));
+    snprintf(resp_body->info.name, sizeof(resp_body->info.name), "%s", basename(path));
+    if (device_read_pci_info(d, &resp_body->info.pci) != 0) {
+        memset(&resp_body->info.pci, 0, sizeof(resp_body->info.pci));
+    }
 
     *resp_size = sizeof(*resp_body);
     return VRTD_RET_OK;
+}
+
+static uint16_t client_handle_request_get_device_by_bdf(
+    struct client *client,
+    const struct vrtd_req_get_device_by_bdf *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_get_device_by_bdf *resp_body,
+    uint16_t *resp_size
+)
+{
+    int ret = auth_request_get_device_by_bdf(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    char bdf[VRTD_PCI_BDF_LEN];
+    memcpy(bdf, req_body->bdf, sizeof(bdf));
+    bdf[sizeof(bdf) - 1] = '\0';
+
+    if (bdf[0] == '\0') {
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    for (size_t i = 0; i < client->state->devices.len; ++i) {
+        struct device *d = client->state->devices.d[i];
+        struct vrtd_pci_info pci = {0};
+        if (device_read_pci_info(d, &pci) != 0) {
+            continue;
+        }
+
+        int match = strcmp(pci.bdf, bdf) == 0;
+
+        if (match) {
+            resp_body->dev_number = (uint32_t) i;
+            *resp_size = sizeof(*resp_body);
+            return VRTD_RET_OK;
+        }
+    }
+
+    return VRTD_RET_NOEXIST;
 }
 
 static uint16_t client_handle_request_get_bar_info(

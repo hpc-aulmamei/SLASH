@@ -29,11 +29,16 @@
 
 #include "array.h"
 
+struct device;
+
 struct client {
     uint8_t inb[VRTD_MSG_MAX_SIZE];
     uint8_t outb[VRTD_MSG_MAX_SIZE];
 
     int fd;
+
+    int in_fd;
+    bool have_in_fd;
 
     int out_fd;
     bool have_out_fd;
@@ -41,10 +46,13 @@ struct client {
     bool have_request;
     bool have_response;
     bool have_new_response;
+    bool pending_design_write;
+    struct device *pending_design_write_device;
 
     uint32_t wanted_epoll_events;
 
     uid_t uid;
+    uint64_t conn_id;
     struct gid_t_array gids;
 
     struct vrtd *state;
@@ -75,5 +83,6 @@ void cleanup_clientp(struct client **clientp)
 DECLARE_OWNING_PTR_ARRAY(client_ptr_array, struct client *, cleanup_client)
 
 int on_client_io(sd_event_source *s, int fd, uint32_t revents, void *user);
+int on_event_deferred_work(sd_event_source *s, uint64_t usec, void *user);
 
 #endif // VRTD_SERVE_H

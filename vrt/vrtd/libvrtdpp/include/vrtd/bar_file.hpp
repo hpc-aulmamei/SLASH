@@ -168,7 +168,7 @@ public:
         }
 
         volatile uint8_t *p = static_cast<volatile uint8_t *>(barFile.map);
-        volatile T *paddr = static_cast<volatile T *>(&p[address]);
+        volatile T *paddr = reinterpret_cast<volatile T *>(&p[address]);
 
         std::function<void()> callback{};
 

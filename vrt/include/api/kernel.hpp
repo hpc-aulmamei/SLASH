@@ -21,12 +21,11 @@
 #ifndef KERNEL_HPP
 #define KERNEL_HPP
 
-#include <ami.h>
-#include <ami_mem_access.h>
 #include <json/json.h>
 
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <regex>
 #include <stdexcept>
 #include <string>
@@ -37,6 +36,7 @@
 #include "utils/logger.hpp"
 #include "utils/platform.hpp"
 #include "utils/zmq_server.hpp"
+#include <vrtd/bar.hpp>
 
 namespace vrt {
 class Device;
@@ -47,9 +47,7 @@ class Buffer;
  * @brief Class representing a kernel.
  */
 class Kernel {
-    static constexpr uint64_t BASE_BAR_ADDR = 0x20100000000;  ///< Base BAR address
     uint8_t bar = 0;                                          ///< Base Address Register (BAR)
-    ami_device* dev = nullptr;                                ///< Pointer to the AMI device
     std::string name;                                         ///< Name of the kernel
     uint64_t baseAddr;                                        ///< Base address of the kernel
     uint64_t range;                                           ///< Address range of the kernel
@@ -59,16 +57,16 @@ class Kernel {
     Platform platform;                         ///< Platform of the device
     std::shared_ptr<ZmqServer> server;         ///< Pointer to ZeroMQ server for communication
     std::map<uint32_t, uint32_t> registerMap;  ///< Map of register offsets to values
+    std::optional<vrtd::Bar> vrtdBar;          ///< vrtd BAR handle for hardware access
    public:
     /**
      * @brief Constructor for Kernel.
-     * @param device Pointer to the AMI device.
      * @param name The name of the kernel.
      * @param baseAddr The base address of the kernel.
      * @param range The address range of the kernel.
      * @param registers The list of registers in the kernel.
      */
-    Kernel(ami_device* device, const std::string& name, uint64_t baseAddr, uint64_t range,
+    Kernel(const std::string& name, uint64_t baseAddr, uint64_t range,
            const std::vector<Register>& registers);
 
     /**
@@ -84,10 +82,10 @@ class Kernel {
     Kernel(vrt::Device& device, const std::string& kernelName);
 
     /**
-     * @brief Sets the device for the kernel.
-     * @param device Pointer to the AMI device.
+     * @brief Sets the vrtd BAR handle for hardware access.
+     * @param bar The vrtd BAR handle.
      */
-    void setDevice(ami_device* device);
+    void setVrtdBar(const std::optional<vrtd::Bar>& bar);
 
     /**
      * @brief Writes a value to a register.
@@ -270,18 +268,7 @@ class Kernel {
      *
      * @param other The kernel to move from.
      */
-    Kernel(Kernel&& other) noexcept
-        : bar(other.bar),
-          dev(other.dev),
-          name(std::move(other.name)),
-          baseAddr(other.baseAddr),
-          range(other.range),
-          registers(std::move(other.registers)),
-          currentRegisterIndex(other.currentRegisterIndex),
-          deviceBdf(std::move(other.deviceBdf)),
-          platform(other.platform),
-          server(std::move(other.server)),
-          registerMap(std::move(other.registerMap)) {}
+    Kernel(Kernel&& other) noexcept = default;
 
     /**
      * @brief Copy assignment operator.
@@ -297,22 +284,7 @@ class Kernel {
      * @param other The kernel to move from.
      * @return Reference to this kernel.
      */
-    Kernel& operator=(Kernel&& other) noexcept {
-        if (this != &other) {
-            bar = other.bar;
-            dev = other.dev;
-            name = std::move(other.name);
-            baseAddr = other.baseAddr;
-            range = other.range;
-            registers = std::move(other.registers);
-            currentRegisterIndex = other.currentRegisterIndex;
-            deviceBdf = std::move(other.deviceBdf);
-            platform = other.platform;
-            server = std::move(other.server);
-            registerMap = std::move(other.registerMap);
-        }
-        return *this;
-    }
+    Kernel& operator=(Kernel&& other) noexcept = default;
 };
 
 }  // namespace vrt

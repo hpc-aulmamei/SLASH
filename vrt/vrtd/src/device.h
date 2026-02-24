@@ -27,6 +27,11 @@
 #include <slash/qdma.h>
 
 #include "array.h"
+#include "buffer.h"
+
+struct design_writer;
+struct clock_driver;
+struct device_memory_map;
 
 struct device {
     char *path; /* owning */
@@ -34,6 +39,11 @@ struct device {
     struct slash_qdma *qdma;
     struct slash_ioctl_bar_info *bar_info[6];
     struct slash_bar_file *bar_files[6];
+    struct design_writer *design_writer;
+    struct clock_driver *clock_driver;
+    struct device_memory_map *memory_map;
+    struct buffer_ptr_array buffers;
+    
 };
 
 void cleanup_device(struct device *d);

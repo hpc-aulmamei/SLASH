@@ -20,6 +20,8 @@
 
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+
 # If you have dependencies, call find_dependency() here.
 # e.g.: find_dependency(Threads)
 find_dependency(slash)

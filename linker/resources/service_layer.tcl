@@ -651,6 +651,9 @@ set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_03]
     CONFIG.NUM_SI {1} \
   ] $noc_virt_1
 
+  set_property -dict [ list \
+   CONFIG.INI_STRATEGY {driver} \
+ ] [get_bd_intf_pins /noc_virt_1/M00_INI]
 
   set_property -dict [ list \
    CONFIG.INI_STRATEGY {driver} \
@@ -675,6 +678,9 @@ set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_03]
     CONFIG.NUM_SI {1} \
   ] $noc_virt_2
 
+  set_property -dict [ list \
+   CONFIG.INI_STRATEGY {driver} \
+ ] [get_bd_intf_pins /noc_virt_2/M00_INI]
 
   set_property -dict [ list \
    CONFIG.INI_STRATEGY {driver} \
@@ -699,6 +705,33 @@ set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_03]
     CONFIG.NUM_SI {1} \
   ] $noc_virt_3
 
+  set_property -dict [ list \
+   CONFIG.INI_STRATEGY {driver} \
+ ] [get_bd_intf_pins /noc_virt_3/M00_INI]
+
+  set_property -dict [ list \
+   CONFIG.CONNECTIONS {M00_INI {read_bw {500} write_bw {500}}} \
+   CONFIG.NOC_PARAMS {} \
+   CONFIG.CATEGORY {pl} \
+ ] [get_bd_intf_pins /noc_virt_3/S00_AXI]
+
+  set_property -dict [ list \
+   CONFIG.ASSOCIATED_BUSIF {S00_AXI} \
+ ] [get_bd_pins /noc_virt_3/aclk0]
+
+  # Create instance: noc_virt_4, and set properties
+  set noc_virt_4 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc noc_virt_4 ]
+  set_property -dict [list \
+    CONFIG.NUM_MI {0} \
+    CONFIG.NUM_NMI {1} \
+    CONFIG.NUM_NSI {0} \
+    CONFIG.NUM_SI {1} \
+  ] $noc_virt_4
+
+
+  set_property -dict [ list \
+   CONFIG.INI_STRATEGY {driver} \
+ ] [get_bd_intf_pins /noc_virt_4/M00_INI]
 
   set_property -dict [ list \
    CONFIG.INI_STRATEGY {driver} \

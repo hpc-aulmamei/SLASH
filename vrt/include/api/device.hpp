@@ -21,10 +21,6 @@
 #ifndef DEVICE_HPP
 #define DEVICE_HPP
 
-#include <ami.h>
-#include <ami_mem_access.h>
-#include <ami_program.h>
-#include <ami_sensor.h>
 #include <fcntl.h>
 #include <json/json.h>
 #include <libxml/parser.h>
@@ -34,21 +30,22 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <thread>
+#include <vector>
 
 #include "allocator/allocator.hpp"
 #include "api/kernel.hpp"
 #include "api/vrt_version.hpp"
 #include "api/vrtbin.hpp"
-#include "driver/clk_wiz.hpp"
 #include "driver/qdma_logic.hpp"
 #include "parser/xml_parser.hpp"
-#include "qdma/pcie_driver_handler.hpp"
 #include "qdma/qdma_connection.hpp"
 #include "qdma/qdma_intf.hpp"
 #include "utils/logger.hpp"
 #include "utils/platform.hpp"
 #include "utils/zmq_server.hpp"
+#include <vrtd/session.hpp>
 
 namespace vrt {
 
@@ -74,7 +71,6 @@ enum class ProgramType {
  *
  * This macro defines the path to the shell script used for setting up QDMA queues.
  */
-#define QDMA_SETUP_QUEUES "/usr/local/vrt/setup_queues.sh "
 
 /**
  * @brief Delay in microseconds for partial boot process.
@@ -87,29 +83,27 @@ enum class ProgramType {
  * @brief Class representing a device.
  */
 class Device {
-    static constexpr uint64_t CLK_WIZ_BASE = 0x20100010000;  ///< Base address for the clock wizard
-    static constexpr uint32_t CLK_WIZ_OFFSET = 0x10000;
     static constexpr uint64_t QDMA_LOGIC_BASE = 0x20100020000;  ///< Base address for QDMA logic
     static constexpr uint32_t QDMA_LOGIC_OFFSET = 0x1000;       /// Offset for QDMA logic
-    ami_device* dev = nullptr;                                  ///< Pointer to the AMI device
     uint8_t bar = 0;                                            ///< Base Address Register (BAR)
     uint64_t offset = 0;                                        ///< Offset for memory operations
     uint16_t pci_bdf = 0;     ///< PCI Bus:Device.Function identifier
     std::string systemMap;    ///< Path to the system map file
     std::string bdf;          ///< Bus:Device.Function identifier
+    std::string bdfFull;      ///< Domain:Bus:Device.Function identifier
     std::string pdiPath;      ///< Path to the PDI file
+    std::vector<std::string> pdiPaths;  ///< Paths to PDI files discovered in archive
     Vrtbin vrtbin;            ///< Vrtbin object for handling VRTBIN operations
-    ClkWiz clkWiz;            ///< Clock Wizard object for handling clock wizard operations
     uint64_t clockFreq;       ///< Clock frequency
     ProgramType programType;  ///< Type of programming
     std::map<std::string, Kernel> kernels;        ///< Map of kernel names to Kernel objects
-    PcieDriverHandler pcieHandler;                ///< PCIe driver handler object
     Allocator* allocator;                         ///< Allocator object
-    VrtbinType vrtbinType;                        ///< Type of VRTBIN
     Platform platform;                            ///< Platform information
     std::shared_ptr<ZmqServer> zmqServer;         ///< ZeroMQ server object
     std::vector<QdmaConnection> qdmaConnections;  ///< Vector of QDMA connections
     std::vector<QdmaIntf*> qdmaIntfs;             ///< Vector of QDMA interfaces for streaming
+    std::shared_ptr<vrtd::Session> vrtdSession;   ///< vrtd session for hardware access
+    std::optional<vrtd::Device> vrtdDevice;       ///< vrtd device handle (requires session)
    public:
     QdmaIntf qdmaIntf;  ///< QDMA interface object
 
@@ -142,32 +136,6 @@ class Device {
     void programDevice();
 
     /**
-     * @brief Sends a command to the PCIe driver.
-     * @param cmd The command to send.
-     */
-    void sendPcieDriverCmd(std::string cmd);
-
-    /**
-     * @brief Boots the device.
-     */
-    void bootDevice();
-
-    /**
-     * @brief Gets a new handle for the device.
-     */
-    void getNewHandle();
-
-    /**
-     * @brief Creates the AMI device.
-     */
-    void createAmiDev();
-
-    /**
-     * @brief Destroys the AMI device.
-     */
-    void destroyAmiDev();
-
-    /**
      * @brief Destructor for Device.
      */
     ~Device();
@@ -182,7 +150,7 @@ class Device {
      */
     void cleanup();
     /**
-     * @brief Sets clk_wiz frequency.
+     * @brief Sets device clock frequency.
      */
     void setFrequency(uint64_t freq);
 
@@ -195,11 +163,6 @@ class Device {
      * @brief Gets the maximum frequency.
      */
     uint64_t getMaxFrequency();
-
-    /**
-     * @brief Gets ami device.
-     */
-    ami_device* getAmiDev();
 
     /**
      * @brief Finds the VRTBIN type from system map.
@@ -227,6 +190,16 @@ class Device {
     Allocator* getAllocator();
 
     /**
+     * @brief Gets the underlying vrtd device handle (hardware only).
+     */
+    vrtd::Device& getVrtdDevice();
+
+    /**
+     * @brief Gets the underlying vrtd device handle (hardware only).
+     */
+    const vrtd::Device& getVrtdDevice() const;
+
+    /**
      * @brief Gets the QDMA connections.
      */
     std::vector<QdmaConnection> getQdmaConnections();
@@ -240,16 +213,6 @@ class Device {
      * @brief Gets the QDMA streaming interfaces.
      */
     std::vector<QdmaIntf*> getQdmaInterfaces();
-
-    /**
-     * @brief Locks pcie device, for exclusive access.
-     */
-    void lockPcieDevice(const std::string& bdf);
-
-    /**
-     * @brief Unlocks pcie device, for exclusive access.
-     */
-    void unlockPcieDevice(const std::string& bdf);
 };
 
 }  // namespace vrt

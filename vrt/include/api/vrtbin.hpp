@@ -22,12 +22,15 @@
 #define VRTBIN_HPP
 
 #include <array>
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "parser/xml_parser.hpp"
 #include "utils/logger.hpp"
@@ -40,12 +43,11 @@ namespace vrt {
  * @brief Class for handling VRTBIN operations.
  */
 class Vrtbin {
-    std::string vrtbinPath;                                         ///< Path to the VRTBIN file
+    std::string vrtbinPath;                                         ///< Path to the VRTBIN tar file
     std::string systemMapPath;                                      ///< Path to the system map file
-    std::string versionPath;                                        ///< Path to the version file
     std::string pdiPath;                                            ///< Path to the PDI file
-    std::string uuid;                                               ///< UUID of the VRTBIN
-    std::string tempExtractPath = FilesystemCache::getCachePath();  ///< Temporary extraction path
+    std::vector<std::string> pdiPaths;                              ///< Paths to all discovered PDI files
+    std::string tempExtractPath;                                    ///< Temporary extraction path
     std::string emulationExecPath;                                  ///< Path to the emulation executable
     std::string simulationExecPath;                                 ///< Path to the simulation executable
     Platform platform;                                              ///< Platform type
@@ -55,6 +57,9 @@ class Vrtbin {
      * @param destination The destination file path.
      */
     void copy(const std::string& source, const std::string& destination);
+    void discoverPdiFiles();
+    std::filesystem::path findExtractedFile(const std::string& filename) const;
+    static std::string sanitizeForPath(const std::string& input);
 
    public:
     /**
@@ -82,15 +87,10 @@ class Vrtbin {
     std::string getPdiPath();
 
     /**
-     * @brief Gets the UUID of the VRTBIN.
-     * @return The UUID of the VRTBIN.
+     * @brief Gets the paths to all discovered PDI files.
+     * @return A list of paths to PDI files.
      */
-    std::string getUUID();
-
-    /**
-     * @brief Extracts the UUID from the VRTBIN file.
-     */
-    void extractUUID();
+    std::vector<std::string> getPdiPaths();
 
     /**
      * @brief Gets the emulation executable file.

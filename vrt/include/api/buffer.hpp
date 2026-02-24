@@ -27,7 +27,26 @@
 #include "utils/platform.hpp"
 #include "utils/zmq_server.hpp"
 
+#include <atomic>
+#include <cstring>
+#include <memory>
+
 namespace vrt {
+
+namespace detail {
+inline uint64_t reserveFakePhysAddr(uint64_t sizeBytes, MemoryRangeType rangeType) {
+    // Match linker simulation address windows from run_pre.tcl:
+    //   HBM/HBM_VNOC: 0x4000_0000_00
+    //   DDR:          0x6000_0000_000
+    static std::atomic<uint64_t> nextHbm{0x4000000000ull};
+    static std::atomic<uint64_t> nextDdr{0x60000000000ull};
+    const uint64_t aligned = (sizeBytes + 0xfff) & ~0xfffull;
+    if (rangeType == MemoryRangeType::DDR) {
+        return nextDdr.fetch_add(aligned, std::memory_order_relaxed);
+    }
+    return nextHbm.fetch_add(aligned, std::memory_order_relaxed);
+}
+}  // namespace detail
 
 /**
  * @brief Enum class representing the type of synchronization.
@@ -54,7 +73,7 @@ class Buffer {
      * @param size The size of the buffer.
      * @param type The type of memory range.
      */
-    Buffer(Device device, size_t size, MemoryRangeType type);
+    Buffer(Device& device, size_t size, MemoryRangeType type);
 
     /**
      * @brief Constructor for Buffer.
@@ -63,7 +82,7 @@ class Buffer {
      * @param type The type of memory range.
      * @param port The HBM port number. This would not have any effect if the type is DDR.
      */
-    Buffer(Device device, size_t size, MemoryRangeType type, uint8_t port);
+    Buffer(Device& device, size_t size, MemoryRangeType type, uint8_t port);
 
     /**
      * @brief Destructor for Buffer.
@@ -122,11 +141,17 @@ class Buffer {
     Buffer& operator=(Buffer&& other) noexcept;
 
    private:
+    static BufferAllocType resolveAllocType(MemoryRangeType type, bool hasPort);
+    static HBMRegion resolveRegion(MemoryRangeType type, bool hasPort, uint8_t port);
+
     uint64_t startAddress;           ///< The starting address of the buffer
     T* localBuffer;                  ///< Pointer to the local buffer
     size_t size;                     ///< The size of the buffer
     MemoryRangeType type;            ///< The type of memory range
-    Device device;                   ///< The device associated with the buffer
+    Device* device;                  ///< The device associated with the buffer (non-owning)
+    std::unique_ptr<Block> block;    ///< Allocator block (hardware only)
+    UntypedBuffer* view;             ///< Cached view into the allocator block
+    bool ownsLocalBuffer;            ///< Whether localBuffer should be deleted
     std::size_t index;               // Member variable to store the index of the buffer
     static std::size_t bufferIndex;  // Static variable to track the buffer index
 };
@@ -135,45 +160,82 @@ template <typename T>
 size_t Buffer<T>::bufferIndex = 0;
 
 template <typename T>
-Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type)
-    : device(device), size(size), type(type), index(bufferIndex++) {
-    startAddress = device.getAllocator()->allocate(size * sizeof(T), type);
-    if (startAddress == 0) {
-        throw std::bad_alloc();
-    }
-
-    localBuffer = new T[size];
-    Platform platform = device.getPlatform();
-    if (platform == Platform::EMULATION) {
-        // send initial buffer so it is populated in the emulation environment
-        std::shared_ptr<ZmqServer> server = device.getZmqServer();
-        std::vector<uint8_t> sendData;
-        std::size_t dataSize = size * sizeof(T);
-        sendData.resize(dataSize);
-        std::memcpy(sendData.data(), localBuffer, dataSize);
-        server->sendBuffer(std::to_string(getPhysAddr()), sendData);
+Buffer<T>::Buffer(Device& device, size_t size, MemoryRangeType type)
+    : startAddress(0),
+      localBuffer(nullptr),
+      size(size),
+      type(type),
+      device(&device),
+      block(nullptr),
+      view(nullptr),
+      ownsLocalBuffer(false),
+      index(bufferIndex++) {
+    Platform platform = this->device->getPlatform();
+    if (platform == Platform::HARDWARE) {
+        BufferAllocType allocType = resolveAllocType(type, false);
+        HBMRegion region = resolveRegion(type, false, 0);
+        block = this->device->getAllocator()->allocate(this->device->getVrtdDevice(), allocType,
+                                                       BufferAllocDir::Bidirectional,
+                                                       size * sizeof(T), region);
+        if (!block) {
+            throw std::bad_alloc();
+        }
+        view = block->getUntypedBuffer();
+        startAddress = view->getPhysAddr();
+        localBuffer = static_cast<T*>(view->data());
+    } else {
+        startAddress = detail::reserveFakePhysAddr(size * sizeof(T), type);
+        localBuffer = new T[size];
+        ownsLocalBuffer = true;
+        if (platform == Platform::EMULATION) {
+            // send initial buffer so it is populated in the emulation environment
+            std::shared_ptr<ZmqServer> server = this->device->getZmqServer();
+            std::vector<uint8_t> sendData;
+            std::size_t dataSize = size * sizeof(T);
+            sendData.resize(dataSize);
+            std::memcpy(sendData.data(), localBuffer, dataSize);
+            server->sendBuffer(std::to_string(getPhysAddr()), sendData);
+        }
     }
 }
 
 template <typename T>
-Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type, uint8_t port)
-    : device(device), size(size), type(type), index(bufferIndex++) {
-    this->device = device;
-
-    startAddress = device.getAllocator()->allocate(size * sizeof(T), type, port);
-    if (startAddress == 0) {
-        throw std::bad_alloc();
+Buffer<T>::Buffer(Device& device, size_t size, MemoryRangeType type, uint8_t port)
+    : startAddress(0),
+      localBuffer(nullptr),
+      size(size),
+      type(type),
+      device(&device),
+      block(nullptr),
+      view(nullptr),
+      ownsLocalBuffer(false),
+      index(bufferIndex++) {
+    Platform platform = this->device->getPlatform();
+    if (platform == Platform::HARDWARE) {
+        BufferAllocType allocType = resolveAllocType(type, true);
+        HBMRegion region = resolveRegion(type, true, port);
+        block = this->device->getAllocator()->allocate(this->device->getVrtdDevice(), allocType,
+                                                       BufferAllocDir::Bidirectional,
+                                                       size * sizeof(T), region);
+        if (!block) {
+            throw std::bad_alloc();
+        }
+        view = block->getUntypedBuffer();
+        startAddress = view->getPhysAddr();
+        localBuffer = static_cast<T*>(view->data());
+    } else {
+        startAddress = detail::reserveFakePhysAddr(size * sizeof(T), type);
+        localBuffer = new T[size];
+        ownsLocalBuffer = true;
     }
-
-    localBuffer = new T[size];
 }
 
 template <typename T>
 Buffer<T>::~Buffer() {
-    if (startAddress != 0) {
-        device.getAllocator()->deallocate(startAddress);
+    if (block && device != nullptr) {
+        device->getAllocator()->deallocate(std::move(block));
     }
-    if (localBuffer != nullptr) {
+    if (ownsLocalBuffer && localBuffer != nullptr) {
         delete[] localBuffer;
     }
 }
@@ -221,29 +283,21 @@ std::string Buffer<T>::getName() {
 
 template <typename T>
 void Buffer<T>::sync(SyncType syncType) {
-    Platform platform = device.getPlatform();
+    Platform platform = device->getPlatform();
     if (platform == Platform::HARDWARE) {
-        size_t maxChunkSize = 1 << 24;  // 22
-        size_t totalSize = size * sizeof(T);
-        size_t chunkSize = maxChunkSize * sizeof(T);
-        size_t offset = 0;
-
-        while (totalSize > 0) {
-            size_t currentChunkSize = std::min(chunkSize, totalSize);
-            if (syncType == SyncType::HOST_TO_DEVICE) {
-                this->device.qdmaIntf.write_buff(reinterpret_cast<char*>(localBuffer) + offset,
-                                                 startAddress + offset, currentChunkSize);
-            } else if (syncType == SyncType::DEVICE_TO_HOST) {
-                this->device.qdmaIntf.read_buff(reinterpret_cast<char*>(localBuffer) + offset,
-                                                startAddress + offset, currentChunkSize);
-            } else {
-                throw std::invalid_argument("Invalid sync type");
-            }
-            offset += currentChunkSize;
-            totalSize -= currentChunkSize;
+        if (view == nullptr) {
+            throw std::runtime_error("Buffer view unavailable for hardware sync");
+        }
+        uint64_t totalSize = size * sizeof(T);
+        if (syncType == SyncType::HOST_TO_DEVICE) {
+            view->syncToDevice(0, totalSize);
+        } else if (syncType == SyncType::DEVICE_TO_HOST) {
+            view->syncToHost(0, totalSize);
+        } else {
+            throw std::invalid_argument("Invalid sync type");
         }
     } else if (platform == Platform::EMULATION) {
-        std::shared_ptr<ZmqServer> server = device.getZmqServer();
+        std::shared_ptr<ZmqServer> server = device->getZmqServer();
         if (syncType == SyncType::HOST_TO_DEVICE) {
             std::vector<uint8_t> sendData;
             std::size_t dataSize = size * sizeof(T);
@@ -252,16 +306,29 @@ void Buffer<T>::sync(SyncType syncType) {
             server->sendBuffer(std::to_string(getPhysAddr()), sendData);
         } else if (syncType == SyncType::DEVICE_TO_HOST) {
             std::vector<uint8_t> recvData = server->fetchBuffer(std::to_string(getPhysAddr()));
-            size = recvData.size() / sizeof(T);
-            localBuffer = reinterpret_cast<T*>(realloc(localBuffer, recvData.size()));
-            std::memcpy(localBuffer, recvData.data(), recvData.size());
+            if ((recvData.size() % sizeof(T)) != 0) {
+                throw std::runtime_error("Received emulation buffer size is not aligned to element size");
+            }
+            const size_t newSize = recvData.size() / sizeof(T);
+            if (newSize != size) {
+                T* resized = new T[newSize];
+                std::memcpy(resized, recvData.data(), recvData.size());
+                if (ownsLocalBuffer && localBuffer != nullptr) {
+                    delete[] localBuffer;
+                }
+                localBuffer = resized;
+                ownsLocalBuffer = true;
+                size = newSize;
+            } else {
+                std::memcpy(localBuffer, recvData.data(), recvData.size());
+            }
 
         } else {
             throw std::invalid_argument("Invalid sync type");
         }
 
     } else if (platform == Platform::SIMULATION) {
-        std::shared_ptr<ZmqServer> server = device.getZmqServer();
+        std::shared_ptr<ZmqServer> server = device->getZmqServer();
         if (syncType == SyncType::HOST_TO_DEVICE) {
             std::vector<uint8_t> sendData;
             std::size_t dataSize = size * sizeof(T);
@@ -271,10 +338,22 @@ void Buffer<T>::sync(SyncType syncType) {
         } else if (syncType == SyncType::DEVICE_TO_HOST) {
             std::vector<uint8_t> recvData;
             server->fetchBufferSim(getPhysAddr(), size * sizeof(T), recvData);
-
-            size = recvData.size() * sizeof(T);
-            localBuffer = reinterpret_cast<T*>(realloc(localBuffer, recvData.size()));
-            std::memcpy(localBuffer, recvData.data(), recvData.size());
+            if ((recvData.size() % sizeof(T)) != 0) {
+                throw std::runtime_error("Received simulation buffer size is not aligned to element size");
+            }
+            const size_t newSize = recvData.size() / sizeof(T);
+            if (newSize != size) {
+                T* resized = new T[newSize];
+                std::memcpy(resized, recvData.data(), recvData.size());
+                if (ownsLocalBuffer && localBuffer != nullptr) {
+                    delete[] localBuffer;
+                }
+                localBuffer = resized;
+                ownsLocalBuffer = true;
+                size = newSize;
+            } else {
+                std::memcpy(localBuffer, recvData.data(), recvData.size());
+            }
         } else {
             throw std::invalid_argument("Invalid sync type");
         }
@@ -282,26 +361,36 @@ void Buffer<T>::sync(SyncType syncType) {
 }
 template <typename T>
 Buffer<T>::Buffer(Buffer&& other) noexcept
-    : device(other.device),
+    : startAddress(other.startAddress),
+      localBuffer(other.localBuffer),
       size(other.size),
       type(other.type),
-      index(other.index),
-      startAddress(other.startAddress),
-      localBuffer(other.localBuffer) {
+      device(other.device),
+      block(std::move(other.block)),
+      view(other.view),
+      ownsLocalBuffer(other.ownsLocalBuffer),
+      index(other.index) {
+    if (block) {
+        view = block->getUntypedBuffer();
+        localBuffer = static_cast<T*>(view->data());
+    }
     other.startAddress = 0;
     other.localBuffer = nullptr;
     other.size = 0;
+    other.device = nullptr;
+    other.view = nullptr;
+    other.ownsLocalBuffer = false;
 }
 
 template <typename T>
 Buffer<T>& Buffer<T>::operator=(Buffer&& other) noexcept {
     if (this != &other) {
-        if (localBuffer) {
+        if (ownsLocalBuffer && localBuffer) {
             delete[] localBuffer;
         }
 
-        if (startAddress != 0) {
-            device.getAllocator()->deallocate(startAddress);
+        if (block && device != nullptr) {
+            device->getAllocator()->deallocate(std::move(block));
         }
 
         device = other.device;
@@ -310,12 +399,47 @@ Buffer<T>& Buffer<T>::operator=(Buffer&& other) noexcept {
         index = other.index;
         startAddress = other.startAddress;
         localBuffer = other.localBuffer;
+        block = std::move(other.block);
+        view = other.view;
+        ownsLocalBuffer = other.ownsLocalBuffer;
 
+        if (block) {
+            view = block->getUntypedBuffer();
+            localBuffer = static_cast<T*>(view->data());
+        }
         other.startAddress = 0;
         other.localBuffer = nullptr;
         other.size = 0;
+        other.device = nullptr;
+        other.view = nullptr;
+        other.ownsLocalBuffer = false;
     }
     return *this;
+}
+
+template <typename T>
+BufferAllocType Buffer<T>::resolveAllocType(MemoryRangeType type, bool hasPort) {
+    switch (type) {
+        case MemoryRangeType::DDR:
+            return BufferAllocType::Ddr;
+        case MemoryRangeType::HBM:
+            return hasPort ? BufferAllocType::Hbm : BufferAllocType::HbmVnoc;
+        case MemoryRangeType::HBM_VNOC:
+            return BufferAllocType::HbmVnoc;
+        default:
+            return BufferAllocType::Ddr;
+    }
+}
+
+template <typename T>
+HBMRegion Buffer<T>::resolveRegion(MemoryRangeType type, bool hasPort, uint8_t port) {
+    if (type == MemoryRangeType::HBM && hasPort) {
+        if (port > static_cast<uint8_t>(HBMRegion::HBM63)) {
+            throw std::out_of_range("HBM port out of range");
+        }
+        return static_cast<HBMRegion>(port);
+    }
+    return HBMRegion::NON_HBM;
 }
 
 }  // namespace vrt

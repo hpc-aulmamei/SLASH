@@ -22,139 +22,316 @@
 #define ALLOCATOR_HPP
 
 #include <algorithm>
+#include <array>
+#include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <memory>
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
+
+#include <vrtd/buffer.hpp>
+
+namespace vrtd {
+class Device;
+}
+
 namespace vrt {
 
-/**
- * @brief Enum class representing the type of memory range.
- */
+typedef vrtd::BufferAllocType BufferAllocType;
+typedef vrtd::BufferAllocDir BufferAllocDir;
+
 enum class MemoryRangeType {
-    HBM,  ///< High Bandwidth Memory
-    DDR   ///< Double Data Rate Memory
+    HBM,
+    DDR,
+    HBM_VNOC,
 };
 
-/// Starting address of HBM
-constexpr uint64_t HBM_START = 0x4000000000;
-/// Size of HBM (32 GB)
-constexpr uint64_t HBM_SIZE = 32L * 1024 * 1024 * 1024;  // 32G
-/// Size of HBM Port (1 GB)
-constexpr uint64_t HBM_PORT_SIZE = 1L * 1024 * 1024 * 1024;  // 1G
+enum class HBMRegion : uint64_t {
+    HBM0 = 0,
+    HBM1 = 1,
+    HBM2 = 2,
+    HBM3 = 3,
+    HBM4 = 4,
+    HBM5 = 5,
+    HBM6 = 6,
+    HBM7 = 7,
+    HBM8 = 8,
+    HBM9 = 9,
+    HBM10 = 10,
+    HBM11 = 11,
+    HBM12 = 12,
+    HBM13 = 13,
+    HBM14 = 14,
+    HBM15 = 15,
+    HBM16 = 16,
+    HBM17 = 17,
+    HBM18 = 18,
+    HBM19 = 19,
+    HBM20 = 20,
+    HBM21 = 21,
+    HBM22 = 22,
+    HBM23 = 23,
+    HBM24 = 24,
+    HBM25 = 25,
+    HBM26 = 26,
+    HBM27 = 27,
+    HBM28 = 28,
+    HBM29 = 29,
+    HBM30 = 30,
+    HBM31 = 31,
+    HBM32 = 32,
+    HBM33 = 33,
+    HBM34 = 34,
+    HBM35 = 35,
+    HBM36 = 36,
+    HBM37 = 37,
+    HBM38 = 38,
+    HBM39 = 39,
+    HBM40 = 40,
+    HBM41 = 41,
+    HBM42 = 42,
+    HBM43 = 43,
+    HBM44 = 44,
+    HBM45 = 45,
+    HBM46 = 46,
+    HBM47 = 47,
+    HBM48 = 48,
+    HBM49 = 49,
+    HBM50 = 50,
+    HBM51 = 51,
+    HBM52 = 52,
+    HBM53 = 53,
+    HBM54 = 54,
+    HBM55 = 55,
+    HBM56 = 56,
+    HBM57 = 57,
+    HBM58 = 58,
+    HBM59 = 59,
+    HBM60 = 60,
+    HBM61 = 61,
+    HBM62 = 62,
+    HBM63 = 63,
 
-/// Starting address of DDR DIMM
-constexpr uint64_t DDR_START = 0x60000000000;
-/// Size of DDR (32 GB)
-constexpr uint64_t DDR_SIZE = 32L * 1024 * 1024 * 1024;  // 32G
-
-/**
- * @brief Class representing a superblock of memory.
- */
-class Superblock {
-   public:
-    /**
-     * @brief Constructor for Superblock.
-     * @param startAddress The starting address of the superblock.
-     * @param size The size of the superblock.
-     */
-    Superblock(uint64_t startAddress, uint64_t size);
-
-    /**
-     * @brief Allocates a block of memory from the superblock.
-     * @param size The size of the memory block to allocate.
-     * @return The starting address of the allocated memory block.
-     */
-    uint64_t allocate(uint64_t size);
-
-    /**
-     * @brief Deallocates a block of memory.
-     * @param addr The starting address of the memory block to deallocate.
-     */
-    void deallocate(uint64_t addr);
-
-    uint64_t startAddress;  ///< The starting address of the superblock.
-   private:
-    uint64_t size;                   ///< The size of the superblock.
-    uint64_t offset;                 ///< The current offset for allocation.
-    std::vector<uint64_t> freeList;  ///< List of free memory blocks.
+    NON_HBM = std::numeric_limits<uint64_t>::max(),
 };
 
-/**
- * @brief Struct representing a range of memory.
- */
-struct MemoryRange {
-    uint64_t startAddress;                ///< The starting address of the memory range.
-    uint64_t size;                        ///< The size of the memory range.
-    uint64_t offset;                      ///< The current offset for allocation.
-    std::vector<Superblock> superblocks;  ///< List of superblocks in the memory range.
-    std::vector<uint64_t> freeList;       ///< List of free memory blocks.
-    std::vector<std::pair<uint64_t, uint64_t>> usedMemoryBlocks;  ///< List of used memory blocks.
-    /**
-     * @brief Constructor for MemoryRange.
-     * @param startAddress The starting address of the memory range.
-     * @param size The size of the memory range.
-     */
-    MemoryRange(uint64_t startAddress, uint64_t size);
+class UntypedBuffer {
+    vrtd::Buffer* backingBuffer;
+
+    uint64_t size;
+    uint64_t offset;
+public:
+    UntypedBuffer(std::nullptr_t) noexcept;
+    UntypedBuffer(vrtd::Buffer* backingBuffer, uint64_t size = std::numeric_limits<uint64_t>::max(), uint64_t offset = 0);
+    UntypedBuffer(const UntypedBuffer& parent, uint64_t size, uint64_t offset);
+    virtual ~UntypedBuffer();
+
+    BufferAllocType getAllocType() const noexcept;
+    BufferAllocDir getAllocDir() const noexcept;
+    HBMRegion getHBMRegion() const noexcept;
+    uint64_t getSize() const noexcept;
+    uint64_t getPhysAddr() const noexcept;
+    void* data() const noexcept;
+
+    void syncToDevice(uint64_t offset = 0, uint64_t size = std::numeric_limits<uint64_t>::max());
+    void syncToHost(uint64_t offset = 0, uint64_t size = std::numeric_limits<uint64_t>::max());
+
+    bool operator==(std::nullptr_t) const noexcept;
+    bool operator!=(std::nullptr_t) const noexcept;
+    friend bool operator==(std::nullptr_t, const UntypedBuffer& buffer) noexcept;
+    friend bool operator!=(std::nullptr_t, const UntypedBuffer& buffer) noexcept;
 };
 
-/**
- * @brief Class representing a memory allocator.
- */
+class Block {
+public:
+    Block();
+    virtual ~Block();
+
+    virtual UntypedBuffer *getUntypedBuffer() const noexcept = 0;
+};
+
+/* >32MB */
+class LargeBlock : public Block {
+    std::unique_ptr<vrtd::Buffer> backingBuffer;
+    std::unique_ptr<UntypedBuffer> untypedBuffer;
+public:
+    LargeBlock(vrtd::Device& device, BufferAllocType type, BufferAllocDir dir, uint64_t size, HBMRegion region = HBMRegion::NON_HBM);
+    ~LargeBlock() override;
+
+    UntypedBuffer *getUntypedBuffer() const noexcept override;
+};
+
+template <size_t MIN_K, size_t MAX_K>
+class BuddySuperblockBase {
+protected:
+    static_assert(MIN_K <= MAX_K, "MIN_K must be <= MAX_K");
+    static constexpr size_t kMin = MIN_K;
+    static constexpr size_t kMax = MAX_K;
+    static constexpr size_t kNumBuckets = MAX_K - MIN_K + 1;
+    static constexpr size_t kToIndex(size_t k) { return k - MIN_K; }
+    static size_t sizeToIndex(size_t size, const char* tooSmallError) {
+        size_t k = 64 - __builtin_clzll((unsigned long long)(size - 1));
+        if (k < MIN_K) {
+            throw std::runtime_error(tooSmallError);
+        }
+        return kToIndex(k);
+    }
+
+    std::array<std::vector<UntypedBuffer>, kNumBuckets> freeList;
+
+    void seed(const UntypedBuffer& whole, const char* tooSmallError, const char* tooLargeError) {
+        // Seed the free list with the full superblock as a single buddy.
+        size_t index = sizeToIndex(whole.getSize(), tooSmallError);
+        if (index >= kNumBuckets) {
+            throw std::runtime_error(tooLargeError);
+        }
+        freeList[index].push_back(whole);
+    }
+
+    UntypedBuffer allocate(uint64_t size, const char* tooSmallError) {
+        // Round size to a bucket index (power-of-two) and search for a free buddy.
+        size_t index = sizeToIndex(size, tooSmallError);
+        if (index >= kNumBuckets) {
+            throw std::bad_alloc();
+        }
+
+        for (size_t i = index; i < kNumBuckets; ++i) {
+            if (freeList[i].empty()) {
+                continue;
+            }
+
+            // Take the smallest available buddy and split until we reach the target size.
+            UntypedBuffer buffer = freeList[i].back();
+            freeList[i].pop_back();
+
+            while (i > index) {
+                --i;
+                uint64_t halfSize = 1ULL << (MIN_K + i);
+                // Return the upper half to the free list, keep the lower half to keep splitting.
+                freeList[i].emplace_back(buffer, halfSize, halfSize);
+                buffer = UntypedBuffer(buffer, halfSize, 0);
+            }
+            return buffer;
+        }
+        
+        return nullptr;
+    }
+
+    void deallocate(const UntypedBuffer& whole, UntypedBuffer buffer, const char* tooSmallError, const char* ownershipError) {
+        // Compute the buddy bucket for this size class.
+        size_t index = sizeToIndex(buffer.getSize(), tooSmallError);
+        if (index >= kNumBuckets) {
+            throw std::runtime_error("Invalid buffer size for deallocation");
+        }
+        // Validate the slice belongs to this superblock.
+        const uint64_t base = whole.getPhysAddr();
+        const uint64_t totalSize = whole.getSize();
+        uint64_t size = buffer.getSize();
+        uint64_t offset = buffer.getPhysAddr() - base;
+        if (offset + size > totalSize) {
+            throw std::runtime_error(ownershipError);
+        }
+
+        // Coalesce with free buddy blocks while possible.
+        size_t i = index;
+        while (i + 1 < kNumBuckets) {
+            const uint64_t buddyOffset = offset ^ size;
+            auto& bucket = freeList[i];
+            size_t buddyIndex = bucket.size();
+            // Linear search for the buddy in this bucket.
+            for (size_t j = 0; j < bucket.size(); ++j) {
+                if (bucket[j].getPhysAddr() - base == buddyOffset) {
+                    buddyIndex = j;
+                    break;
+                }
+            }
+            if (buddyIndex == bucket.size()) {
+                break;
+            }
+
+            // Remove buddy from free list (swap-pop).
+            if (buddyIndex + 1 != bucket.size()) {
+                bucket[buddyIndex] = bucket.back();
+            }
+            bucket.pop_back();
+            // Merge into next size class.
+            offset = std::min(offset, buddyOffset);
+            size <<= 1;
+            ++i;
+        }
+
+        // Insert the final (possibly coalesced) block into its bucket.
+        freeList[i].emplace_back(whole, size, offset);
+    }
+
+    bool isFree(const UntypedBuffer& whole, const char* tooSmallError) const {
+        // Simplified check: rely on the full-size bucket as the indicator.
+        size_t index = sizeToIndex(whole.getSize(), tooSmallError);
+        assert(index < kNumBuckets);
+        return freeList[index].size() == 1;
+    }
+};
+
+class LargeBlockSuperblock : public LargeBlock, private BuddySuperblockBase<21, 36> {
+    using Buddy = BuddySuperblockBase<21, 36>;  // 2MB - 64MB
+public:
+    static constexpr size_t MAX_SIZE = 1ULL << Buddy::kMax; // 64MB
+
+    LargeBlockSuperblock(vrtd::Device& device, BufferAllocType type, BufferAllocDir dir, uint64_t size, HBMRegion region = HBMRegion::NON_HBM);
+    ~LargeBlockSuperblock() override;
+
+    UntypedBuffer allocate(uint64_t size);
+    void deallocate(UntypedBuffer buffer);
+    bool isFree() const;
+};
+
+/* 2MB - 32MB */
+class MediumBlock : public Block {
+    std::unique_ptr<UntypedBuffer> untypedBuffer;
+    LargeBlockSuperblock *backingBlockSuperblock;
+public:
+    MediumBlock(LargeBlockSuperblock *backingSuperblock, UntypedBuffer untypedBuffer);
+    virtual ~MediumBlock() override;
+
+    UntypedBuffer *getUntypedBuffer() const noexcept override;
+};
+
+class MediumBlockSuperblock : public MediumBlock, private BuddySuperblockBase<12, 20> {
+    using Buddy = BuddySuperblockBase<12, 20>;  // 4KB - 1MB
+public:
+    static constexpr size_t MAX_SIZE = 1ULL << Buddy::kMax; // 1MB
+
+    MediumBlockSuperblock(LargeBlockSuperblock *backingSuperblock, UntypedBuffer untypedBuffer);
+    ~MediumBlockSuperblock() override;
+
+    UntypedBuffer allocate(uint64_t size);
+    void deallocate(UntypedBuffer buffer);
+    bool isFree() const;
+};
+
+/* <2MB */
+class SmallBlock : public Block {
+    std::unique_ptr<UntypedBuffer> untypedBuffer;
+    MediumBlockSuperblock *backingBlockSuperblock;
+public:
+    SmallBlock(MediumBlockSuperblock *backingBlockSuperblock, UntypedBuffer untypedBuffer);
+    ~SmallBlock() override;
+
+    UntypedBuffer *getUntypedBuffer() const noexcept override;
+};
+
 class Allocator {
-   public:
-    /**
-     * @brief Constructor for Allocator.
-     * @param superblockSize The size of the superblocks to use.
-     */
-    Allocator(uint64_t superblockSize = 4096);
+    std::vector<std::unique_ptr<LargeBlockSuperblock>> largeBlockSuperblocks;
+    std::vector<std::unique_ptr<MediumBlockSuperblock>> mediumBlockSuperblocks;
+public:
+    Allocator();
+    ~Allocator();
 
-    Allocator() : Allocator(4096) {}
-
-    /**
-     * @brief Adds a memory range to the allocator.
-     * @param type The type of memory range (HBM or DDR).
-     * @param startAddress The starting address of the memory range.
-     * @param size The size of the memory range.
-     */
-    void addMemoryRange(MemoryRangeType type, uint64_t startAddress, uint64_t size);
-
-    /**
-     * @brief Allocates a block of memory.
-     * @param size The size of the memory block to allocate.
-     * @param type The type of memory range to allocate from (HBM or DDR).
-     * @return The starting address of the allocated memory block.
-     */
-    uint64_t allocate(uint64_t size, MemoryRangeType type);
-
-    /**
-     * @brief Deallocates a block of memory.
-     * @param addr The starting address of the memory block to deallocate.
-     */
-    void deallocate(uint64_t addr);
-
-    /**
-     * @brief Allocates a block of memory from the specified port.
-     * @param size The size of the memory block to allocate.
-     * @param type The type of memory range to allocate from (HBM or DDR).
-     * @param port The port to allocate from.
-     * @return The starting address of the allocated memory block.
-     */
-    uint64_t allocate(uint64_t size, MemoryRangeType type, uint8_t port);
-
-    /**
-     * @brief Gets the size of the specified memory range type.
-     * @param type The type of memory range (HBM or DDR).
-     * @return The size of the specified memory range type.
-     */
-    uint64_t getSize(MemoryRangeType type) const;
-
-   private:
-    uint64_t superblockSize;  ///< The size of the superblocks.
-    std::unordered_map<MemoryRangeType, MemoryRange>
-        memoryRanges;  ///< Map of memory ranges by type.
-    std::unordered_map<uint64_t, Superblock*>
-        addrToSuperblock;  ///< Map of addresses to superblocks.
+    std::unique_ptr<Block> allocate(vrtd::Device& device, BufferAllocType type, BufferAllocDir dir, uint64_t size, HBMRegion region = HBMRegion::NON_HBM);
+    void deallocate(std::unique_ptr<Block> block);
 };
 
 }  // namespace vrt

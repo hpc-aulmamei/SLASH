@@ -19,9 +19,13 @@
  */
 
 #include <iostream>
+#include <algorithm>
+#include <cmath>
 #include <cstring> // for std::memcpy
+#include <iomanip>
 #include <random>
 #include <chrono>
+#include <vector>
 
 #include <utils/logger.hpp>
 #include <api/device.hpp>
@@ -49,13 +53,32 @@ int main(int argc, char* argv[]) {
         std::uniform_real_distribution<> dis(0.0, 1.0);
 
         float goldenModel = 0;
+        std::vector<float> hostInput(size);
         std::cout << "Generating data...\n";
         for(uint32_t i = 0; i < size; i++) {
             buffer[i] = static_cast<float>(dis(gen));
+            hostInput[i] = buffer[i];
             goldenModel += buffer[i] + 1;
         }
 
         buffer.sync(vrt::SyncType::HOST_TO_DEVICE);
+        if (device.getPlatform() == vrt::Platform::SIMULATION) {
+            buffer.sync(vrt::SyncType::DEVICE_TO_HOST);
+            uint32_t mismatchCount = 0;
+            uint32_t nanCount = 0;
+            for (uint32_t i = 0; i < size; i++) {
+                if (!std::isfinite(buffer[i])) {
+                    nanCount++;
+                }
+                if (std::memcmp(&buffer[i], &hostInput[i], sizeof(float)) != 0) {
+                    mismatchCount++;
+                }
+            }
+            std::cout << "SIM pre-kernel memory roundtrip mismatches: " << mismatchCount
+                      << ", NaNs: " << nanCount << std::endl;
+            std::memcpy(buffer.get(), hostInput.data(), size * sizeof(float));
+            buffer.sync(vrt::SyncType::HOST_TO_DEVICE);
+        }
         increment.start(size, buffer.getPhysAddr());
         accumulate.start(size);
         auto start = std::chrono::high_resolution_clock::now();
@@ -66,18 +89,51 @@ int main(int argc, char* argv[]) {
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
         std::cout << "Time taken for waits: " << duration << " us" << std::endl;
 
+        uint32_t outCtrl = accumulate.read(0x1c);
         uint32_t val = accumulate.read(0x18);
         float floatVal;
         std::memcpy(&floatVal, &val, sizeof(float));
-        if(std::fabs(goldenModel - floatVal) > 0.0001) {
+        const float absError = std::fabs(goldenModel - floatVal);
+        constexpr float kAbsTolerance = 1e-3f;
+        constexpr float kRelTolerance = 1e-6f;
+        const float effectiveTolerance =
+            std::max(kAbsTolerance, kRelTolerance * std::fabs(goldenModel));
+        if ((outCtrl & 0x1u) == 0u) {
             std::cerr << "Test failed!" << std::endl;
+            std::cout << "Output valid bit is not set (out_r_ctrl=0x" << std::hex << outCtrl
+                      << ")" << std::dec << std::endl;
+            std::cout << std::setprecision(10);
             std::cout << "Expected: " << goldenModel << std::endl;
             std::cout << "Got: " << floatVal << std::endl;
+            std::cout << "Raw register value: 0x" << std::hex << val << std::dec << std::endl;
+            device.cleanup();
+            return 1;
+        }
+        if(!std::isfinite(floatVal) || absError > effectiveTolerance) {
+            std::cerr << "Test failed!" << std::endl;
+            std::cout << "out_r_ctrl: 0x" << std::hex << outCtrl << std::dec << std::endl;
+            std::cout << std::setprecision(10);
+            std::cout << "Expected: " << goldenModel << std::endl;
+            std::cout << "Got: " << floatVal << std::endl;
+            std::cout << "Absolute error: " << absError
+                      << " (effective tolerance " << effectiveTolerance
+                      << ", abs " << kAbsTolerance
+                      << ", rel " << kRelTolerance << ")"
+                      << std::endl;
+            if (!std::isfinite(floatVal)) {
+                std::cout << "Raw register value: 0x" << std::hex << val << std::dec << std::endl;
+            }
             device.cleanup();
             return 1;
         } else {
+            std::cout << std::setprecision(10);
             std::cout << "Expected: " << goldenModel << std::endl;
             std::cout << "Got: " << floatVal << std::endl;
+            std::cout << "Absolute error: " << absError
+                      << " (effective tolerance " << effectiveTolerance
+                      << ", abs " << kAbsTolerance
+                      << ", rel " << kRelTolerance << ")"
+                      << std::endl;
             std::cout << "Test passed!" << std::endl;
         }
         

@@ -143,13 +143,14 @@ This section walks the common path from connection to BAR memory access, showing
 
 - **C**
   - Count: ``vrtd_get_num_devices(fd, &count)`` → ``VRTD_RET_OK`` on success.
-  - Name: ``vrtd_get_device_info(fd, dev_index, name_buf)`` where
-    ``char name_buf[128];`` (NUL-terminated; buffer **must be** 128 bytes).
+  - Info: ``vrtd_get_device_info(fd, dev_index, &info)`` where
+    ``struct vrtd_device_info info;`` (includes name + PCI BDF/IDs).
+  - Lookup: ``vrtd_get_device_by_bdf(fd, "0000:65:00.0", &dev_index)``.
 - **C++**
   - Count: ``uint32_t n = s.getNumDevices();``  → may **throw** ``vrtd::Error``.
   - Select: ``vrtd::Device d = s.getDevice(i);`` (0-based; throws
     ``vrtd::Error(VRTD_RET_NOEXIST)`` if out of range).
-  - Accessors: ``d.getNum()``, ``d.getName()``.
+  - Accessors: ``d.getNum()``, ``d.getName()``, ``d.getBdf()``.
   - Lifetime note: Any ``Device`` becomes **invalid** if its originating
     ``Session`` is closed or moved; later calls **throw**.
 
@@ -253,19 +254,21 @@ C API at a Glance
 
 - ``vrtd_connect(path)`` → returns ``fd`` (close with ``close()``).
 - ``vrtd_get_num_devices(fd, &out)`` → device count.
-- ``vrtd_get_device_info(fd, dev, name[128])`` → device name (NUL-terminated).
+- ``vrtd_get_device_info(fd, dev, &info)`` → name + PCI BDF/IDs.
+- ``vrtd_get_device_by_bdf(fd, "0000:65:00.0", &dev)`` → device index.
 - ``vrtd_get_bar_info(fd, dev, bar, &info)`` → BAR metadata.
 - ``vrtd_get_bar_fd(fd, dev, bar, &fd_out, &len)`` → BAR FD + length.
 - ``vrtd_open_bar_file(fd, dev, bar, &slash_bar_file)`` → maps BAR.
 - ``vrtd_close_bar_file(&slash_bar_file)`` → unmaps/closes BAR.
-- ``vrtd_raw_request(fd, opcode, ...)`` → low-level request/response.
+- ``vrtd_device_hotplug_{rescan,remove,toggle_sbr,hotplug}(fd, dev)`` → privileged PCIe hotplug control.
+- ``vrtd_raw_request(fd, opcode, ..., resp_fd, req_fd)`` → low-level request/response (optional receive/send FD).
 
 C++ Wrapper Flow
 ----------------
 
 - ``vrtd::Session``: owns the connection; **thread-safe** (internal mutex).
-  - ``getNumDevices()``, ``getDevice(i)``, ``close()``, ``operator bool``.
-- ``vrtd::Device``: value-type view of a device (number + name).
+  - ``getNumDevices()``, ``getDevice(i)``, ``getDeviceByBdf(bdf)``, ``close()``, ``operator bool``.
+- ``vrtd::Device``: value-type view of a device (number + name + BDF/IDs).
   - **Invalidated** if its originating session is closed or moved.
   - ``getBar(bar_index)`` → ``vrtd::Bar``.
 - ``vrtd::Bar``: value-type BAR metadata and opener.
@@ -340,4 +343,3 @@ Troubleshooting
 - **Two concurrent ``getPtr()`` calls on the same BarFile** → throws re-entrancy error.
 - **Transport errors** (socket down, daemon not running) → map to
   ``VRTD_RET_BAD_CONN`` / ``vrtd::Error`` with "connection" message.
-

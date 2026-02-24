@@ -34,8 +34,6 @@
 #include <linux/xarray.h>
 #include <linux/anon_inodes.h>
 
-#define SLASH_QDMA_PF 0
-
 #define SLASH_QDMA_DIR_H2C  BIT(0)
 #define SLASH_QDMA_DIR_C2H  BIT(1)
 #define SLASH_QDMA_DIR_CMPT BIT(2)
@@ -108,6 +106,11 @@ static u32 slash_qdma_qtype_to_dir(enum queue_type_t qtype)
     default:
         return 0;
     }
+}
+
+static inline bool slash_qdma_qhndl_is_valid(unsigned long qhndl)
+{
+    return qhndl != QDMA_QUEUE_IDX_INVALID;
 }
 
 static inline struct slash_qdma_qpair_entry *
@@ -229,8 +232,7 @@ static int slash_qdma_fop_release(struct inode *inode, struct file *file);
 static long slash_qdma_fop_ioctl(struct file *file, unsigned int op, unsigned long arg);
 static void slash_qdma_ioctl_info(struct miscdevice *misc, struct slash_qdma_dev *qdma_dev, struct slash_qdma_info *qdma_info);
 
-#define SLASH_QDMA_PCI_VENDOR_ID 0x00 //TOOD: Change
-#define SLASH_QDMA_PCI_DEVICE_ID 0x00
+
 
 static const struct pci_device_id slash_qdma_ids[] = {
     {PCI_DEVICE(SLASH_QDMA_PCI_VENDOR_ID, SLASH_QDMA_PCI_DEVICE_ID)},
@@ -361,7 +363,7 @@ static int slash_qdma_create_qdma_device(struct pci_dev *pdev, struct slash_qdma
     device->pdev = pdev;
     kref_init(&device->ref);
     mutex_init(&device->lock);
-    xa_init(&device->qpairs);
+    xa_init_flags(&device->qpairs, XA_FLAGS_ALLOC);
     device->hw_shutdown = false;
     pci_set_drvdata(pdev, device);
 
@@ -481,12 +483,12 @@ static void slash_qdma_conf_options(struct qdma_dev_conf *conf, struct pci_dev *
     conf->master_pf          = 1; /* This is the master PF */
     conf->intr_moderation    = 1;
     conf->vf_max             = 8;
-    conf->intr_rngsz         = 128; // TODO: tune
+    conf->intr_rngsz         = INTR_RING_SZ_4KB; // TODO: tune
 
     // Ask for as many queue MSI-X vectors as you’d like to dedicate to queues
-    conf->msix_qvec_max      = 256;
-    conf->user_msix_qvec_max = 0;
-    conf->data_msix_qvec_max = 0;
+    conf->msix_qvec_max      = 32; // For Versal
+    conf->user_msix_qvec_max = 1;
+    conf->data_msix_qvec_max = 5;
 
     conf->qdma_drv_mode      = POLL_MODE; // TODO: experiment with this
     conf->uld                = 0;
@@ -494,7 +496,7 @@ static void slash_qdma_conf_options(struct qdma_dev_conf *conf, struct pci_dev *
     conf->bar_num_config     = 0;
     conf->bar_num_user       = -1;
     conf->bar_num_bypass     = -1;
-    conf->qsets_base         = 0;
+    conf->qsets_base         = -1;
 
     // Optional callbacks
     conf->fp_user_isr_handler = NULL;
@@ -698,6 +700,8 @@ static int slash_qdma_ioctl_qpair_add(struct miscdevice *misc,
     entry->mode = req->mode;
     entry->irq_mode = 0;
     entry->irq_vector = 0;
+    for (idx = 0; idx < SLASH_QDMA_QTYPE_COUNT; idx++)
+        entry->qhndl[idx] = QDMA_QUEUE_IDX_INVALID;
 
     /*
      * Allocate a new qpair ID in the xarray and use it as the
@@ -750,7 +754,7 @@ static int slash_qdma_ioctl_qpair_add_q(struct miscdevice *misc,
     char errbuf[128] = {0};
     u32 dir_mask = req->dir_mask;
     int err;
-    unsigned long qhndl = 0;
+    unsigned long qhndl = QDMA_QUEUE_IDX_INVALID;
 
     if (!(dir_mask & dir_bit))
         return -EINVAL;
@@ -761,6 +765,13 @@ static int slash_qdma_ioctl_qpair_add_q(struct miscdevice *misc,
     qconf.irq_en = 0;
     qconf.cmpl_en_intr = 0;
     qconf.cmpl_trig_mode = TRIG_MODE_DISABLE;
+
+    qconf.wb_status_en = 1;
+    qconf.cmpl_status_acc_en = 1;
+    qconf.cmpl_status_pend_chk = 1;
+    qconf.cmpl_stat_en = 1;
+    
+    qconf.aperture_size = 4096;
 
     switch (qtype) {
     case Q_H2C:
@@ -805,7 +816,13 @@ static void slash_qdma_ioctl_qpair_rm_q(struct miscdevice *misc,
     unsigned long qhndl = entry->qhndl[qtype];
     char errbuf[128] = {0};
     int err;
-    
+
+    if (!slash_qdma_qhndl_is_valid(qhndl)) {
+        entry->qhndl[qtype] = QDMA_QUEUE_IDX_INVALID;
+        entry->dir_mask &= ~slash_qdma_qtype_to_dir(qtype);
+        return;
+    }
+
     err = qdma_queue_remove(qdma_dev->qdma_handle, qhndl,
                         errbuf, sizeof(errbuf));
 
@@ -815,7 +832,7 @@ static void slash_qdma_ioctl_qpair_rm_q(struct miscdevice *misc,
                 qtype, err, errbuf);
     }
 
-    entry->qhndl[qtype] = 0;
+    entry->qhndl[qtype] = QDMA_QUEUE_IDX_INVALID;
     entry->dir_mask &= ~slash_qdma_qtype_to_dir(qtype);
 }
 
@@ -929,7 +946,8 @@ static int slash_qdma_ioctl_qpair_op_apply(struct slash_qdma_dev *qdma_dev,
         char errbuf[128] = {0};
         int err;
 
-        if (!(entry->dir_mask & dir_bit) || !entry->qhndl[qtype])
+        if (!(entry->dir_mask & dir_bit) ||
+            !slash_qdma_qhndl_is_valid(entry->qhndl[qtype]))
             continue;
 
         err = fn(qdma_dev->qdma_handle, entry->qhndl[qtype],
@@ -1087,14 +1105,14 @@ static ssize_t slash_qdma_qpair_read_write(struct file *file, char __user *buf,
 
     if (write) {
         if (!(entry->dir_mask & SLASH_QDMA_DIR_H2C) ||
-            !entry->qhndl[Q_H2C]) {
+            !slash_qdma_qhndl_is_valid(entry->qhndl[Q_H2C])) {
             mutex_unlock(&qdma_dev->lock);
             return -ENODEV;
         }
         qhndl = entry->qhndl[Q_H2C];
     } else {
         if (!(entry->dir_mask & SLASH_QDMA_DIR_C2H) ||
-            !entry->qhndl[Q_C2H]) {
+            !slash_qdma_qhndl_is_valid(entry->qhndl[Q_C2H])) {
             mutex_unlock(&qdma_dev->lock);
             return -ENODEV;
         }
@@ -1238,6 +1256,9 @@ static int slash_qdma_ioctl_qpair_get_fd_w(struct miscdevice *misc,
         return err;
     }
 
+    file->f_mode |= FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE;
+
+
     fd = get_unused_fd_flags(req.flags & O_CLOEXEC);
     if (fd < 0) {
         fput(file);
@@ -1281,7 +1302,8 @@ static void slash_qdma_qpair_teardown(struct slash_qdma_dev *qdma_dev, u32 qid,
     }
 
     /* Mark entry dead for any stale FDs */
-    memset(entry->qhndl, 0, sizeof(entry->qhndl));
+    for (idx = 0; idx < SLASH_QDMA_QTYPE_COUNT; idx++)
+        entry->qhndl[idx] = QDMA_QUEUE_IDX_INVALID;
     entry->dir_mask = 0;
 
     /* Drop from xarray and release ref */

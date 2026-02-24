@@ -37,12 +37,11 @@ class QdmaLogic : public Kernel {
     /**
      * @brief Constructor for QdmaLogic.
      *
-     * @param device Pointer to the AMI device.
      * @param name Name of the QDMA kernel.
      * @param baseAddr Base address of the QDMA kernel in device memory.
      * @param range Memory range allocated to the QDMA kernel.
      */
-    QdmaLogic(ami_device* device, const std::string& name, uint64_t baseAddr, uint64_t range);
+    QdmaLogic(const std::string& name, uint64_t baseAddr, uint64_t range);
 
     /**
      * @brief Sets QDMA queue parameters.

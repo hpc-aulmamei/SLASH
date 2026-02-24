@@ -31,6 +31,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <utility>
+#include <string>
 
 namespace vrtd {
 
@@ -97,14 +98,71 @@ Device Session::getDevice(size_t i) const {
     }
     std::lock_guard<std::mutex> lk(*m);
 
-    char name[128];
+    vrtd_device_info info = {};
 
-    auto ret = vrtd_get_device_info(fd, i, name);
+    auto ret = vrtd_get_device_info(fd, i, &info);
     if (ret != VRTD_RET_OK) {
         throw Error(ret);
     }
 
-    return Device(i, {name, strlen(name)}, [&](const Device& device, uint8_t num) { return getBar(device, num); } );
+    return Device(
+        i,
+        {info.name, strnlen(info.name, sizeof(info.name))},
+        {info.pci.bdf, strnlen(info.pci.bdf, sizeof(info.pci.bdf))},
+        info.pci.vendor_id,
+        info.pci.device_id,
+        info.pci.subsystem_vendor_id,
+        info.pci.subsystem_device_id,
+        [&](const Device& device, uint8_t num) { return getBar(device, num); },
+        [&](const Device& device, const slash_qdma_qpair_add& cfg) { return createQdmaQpair(device, cfg); },
+        [&](const Device& device, BufferAllocType type, uint64_t size, uint64_t arg, BufferAllocDir dir) {
+            return openBuffer(device, type, size, arg, dir);
+        },
+        [&](const Device& device, HotplugOp op) { return hotplugOp(device, op); },
+        [&](const Device& device, int input_fd) { return designWrite(device, input_fd); },
+        [&](const Device& device, std::string_view path) { return designWriteFile(device, path); },
+        [&](const Device& device, ClockRegion region) { return getClockRate(device, region); },
+        [&](const Device& device, ClockRegion region, uint32_t rate_hz) { return setClockRate(device, region, rate_hz); }
+    );
+}
+
+Device Session::getDeviceByBdf(std::string_view bdf) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    uint32_t dev_num = 0;
+    auto ret = vrtd_get_device_by_bdf(fd, std::string(bdf).c_str(), &dev_num);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    vrtd_device_info info = {};
+    ret = vrtd_get_device_info(fd, dev_num, &info);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    return Device(
+        dev_num,
+        {info.name, strnlen(info.name, sizeof(info.name))},
+        {info.pci.bdf, strnlen(info.pci.bdf, sizeof(info.pci.bdf))},
+        info.pci.vendor_id,
+        info.pci.device_id,
+        info.pci.subsystem_vendor_id,
+        info.pci.subsystem_device_id,
+        [&](const Device& device, uint8_t num) { return getBar(device, num); },
+        [&](const Device& device, const slash_qdma_qpair_add& cfg) { return createQdmaQpair(device, cfg); },
+        [&](const Device& device, BufferAllocType type, uint64_t size, uint64_t arg, BufferAllocDir dir) {
+            return openBuffer(device, type, size, arg, dir);
+        },
+        [&](const Device& device, HotplugOp op) { return hotplugOp(device, op); },
+        [&](const Device& device, int input_fd) { return designWrite(device, input_fd); },
+        [&](const Device& device, std::string_view path) { return designWriteFile(device, path); },
+        [&](const Device& device, ClockRegion region) { return getClockRate(device, region); },
+        [&](const Device& device, ClockRegion region, uint32_t rate_hz) { return setClockRate(device, region, rate_hz); }
+    );
 }
 
 Bar Session::getBar(const Device& device, uint8_t num) const {
@@ -177,6 +235,106 @@ QdmaQpair Session::createQdmaQpair(
         [this, device](const QdmaQpair& qp) { deleteQdmaQpair(device, qp.getQid()); },
         [this, device](const QdmaQpair& qp, uint32_t flags) { return openQdmaQpairFd(device, qp.getQid(), flags); }
     );
+}
+
+Buffer Session::openBuffer(
+    const Device& device,
+    BufferAllocType allocType,
+    uint64_t size,
+    uint64_t allocArg,
+    BufferAllocDir allocDir
+) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    struct vrtd_buffer *raw = nullptr;
+    auto ret = vrtd_buffer_open(
+        fd,
+        device.getNum(),
+        static_cast<uint32_t>(allocType),
+        static_cast<uint32_t>(allocDir),
+        allocArg,
+        size,
+        &raw
+    );
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    if (raw == nullptr) {
+        throw Error(VRTD_RET_INTERNAL_ERROR);
+    }
+
+    return Buffer(raw);
+}
+
+void Session::hotplugOp(const Device& device, HotplugOp op) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    auto ret = vrtd_device_hotplug_op(fd, device.getNum(), static_cast<uint8_t>(op));
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
+void Session::designWrite(const Device& device, int input_fd) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    auto ret = vrtd_design_write(fd, device.getNum(), input_fd);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
+void Session::designWriteFile(const Device& device, std::string_view path) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    std::string path_str(path);
+    auto ret = vrtd_design_write_file(fd, device.getNum(), path_str.c_str());
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
+uint32_t Session::getClockRate(const Device& device, ClockRegion region) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    uint32_t rate = 0;
+    auto ret = vrtd_clock_get_rate(fd, device.getNum(), static_cast<uint32_t>(region), &rate);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    return rate;
+}
+
+uint32_t Session::setClockRate(const Device& device, ClockRegion region, uint32_t rate_hz) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    uint32_t achieved = 0;
+    auto ret = vrtd_clock_set_rate(fd, device.getNum(), static_cast<uint32_t>(region), rate_hz, &achieved);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    return achieved;
 }
 
 void Session::startQdmaQpair(const Device& device, uint32_t qid) const {

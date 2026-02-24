@@ -28,6 +28,11 @@ int auth_request_get_device_info(
     const struct vrtd_req_get_device_info *req_body
 );
 
+int auth_request_get_device_by_bdf(
+    struct client *client,
+    const struct vrtd_req_get_device_by_bdf *req_body
+);
+
 int auth_request_get_num_devices(
     struct client *client,
     const struct vrtd_req_get_num_devices *req_body
@@ -61,6 +66,31 @@ int auth_request_qdma_qpair_op(
 int auth_request_qdma_qpair_get_fd(
     struct client *client,
     const struct vrtd_req_qdma_qpair_get_fd *req_body
+);
+
+int auth_request_buffer_open(
+    struct client *client,
+    const struct vrtd_req_buffer_open *req_body
+);
+
+int auth_request_buffer_close(
+    struct client *client,
+    const struct vrtd_req_buffer_close *req_body
+);
+
+int auth_request_design_write(
+    struct client *client,
+    const struct vrtd_req_design_write *req_body
+);
+
+int auth_request_device_hotplug_op(
+    struct client *client,
+    const struct vrtd_req_device_hotplug_op *req_body
+);
+
+int auth_request_clock_op(
+    struct client *client,
+    const struct vrtd_req_clock_op *req_body
 );
 
 #endif // VRTD_AUTH_H
