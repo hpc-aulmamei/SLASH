@@ -288,6 +288,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
     ref_vars = []
     fetch_scalar_cases = []
     autostart_calls = []
+    manifest_kernels = []
 
     for inst_name, inst in instances.items():
         ktype = inst.kernel.name
@@ -359,7 +360,8 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
         has_axilite = any(True for _ in inst.kernel.ports_of_type(BusType.AXILITE))
         stream_only = bool(meta["Args"]) and all(_is_stream(a["cppType"]) for a in meta["Args"])
         has_missing_stream = any(arg == "/*MISSING_STREAM*/" for arg in call_args)
-        if stream_only and not has_axilite and not has_missing_stream:
+        autostart = stream_only and not has_axilite and not has_missing_stream
+        if autostart:
             autostart_calls.append(
                 {
                     "inst": inst_name,
@@ -367,6 +369,24 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                     "call_args": call_args,
                 }
             )
+        manifest_kernels.append(
+            {
+                "instance": inst_name,
+                "top": meta["Top"],
+                "has_axilite": has_axilite,
+                "autostart": autostart,
+                "args": [
+                    {
+                        "name": a["name"],
+                        "cpp_type": a["cppType"],
+                        "iface": a["iface"],
+                        "is_stream": _is_stream(a["cppType"]),
+                        "is_pointer": _is_ptr(_strip_ref(a["cppType"])[0]),
+                    }
+                    for a in meta["Args"]
+                ],
+            }
+        )
 
         reg_block = _select_register_block(inst.kernel)
         regs = []
@@ -448,4 +468,17 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
         "autostart_calls": autostart_calls,
         "fetch_scalar_cases": fetch_scalar_cases,
         "ref_vars": ref_vars,
+        "emu_manifest": {
+            "emu_protocol_version": 1,
+            "kernels": manifest_kernels,
+            "streams": [
+                {
+                    "wire": s["wire"],
+                    "ctype": s["ctype"],
+                    "aliases": list(s["names"]),
+                }
+                for s in stream_routes
+            ],
+            "commands": ["populate", "stream_in", "stream_out", "call", "fetch", "exit"],
+        },
     }

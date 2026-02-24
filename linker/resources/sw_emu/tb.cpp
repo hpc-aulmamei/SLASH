@@ -30,6 +30,8 @@
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
+#include <fstream>
+#include <functional>
 #include <thread>
 
 {% for p in prototypes %}
@@ -77,13 +79,47 @@ int main() {
   hls::stream<{{ w.ctype }}> {{ w.name }};
 {% endfor %}
 
+  std::map<std::string, std::function<void()>> autostartRegistry;
 {% for ac in autostart_calls %}
-  // Auto-run stream-only/no-AXI-Lite kernels so dataflow-only IPs (e.g. passthrough)
-  // can participate in emulation even though VRT will never issue a "call" command.
-  std::thread([&]() {
+  autostartRegistry["{{ ac.inst }}"] = [&]() {
     {{ ac.top }}({{ ac.call_args | join(", ") }});
-  }).detach();
+  };
 {% endfor %}
+
+  Json::Value emuManifest;
+  bool emuManifestLoaded = false;
+  {
+    std::ifstream manifestFile("emu_manifest.json");
+    if (manifestFile.is_open()) {
+      Json::Reader manifestReader;
+      emuManifestLoaded = manifestReader.parse(manifestFile, emuManifest);
+    }
+  }
+
+  bool autostartManifestHadKernels = false;
+  if (emuManifestLoaded && emuManifest.isObject()) {
+    const Json::Value kernels = emuManifest["kernels"];
+    if (kernels.isArray()) {
+      autostartManifestHadKernels = true;
+      for (const auto& k : kernels) {
+        if (!k.isObject()) continue;
+        if (!k.get("autostart", false).asBool()) continue;
+        std::string instance = k.get("instance", "").asString();
+        auto it = autostartRegistry.find(instance);
+        if (it == autostartRegistry.end()) continue;
+        std::thread(it->second).detach();
+      }
+    }
+  }
+
+  if (!autostartManifestHadKernels) {
+{% for ac in autostart_calls %}
+    // Fallback for older outputs or missing manifest.
+    std::thread([&]() {
+      {{ ac.top }}({{ ac.call_args | join(", ") }});
+    }).detach();
+{% endfor %}
+  }
 
   while (true) {
     zmq::message_t request;

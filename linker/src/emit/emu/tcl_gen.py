@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import logging
 import re
 
@@ -62,6 +63,8 @@ def generate_emu_tcl(args) -> None:
 
     if getattr(args, "tb_out", None) is None:
         args.tb_out = str(emu_root / "tb.cpp")
+    if getattr(args, "emu_manifest_out", None) is None:
+        args.emu_manifest_out = str(emu_root / "emu_manifest.json")
 
     default_system_map_out = results_root / project / "system_map.xml"
     if args.system_map_out == "system_map.xml":
@@ -90,6 +93,8 @@ def generate_emu_tcl(args) -> None:
         for ktype, comp_xml in kernel_compxml_by_type.items()
     }
     tb_ctx = build_tb_context(instances, streams, kernel_hls_by_type)
+    if isinstance(tb_ctx.get("emu_manifest"), dict):
+        tb_ctx["emu_manifest"]["project"] = project
 
     tb_template = Path(args.tb_template)
     tb_out = Path(args.tb_out)
@@ -101,6 +106,12 @@ def generate_emu_tcl(args) -> None:
         context=tb_ctx,
     )
     logger.info("Rendered sw_emu tb.cpp to %s", tb_out)
+
+    manifest_out = Path(args.emu_manifest_out)
+    manifest_out.parent.mkdir(parents=True, exist_ok=True)
+    with manifest_out.open("w", encoding="utf-8") as f:
+        json.dump(tb_ctx.get("emu_manifest", {}), f, indent=2, sort_keys=True)
+    logger.info("Rendered emu manifest to %s", manifest_out)
 
     # 5) Render system map (Emulation)
     axilite_ctx = build_axilite_address_context(
