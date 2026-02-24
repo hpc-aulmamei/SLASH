@@ -18,24 +18,31 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-set cur_design [current_bd_design]
-create_bd_design -boundary_from_container [get_bd_cells /service_layer] {{ service_layer_bd_name }}
-current_bd_design $cur_design
-set synth_list [get_property CONFIG.LIST_SYNTH_BD [get_bd_cells /service_layer]]
-set sim_list   [get_property CONFIG.LIST_SIM_BD   [get_bd_cells /service_layer]]
-
-set synth_list [string trim "${synth_list}:{{ service_layer_bd_name }}.bd"]
-set sim_list   [string trim "${sim_list}:{{ service_layer_bd_name }}.bd"]
-
-set_property -dict [list \
-  CONFIG.LIST_SYNTH_BD $synth_list \
-  CONFIG.LIST_SIM_BD   $sim_list \
-] [get_bd_cells /service_layer]
-
-current_bd_design {{ service_layer_bd_name }}
-
+delete_bd_objs [get_bd_cells ]
+delete_bd_objs [get_bd_intf_nets]
+delete_bd_objs [get_bd_nets]
 update_compile_order -fileset sources_1
-
+{% raw %}
+set_property APERTURES {{0xE000_0000 256M}} [get_bd_intf_ports M_QDMA_SLV_BRIDGE]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports M_VIRT_0]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports M_VIRT_1]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports M_VIRT_2]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports M_VIRT_3]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_0]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_1]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_2]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_3]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_4]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_5]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_6]
+set_property APERTURES {{0x600_0000_0000 32G}} [get_bd_intf_ports SL2NOC_7]
+set_property APERTURES {{0x203_0000_0000 128M}} [get_bd_intf_ports S_AXILITE_INI]
+set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_QDMA_SLV_BRIDGE]
+set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_00]
+set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_01]
+set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_02]
+set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_03]
+{% endraw %}
     set axi_noc_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_noc axi_noc_0 ]
   set_property -dict [list \
     CONFIG.NUM_NSI {1} \
@@ -976,6 +983,7 @@ update_compile_order -fileset sources_1
   connect_bd_intf_net -intf_net axi_register_slice_2_M_AXI3 [get_bd_intf_pins axi_register_slice_8/M_AXI] [get_bd_intf_pins axi4_full_passthrough_4/s_axi]
   connect_bd_intf_net -intf_net axi4_full_passthrough_1_m_axi3 [get_bd_intf_pins axi4_full_passthrough_4/m_axi] [get_bd_intf_pins axi_register_slice_9/S_AXI]
   connect_bd_intf_net -intf_net axi_register_slice_9_M_AXI [get_bd_intf_pins axi_register_slice_9/M_AXI] [get_bd_intf_pins noc_virt_4/S00_AXI]
+  connect_bd_intf_net -intf_net noc_virt_5_M00_INI [get_bd_intf_ports M_QDMA_SLV_BRIDGE] [get_bd_intf_pins noc_virt_4/M00_INI]
 
   # Virtual NOC connections
   connect_bd_intf_net -intf_net S_VIRT_00_1 [get_bd_intf_ports S_VIRT_00] [get_bd_intf_pins axi_noc_1/S00_INI]
@@ -1132,6 +1140,10 @@ set ::slash_dcmac_hdl  [file normalize "{{ dcmac_hdl_dir }}"]
 # Source the DCMAC Tcl helpers
 source $::slash_dcmac_tcl
 
+{% for vf in dcmac_hdl_files %}
+import_files -fileset sources_1 -norecurse [file normalize "{{ vf }}"]
+{% endfor %}
+
 # --- Drive DCMAC creation based on config ---
 {% if needs_dcmac %}
   set DCMAC0_ENABLED {{ dc_enable_0 }}
@@ -1240,6 +1252,17 @@ source $::slash_dcmac_tcl
 
   # Restore previous instance
   current_bd_instance $__oldCurInst
+  assign_bd_address -offset 0x020302040400 -range 0x00000100 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_0_n_1/control_intf/axi_gpio_datapath/S_AXI/Reg] -force
+  assign_bd_address -offset 0x020303040400 -range 0x00000100 -with_name SEG_axi_gpio_datapath_Reg_1 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/control_intf/axi_gpio_datapath/S_AXI/Reg] -force
+  assign_bd_address -offset 0x020302040000 -range 0x00000100 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_0_n_1/control_intf/axi_gpio_gt_control/S_AXI/Reg] -force
+  assign_bd_address -offset 0x020303040000 -range 0x00000100 -with_name SEG_axi_gpio_gt_control_Reg_1 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/control_intf/axi_gpio_gt_control/S_AXI/Reg] -force
+  assign_bd_address -offset 0x020302040200 -range 0x00000100 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_0_n_1/control_intf/axi_gpio_monitor/S_AXI/Reg] -force
+  assign_bd_address -offset 0x020303040200 -range 0x00000100 -with_name SEG_axi_gpio_monitor_Reg_1 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/control_intf/axi_gpio_monitor/S_AXI/Reg] -force
+  assign_bd_address -offset 0x020302040600 -range 0x00000100 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_0_n_1/control_intf/axi_gpio_reset_txrx/S_AXI/Reg] -force
+  assign_bd_address -offset 0x020303040600 -range 0x00000100 -with_name SEG_axi_gpio_reset_txrx_Reg_1 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/control_intf/axi_gpio_reset_txrx/S_AXI/Reg] -force
+  assign_bd_address -offset 0x020302000000 -range 0x00040000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_0_n_1/DCMAC_subsys/dcmac_0_core/s_axi/Reg] -force
+  assign_bd_address -offset 0x020303000000 -range 0x00040000 -target_address_space [get_bd_addr_spaces S_AXILITE_INI] [get_bd_addr_segs qsfp_2_n_3/DCMAC_subsys/dcmac_1_core/s_axi/Reg] -force
+
 {% else %}
   # No QSFP <-> NoC links required
 {% endif %}

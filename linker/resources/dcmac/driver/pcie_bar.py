@@ -4,12 +4,12 @@
 import mmap
 from warnings import warn
 import numpy as np
-BAR_SIZE = 256 * 1024 * 1024  # 256 MB
+BAR_SIZE = 128 * 1024 * 1024  # 256 MB
 
 
 def _get_bar_path(dev, debug=True):
     """Generate BAR path based on the PCIe Bus ID"""
-    dev_path = f"/sys/bus/pci/devices/0000:{dev}:00.0/resource0"
+    dev_path = f"/sys/bus/pci/devices/0000:{dev}:00.2/resource2"
     if debug:
         print(f"Using BDF: {dev_path}")
     return dev_path
