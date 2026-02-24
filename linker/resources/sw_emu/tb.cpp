@@ -33,6 +33,8 @@
 #include <fstream>
 #include <functional>
 #include <thread>
+#include <chrono>
+#include <cstdlib>
 
 {% for p in prototypes %}
 {{ p }}
@@ -86,6 +88,13 @@ int main() {
   };
 {% endfor %}
 
+  std::map<std::string, std::function<Json::Value()>> fetchScalarRegistry;
+{% for sym in fetch_scalar_var_symbols %}
+  fetchScalarRegistry["{{ sym }}"] = [&]() {
+    return createJsonValue({{ sym }});
+  };
+{% endfor %}
+
   Json::Value emuManifest;
   bool emuManifestLoaded = false;
   {
@@ -97,6 +106,7 @@ int main() {
   }
 
   bool autostartManifestHadKernels = false;
+  bool launchedAutostartThreads = false;
   if (emuManifestLoaded && emuManifest.isObject()) {
     const Json::Value kernels = emuManifest["kernels"];
     if (kernels.isArray()) {
@@ -107,6 +117,7 @@ int main() {
         std::string instance = k.get("instance", "").asString();
         auto it = autostartRegistry.find(instance);
         if (it == autostartRegistry.end()) continue;
+        launchedAutostartThreads = true;
         std::thread(it->second).detach();
       }
     }
@@ -115,6 +126,7 @@ int main() {
   if (!autostartManifestHadKernels) {
 {% for ac in autostart_calls %}
     // Fallback for older outputs or missing manifest.
+    launchedAutostartThreads = true;
     std::thread([&]() {
       {{ ac.top }}({{ ac.call_args | join(", ") }});
     }).detach();
@@ -123,7 +135,9 @@ int main() {
 
   while (true) {
     zmq::message_t request;
-    socket.recv(request);
+    if (!socket.recv(request, zmq::recv_flags::none)) {
+      continue;
+    }
     std::string req_str(static_cast<char*>(request.data()), request.size());
     Json::Value root;
     Json::Reader reader;
@@ -137,7 +151,10 @@ int main() {
       size_t bufferSize = root["size"].asUInt64();
 
       zmq::message_t data;
-      socket.recv(data);
+      if (!socket.recv(data, zmq::recv_flags::none)) {
+        socket.send(zmq::message_t("ERR", 3), zmq::send_flags::none);
+        continue;
+      }
       void* buffer = new uint8_t[bufferSize];
       memcpy(buffer, data.data(), bufferSize);
 
@@ -147,7 +164,10 @@ int main() {
     } else if (command == "stream_in") {
       std::string name = root["name"].asString();
       zmq::message_t data;
-      socket.recv(data);
+      if (!socket.recv(data, zmq::recv_flags::none)) {
+        socket.send(zmq::message_t("ERR", 3), zmq::send_flags::none);
+        continue;
+      }
       bool handled = false;
 
 {% for s in stream_routes %}
@@ -203,7 +223,35 @@ int main() {
       if (type == "scalar") {
         std::string functionName = root["function"].asString();
         std::string arg = root["arg"].asString();
+        bool handledScalar = false;
 
+        if (emuManifestLoaded && emuManifest.isObject()) {
+          const Json::Value fetchRoutes = emuManifest["fetch"]["scalar"];
+          if (fetchRoutes.isArray()) {
+            for (const auto& route : fetchRoutes) {
+              if (!route.isObject()) continue;
+              if (route.get("function", "").asString() != functionName) continue;
+              if (route.get("arg", "").asString() != arg) continue;
+
+              std::string kind = route.get("kind", "").asString();
+              if (kind == "var") {
+                std::string symbol = route.get("var_symbol", "").asString();
+                auto it = fetchScalarRegistry.find(symbol);
+                if (it != fetchScalarRegistry.end()) {
+                  response = it->second();
+                  handledScalar = true;
+                  break;
+                }
+              } else if (kind == "const_u32") {
+                response = Json::Value(static_cast<Json::UInt>(route.get("value", 0).asUInt()));
+                handledScalar = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!handledScalar) {
 {% for fc in fetch_scalar_cases %}
         if (functionName == "{{ fc.inst }}" && arg == "{{ fc.arg }}") {
 {% if fc.kind == "var" %}
@@ -213,6 +261,7 @@ int main() {
 {% endif %}
         }
 {% endfor %}
+        }
       } else if (type == "buffer") {
         std::string name = root["name"].asString();
         if (buffers.find(name) != buffers.end()) {
@@ -224,6 +273,13 @@ int main() {
       socket.send(zmq::message_t(responseStr.c_str(), responseStr.size()), zmq::send_flags::none);
     } else if (command == "exit") {
       socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
+      if (launchedAutostartThreads) {
+        // Free-running autostart kernels (e.g. ap_ctrl_none stream-only kernels)
+        // run in detached threads and may never return. Exiting main() would destroy
+        // local hls::stream objects while those threads are still active.
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        std::_Exit(0);
+      }
       break;
     } else {
       socket.send(zmq::message_t("ERR", 3), zmq::send_flags::none);

@@ -459,6 +459,27 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                     }
                 )
 
+    fetch_scalar_var_symbols = sorted(
+        {
+            c["var"]
+            for c in fetch_scalar_cases
+            if c.get("kind") == "var" and isinstance(c.get("var"), str)
+        }
+    )
+
+    manifest_fetch_scalar = []
+    for c in fetch_scalar_cases:
+        entry = {
+            "function": c["inst"],
+            "arg": c["arg"],
+            "kind": c["kind"],
+        }
+        if c["kind"] == "var":
+            entry["var_symbol"] = c["var"]
+        elif c["kind"] == "const_u32":
+            entry["value"] = int(c["value"])
+        manifest_fetch_scalar.append(entry)
+
     return {
         "prototypes": prototypes,
         "vars": vars_decl,
@@ -467,6 +488,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
         "function_calls": function_calls,
         "autostart_calls": autostart_calls,
         "fetch_scalar_cases": fetch_scalar_cases,
+        "fetch_scalar_var_symbols": fetch_scalar_var_symbols,
         "ref_vars": ref_vars,
         "emu_manifest": {
             "emu_protocol_version": 1,
@@ -480,5 +502,8 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 for s in stream_routes
             ],
             "commands": ["populate", "stream_in", "stream_out", "call", "fetch", "exit"],
+            "fetch": {
+                "scalar": manifest_fetch_scalar,
+            },
         },
     }
