@@ -33,6 +33,7 @@
 #include <optional>
 #include <thread>
 #include <vector>
+#include <vrtd/session.hpp>
 
 #include "allocator/allocator.hpp"
 #include "api/kernel.hpp"
@@ -45,7 +46,6 @@
 #include "utils/logger.hpp"
 #include "utils/platform.hpp"
 #include "utils/zmq_server.hpp"
-#include <vrtd/session.hpp>
 
 namespace vrt {
 
@@ -79,6 +79,8 @@ enum class ProgramType {
  * will wait during the partial boot process (4 seconds).
  */
 #define DELAY_PARTIAL_BOOT (4 * 1000 * 1000)
+
+namespace impl {
 /**
  * @brief Class representing a device.
  */
@@ -87,23 +89,23 @@ class Device {
     static constexpr uint32_t QDMA_LOGIC_OFFSET = 0x1000;       /// Offset for QDMA logic
     uint8_t bar = 0;                                            ///< Base Address Register (BAR)
     uint64_t offset = 0;                                        ///< Offset for memory operations
-    uint16_t pci_bdf = 0;     ///< PCI Bus:Device.Function identifier
-    std::string systemMap;    ///< Path to the system map file
-    std::string bdf;          ///< Bus:Device.Function identifier
-    std::string bdfFull;      ///< Domain:Bus:Device.Function identifier
-    std::string pdiPath;      ///< Path to the PDI file
-    std::vector<std::string> pdiPaths;  ///< Paths to PDI files discovered in archive
-    Vrtbin vrtbin;            ///< Vrtbin object for handling VRTBIN operations
-    uint64_t clockFreq;       ///< Clock frequency
-    ProgramType programType;  ///< Type of programming
-    std::map<std::string, Kernel> kernels;        ///< Map of kernel names to Kernel objects
-    Allocator* allocator;                         ///< Allocator object
-    Platform platform;                            ///< Platform information
-    std::shared_ptr<ZmqServer> zmqServer;         ///< ZeroMQ server object
-    std::vector<QdmaConnection> qdmaConnections;  ///< Vector of QDMA connections
-    std::vector<QdmaIntf*> qdmaIntfs;             ///< Vector of QDMA interfaces for streaming
-    std::shared_ptr<vrtd::Session> vrtdSession;   ///< vrtd session for hardware access
-    std::optional<vrtd::Device> vrtdDevice;       ///< vrtd device handle (requires session)
+    uint16_t pci_bdf = 0;                                       ///< PCI Bus:Device.Function identifier
+    std::string systemMap;                                      ///< Path to the system map file
+    std::string bdf;                                            ///< Bus:Device.Function identifier
+    std::string bdfFull;                                        ///< Domain:Bus:Device.Function identifier
+    std::string pdiPath;                                        ///< Path to the PDI file
+    std::vector<std::string> pdiPaths;                          ///< Paths to PDI files discovered in archive
+    Vrtbin vrtbin;                                              ///< Vrtbin object for handling VRTBIN operations
+    uint64_t clockFreq;                                         ///< Clock frequency
+    ProgramType programType;                                    ///< Type of programming
+    std::map<std::string, Kernel> kernels;                      ///< Map of kernel names to Kernel objects
+    Allocator* allocator;                                       ///< Allocator object
+    Platform platform;                                          ///< Platform information
+    std::shared_ptr<ZmqServer> zmqServer;                       ///< ZeroMQ server object
+    std::vector<QdmaConnection> qdmaConnections;                ///< Vector of QDMA connections
+    std::vector<QdmaIntf*> qdmaIntfs;                           ///< Vector of QDMA interfaces for streaming
+    std::shared_ptr<vrtd::Session> vrtdSession;                 ///< vrtd session for hardware access
+    std::optional<vrtd::Device> vrtdDevice;                     ///< vrtd device handle (requires session)
    public:
     QdmaIntf qdmaIntf;  ///< QDMA interface object
 
@@ -116,7 +118,10 @@ class Device {
     Device(const std::string& bdf, const std::string& vrtbinPath, bool program = true,
            ProgramType programType = ProgramType::FLASH);
 
-    Device() = default;
+    Device() = delete;
+    Device(Device&) = delete;
+    Device(Device&&) = delete;
+
     /**
      * @brief Gets a kernel by name.
      * @param name The name of the kernel.
@@ -213,6 +218,58 @@ class Device {
      * @brief Gets the QDMA streaming interfaces.
      */
     std::vector<QdmaIntf*> getQdmaInterfaces();
+};
+}  // namespace impl
+
+class Device {
+    std::shared_ptr<impl::Device> internal;
+
+   public:
+    /**
+     * @brief Constructor for Device.
+     * @param bdf The Bus:Device.Function identifier.
+     * @param vrtbinPath The path to the VRTBIN file.
+     * @param program Flag indicating whether to program the device.
+     */
+    Device(const std::string& bdf, const std::string& vrtbinPath, bool program = true,
+           ProgramType programType = ProgramType::FLASH) : internal(new impl::Device(bdf, vrtbinPath, program, programType)) {}
+
+    Device() = delete;
+
+    /**
+     * @brief Gets a kernel by name.
+     * @param name The name of the kernel.
+     * @return The Kernel object.
+     */
+    vrt::Kernel getKernel(const std::string& name) { return internal->getKernel(name); }
+
+    /**
+     * @brief Gets the Bus:Device.Function identifier.
+     * @return The Bus:Device.Function identifier.
+     */
+    std::string getBdf() { return internal->getBdf(); }
+
+    /**
+     * @brief Sets device clock frequency.
+     */
+    void setFrequency(uint64_t freq) { internal->setFrequency(freq); }
+
+    /**
+     * @brief Gets the clock frequency.
+     */
+    uint64_t getFrequency() { return internal->getFrequency(); }
+
+    /**
+     * @brief Gets the maximum frequency.
+     */
+    uint64_t getMaxFrequency() { return internal->getMaxFrequency(); }
+
+    /**
+     * @brief Gets the platform.
+     */
+    Platform getPlatform() { return internal->getPlatform(); }
+
+    std::shared_ptr<impl::Device> getInternal() const { return internal; }
 };
 
 }  // namespace vrt

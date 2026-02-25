@@ -36,9 +36,9 @@ Kernel::Kernel(Device& device, const std::string& kernelName)
     : Kernel(device.getKernel(kernelName)) {
     deviceBdf = device.getBdf();
     this->platform = device.getPlatform();
-    this->server = device.getZmqServer();
+    this->server = device.getInternal()->getZmqServer();
     if (this->platform == Platform::HARDWARE) {
-        const auto& vrtdDevice = device.getVrtdDevice();
+        const auto& vrtdDevice = device.getInternal()->getVrtdDevice();
         this->vrtdBar = vrtdDevice.getBar(bar);
     }
 }

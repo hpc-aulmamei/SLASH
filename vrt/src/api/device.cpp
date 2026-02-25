@@ -20,16 +20,18 @@
 
 #include "api/device.hpp"
 
-#include "utils/filesystem_cache.hpp"
+#include <unistd.h>
 
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
 #include <limits>
-#include <unistd.h>
 #include <vrtd/bar.hpp>
 
+#include "utils/filesystem_cache.hpp"
+
 namespace vrt {
+namespace impl {
 
 namespace {
 
@@ -248,4 +250,5 @@ const vrtd::Device& Device::getVrtdDevice() const {
 
 std::vector<QdmaIntf*> Device::getQdmaInterfaces() { return qdmaIntfs; }
 
+}  // namespace impl
 }  // namespace vrt
