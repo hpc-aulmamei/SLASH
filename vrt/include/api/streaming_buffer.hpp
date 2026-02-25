@@ -129,7 +129,7 @@ StreamingBuffer<T>::StreamingBuffer(Device device, Kernel kernel, const std::str
     localBuffer = new T[size];
     Platform platform = device.getPlatform();
     if (platform == Platform::HARDWARE) {
-        for (auto& qdmaIntf : device.getQdmaInterfaces()) {
+        for (auto& qdmaIntf : device.getInternal()->getQdmaInterfaces()) {
             if (qdmaIntf->getQueueIdx() == index) {
                 qdmaInterface = qdmaIntf;
             }
@@ -162,7 +162,7 @@ template <typename T>
 void StreamingBuffer<T>::sync() {
     Platform platform = device.getPlatform();
     if (platform == Platform::EMULATION) {
-        ZmqServer* server = device.getZmqServer();
+        ZmqServer* server = device.getInternal()->getZmqServer();
         if (syncType == StreamDirection::HOST_TO_DEVICE) {
             std::vector<uint8_t> sendData;
             std::size_t dataSize = size * sizeof(T);

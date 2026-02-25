@@ -89,7 +89,7 @@ class Kernel {
      * @param device The Device object.
      * @param kernelName The name of the kernel.
      */
-    Kernel(vrt::Device& device, const std::string& kernelName);
+    Kernel(vrt::Device device, const std::string& kernelName);
 
     /**
      * @brief Sets the vrtd BAR handle for hardware access.
