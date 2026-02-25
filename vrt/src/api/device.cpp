@@ -101,28 +101,27 @@ bool parseEmuArgIndex(const std::string& argName, std::size_t& outIdx) {
 
 void applyEmuManifestToKernels(const std::string& manifestPath, std::map<std::string, Kernel>& kernels) {
     if (manifestPath.empty()) {
-        return;
+        throw std::runtime_error("EMU manifest missing from vrtbin");
     }
 
     std::ifstream in(manifestPath);
     if (!in.is_open()) {
-        utils::Logger::log(utils::LogLevel::WARN, __PRETTY_FUNCTION__,
-                           "EMU manifest path present but unreadable: {}", manifestPath);
-        return;
+        throw std::runtime_error("EMU manifest path unreadable: " + manifestPath);
     }
 
     Json::Value root;
     Json::Reader reader;
     if (!reader.parse(in, root) || !root.isObject()) {
-        utils::Logger::log(utils::LogLevel::WARN, __PRETTY_FUNCTION__,
-                           "Failed to parse EMU manifest {}", manifestPath);
-        return;
+        throw std::runtime_error("Failed to parse EMU manifest: " + manifestPath);
     }
 
     std::size_t appliedCallKinds = 0;
     std::size_t appliedFetchRoutes = 0;
 
     const Json::Value manifestKernels = root["kernels"];
+    if (!manifestKernels.isArray()) {
+        throw std::runtime_error("EMU manifest missing required array: kernels");
+    }
     if (manifestKernels.isArray()) {
         for (const auto& k : manifestKernels) {
             if (!k.isObject()) continue;
@@ -154,7 +153,14 @@ void applyEmuManifestToKernels(const std::string& manifestPath, std::map<std::st
     }
 
     std::map<std::string, std::map<uint32_t, std::string>> fetchRoutesByKernel;
-    const Json::Value fetchScalar = root["fetch"]["scalar"];
+    const Json::Value fetch = root["fetch"];
+    if (!fetch.isObject()) {
+        throw std::runtime_error("EMU manifest missing required object: fetch");
+    }
+    const Json::Value fetchScalar = fetch["scalar"];
+    if (!fetchScalar.isArray()) {
+        throw std::runtime_error("EMU manifest missing required array: fetch.scalar");
+    }
     if (fetchScalar.isArray()) {
         for (const auto& route : fetchScalar) {
             if (!route.isObject()) continue;

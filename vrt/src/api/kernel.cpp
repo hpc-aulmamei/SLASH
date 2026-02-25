@@ -93,24 +93,7 @@ uint32_t Kernel::read(uint32_t offset) {
                                             static_cast<size_t>(barOffset));
         return *ptr;
     } else if (platform == Platform::EMULATION) {
-        auto fetchRoute = emuFetchScalarArgByOffset.find(offset);
-        if (fetchRoute != emuFetchScalarArgByOffset.end()) {
-            return server->fetchScalar(name, fetchRoute->second, offset);
-        }
-        currentRegisterIndex = 4;
-        std::size_t argIdx = 0;
-        while (currentRegisterIndex < registers.size()) {
-            std::regex re(".*_\\d+$");
-            if (std::regex_match(registers.at(currentRegisterIndex).getRegisterName(), re)) {
-                currentRegisterIndex += 2;
-            } else {
-                if (registers.at(currentRegisterIndex).getOffset() == offset) {
-                    return server->fetchScalar(name, "arg" + std::to_string(argIdx), offset);
-                }
-                currentRegisterIndex++;
-            }
-            argIdx++;
-        }
+        return server->readRegister(name, offset);
     } else if (platform == Platform::SIMULATION) {
         return server->fetchScalarSim(baseAddr + offset);
     }

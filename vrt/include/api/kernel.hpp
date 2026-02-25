@@ -263,19 +263,21 @@ class Kernel {
                 emuKind = emuCallArgKinds[static_cast<std::size_t>(argIndex)];
             }
 
+            if (emuKind.empty()) {
+                throw std::runtime_error("EMU manifest arg kind missing for kernel '" + name +
+                                         "' at arg" + std::to_string(argIndex));
+            }
+
             if (emuKind == "buffer") {
                 command["args"]["arg" + std::to_string(argIndex)]["type"] = "buffer";
                 command["args"]["arg" + std::to_string(argIndex)]["name"] = std::to_string(arg);
             } else if (emuKind == "scalar") {
                 command["args"]["arg" + std::to_string(argIndex)]["type"] = "scalar";
                 command["args"]["arg" + std::to_string(argIndex)]["value"] = arg;
-            } else if (isSplitReg) {
-                // Legacy heuristic fallback when manifest metadata is unavailable.
-                command["args"]["arg" + std::to_string(argIndex)]["type"] = "buffer";
-                command["args"]["arg" + std::to_string(argIndex)]["name"] = std::to_string(arg);
             } else {
-                command["args"]["arg" + std::to_string(argIndex)]["type"] = "scalar";
-                command["args"]["arg" + std::to_string(argIndex)]["value"] = arg;
+                throw std::runtime_error("Unsupported EMU manifest arg kind '" + emuKind +
+                                         "' for kernel '" + name + "' at arg" +
+                                         std::to_string(argIndex));
             }
 
             currentRegisterIndex += isSplitReg ? 2 : 1;

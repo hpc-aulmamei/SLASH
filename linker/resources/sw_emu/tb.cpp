@@ -36,6 +36,7 @@
 #include <future>
 #include <chrono>
 #include <cstdlib>
+#include <mutex>
 
 {% for p in prototypes %}
 {{ p }}
@@ -144,36 +145,42 @@ int main() {
     return createJsonValueHi({{ sym }});
   };
 {% endfor %}
+  std::map<std::string, std::map<uint32_t, uint32_t>> kernelRegisterShadow;
+  std::mutex kernelRegisterShadowMutex;
 
   Json::Value emuManifest;
   bool emuManifestLoaded = false;
   {
     std::ifstream manifestFile("emu_manifest.json");
-    if (manifestFile.is_open()) {
-      emuExecDebug("manifest", "opened emu_manifest.json");
-      Json::Reader manifestReader;
-      emuManifestLoaded = manifestReader.parse(manifestFile, emuManifest);
-      emuExecDebug("manifest", std::string("parse result=") + (emuManifestLoaded ? "success" : "failure"));
-      if (!emuManifestLoaded) {
-        emuExecLog("manifest", "parse failed; runtime will use compatibility behavior");
-      }
-    } else {
-      emuExecLog("manifest", "emu_manifest.json not found; runtime will use compatibility behavior");
+    if (!manifestFile.is_open()) {
+      emuExecLog("manifest", "emu_manifest.json not found");
+      return 1;
+    }
+    emuExecDebug("manifest", "opened emu_manifest.json");
+    Json::Reader manifestReader;
+    emuManifestLoaded = manifestReader.parse(manifestFile, emuManifest);
+    emuExecDebug("manifest", std::string("parse result=") + (emuManifestLoaded ? "success" : "failure"));
+    if (!emuManifestLoaded) {
+      emuExecLog("manifest", "parse failed");
+      return 1;
     }
   }
 
   bool emuManifestUsable = emuManifestLoaded && emuManifest.isObject();
   bool emuManifestHasKernelMetadata = false;
   bool emuManifestHasFetchMetadata = false;
+  bool emuManifestHasRegisterMetadata = false;
   bool emuManifestSchemaValidated = false;
   bool requireFastExitOnExit = false;
   size_t manifestFetchScalarRouteCount = 0;
   size_t manifestCallableKernelCount = 0;
   size_t manifestAutostartKernelCount = 0;
+  size_t manifestRegisterCount = 0;
   std::map<std::string, Json::Value> kernelManifestRegistry;
 
   if (emuManifestLoaded && !emuManifest.isObject()) {
-    emuExecLog("manifest", "emu_manifest.json parsed but root is not an object; using compatibility mode");
+    emuExecLog("manifest", "emu_manifest.json parsed but root is not an object");
+    return 1;
   }
   if (emuManifestUsable) {
     const Json::Value schema = emuManifest["manifest_schema"];
@@ -188,17 +195,18 @@ int main() {
             emuExecLog("manifest", "required_sections contains non-string entry");
             break;
           }
-          if (!emuManifest.isMember(name.asString())) {
-            requiredOk = false;
-            emuExecLog("manifest", std::string("missing required section '") + name.asString()
-                                   + "'; using compatibility mode where possible");
-            break;
-          }
+              if (!emuManifest.isMember(name.asString())) {
+                requiredOk = false;
+                emuExecLog("manifest", std::string("missing required section '") + name.asString()
+                                   + "'");
+                break;
+              }
         }
       }
       emuManifestSchemaValidated = schema.get("version", 0).asUInt() >= 1 && requiredOk;
     } else {
-      emuExecLog("manifest", "emu_manifest.json has no manifest_schema; using compatibility mode");
+      emuExecLog("manifest", "emu_manifest.json has no manifest_schema");
+      return 1;
     }
 
     const Json::Value fetchMeta = emuManifest["fetch"];
@@ -212,18 +220,38 @@ int main() {
     }
   }
 
-  bool autostartManifestHadKernels = false;
-  bool launchedAutostartThreads = false;
+  if (!emuManifestSchemaValidated) {
+    emuExecLog("manifest", "manifest schema validation failed");
+    return 1;
+  }
+
   if (emuManifestUsable) {
     const Json::Value kernels = emuManifest["kernels"];
     if (kernels.isArray()) {
       emuManifestHasKernelMetadata = true;
-      autostartManifestHadKernels = true;
       for (const auto& k : kernels) {
         if (!k.isObject()) continue;
         std::string instance = k.get("instance", "").asString();
         if (!instance.empty()) {
           kernelManifestRegistry[instance] = k;
+          std::map<uint32_t, uint32_t> regShadow;
+          const Json::Value regs = k["registers"];
+          if (regs.isArray()) {
+            for (const auto& reg : regs) {
+              if (!reg.isObject()) continue;
+              const Json::Value offsetVal = reg["offset"];
+              if (!offsetVal.isUInt() && !offsetVal.isInt()) continue;
+              regShadow[static_cast<uint32_t>(offsetVal.asUInt())] = 0u;
+              manifestRegisterCount += 1;
+            }
+            emuManifestHasRegisterMetadata = true;
+          }
+          auto ctrlIt = regShadow.find(0x00u);
+          if (ctrlIt != regShadow.end()) {
+            // HLS ap_ctrl_hs reset-like state: idle=1, ready=1, done=0, start=0.
+            ctrlIt->second = 0x0Cu;
+          }
+          kernelRegisterShadow[instance] = std::move(regShadow);
           emuExecDebug("manifest", std::string("kernel meta loaded for '") + instance + "'");
         }
         if (k.get("callable", false).asBool()) {
@@ -239,35 +267,133 @@ int main() {
         if (k.get("shutdown_policy", "").asString() == "fast_exit") {
           requireFastExitOnExit = true;
         }
-        launchedAutostartThreads = true;
         emuExecLog("autostart", std::string("launching '") + instance + "' from manifest");
         std::thread(it->second).detach();
       }
     }
   }
 
-  if (!autostartManifestHadKernels) {
-{% for ac in autostart_calls %}
-    // Fallback for older outputs or missing manifest.
-    requireFastExitOnExit = true;
-    launchedAutostartThreads = true;
-    emuExecLog("autostart", "fallback launch for '{{ ac.inst }}' (manifest missing/legacy)");
-    std::thread([&]() {
-      {{ ac.top }}({{ ac.call_args | join(", ") }});
-    }).detach();
-{% endfor %}
+  if (!emuManifestHasKernelMetadata) {
+    emuExecLog("manifest", "manifest missing kernels metadata");
+    return 1;
+  }
+  if (!emuManifestHasFetchMetadata) {
+    emuExecLog("manifest", "manifest missing fetch.scalar metadata");
+    return 1;
+  }
+  if (!emuManifestHasRegisterMetadata) {
+    emuExecLog("manifest", "manifest missing kernel register metadata");
+    return 1;
   }
 
-  if (emuManifestLoaded) {
-    emuExecLog("manifest",
-      std::string("manifest ")
-      + (emuManifestUsable ? "loaded" : "compat")
-      + " schema=" + (emuManifestSchemaValidated ? "ok" : "compat")
-      + " kernels=" + std::to_string(kernelManifestRegistry.size())
-      + " callable=" + std::to_string(manifestCallableKernelCount)
-      + " autostart=" + std::to_string(manifestAutostartKernelCount)
-      + " fetch.scalar=" + std::to_string(manifestFetchScalarRouteCount));
-  }
+  emuExecLog("manifest",
+    std::string("manifest loaded")
+    + " schema=" + (emuManifestSchemaValidated ? "ok" : "invalid")
+    + " kernels=" + std::to_string(kernelManifestRegistry.size())
+    + " regs=" + std::to_string(manifestRegisterCount)
+    + " callable=" + std::to_string(manifestCallableKernelCount)
+    + " autostart=" + std::to_string(manifestAutostartKernelCount)
+    + " fetch.scalar=" + std::to_string(manifestFetchScalarRouteCount));
+
+  auto setKernelCtrlRunning = [&](const std::string& functionName) {
+    std::lock_guard<std::mutex> lock(kernelRegisterShadowMutex);
+    auto kernelIt = kernelRegisterShadow.find(functionName);
+    if (kernelIt == kernelRegisterShadow.end()) return;
+    auto ctrlIt = kernelIt->second.find(0x00u);
+    if (ctrlIt == kernelIt->second.end()) return;
+    const uint32_t autoRestart = ctrlIt->second & 0x80u;
+    ctrlIt->second = autoRestart | 0x01u;  // ap_start=1, done/idle/ready cleared while active
+  };
+
+  auto setKernelCtrlCompleted = [&](const std::string& functionName) {
+    std::lock_guard<std::mutex> lock(kernelRegisterShadowMutex);
+    auto kernelIt = kernelRegisterShadow.find(functionName);
+    if (kernelIt == kernelRegisterShadow.end()) return;
+    auto ctrlIt = kernelIt->second.find(0x00u);
+    if (ctrlIt == kernelIt->second.end()) return;
+    const uint32_t autoRestart = ctrlIt->second & 0x80u;
+    ctrlIt->second = autoRestart | 0x0Eu;  // ap_done=1, ap_idle=1, ap_ready=1
+  };
+
+  auto refreshKernelRegisterShadowFromManifest =
+      [&](const std::string& functionName, bool includeSyntheticCtrlValid) {
+        std::lock_guard<std::mutex> lock(kernelRegisterShadowMutex);
+        auto kernelIt = kernelRegisterShadow.find(functionName);
+        if (kernelIt == kernelRegisterShadow.end()) return;
+        const Json::Value fetchRoutes = emuManifest["fetch"]["scalar"];
+        if (!fetchRoutes.isArray()) return;
+        const Json::Value kernelMeta = kernelManifestRegistry[functionName];
+        const Json::Value callableArgs = kernelMeta["call_args"];
+
+        for (const auto& route : fetchRoutes) {
+          if (!route.isObject()) continue;
+          if (route.get("function", "").asString() != functionName) continue;
+          if (!includeSyntheticCtrlValid && callableArgs.isArray()) {
+            const std::string routeArg = route.get("arg", "").asString();
+            bool routeArgIsCallBound = false;
+            for (const auto& ca : callableArgs) {
+              if (!ca.isObject()) continue;
+              if (ca.get("arg", "").asString() == routeArg) {
+                routeArgIsCallBound = true;
+                break;
+              }
+            }
+            if (!routeArgIsCallBound) continue;
+          }
+          const Json::Value source = route["source"];
+          if (!source.isObject()) continue;
+          const Json::Value regOffVal = source["register_offset"];
+          if (!regOffVal.isUInt() && !regOffVal.isInt()) continue;
+          const uint32_t regOff = static_cast<uint32_t>(regOffVal.asUInt());
+          auto regIt = kernelIt->second.find(regOff);
+          if (regIt == kernelIt->second.end()) continue;
+
+          const bool isSyntheticCtrlValid =
+              source.isMember("synthetic") && source["synthetic"].isString()
+              && source["synthetic"].asString() == "ctrl_valid";
+          if (isSyntheticCtrlValid && !includeSyntheticCtrlValid) {
+            regIt->second = 0u;
+            continue;
+          }
+
+          Json::Value routeValue;
+          bool handled = false;
+          const std::string kind = route.get("kind", "").asString();
+          if (kind == "var") {
+            std::string symbol = route.get("var_symbol", "").asString();
+            auto it = fetchScalarRegistry.find(symbol);
+            if (it != fetchScalarRegistry.end()) {
+              routeValue = it->second();
+              handled = true;
+            } else {
+              emuExecLog("reg_shadow",
+                        "manifest var route symbol missing from fetchScalarRegistry: " + symbol);
+            }
+          } else if (kind == "var_u32_hi") {
+            std::string symbol = route.get("var_symbol", "").asString();
+            auto it = fetchScalarHiRegistry.find(symbol);
+            if (it != fetchScalarHiRegistry.end()) {
+              routeValue = it->second();
+              handled = true;
+            } else {
+              emuExecLog("reg_shadow",
+                        "manifest var_u32_hi symbol missing from fetchScalarHiRegistry: " + symbol);
+            }
+          } else if (kind == "const_u32") {
+            routeValue = Json::Value(static_cast<Json::UInt>(route.get("value", 0).asUInt()));
+            handled = true;
+          } else {
+            emuExecLog("reg_shadow", "unsupported manifest route kind for shadow refresh: " + kind);
+          }
+
+          if (!handled) continue;
+          if (!routeValue.isUInt() && !routeValue.isInt()) {
+            emuExecLog("reg_shadow", "non-scalar manifest route value for shadow refresh");
+            continue;
+          }
+          regIt->second = static_cast<uint32_t>(routeValue.asUInt());
+        }
+      };
 
   while (true) {
     zmq::message_t request;
@@ -461,6 +587,17 @@ int main() {
 {% endfor %}
 
       if (handledCall) {
+        auto invokeCallTracked = [
+          invokeCall,
+          functionName,
+          &refreshKernelRegisterShadowFromManifest,
+          &setKernelCtrlCompleted
+        ]() {
+          invokeCall();
+          refreshKernelRegisterShadowFromManifest(functionName, true);
+          setKernelCtrlCompleted(functionName);
+        };
+
         if (isAsyncStart) {
           auto activeIt = activeCallFutures.find(functionName);
           if (activeIt != activeCallFutures.end()) {
@@ -485,7 +622,9 @@ int main() {
           }
 
           try {
-            activeCallFutures[functionName] = std::async(std::launch::async, invokeCall);
+            setKernelCtrlRunning(functionName);
+            refreshKernelRegisterShadowFromManifest(functionName, false);
+            activeCallFutures[functionName] = std::async(std::launch::async, invokeCallTracked);
             emuExecDebug("call", "launched async instance='" + functionName + "'");
             socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
           } catch (const std::exception& e) {
@@ -497,7 +636,9 @@ int main() {
           }
         } else {
           try {
-            invokeCall();
+            setKernelCtrlRunning(functionName);
+            refreshKernelRegisterShadowFromManifest(functionName, false);
+            invokeCallTracked();
             socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
           } catch (const std::exception& e) {
             emuExecLog("call", std::string("call failed for '") + functionName + "': " + e.what());
@@ -535,6 +676,40 @@ int main() {
         emuExecLog("wait", std::string("async kernel '") + functionName + "' failed (unknown error)");
         socket.send(zmq::message_t("ERR", 3), zmq::send_flags::none);
       }
+    } else if (command == "read_register") {
+      Json::Value response;
+      std::string functionName = root["function"].asString();
+      const Json::Value offsetVal = root["offset"];
+      if (!offsetVal.isUInt() && !offsetVal.isInt()) {
+        emuExecLog("read_register", "invalid or missing offset");
+        response["error"] = "invalid_offset";
+      } else {
+        const uint32_t offset = static_cast<uint32_t>(offsetVal.asUInt());
+        std::lock_guard<std::mutex> lock(kernelRegisterShadowMutex);
+        auto kernelIt = kernelRegisterShadow.find(functionName);
+        if (kernelIt == kernelRegisterShadow.end()) {
+          emuExecLog("read_register", "unknown function '" + functionName + "'");
+          response["error"] = "unknown_function";
+          response["function"] = functionName;
+        } else {
+          auto regIt = kernelIt->second.find(offset);
+          if (regIt == kernelIt->second.end()) {
+            emuExecLog("read_register", "unknown register offset for '" + functionName
+                          + "' offset=0x" + std::to_string(offset));
+            response["error"] = "unknown_register";
+            response["function"] = functionName;
+            response["offset"] = offset;
+          } else {
+            response = Json::Value(static_cast<Json::UInt>(regIt->second));
+            emuExecDebug("read_register", "function=" + functionName
+                         + " offset=0x" + std::to_string(offset)
+                         + " value=" + emuJsonString(response));
+          }
+        }
+      }
+
+      std::string responseStr = Json::writeString(Json::StreamWriterBuilder(), response);
+      socket.send(zmq::message_t(responseStr.c_str(), responseStr.size()), zmq::send_flags::none);
     } else if (command == "fetch") {
       std::string type = root["type"].asString();
       Json::Value response;
@@ -558,9 +733,11 @@ int main() {
               if (route.get("arg", "").asString() != arg) continue;
               if (hasOffsetHint) {
                 const Json::Value source = route["source"];
-                if (source.isObject() && source.isMember("register_offset")
-                    && source["register_offset"].isUInt()
-                    && source["register_offset"].asUInt() != offsetHint) {
+                if (!source.isObject() || !source.isMember("register_offset")
+                    || !source["register_offset"].isUInt()) {
+                  continue;
+                }
+                if (source["register_offset"].asUInt() != offsetHint) {
                   continue;
                 }
               }
@@ -609,24 +786,12 @@ int main() {
         }
 
         if (!handledScalar) {
-          emuExecDebug("fetch", "falling back to generated scalar fetch cases");
-{% for fc in fetch_scalar_cases %}
-        if (functionName == "{{ fc.inst }}" && arg == "{{ fc.arg }}"{% if fc.register_offset is defined and fc.register_offset is not none %} && (!hasOffsetHint || offsetHint == {{ fc.register_offset }}){% endif %}) {
-{% if fc.kind == "var" %}
-          response = createJsonValue({{ fc.var }});
-          emuExecDebug("fetch", "fallback scalar route hit {{ fc.inst }} {{ fc.arg }} kind=var value=" + emuJsonString(response));
-{% elif fc.kind == "var_u32_hi" %}
-          response = createJsonValueHi({{ fc.var }});
-          emuExecDebug("fetch", "fallback scalar route hit {{ fc.inst }} {{ fc.arg }} kind=var_u32_hi value=" + emuJsonString(response));
-{% elif fc.kind == "const_u32" %}
-          response = Json::Value(static_cast<Json::UInt>({{ fc.value }}));
-          emuExecDebug("fetch", "fallback scalar route hit {{ fc.inst }} {{ fc.arg }} kind=const_u32 value=" + emuJsonString(response));
-{% endif %}
-          handledScalar = true;
-        }
-{% endfor %}
-          if (!handledScalar) {
-            emuExecLog("fetch", "scalar fetch unresolved after manifest+fallback");
+          emuExecLog("fetch", "scalar fetch unresolved in manifest");
+          response["error"] = "scalar_fetch_unresolved";
+          response["function"] = functionName;
+          response["arg"] = arg;
+          if (hasOffsetHint) {
+            response["offset"] = offsetHint;
           }
         }
       } else if (type == "buffer") {

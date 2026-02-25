@@ -417,6 +417,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 "missing_stream_bindings": has_missing_stream,
                 "call_arg_count": len(manifest_call_args),
                 "call_args": manifest_call_args,
+                "registers": [],
                 "args": [
                     {
                         "name": a["name"],
@@ -451,6 +452,16 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
         regs = []
         if reg_block is not None and getattr(reg_block, "registers", None):
             regs = sorted(reg_block.registers, key=lambda r: r.address_offset)
+        manifest_kernels[-1]["registers"] = [
+            {
+                "name": (getattr(r, "name", "") or ""),
+                "offset": int(getattr(r, "address_offset", 0) or 0),
+                "width": int(getattr(r, "range", 32) or 32),
+                "access": (getattr(r, "access", "") or ""),
+                "description": (getattr(r, "description", "") or ""),
+            }
+            for r in regs
+        ]
 
         # Mirror vrt::Kernel::read() emulation indexing, which starts after the
         # first 4 control registers and synthesizes argN based on register order.
@@ -548,18 +559,11 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
 
                 fetch_arg_idx += 1
                 reg_idx += 1
-        else:
-            # Fallback if register metadata is unavailable.
-            for idx, arg in enumerate(non_stream_args):
-                fetch_scalar_cases.append(
-                    {
-                        "inst": inst_name,
-                        "arg": f"arg{idx}",
-                        "kind": "var",
-                        "var": arg["var"],
-                        "source": "fallback_no_register_metadata",
-                    }
-                )
+        elif non_stream_args:
+            raise RuntimeError(
+                "EMU fetch metadata generation requires register metadata for "
+                f"kernel instance '{inst_name}'"
+            )
 
     fetch_scalar_var_symbols = sorted(
         {
@@ -620,7 +624,16 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 }
                 for s in stream_routes
             ],
-            "commands": ["populate", "stream_in", "stream_out", "call", "fetch", "exit"],
+            "commands": [
+                "populate",
+                "stream_in",
+                "stream_out",
+                "call",
+                "wait",
+                "read_register",
+                "fetch",
+                "exit",
+            ],
             "fetch": {
                 "schema_version": 1,
                 "scalar": manifest_fetch_scalar,
