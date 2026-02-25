@@ -69,7 +69,7 @@ int on_event_new_connection(sd_event_source *s, int fd, uint32_t revents, void *
         }
 
         _cleanup_(cleanup_clientp)
-        struct client *client;
+        struct client *client = NULL;
         int ret = create_client_event(s, cfd, state, &client);
         if (ret == -1) {
             close(cfd);
@@ -128,7 +128,14 @@ static int create_client_event(sd_event_source *listener_event_source, int cfd, 
     ret = sd_event_source_set_description(source, description);
     PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Could not set description for client fd");
 
+    state->next_conn_id++;
+    if (state->next_conn_id == 0) {
+        state->next_conn_id = 1;
+    }
+
     client->fd = cfd;
+    client->in_fd = -1;
+    client->conn_id = state->next_conn_id;
     client->state = state;
     client->event_source = source;
 
@@ -208,5 +215,3 @@ int populate_uid_gid(int cfd, struct client *client)
 
     return 0;
 }
-
-

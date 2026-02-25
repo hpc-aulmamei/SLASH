@@ -27,19 +27,23 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <optional>
 #include <string>
 
 #include "utils/logger.hpp"
+#include "qdma/qdma_connection.hpp"
+
+#include <vrtd/qdma_qpair.hpp>
 
 #define RW_MAX_SIZE 0x7ffff000  ///< Maximum size for read/write operations
 #define GB_DIV 1000000000       ///< Divider for gigabytes
 #define MB_DIV 1000000          ///< Divider for megabytes
 #define KB_DIV 1000             ///< Divider for kilobytes
 #define NSEC_DIV 1000000000     ///< Divider for nanoseconds
-#define QMAX_PATH "/sys/bus/pci/devices/0000:%s:00.1/qdma/qmax"  ///< Path for QMAX
-#define QDMA_QUEUE_NAME "qdma%s001"                              ///< Format for QDMA queue name
-#define QDMA_DEFAULT_QUEUE "/dev/qdma%s001-MM-0"                 ///< Default QDMA queue
-#define QDMA_DEFAULT_ST_QUEUE "/dev/qdma%s001-ST-%u"             ///< Default stream queue
+
+namespace vrtd {
+class Device;
+}
 
 namespace vrt {
 /**
@@ -48,7 +52,8 @@ namespace vrt {
 class QdmaIntf {
     uint8_t queueIdx;       ///< Queue index
     std::string bdf;        ///< Bus:Device.Function identifier
-    std::string queueName;  ///< Queue name
+    std::optional<vrtd::QdmaQpair> qpair;  ///< vrtd qpair (streaming)
+    int qpairFd = -1;                     ///< Cached qpair fd
 
     /**
      * @brief Writes data from a buffer to a device.
@@ -75,39 +80,19 @@ class QdmaIntf {
      * @param bdf The BDF to strip.
      * @return The stripped bus part.
      */
-    char* strip(const char* bdf);
-
-    /**
-     * @brief Creates a QDMA queue.
-     * @param bdf The BDF of the device.
-     * @return The name of the created queue.
-     */
-    char* create_qdma_queue(const char* bdf);
-
-    /**
-     * @brief Deletes a QDMA queue.
-     * @param bdf The BDF of the device.
-     * @return 0 on success, -1 on failure.
-     */
-    int delete_qdma_queue(const char* bdf);
-
-    // Static instance pointer
-    static QdmaIntf* instance;
 
    public:
     /**
      * @brief Constructor of the QdmaIntf class
      * @param bdf The BDF (Bus:Device.Function) of the device.
      */
-    QdmaIntf(const std::string& bdf);
-
     /**
-     * @brief Constructor of the QdmaIntf class with queue index
-     * @brief Assumes all queues are stream type
-     * @param bdf The BDF (Bus:Device.Function) of the device.
-     * @param queueIdx The index of the queue.
+     * @brief Constructor of the QdmaIntf class using vrtd qpair (streaming).
+     * @param device The vrtd device handle.
+     * @param queueIdx The stream queue index (from system map).
+     * @param direction Stream direction (H2C or C2H).
      */
-    QdmaIntf(const std::string& bdf, const uint32_t queueIdx);
+    QdmaIntf(const vrtd::Device& device, const uint32_t queueIdx, StreamDirection direction);
 
     /**
      * @brief Default constructor for QdmaIntf.

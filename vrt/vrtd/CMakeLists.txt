@@ -57,6 +57,11 @@ install(
 )
 
 install(
+  DIRECTORY "${PROJECT_SOURCE_DIR}/libvrtdpp/include/"
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+)
+
+install(
   TARGETS vrtd libvrtd libvrtdpp
   EXPORT  vrtdTargets
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"

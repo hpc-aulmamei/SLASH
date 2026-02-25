@@ -64,16 +64,12 @@ void XMLParser::parseXML() {
             }
             auto ba = std::stoull(baseAddress, nullptr, 16);
             auto r = std::stoull(range, nullptr, 16);
-            Kernel kernel((ami_device*)nullptr, name, ba, r, registers);
+            Kernel kernel(name, ba, r, registers);
             kernels[name] = kernel;
         } else if (kernelNode->type == XML_ELEMENT_NODE &&
                    xmlStrcmp(kernelNode->name, BAD_CAST "ClockFrequency") == 0) {
             std::string clkFreq = (const char*)xmlNodeGetContent(kernelNode);
             this->clockFrequency = std::stoull(clkFreq);
-        } else if (kernelNode->type == XML_ELEMENT_NODE &&
-                   xmlStrcmp(kernelNode->name, BAD_CAST "Type") == 0) {
-            std::string type = (const char*)xmlNodeGetContent(kernelNode);
-            this->vrtbinType = (type == "Full") ? VrtbinType::FLAT : VrtbinType::SEGMENTED;
         } else if (kernelNode->type == XML_ELEMENT_NODE &&
                    xmlStrcmp(kernelNode->name, BAD_CAST "Platform") == 0) {
             std::string platform_ = (const char*)xmlNodeGetContent(kernelNode);
@@ -110,8 +106,6 @@ void XMLParser::parseXML() {
 std::map<std::string, Kernel> XMLParser::getKernels() { return kernels; }
 
 uint64_t XMLParser::getClockFrequency() { return this->clockFrequency; }
-
-VrtbinType XMLParser::getVrtbinType() { return this->vrtbinType; }
 
 Platform XMLParser::getPlatform() { return this->platform; }
 

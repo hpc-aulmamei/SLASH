@@ -29,6 +29,7 @@
 #include <syslog.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <systemd/sd-daemon.h>
@@ -43,10 +44,13 @@
 #include "device.h"
 #include "signals.h"
 
+#define VRTD_DEFERRED_WORK_INTERVAL_USEC (20ULL * 1000ULL)
+
 static void check_journal_and_abort_if_needed(void);
 static int configure_watchdog(sd_event *ev);
 static int configure_signals(sd_event *ev, struct vrtd *state);
 static int configure_sockets(sd_event *ev, struct vrtd *state);
+static int configure_background_tasks(sd_event *ev, struct vrtd *state);
 static int block_signals(const int *signals, size_t n);
 
 int main(void)
@@ -90,6 +94,12 @@ int main(void)
     ret = configure_sockets(ev, &state);
     if (ret == -1) {
         (void) sd_journal_print(LOG_CRIT, "Failed to configure sockets");
+        exit(EXIT_FAILURE);
+    }
+
+    ret = configure_background_tasks(ev, &state);
+    if (ret == -1) {
+        (void) sd_journal_print(LOG_CRIT, "Failed to configure background tasks");
         exit(EXIT_FAILURE);
     }
 
@@ -225,6 +235,11 @@ static int configure_sockets(sd_event *ev, struct vrtd *state)
             return -1;
         }
 
+        int flags = fcntl(fd, F_GETFL, 0);
+        PROPAGATE_ERROR_STDC_LOG(flags, LOG_ERR, "Failed to get fcntl for fd=%d (%s)", fd, names[i]);
+        ret = fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Failed to set fcntl for fd=%d (%s)", fd, names[i]);
+        
         _cleanup_(sd_event_source_unrefp)
         sd_event_source *source = NULL;
         ret = sd_event_add_io(ev, &source, fd, EPOLLIN, on_event_new_connection, state);
@@ -258,6 +273,37 @@ static int configure_watchdog(sd_event *ev)
 {
     int ret = sd_event_set_watchdog(ev, 1);
     PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to enable watchdog");
+
+    return 0;
+}
+
+static int configure_background_tasks(sd_event *ev, struct vrtd *state)
+{
+    uint64_t now = 0;
+    int ret = sd_event_now(ev, CLOCK_MONOTONIC, &now);
+    PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to read event loop clock");
+
+    _cleanup_(sd_event_source_unrefp)
+    sd_event_source *source = NULL;
+    ret = sd_event_add_time(
+        ev,
+        &source,
+        CLOCK_MONOTONIC,
+        now + VRTD_DEFERRED_WORK_INTERVAL_USEC,
+        VRTD_DEFERRED_WORK_INTERVAL_USEC / 2,
+        on_event_deferred_work,
+        state
+    );
+    PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to add deferred work timer");
+
+    ret = sd_event_source_set_description(source, "Deferred request poll");
+    PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to set deferred work timer description");
+
+    ret = sd_event_source_set_floating(source, 1);
+    PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to float deferred work timer source");
+
+    ret = sd_event_source_set_exit_on_failure(source, 1);
+    PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to set exit-on-failure for deferred work timer");
 
     return 0;
 }

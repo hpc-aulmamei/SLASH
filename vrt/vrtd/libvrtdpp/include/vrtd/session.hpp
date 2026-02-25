@@ -26,10 +26,12 @@
 #include <vrtd/device.hpp>
 #include <vrtd/bar.hpp>
 #include <vrtd/bar_file.hpp>
+#include <vrtd/buffer.hpp>
 #include <vrtd/qdma_qpair.hpp>
 
 #include <mutex>
 #include <memory>
+#include <string_view>
 
 namespace vrtd {
 
@@ -113,6 +115,15 @@ public:
     Device getDevice(size_t i) const;
 
     /**
+     * @brief Retrieve a device handle by PCI BDF string.
+     *
+     * @param bdf PCI BDF string (e.g., "0000:65:00.0").
+     * @return A lightweight @c Device value referring back to this session.
+     * @throws vrtd::Error if the device cannot be found or if the session is not usable.
+     */
+    Device getDeviceByBdf(std::string_view bdf) const;
+
+    /**
      * @brief Query QDMA capabilities for a device.
      *
      * @param device Device for which to query QDMA info.
@@ -120,45 +131,6 @@ public:
      * @throws vrtd::Error on error.
      */
     struct slash_qdma_info getQdmaInfo(const Device& device) const;
-
-    /**
-     * @brief Create a QDMA qpair on a device.
-     *
-     * Returns an owning @c QdmaQpair that will automatically delete
-     * the qpair on destruction.
-     *
-     * @param device Device on which to create the qpair.
-     * @param cfg    Qpair configuration parameters. The returned qpair
-     *               exposes @c getQid().
-     * @return An owning @c QdmaQpair.
-     * @throws vrtd::Error on error.
-     */
-    QdmaQpair createQdmaQpair(
-        const Device& device,
-        const struct slash_qdma_qpair_add& cfg
-    ) const;
-
-    /**
-     * @brief Start, stop or delete an existing QDMA qpair.
-     *
-     * Convenience wrappers around the vrtd QDMA queue-op requests.
-     *
-     * @throws vrtd::Error on error.
-     */
-    void startQdmaQpair(const Device& device, uint32_t qid) const;
-    void stopQdmaQpair (const Device& device, uint32_t qid) const;
-    void deleteQdmaQpair(const Device& device, uint32_t qid) const;
-
-    /**
-     * @brief Obtain a read/write file descriptor for a QDMA qpair.
-     *
-     * @param device Device owning the qpair.
-     * @param qid    Qpair identifier as returned by @c createQdmaQpair().
-     * @param flags  OR of O_CLOEXEC and 0 (other flags may be rejected).
-     * @return A new file descriptor referring to the qpair, owned by the caller.
-     * @throws vrtd::Error on error.
-     */
-    int openQdmaQpairFd(const Device& device, uint32_t qid, uint32_t flags = 0) const;
 
     /**
      * @brief Explicitly close the session.
@@ -192,6 +164,113 @@ private:
      * @internal Opens and mmaps a BAR file. Called via @c Bar::openBarFile().
      */
     BarFile openBarFile(const Bar &bar) const;
+
+    /**
+     * @internal Create a QDMA qpair on a device.
+     *
+     * Returns an owning @c QdmaQpair that will automatically delete
+     * the qpair on destruction.
+     *
+     * @param device Device on which to create the qpair.
+     * @param cfg    Qpair configuration parameters. The returned qpair
+     *               exposes @c getQid().
+     * @return An owning @c QdmaQpair.
+     * @throws vrtd::Error on error.
+     */
+    QdmaQpair createQdmaQpair(
+        const Device& device,
+        const struct slash_qdma_qpair_add& cfg
+    ) const;
+
+    /**
+     * @internal Open a buffer (allocation + QDMA qpair).
+     *
+     * @param device    Device on which to allocate.
+     * @param allocType Allocation type.
+     * @param size      Requested size in bytes.
+     * @param allocArg  Allocation argument (HBM region index for HBM).
+     * @param allocDir  QDMA transfer direction.
+     * @return An owning @c Buffer.
+     * @throws vrtd::Error on error.
+     */
+    Buffer openBuffer(
+        const Device& device,
+        BufferAllocType allocType,
+        uint64_t size,
+        uint64_t allocArg,
+        BufferAllocDir allocDir
+    ) const;
+
+    /**
+     * @internal Perform a PCIe hotplug operation.
+     *
+     * @param device Device target.
+     * @param op     One of vrtd::HotplugOp.
+     * @throws vrtd::Error on error.
+     */
+    void hotplugOp(const Device& device, HotplugOp op) const;
+
+    /**
+     * @internal Perform a design writer transfer using an input FD.
+     *
+     * @param device   Device owning the design writer.
+     * @param input_fd Input file descriptor to transfer from.
+     * @throws vrtd::Error on error.
+     */
+    void designWrite(const Device& device, int input_fd) const;
+
+    /**
+     * @internal Perform a design writer transfer using a file path.
+     *
+     * @param device Device owning the design writer.
+     * @param path   Input file path to transfer from.
+     * @throws vrtd::Error on error.
+     */
+    void designWriteFile(const Device& device, std::string_view path) const;
+
+    /**
+     * @internal Get clock rate for a region.
+     *
+     * @param device Device owning the clock.
+     * @param region One of vrtd_clock_region.
+     * @return Current rate in Hz.
+     * @throws vrtd::Error on error.
+     */
+    uint32_t getClockRate(const Device& device, ClockRegion region) const;
+
+    /**
+     * @internal Set clock rate for a region.
+     *
+     * @param device Device owning the clock.
+     * @param region One of vrtd_clock_region.
+     * @param rate_hz Requested rate in Hz.
+     * @return Achieved rate in Hz.
+     * @throws vrtd::Error on error.
+     */
+    uint32_t setClockRate(const Device& device, ClockRegion region, uint32_t rate_hz) const;
+
+    /**
+     * @internal Start, stop or delete an existing QDMA qpair.
+     *
+     * Convenience wrappers around the vrtd QDMA queue-op requests, used by
+     * @c QdmaQpair via the callbacks injected by @c createQdmaQpair().
+     *
+     * @throws vrtd::Error on error.
+     */
+    void startQdmaQpair(const Device& device, uint32_t qid) const;
+    void stopQdmaQpair (const Device& device, uint32_t qid) const;
+    void deleteQdmaQpair(const Device& device, uint32_t qid) const;
+
+    /**
+     * @internal Obtain a read/write file descriptor for a QDMA qpair.
+     *
+     * @param device Device owning the qpair.
+     * @param qid    Qpair identifier as returned by @c createQdmaQpair().
+     * @param flags  OR of O_CLOEXEC and 0 (other flags may be rejected).
+     * @return A new file descriptor referring to the qpair, owned by the caller.
+     * @throws vrtd::Error on error.
+     */
+    int openQdmaQpairFd(const Device& device, uint32_t qid, uint32_t flags = 0) const;
 };
 
 }

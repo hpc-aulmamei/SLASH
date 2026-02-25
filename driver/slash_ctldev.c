@@ -390,6 +390,37 @@ static long slash_ctldev_fop_ioctl(struct file *file, unsigned int op, unsigned 
         return ret;
     }
 
+    case SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO: {
+        struct slash_ioctl_device_info info;
+        u32 user_size = 0;
+        size_t copy_size;
+
+        if (copy_from_user(&user_size, (void __user *)arg, sizeof(user_size))) {
+            dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO copy_from_user failed\n");
+            return -EFAULT;
+        }
+
+        if (!user_size || user_size > sizeof(info))
+            user_size = sizeof(info);
+
+        memset(&info, 0, sizeof(info));
+        info.size = sizeof(info);
+
+        strscpy(info.bdf, pci_name(pdev), sizeof(info.bdf));
+        info.vendor_id = pdev->vendor;
+        info.device_id = pdev->device;
+        info.subsystem_vendor_id = pdev->subsystem_vendor;
+        info.subsystem_device_id = pdev->subsystem_device;
+
+        copy_size = min_t(size_t, user_size, sizeof(info));
+        if (copy_to_user((void __user *)arg, &info, copy_size)) {
+            dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO copy_to_user failed\n");
+            return -EFAULT;
+        }
+
+        return 0;
+    }
+
     default:
         dev_warn(&pdev->dev, "ctldev: unknown ioctl op=0x%x\n", op);
         return -ENOTTY;

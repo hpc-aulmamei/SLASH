@@ -26,6 +26,29 @@ import sys
 import threading
 import time
 from pathlib import Path
+import shutil
+
+from emit.hw.tcl_gen import generate_tcl
+from emit.hw.project_gen import (
+    create_build_project,
+    generate_base_pdi_with_aved,
+    generate_image,
+    generate_util_report,
+)
+from emit.sim.tcl_gen import generate_sim_tcl
+from emit.emu.tcl_gen import generate_emu_tcl
+from emit.sim.project_gen import create_sim_project, build_sim_project
+from emit.emu.project_gen import build_emu_project, package_emu_artifacts
+
+from emit.metadata.prog_image import build_vbin
+
+HW_STEPS = (
+    "create_project",
+    "generate_tcl",
+    "create_hw_project",
+    "build_hw_project",
+    "create_metadata",
+)
 
 from emit.hw.tcl_gen import generate_tcl
 from emit.hw.project_gen import (

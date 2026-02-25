@@ -20,6 +20,8 @@
 struct slash_ctldev *slash_ctldev_mock_open(void);
 int slash_ctldev_mock_close(struct slash_ctldev *ctldev);
 
+struct slash_ioctl_device_info *slash_device_info_mock_read(struct slash_ctldev *ctldev);
+
 struct slash_ioctl_bar_info *slash_bar_info_mock_read(struct slash_ctldev *ctldev, int bar_number);
 void slash_bar_info_mock_free(struct slash_ioctl_bar_info *ctldev);
 

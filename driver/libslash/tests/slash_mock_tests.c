@@ -1,9 +1,11 @@
 #include <slash/ctldev.h>
+#include <slash/hotplug.h>
 
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 static int test_bar_info(struct slash_ctldev *ctldev)
 {
@@ -123,6 +125,59 @@ static int test_bar_file(struct slash_ctldev *ctldev)
     return 0;
 }
 
+static int test_hotplug_validation(void)
+{
+    struct slash_hotplug hotplug;
+    char too_long_bdf[SLASH_HOTPLUG_BDF_LEN + 2];
+
+    errno = 0;
+    if (slash_hotplug_rescan(NULL) == 0) {
+        fprintf(stderr, "slash_hotplug_rescan should fail with NULL handle\n");
+        return 1;
+    }
+    if (errno != EINVAL) {
+        fprintf(stderr, "Expected EINVAL for NULL hotplug handle, got %d\n", errno);
+        return 1;
+    }
+
+    memset(too_long_bdf, 'a', sizeof(too_long_bdf));
+    too_long_bdf[sizeof(too_long_bdf) - 1] = '\0';
+
+    hotplug.fd = -1;
+
+    errno = 0;
+    if (slash_hotplug_remove(&hotplug, too_long_bdf) == 0) {
+        fprintf(stderr, "slash_hotplug_remove should reject overlong BDF\n");
+        return 1;
+    }
+    if (errno != EINVAL) {
+        fprintf(stderr, "Expected EINVAL for overlong BDF, got %d\n", errno);
+        return 1;
+    }
+
+    errno = 0;
+    if (slash_hotplug_toggle_sbr(NULL, NULL) == 0) {
+        fprintf(stderr, "slash_hotplug_toggle_sbr should fail with NULL handle\n");
+        return 1;
+    }
+    if (errno != EINVAL) {
+        fprintf(stderr, "Expected EINVAL for NULL handle in toggle_sbr, got %d\n", errno);
+        return 1;
+    }
+
+    errno = 0;
+    if (slash_hotplug_hotplug(NULL, NULL) == 0) {
+        fprintf(stderr, "slash_hotplug_hotplug should fail with NULL handle\n");
+        return 1;
+    }
+    if (errno != EINVAL) {
+        fprintf(stderr, "Expected EINVAL for NULL handle in hotplug, got %d\n", errno);
+        return 1;
+    }
+
+    return 0;
+}
+
 int main(void)
 {
     struct slash_ctldev *ctldev;
@@ -145,6 +200,11 @@ int main(void)
     }
 
     if (test_bar_file(ctldev) != 0) {
+        (void) slash_ctldev_close(ctldev);
+        return 1;
+    }
+
+    if (test_hotplug_validation() != 0) {
         (void) slash_ctldev_close(ctldev);
         return 1;
     }

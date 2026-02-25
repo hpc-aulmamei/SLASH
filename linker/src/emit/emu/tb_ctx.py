@@ -24,6 +24,8 @@ from pathlib import Path
 import json
 import re
 
+from core.port import BusType
+
 
 def infer_sol1_json_from_component_xml(component_xml: Path) -> Path:
     """
@@ -62,21 +64,78 @@ def infer_sol1_json_from_component_xml(component_xml: Path) -> Path:
 
 
 def _norm_stream_type(src: str) -> str:
-    # "stream<ap_uint<32>, 0>&" -> "hls::stream<ap_uint<32>>&"
+    # Canonicalize stream types so downstream checks are stable.
+    parsed = _parse_stream_type(src)
+    if parsed is None:
+        return src.strip()
+    elem_type, is_ref = parsed
+    return f"hls::stream<{elem_type}>{'&' if is_ref else ''}"
+
+
+def _parse_stream_type(src: str) -> tuple[str, bool] | None:
+    """
+    Parse stream-like types with nested templates, e.g.
+      stream<ap_uint<32>, 0>&
+      hls::stream<ap_uint<512>>&
+      hls::stream<qdma_axis<64,0,0,0> >&
+    Returns (element_type, is_reference) or None if not a stream type.
+    """
     s = src.strip()
-    m = re.match(r"stream\s*<\s*([^,>]+)\s*,\s*[^>]+>\s*&\s*$", s)
-    if m:
-        return f"hls::stream<{m.group(1).strip()}>&"
-    return s
+    if not re.match(r"^(?:hls::)?stream\s*<", s):
+        return None
+
+    lt = s.find("<")
+    if lt < 0:
+        return None
+
+    depth = 0
+    gt = -1
+    for i in range(lt, len(s)):
+        c = s[i]
+        if c == "<":
+            depth += 1
+        elif c == ">":
+            depth -= 1
+            if depth == 0:
+                gt = i
+                break
+    if gt < 0:
+        return None
+
+    inner = s[lt + 1 : gt]
+    tail = s[gt + 1 :].strip()
+    is_ref = tail.endswith("&")
+
+    # Split stream template args at top-level commas only.
+    parts: list[str] = []
+    cur: list[str] = []
+    depth = 0
+    for ch in inner:
+        if ch == "<":
+            depth += 1
+            cur.append(ch)
+        elif ch == ">":
+            depth = max(0, depth - 1)
+            cur.append(ch)
+        elif ch == "," and depth == 0:
+            parts.append("".join(cur).strip())
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur).strip())
+
+    if not parts or not parts[0]:
+        return None
+    return parts[0], is_ref
 
 
 def _is_stream(cpp_t: str) -> bool:
-    return "hls::stream" in cpp_t
+    return _parse_stream_type(cpp_t) is not None
 
 
 def _stream_inner(cpp_t: str) -> str:
-    m = re.search(r"hls::stream<\s*(.+?)\s*>", cpp_t)
-    return m.group(1) if m else "ap_uint<512>"
+    parsed = _parse_stream_type(cpp_t)
+    return parsed[0] if parsed is not None else "ap_uint<512>"
 
 
 def _is_ptr(cpp_t: str) -> bool:
@@ -89,6 +148,73 @@ def _strip_ref(cpp_t: str) -> tuple[str, bool]:
     if t.endswith("&") and not _is_stream(t):
         return t[:-1].strip(), True
     return t, False
+
+
+def _select_register_block(kernel):
+    mmaps = getattr(kernel, "memory_maps", []) or []
+
+    for mm in mmaps:
+        if mm.name and "control" in mm.name.lower():
+            for ab in mm.address_blocks:
+                if (ab.usage or "").lower() == "register":
+                    return ab
+            if mm.address_blocks:
+                return mm.address_blocks[0]
+
+    for mm in mmaps:
+        for ab in mm.address_blocks:
+            if (ab.usage or "").lower() == "register":
+                return ab
+
+    for mm in mmaps:
+        if mm.address_blocks:
+            return mm.address_blocks[0]
+
+    return None
+
+
+_REG_SPLIT_RE = re.compile(r".*_\d+$")
+_QDMA_PORT_RE = re.compile(r"qdma_(\d+)$")
+
+
+def _is_split_reg_name(name: str) -> bool:
+    return bool(_REG_SPLIT_RE.fullmatch(name or ""))
+
+
+def _stream_aliases_for_edge(edge, wire_name: str) -> list[str]:
+    names = [wire_name]
+
+    def _maybe_add(inst_name: str, port_name: str, prefix: str) -> None:
+        if not inst_name.lower().startswith("cips"):
+            return
+        m = _QDMA_PORT_RE.fullmatch(port_name or "")
+        if not m:
+            return
+        names.append(f"{prefix}{m.group(1)}")
+
+    _maybe_add(getattr(edge, "src_inst"), getattr(edge, "src_port"), "streamingBuffer_")
+    _maybe_add(getattr(edge, "dst_inst"), getattr(edge, "dst_port"), "outputStreamingBuffer_")
+
+    # preserve order while deduping
+    out: list[str] = []
+    seen: set[str] = set()
+    for n in names:
+        if n not in seen:
+            seen.add(n)
+            out.append(n)
+    return out
+
+
+def _infer_control_mode(*, has_axilite: bool, stream_only: bool) -> str:
+    if has_axilite:
+        return "s_axilite"
+    if stream_only:
+        return "ap_ctrl_none"
+    return "unknown"
+
+
+def _call_kind_for_cpp_type(cpp_t: str) -> str:
+    return "buffer" if _is_ptr(cpp_t) else "scalar"
 
 
 def parse_sol1_data(sol1_json: Path) -> dict:
@@ -111,6 +237,7 @@ def parse_sol1_data(sol1_json: Path) -> dict:
             {
                 "name": arg_name,
                 "index": idx,
+                "direction": info.get("direction"),
                 "srcType": src_type,
                 "cppType": cpp_type,
                 "iface": iface,
@@ -142,16 +269,29 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
     wires = []
     endpoint_to_wire: dict[str, str] = {}
 
-    def get_stream_ctype(inst_name: str, iface: str) -> str:
+    def _get_stream_ctype_from_endpoint(inst_name: str, iface: str) -> str | None:
+        if inst_name not in instances:
+            return None
         ktype = instances[inst_name].kernel.name
         meta = hls_meta[ktype]
         a = next((x for x in meta["Args"] if x["iface"] == iface and _is_stream(x["cppType"])), None)
-        return _stream_inner(a["cppType"]) if a else "ap_uint<512>"
+        if a is None:
+            return None
+        return _stream_inner(a["cppType"])
 
+    def get_stream_ctype(edge) -> str:
+        return (
+            _get_stream_ctype_from_endpoint(edge.src_inst, edge.src_port)
+            or _get_stream_ctype_from_endpoint(edge.dst_inst, edge.dst_port)
+            or "ap_uint<512>"
+        )
+
+    stream_routes = []
     for i, e in enumerate(streams):
         wname = f"stream_{i}"
-        ctype = get_stream_ctype(e.src_inst, e.src_port)
+        ctype = get_stream_ctype(e)
         wires.append({"name": wname, "ctype": ctype})
+        stream_routes.append({"wire": wname, "ctype": ctype, "names": _stream_aliases_for_edge(e, wname)})
         endpoint_to_wire[f"{e.src_inst}.{e.src_port}"] = wname
         endpoint_to_wire[f"{e.dst_inst}.{e.dst_port}"] = wname
 
@@ -159,10 +299,14 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
     vars_decl = []
     function_calls = []
     ref_vars = []
+    fetch_scalar_cases = []
+    autostart_calls = []
+    manifest_kernels = []
 
     for inst_name, inst in instances.items():
         ktype = inst.kernel.name
         meta = hls_meta[ktype]
+        non_stream_args = []
 
         # declare per-arg vars (skip streams)
         for a in meta["Args"]:
@@ -178,9 +322,18 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 vars_decl.append(f"{cpp_t} {vname}")
                 if is_ref:
                     ref_vars.append(vname)
+            non_stream_args.append(
+                {
+                    "name": a["name"],
+                    "var": vname,
+                    "cppType": cpp_t,
+                    "is_ref": is_ref,
+                }
+            )
 
         decode_blocks = []
         call_args = []
+        manifest_call_args = []
 
         argN = 0
         for a in meta["Args"]:
@@ -206,6 +359,21 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 decode_blocks.append(f'  assignValue({vname}, root["args"]["arg{argN}"]["value"]);')
                 decode_blocks.append('}')
 
+            include_in_manifest_call = True
+            if (a.get("direction") or "in") == "out" and not _is_ptr(cpp_t):
+                # VRT emu calls omit scalar/register-style outputs (read back via fetch),
+                # but still pass pointer outputs (e.g. m_axi write destinations).
+                include_in_manifest_call = False
+
+            if include_in_manifest_call:
+                manifest_call_args.append(
+                    {
+                        "arg": f"arg{argN}",
+                        "kind": _call_kind_for_cpp_type(cpp_t),
+                        "source_arg": a["name"],
+                        "cpp_type": cpp_t,
+                    }
+                )
             call_args.append(vname)
             argN += 1
 
@@ -218,10 +386,216 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
             }
         )
 
+        has_axilite = any(True for _ in inst.kernel.ports_of_type(BusType.AXILITE))
+        stream_only = bool(meta["Args"]) and all(_is_stream(a["cppType"]) for a in meta["Args"])
+        has_missing_stream = any(arg == "/*MISSING_STREAM*/" for arg in call_args)
+        control_mode = _infer_control_mode(has_axilite=has_axilite, stream_only=stream_only)
+        autostart = stream_only and not has_axilite and not has_missing_stream
+        callable_kernel = has_axilite and not has_missing_stream
+        scheduling_policy = "autostart" if autostart else "call"
+        autostart_reason = "stream_only_no_axilite" if autostart else ""
+        shutdown_policy = "fast_exit" if autostart else "normal_exit"
+        if autostart:
+            autostart_calls.append(
+                {
+                    "inst": inst_name,
+                    "top": meta["Top"],
+                    "call_args": call_args,
+                }
+            )
+        manifest_kernels.append(
+            {
+                "instance": inst_name,
+                "top": meta["Top"],
+                "has_axilite": has_axilite,
+                "control_mode": control_mode,
+                "callable": callable_kernel,
+                "autostart": autostart,
+                "autostart_reason": autostart_reason,
+                "scheduling_policy": scheduling_policy,
+                "shutdown_policy": shutdown_policy,
+                "missing_stream_bindings": has_missing_stream,
+                "call_arg_count": len(manifest_call_args),
+                "call_args": manifest_call_args,
+                "args": [
+                    {
+                        "name": a["name"],
+                        "cpp_type": a["cppType"],
+                        "iface": a["iface"],
+                        "direction": a.get("direction"),
+                        "is_stream": _is_stream(a["cppType"]),
+                        "is_pointer": _is_ptr(_strip_ref(a["cppType"])[0]),
+                        "call_arg": next(
+                            (
+                                ca["arg"]
+                                for ca in manifest_call_args
+                                if ca["source_arg"] == a["name"]
+                            ),
+                            None,
+                        ),
+                        "call_kind": next(
+                            (
+                                ca["kind"]
+                                for ca in manifest_call_args
+                                if ca["source_arg"] == a["name"]
+                            ),
+                            None,
+                        ),
+                    }
+                    for a in meta["Args"]
+                ],
+            }
+        )
+
+        reg_block = _select_register_block(inst.kernel)
+        regs = []
+        if reg_block is not None and getattr(reg_block, "registers", None):
+            regs = sorted(reg_block.registers, key=lambda r: r.address_offset)
+
+        # Mirror vrt::Kernel::read() emulation indexing, which starts after the
+        # first 4 control registers and synthesizes argN based on register order.
+        if regs:
+            reg_idx = 4
+            fetch_arg_idx = 0
+            logical_arg_idx = 0
+            prev_value_reg_name: str | None = None
+            while reg_idx < len(regs):
+                reg_name = getattr(regs[reg_idx], "name", "") or ""
+                reg_off = int(getattr(regs[reg_idx], "address_offset", 0) or 0)
+
+                if _is_split_reg_name(reg_name):
+                    if logical_arg_idx < len(non_stream_args):
+                        fetch_scalar_cases.append(
+                            {
+                                "inst": inst_name,
+                                "arg": f"arg{fetch_arg_idx}",
+                                "kind": "var",
+                                "var": non_stream_args[logical_arg_idx]["var"],
+                                "source": "register_metadata",
+                                "register_name": reg_name,
+                                "register_offset": reg_off,
+                                "register_split": True,
+                            }
+                        )
+                        logical_arg_idx += 1
+                    fetch_arg_idx += 1
+                    reg_idx += 2
+                    continue
+
+                if prev_value_reg_name and reg_name == f"{prev_value_reg_name}_ctrl":
+                    fetch_scalar_cases.append(
+                        {
+                            "inst": inst_name,
+                            "arg": f"arg{fetch_arg_idx}",
+                            "kind": "const_u32",
+                            "value": 1,
+                            "source": "register_metadata",
+                            "register_name": reg_name,
+                            "register_offset": reg_off,
+                            "synthetic": "ctrl_valid",
+                            "derived_from_register": prev_value_reg_name,
+                        }
+                    )
+                    fetch_arg_idx += 1
+                    reg_idx += 1
+                    continue
+
+                if logical_arg_idx < len(non_stream_args):
+                    fetch_scalar_cases.append(
+                        {
+                            "inst": inst_name,
+                            "arg": f"arg{fetch_arg_idx}",
+                            "kind": "var",
+                            "var": non_stream_args[logical_arg_idx]["var"],
+                            "source": "register_metadata",
+                            "register_name": reg_name,
+                            "register_offset": reg_off,
+                            "register_split": False,
+                        }
+                    )
+                    logical_arg_idx += 1
+                    prev_value_reg_name = reg_name
+                else:
+                    prev_value_reg_name = None
+
+                fetch_arg_idx += 1
+                reg_idx += 1
+        else:
+            # Fallback if register metadata is unavailable.
+            for idx, arg in enumerate(non_stream_args):
+                fetch_scalar_cases.append(
+                    {
+                        "inst": inst_name,
+                        "arg": f"arg{idx}",
+                        "kind": "var",
+                        "var": arg["var"],
+                        "source": "fallback_no_register_metadata",
+                    }
+                )
+
+    fetch_scalar_var_symbols = sorted(
+        {
+            c["var"]
+            for c in fetch_scalar_cases
+            if c.get("kind") == "var" and isinstance(c.get("var"), str)
+        }
+    )
+
+    manifest_fetch_scalar = []
+    for c in fetch_scalar_cases:
+        entry = {
+            "function": c["inst"],
+            "arg": c["arg"],
+            "kind": c["kind"],
+        }
+        if c["kind"] == "var":
+            entry["var_symbol"] = c["var"]
+        elif c["kind"] == "const_u32":
+            entry["value"] = int(c["value"])
+        source = {"mode": c.get("source", "unknown")}
+        if isinstance(c.get("register_name"), str):
+            source["register_name"] = c["register_name"]
+        if isinstance(c.get("register_offset"), int):
+            source["register_offset"] = c["register_offset"]
+        if c.get("register_split") is not None:
+            source["register_split"] = bool(c["register_split"])
+        if isinstance(c.get("synthetic"), str):
+            source["synthetic"] = c["synthetic"]
+        if isinstance(c.get("derived_from_register"), str):
+            source["derived_from_register"] = c["derived_from_register"]
+        entry["source"] = source
+        manifest_fetch_scalar.append(entry)
+
     return {
         "prototypes": prototypes,
         "vars": vars_decl,
         "wires": wires,
+        "stream_routes": stream_routes,
         "function_calls": function_calls,
+        "autostart_calls": autostart_calls,
+        "fetch_scalar_cases": fetch_scalar_cases,
+        "fetch_scalar_var_symbols": fetch_scalar_var_symbols,
         "ref_vars": ref_vars,
+        "emu_manifest": {
+            "manifest_schema": {
+                "name": "slash.sw_emu",
+                "version": 1,
+                "required_sections": ["kernels", "streams", "commands", "fetch"],
+            },
+            "emu_protocol_version": 1,
+            "kernels": manifest_kernels,
+            "streams": [
+                {
+                    "wire": s["wire"],
+                    "ctype": s["ctype"],
+                    "aliases": list(s["names"]),
+                }
+                for s in stream_routes
+            ],
+            "commands": ["populate", "stream_in", "stream_out", "call", "fetch", "exit"],
+            "fetch": {
+                "schema_version": 1,
+                "scalar": manifest_fetch_scalar,
+            },
+        },
     }

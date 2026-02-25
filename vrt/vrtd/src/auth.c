@@ -51,6 +51,26 @@ int auth_request_get_device_info(
     }
 }
 
+int auth_request_get_device_by_bdf(
+    struct client *client,
+    const struct vrtd_req_get_device_by_bdf *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (client->role->query) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 int auth_request_get_num_devices(
     struct client *client,
     const struct vrtd_req_get_num_devices *req_body
@@ -220,6 +240,150 @@ int auth_request_qdma_qpair_get_fd(
 
     if (!client->role->bar_policy.any) {
         /* TODO: introduce a dedicated QDMA policy instead of reusing bar_policy. */
+        return 0;
+    }
+
+    return 1;
+}
+
+int auth_request_buffer_open(
+    struct client *client,
+    const struct vrtd_req_buffer_open *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (!client->role->query) {
+        return 0;
+    }
+
+    if (!client->role->allow_any_device) {
+        return 0;
+    }
+
+    if (!client->role->bar_policy.any) {
+        /* TODO: introduce a dedicated buffer policy instead of reusing bar_policy. */
+        return 0;
+    }
+
+    return 1;
+}
+
+int auth_request_buffer_close(
+    struct client *client,
+    const struct vrtd_req_buffer_close *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (!client->role->query) {
+        return 0;
+    }
+
+    if (!client->role->allow_any_device) {
+        return 0;
+    }
+
+    if (!client->role->bar_policy.any) {
+        /* TODO: introduce a dedicated buffer policy instead of reusing bar_policy. */
+        return 0;
+    }
+
+    return 1;
+}
+
+int auth_request_design_write(
+    struct client *client,
+    const struct vrtd_req_design_write *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (!client->role->query) {
+        return 0;
+    }
+
+    if (!client->role->allow_any_device) {
+        return 0;
+    }
+
+    if (!client->role->bar_policy.any) {
+        /* TODO: introduce a dedicated policy instead of reusing bar_policy. */
+        return 0;
+    }
+
+    return 1;
+}
+
+int auth_request_device_hotplug_op(
+    struct client *client,
+    const struct vrtd_req_device_hotplug_op *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (!client->role->query) {
+        return 0;
+    }
+
+    if (!client->role->allow_any_device) {
+        return 0;
+    }
+
+    if (!client->role->pcie_hotplug) {
+        return 0;
+    }
+
+    return 1;
+}
+
+int auth_request_clock_op(
+    struct client *client,
+    const struct vrtd_req_clock_op *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (!client->role->query) {
+        return 0;
+    }
+
+    if (!client->role->allow_any_device) {
+        return 0;
+    }
+
+    if (!client->role->bar_policy.any) {
+        /* TODO: introduce a dedicated clock policy instead of reusing bar_policy. */
         return 0;
     }
 

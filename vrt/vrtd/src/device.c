@@ -21,6 +21,9 @@
 #define _GNU_SOURCE
 
 #include "device.h"
+#include "allocator.h"
+#include "clock.h"
+#include "design_writer.h"
 
 #include <assert.h>
 #include <errno.h>
@@ -34,14 +37,13 @@
 
 static int devices_open(struct device_ptr_array *devices, size_t pathc, char ** paths);
 static int device_open(struct device *d, const char *path);
-void cleanup_device(struct device *d);
 
 int devices_discover_and_open(struct device_ptr_array *devices)
 {
     _cleanup_(globfree)
     glob_t g = {0};
 
-    int ret = glob("/dev/slash_ctl*", GLOB_ERR, NULL, &g);
+    int ret = glob("/dev/slash/ctl*", GLOB_ERR, NULL, &g);
     if (ret != 0) {
         (void) sd_journal_print(
             LOG_ERR,
@@ -92,21 +94,43 @@ static int device_open(struct device *d, const char *path)
 
     assert(d->ctl != NULL);
 
+    d->buffers = buffer_ptr_array_init();
+
+    d->memory_map = device_memory_map_create();
+    if (d->memory_map == NULL) {
+        (void) sd_journal_print(
+            LOG_ERR,
+            "Error creating device memory map for %s: %m",
+            path
+        );
+        return -1;
+    }
+
+    d->clock_driver = clock_driver_create(d->ctl);
+    if (d->clock_driver == NULL) {
+        (void) sd_journal_print(
+            LOG_ERR,
+            "Error creating clock driver for %s: %m",
+            path
+        );
+        return -1;
+    }
+
     /* Best-effort QDMA ctl path:
-     * Map /dev/slash_ctlN -> /dev/slash_qdma_ctlN by string replacement.
+     * Map /dev/slash/ctlN -> /dev/slash/qdma_ctlN by string replacement.
      * This assumes matching indices and a single device.
      *
      * TODO: replace this with a robust mapping via sysfs/PCI BDF when
      * multiple devices or different naming schemes are supported.
      */
     {
-        const char *prefix = "/dev/slash_ctl";
+        const char *prefix = "/dev/slash/ctl";
         _cleanup_(cleanup_free)
         char *qdma_path = NULL;
 
         if (strncmp(path, prefix, strlen(prefix)) == 0) {
             const char *suffix = path + strlen(prefix);
-            int n = asprintf(&qdma_path, "/dev/slash_qdma_ctl%s", suffix);
+            int n = asprintf(&qdma_path, "/dev/slash/qdma_ctl%s", suffix);
             if (n < 0) {
                 qdma_path = NULL;
             }
@@ -120,6 +144,16 @@ static int device_open(struct device *d, const char *path)
                     "Error opening QDMA device %s (for %s): %m",
                     qdma_path, d->path
                 );
+            } else {
+                d->design_writer = design_writer_create(d->qdma);
+                if (d->design_writer == NULL) {
+                    (void) sd_journal_print(
+                        LOG_ERR,
+                        "Error creating design writer for %s: %m",
+                        d->path
+                    );
+                    return -1;
+                }
             }
         }
     }
@@ -156,6 +190,23 @@ void cleanup_device(struct device *d)
 {
     if (d == NULL) {
         return;
+    }
+
+    buffer_ptr_array_free(&d->buffers);
+
+    if (d->design_writer != NULL) {
+        cleanup_design_writer(d->design_writer);
+        d->design_writer = NULL;
+    }
+
+    if (d->memory_map != NULL) {
+        device_memory_map_cleanup(d->memory_map);
+        d->memory_map = NULL;
+    }
+
+    if (d->clock_driver != NULL) {
+        cleanup_clock_driver(d->clock_driver);
+        d->clock_driver = NULL;
     }
 
     if (d->qdma != NULL) {

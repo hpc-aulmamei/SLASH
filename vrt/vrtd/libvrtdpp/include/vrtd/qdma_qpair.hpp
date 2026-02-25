@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <functional>
 #include <fstream>
+#include <fcntl.h>
 
 namespace vrtd {
 

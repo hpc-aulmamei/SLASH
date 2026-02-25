@@ -135,6 +135,7 @@ def package_emu_artifacts(
     emu_root = _emu_root(project_name)
     system_map = project_root / "system_map.xml"
     vpp_emu = emu_root / "vpp_emu"
+    emu_manifest = emu_root / "emu_manifest.json"
 
     if not system_map.exists():
         raise FileNotFoundError(f"system_map.xml not found: {system_map}")
@@ -149,6 +150,8 @@ def package_emu_artifacts(
     with tarfile.open(out_path, mode="w") as tf:
         tf.add(system_map, arcname="system_map.xml")
         tf.add(vpp_emu, arcname="vpp_emu")
+        if emu_manifest.exists():
+            tf.add(emu_manifest, arcname="emu_manifest.json")
 
     logger.info("Emulation vbin in %s", out_path)
     return out_path

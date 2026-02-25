@@ -30,7 +30,9 @@ ccflags-y += \
 	-I$(src)/$(QDMA_DRV_ROOT)/libqdma/qdma_access/eqdma_cpm5_access \
 	-I$(src)/$(QDMA_DRV_ROOT)/libqdma/qdma_access/eqdma_soft_access \
 	-I$(src)/$(QDMA_DRV_ROOT)/libqdma/qdma_access/qdma_cpm4_access \
-	-I$(src)/$(QDMA_DRV_ROOT)/libqdma/qdma_access/qdma_soft_access
+	-I$(src)/$(QDMA_DRV_ROOT)/libqdma/qdma_access/qdma_soft_access \
+	\
+	-DTANDEM_BOOT_SUPPORTED=1
 
 
 LIBQDMA_OBJS := \

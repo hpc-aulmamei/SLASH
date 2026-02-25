@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
         vrt::Buffer<uint32_t> in_buff(device, size, vrt::MemoryRangeType::HBM);
         vrt::Buffer<uint32_t> out_buff(device, size, vrt::MemoryRangeType::HBM);
         for(uint32_t i = 0; i < size; i++) {
-            in_buff[i] = 1;
+            in_buff[i] = i;
         }
         in_buff.sync(vrt::SyncType::HOST_TO_DEVICE);
         offset.start(size, in_buff.getPhysAddr(), m, n);

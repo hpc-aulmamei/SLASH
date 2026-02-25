@@ -103,7 +103,7 @@ class StreamingBuffer {
     std::size_t index;         ///< Index of the buffer.
     std::string name;          ///< Name of the buffer.
     std::string portName;      ///< Name of the port associated with the buffer.
-    QdmaIntf* qdmaInterface;   ///< Pointer to the QDMA interface.
+    QdmaIntf* qdmaInterface = nullptr;   ///< Pointer to the QDMA interface.
 };
 
 template <typename T>
@@ -176,10 +176,13 @@ void StreamingBuffer<T>::sync() {
             std::memcpy(localBuffer, recvData.data(), recvData.size());
         }
     } else if (platform == Platform::HARDWARE) {
+        if (qdmaInterface == nullptr) {
+            throw std::runtime_error("QDMA interface not initialized for streaming buffer");
+        }
         if (syncType == StreamDirection::HOST_TO_DEVICE) {
             qdmaInterface->write_buff(reinterpret_cast<char*>(localBuffer), 0, size * sizeof(T));
         } else {
-            throw std::runtime_error("C2H streaming buffer not implemented in hardware.");
+            qdmaInterface->read_buff(reinterpret_cast<char*>(localBuffer), 0, size * sizeof(T));
         }
     } else {
         throw std::runtime_error("Streaming buffer not implemented for this platform.");

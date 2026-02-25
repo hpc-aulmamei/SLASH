@@ -18,7 +18,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "vrtd/wire.h"
 #define _GNU_SOURCE
 
 #include <slash/uapi/slash_interface.h>
@@ -34,8 +33,69 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <sys/mman.h>
+#include <fcntl.h>
 
 #include <vrtd/vrtd.h>
+
+static enum vrtd_ret vrtd_recv_response(
+    int fd,
+    void *resp_body_buf,
+    size_t resp_bufsz,
+    int *resp_fd
+)
+{
+    struct vrtd_resp_header rh = {0};
+
+    struct iovec riov[2];
+    riov[0].iov_base = &rh;
+    riov[0].iov_len  = sizeof(rh);
+    riov[1].iov_base = resp_body_buf;
+    riov[1].iov_len  = resp_bufsz;
+
+    char cbuf[CMSG_SPACE(sizeof(int))];
+    struct msghdr rmsg = {
+        .msg_iov        = riov,
+        .msg_iovlen     = resp_bufsz ? 2 : 1,
+        .msg_control    = resp_fd ? cbuf : NULL,
+        .msg_controllen = resp_fd ? sizeof(cbuf) : 0,
+    };
+
+    if (resp_fd) {
+        *resp_fd = -1;
+    }
+
+    ssize_t rn = recvmsg(fd, &rmsg, MSG_CMSG_CLOEXEC);
+    if (rn == -1) {
+        return VRTD_RET_BAD_CONN;
+    }
+
+    if (rmsg.msg_flags & MSG_TRUNC) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+    if (rmsg.msg_flags & MSG_CTRUNC) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    if ((size_t)rn < sizeof(rh)) {
+        return VRTD_RET_BAD_CONN;
+    }
+
+    size_t expect = sizeof(rh) + rh.size;
+    if ((size_t) rn != expect) {
+        return VRTD_RET_BAD_CONN;
+    }
+
+    /* Extract FD if any */
+    for (struct cmsghdr *c = CMSG_FIRSTHDR(&rmsg); c != NULL; c = CMSG_NXTHDR(&rmsg, c)) {
+        if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS && c->cmsg_len >= CMSG_LEN(sizeof(int))) {
+            assert(resp_fd != NULL);
+            memcpy(resp_fd, CMSG_DATA(c), sizeof(int));
+            break;
+        }
+    }
+
+    return (enum vrtd_ret) rh.ret;
+}
 
 int vrtd_connect(const char *path)
 {
@@ -72,7 +132,8 @@ enum vrtd_ret vrtd_raw_request(
     uint16_t opcode,
     const void *req_body, uint16_t req_size,
     void *resp_body_buf, size_t resp_bufsz,
-    int *out_fd
+    int *resp_fd,
+    const int *req_fd
 )
 {
     if (req_size > VRTD_MSG_MAX_SIZE - sizeof(struct vrtd_req_header)) { errno = EMSGSIZE; return -1; }
@@ -90,10 +151,24 @@ enum vrtd_ret vrtd_raw_request(
     siov[1].iov_base = (void*) req_body;
     siov[1].iov_len  = req_size;
 
+    char cbuf[CMSG_SPACE(sizeof(int))];
     struct msghdr smsg = {
-        .msg_iov    = siov,
-        .msg_iovlen = req_size ? 2 : 1,
+        .msg_iov        = siov,
+        .msg_iovlen     = req_size ? 2 : 1,
+        .msg_control    = NULL,
+        .msg_controllen = 0,
     };
+
+    if (req_fd && *req_fd >= 0) {
+        smsg.msg_control = cbuf;
+        smsg.msg_controllen = sizeof(cbuf);
+
+        struct cmsghdr *cmsg = CMSG_FIRSTHDR(&smsg);
+        cmsg->cmsg_level = SOL_SOCKET;
+        cmsg->cmsg_type  = SCM_RIGHTS;
+        cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
+        memcpy(CMSG_DATA(cmsg), req_fd, sizeof(int));
+    }
 
     ssize_t sn = sendmsg(fd, &smsg, MSG_NOSIGNAL);
     if (sn == -1) {
@@ -103,59 +178,9 @@ enum vrtd_ret vrtd_raw_request(
         return VRTD_RET_BAD_CONN;
     }
 
-    /* ---- Receive ---- */
-    struct vrtd_resp_header rh = {0};
-
-    struct iovec riov[2];
-    riov[0].iov_base = &rh;
-    riov[0].iov_len  = sizeof(rh);
-    riov[1].iov_base = resp_body_buf;
-    riov[1].iov_len  = resp_bufsz;
-
-    char cbuf[CMSG_SPACE(sizeof(int))];
-    struct msghdr rmsg = {
-        .msg_iov        = riov,
-        .msg_iovlen     = resp_bufsz ? 2 : 1,
-        .msg_control    = out_fd ? cbuf : NULL,
-        .msg_controllen = out_fd ? sizeof(cbuf) : 0,
-    };
-
-    if (out_fd) {
-        *out_fd = -1;
-    }
-
-    ssize_t rn = recvmsg(fd, &rmsg, MSG_CMSG_CLOEXEC);
-    if (rn == -1) { 
-        return VRTD_RET_BAD_CONN;
-    }
-
-    if (rmsg.msg_flags & MSG_TRUNC) {
-        return VRTD_RET_BAD_LIB_CALL;
-    }
-    if (rmsg.msg_flags & MSG_CTRUNC) {
-        return VRTD_RET_BAD_LIB_CALL;
-    }
-
-    if ((size_t)rn < sizeof(rh)) {
-        return VRTD_RET_BAD_CONN;
-    }
-
-    size_t expect = sizeof(rh) + rh.size;
-    if ((size_t) rn != expect) {
-        return VRTD_RET_BAD_CONN;
-    }
-
-    /* Extract FD if any */
-    for (struct cmsghdr *c = CMSG_FIRSTHDR(&rmsg); c != NULL; c = CMSG_NXTHDR(&rmsg, c)) {
-        if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS && c->cmsg_len >= CMSG_LEN(sizeof(int))) {
-            assert(out_fd != NULL);
-            memcpy(out_fd, CMSG_DATA(c), sizeof(int));
-            break;
-        }
-    }
-
-    return 0;
+    return vrtd_recv_response(fd, resp_body_buf, resp_bufsz, resp_fd);
 }
+
 
 enum vrtd_ret vrtd_get_num_devices(int fd, uint32_t *out)
 {
@@ -167,7 +192,7 @@ enum vrtd_ret vrtd_get_num_devices(int fd, uint32_t *out)
     int ret = vrtd_raw_request(fd, VRTD_REQ_GET_NUM_DEVICES,
                               NULL, 0,
                               &resp, sizeof(resp),
-                              NULL);
+                              NULL, NULL);
     if (ret != VRTD_RET_OK) {
         return ret;
     }
@@ -177,9 +202,9 @@ enum vrtd_ret vrtd_get_num_devices(int fd, uint32_t *out)
     return VRTD_RET_OK;
 }
 
-enum vrtd_ret vrtd_get_device_info(int fd, uint32_t dev, char name_out[128])
+enum vrtd_ret vrtd_get_device_info(int fd, uint32_t dev, struct vrtd_device_info *info_out)
 {
-    if (name_out == NULL) {
+    if (info_out == NULL) {
         return VRTD_RET_BAD_LIB_CALL;
     }
 
@@ -190,13 +215,36 @@ enum vrtd_ret vrtd_get_device_info(int fd, uint32_t dev, char name_out[128])
     int ret = vrtd_raw_request(fd, VRTD_REQ_GET_DEVICE_INFO,
                               &req, sizeof(req),
                               &resp, sizeof(resp),
-                              NULL);
+                              NULL, NULL);
     if (ret != VRTD_RET_OK) {
         return ret;
     }
 
-    strcpy(name_out, resp.name);
+    memcpy(info_out, &resp.info, sizeof(*info_out));
 
+    return VRTD_RET_OK;
+}
+
+enum vrtd_ret vrtd_get_device_by_bdf(int fd, const char *bdf, uint32_t *dev_out)
+{
+    if (bdf == NULL || dev_out == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    struct vrtd_req_get_device_by_bdf req = {0};
+    strncpy(req.bdf, bdf, sizeof(req.bdf) - 1);
+    req.bdf[sizeof(req.bdf) - 1] = '\0';
+
+    struct vrtd_resp_get_device_by_bdf resp = {0};
+    int ret = vrtd_raw_request(fd, VRTD_REQ_GET_DEVICE_BY_BDF,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL, NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    *dev_out = resp.dev_number;
     return VRTD_RET_OK;
 }
 
@@ -214,7 +262,7 @@ enum vrtd_ret vrtd_get_bar_info(int fd, uint32_t dev, uint8_t bar, struct slash_
     int ret = vrtd_raw_request(fd, VRTD_REQ_GET_BAR_INFO,
                               &req, sizeof(req),
                               &resp, sizeof(resp),
-                              NULL);
+                              NULL, NULL);
     if (ret != VRTD_RET_OK) {
         return ret;
     }
@@ -238,7 +286,7 @@ enum vrtd_ret vrtd_get_bar_fd(int fd, uint32_t dev, uint8_t bar, int *fd_out, ui
     int ret = vrtd_raw_request(fd, VRTD_REQ_GET_BAR_FD,
                               &req, sizeof(req),
                               &resp, sizeof(resp),
-                              fd_out);
+                              fd_out, NULL);
     if (ret != VRTD_RET_OK) {
         return ret;
     }
@@ -262,7 +310,7 @@ enum vrtd_ret vrtd_qdma_get_info(int fd, uint32_t dev, struct slash_qdma_info *i
     int ret = vrtd_raw_request(fd, VRTD_REQ_QDMA_GET_INFO,
                                &req, sizeof(req),
                                &resp, sizeof(resp),
-                               NULL);
+                               NULL, NULL);
     if (ret != VRTD_RET_OK) {
         return ret;
     }
@@ -287,7 +335,7 @@ enum vrtd_ret vrtd_qdma_qpair_add(int fd, uint32_t dev, struct slash_qdma_qpair_
     int ret = vrtd_raw_request(fd, VRTD_REQ_QDMA_QPAIR_ADD,
                                &req, sizeof(req),
                                &resp, sizeof(resp),
-                               NULL);
+                               NULL, NULL);
     if (ret != VRTD_RET_OK) {
         return ret;
     }
@@ -309,7 +357,7 @@ static enum vrtd_ret vrtd_qdma_qpair_op(int fd, uint32_t dev, uint32_t qid, uint
     int ret = vrtd_raw_request(fd, VRTD_REQ_QDMA_QPAIR_OP,
                                &req, sizeof(req),
                                &resp, sizeof(resp),
-                               NULL);
+                               NULL, NULL);
     if (ret != VRTD_RET_OK) {
         return ret;
     }
@@ -354,11 +402,219 @@ enum vrtd_ret vrtd_qdma_qpair_get_fd(
     int ret = vrtd_raw_request(fd, VRTD_REQ_QDMA_QPAIR_GET_FD,
                                &req, sizeof(req),
                                &resp, sizeof(resp),
-                               fd_out);
+                               fd_out, NULL);
     if (ret != VRTD_RET_OK) {
         return ret;
     }
 
+    return VRTD_RET_OK;
+}
+
+enum vrtd_ret vrtd_buffer_open(
+    int fd,
+    uint32_t dev,
+    uint32_t alloc_type,
+    uint32_t alloc_dir,
+    uint64_t alloc_arg,
+    uint64_t size_in,
+    struct vrtd_buffer **buffer_out
+)
+{
+    if (buffer_out == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+    *buffer_out = NULL;
+
+    struct vrtd_req_buffer_open req = {
+        .dev_number = dev,
+        .alloc_type = alloc_type,
+        .alloc_dir = alloc_dir,
+        .alloc_arg = alloc_arg,
+        .size = size_in,
+    };
+    struct vrtd_resp_buffer_open resp = {0};
+
+    int qpair_fd = -1;
+    int ret = vrtd_raw_request(fd, VRTD_REQ_BUFFER_OPEN,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               &qpair_fd, NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    if (qpair_fd < 0) {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    ret = vrtd_buffer_create_raw(
+        fd,
+        dev,
+        alloc_type,
+        alloc_dir,
+        alloc_arg,
+        resp.size,
+        resp.phys_addr,
+        qpair_fd,
+        buffer_out
+    );
+    if (ret != VRTD_RET_OK) {
+        (void) close(qpair_fd);
+        return ret;
+    }
+
+    return VRTD_RET_OK;
+}
+
+enum vrtd_ret vrtd_design_write(
+    int fd,
+    uint32_t dev,
+    int input_fd
+)
+{
+    if (input_fd < 0) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    struct vrtd_req_design_write req = {
+        .dev_number = dev,
+    };
+    struct vrtd_resp_design_write resp = {0};
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_DESIGN_WRITE,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL, &input_fd);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    return VRTD_RET_OK;
+}
+
+enum vrtd_ret vrtd_design_write_file(
+    int fd,
+    uint32_t dev,
+    const char *path
+)
+{
+    if (path == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    int input_fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (input_fd < 0) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    enum vrtd_ret ret = vrtd_design_write(fd, dev, input_fd);
+    (void) close(input_fd);
+    return ret;
+}
+
+enum vrtd_ret vrtd_device_hotplug_op(
+    int fd,
+    uint32_t dev,
+    uint8_t op
+)
+{
+    struct vrtd_req_device_hotplug_op req = {
+        .dev_number = dev,
+        .op = op,
+    };
+    struct vrtd_resp_device_hotplug_op resp = {0};
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_DEVICE_HOTPLUG_OP,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL, NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    return VRTD_RET_OK;
+}
+
+enum vrtd_ret vrtd_device_hotplug_rescan(int fd, uint32_t dev)
+{
+    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_RESCAN);
+}
+
+enum vrtd_ret vrtd_device_hotplug_remove(int fd, uint32_t dev)
+{
+    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_REMOVE);
+}
+
+enum vrtd_ret vrtd_device_hotplug_toggle_sbr(int fd, uint32_t dev)
+{
+    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR);
+}
+
+enum vrtd_ret vrtd_device_hotplug_hotplug(int fd, uint32_t dev)
+{
+    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_HOTPLUG);
+}
+
+enum vrtd_ret vrtd_clock_get_rate(
+    int fd,
+    uint32_t dev,
+    uint32_t region,
+    uint32_t *rate_hz_out
+)
+{
+    if (rate_hz_out == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    struct vrtd_req_clock_op req = {
+        .dev_number = dev,
+        .region = region,
+        .op = VRTD_CLOCK_OP_GET,
+        .rate_hz = 0,
+    };
+    struct vrtd_resp_clock_op resp = {0};
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_CLOCK_OP,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL, NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    *rate_hz_out = resp.rate_hz;
+    return VRTD_RET_OK;
+}
+
+enum vrtd_ret vrtd_clock_set_rate(
+    int fd,
+    uint32_t dev,
+    uint32_t region,
+    uint32_t rate_hz_in,
+    uint32_t *rate_hz_out
+)
+{
+    if (rate_hz_out == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    struct vrtd_req_clock_op req = {
+        .dev_number = dev,
+        .region = region,
+        .op = VRTD_CLOCK_OP_SET,
+        .rate_hz = rate_hz_in,
+    };
+    struct vrtd_resp_clock_op resp = {0};
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_CLOCK_OP,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL, NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    *rate_hz_out = resp.rate_hz;
     return VRTD_RET_OK;
 }
 

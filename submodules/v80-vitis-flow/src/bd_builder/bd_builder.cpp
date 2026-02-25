@@ -41,6 +41,7 @@ BdBuilder::BdBuilder(std::vector<Kernel> kernels, std::vector<Connection> connec
     this->targetClockFreq = targetClockFreq;
     this->segmented = segmented;
     this->platform = platform;
+    this->netInterfaces = netInterfaces;
     this->tclInjections = std::move(tclInjections);
 
     systemMap.setClockFreq(targetClockFreq);
@@ -220,6 +221,12 @@ void BdBuilder::buildBlockDesign() {
             } catch (...){
                 utils::Logger::log(utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Segmented not set");
             }
+        }
+
+
+
+        for (const auto &script : tclInjections.scriptsPreSynth) {
+            blockDesignFile << generateSourceInstruction(script);
         }
 
 

@@ -17,6 +17,10 @@
 #define SLASH_PCIE_VENDOR_ID 0x10EE
 #define SLASH_PCIE_DEVICE_ID 0x50B6
 #define SLASH_PCIE_PF 2
+
+#define SLASH_QDMA_PCI_VENDOR_ID 0x10EE
+#define SLASH_QDMA_PCI_DEVICE_ID 0x50B5
+#define SLASH_QDMA_PF 1
 // subsystem id e
 
 #define SLASH_NAME "slash"

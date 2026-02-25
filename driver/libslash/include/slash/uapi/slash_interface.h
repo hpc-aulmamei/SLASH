@@ -64,8 +64,22 @@ struct slash_ioctl_bar_fd_request {
     __u64 length;
 };
 
+#define SLASH_PCI_BDF_LEN 32
+
+struct slash_ioctl_device_info {
+    __u32 size;
+
+    /* Kernel to userspace */
+    char bdf[SLASH_PCI_BDF_LEN];
+    __u16 vendor_id;
+    __u16 device_id;
+    __u16 subsystem_vendor_id;
+    __u16 subsystem_device_id;
+};
+
 #define SLASH_CTLDEV_IOCTL_GET_BAR_INFO _IOWR('v', 0x30, struct slash_ioctl_bar_info)
 #define SLASH_CTLDEV_IOCTL_GET_BAR_FD   _IOWR('v', 0x31, struct slash_ioctl_bar_fd_request)
+#define SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO _IOWR('v', 0x32, struct slash_ioctl_device_info)
 
 /* The following are QDMA operations */
 
