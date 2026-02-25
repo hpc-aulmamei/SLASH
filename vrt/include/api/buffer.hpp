@@ -174,9 +174,9 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type)
     if (platform == Platform::HARDWARE) {
         BufferAllocType allocType = resolveAllocType(type, false);
         HBMRegion region = resolveRegion(type, false, 0);
-        block = this->device.getInternal()->getAllocator()->allocate(this->device.getInternal()->getVrtdDevice(), allocType,
-                                                                     BufferAllocDir::Bidirectional,
-                                                                     size * sizeof(T), region);
+        block = this->device.getHandle()->getAllocator()->allocate(this->device.getHandle()->getVrtdDevice(), allocType,
+                                                                   BufferAllocDir::Bidirectional,
+                                                                   size * sizeof(T), region);
         if (!block) {
             throw std::bad_alloc();
         }
@@ -189,7 +189,7 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type)
         ownsLocalBuffer = true;
         if (platform == Platform::EMULATION) {
             // send initial buffer so it is populated in the emulation environment
-            std::shared_ptr<ZmqServer> server = this->device.getInternal()->getZmqServer();
+            std::shared_ptr<ZmqServer> server = this->device.getHandle()->getZmqServer();
             std::vector<uint8_t> sendData;
             std::size_t dataSize = size * sizeof(T);
             sendData.resize(dataSize);
@@ -214,9 +214,9 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type, uint8_t port
     if (platform == Platform::HARDWARE) {
         BufferAllocType allocType = resolveAllocType(type, true);
         HBMRegion region = resolveRegion(type, true, port);
-        block = this->device.getInternal()->getAllocator()->allocate(this->device.getInternal()->getVrtdDevice(), allocType,
-                                                                     BufferAllocDir::Bidirectional,
-                                                                     size * sizeof(T), region);
+        block = this->device.getHandle()->getAllocator()->allocate(this->device.getHandle()->getVrtdDevice(), allocType,
+                                                                   BufferAllocDir::Bidirectional,
+                                                                   size * sizeof(T), region);
         if (!block) {
             throw std::bad_alloc();
         }
@@ -233,7 +233,7 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type, uint8_t port
 template <typename T>
 Buffer<T>::~Buffer() {
     if (block) {
-        device.getInternal()->getAllocator()->deallocate(std::move(block));
+        device.getHandle()->getAllocator()->deallocate(std::move(block));
     }
     if (ownsLocalBuffer && localBuffer != nullptr) {
         delete[] localBuffer;
@@ -297,7 +297,7 @@ void Buffer<T>::sync(SyncType syncType) {
             throw std::invalid_argument("Invalid sync type");
         }
     } else if (platform == Platform::EMULATION) {
-        std::shared_ptr<ZmqServer> server = device.getInternal()->getZmqServer();
+        std::shared_ptr<ZmqServer> server = device.getHandle()->getZmqServer();
         if (syncType == SyncType::HOST_TO_DEVICE) {
             std::vector<uint8_t> sendData;
             std::size_t dataSize = size * sizeof(T);
@@ -328,7 +328,7 @@ void Buffer<T>::sync(SyncType syncType) {
         }
 
     } else if (platform == Platform::SIMULATION) {
-        std::shared_ptr<ZmqServer> server = device.getInternal()->getZmqServer();
+        std::shared_ptr<ZmqServer> server = device.getHandle()->getZmqServer();
         if (syncType == SyncType::HOST_TO_DEVICE) {
             std::vector<uint8_t> sendData;
             std::size_t dataSize = size * sizeof(T);
@@ -390,7 +390,7 @@ Buffer<T>& Buffer<T>::operator=(Buffer&& other) noexcept {
         }
 
         if (block) {
-            device.getInternal()->getAllocator()->deallocate(std::move(block));
+            device.getHandle()->getAllocator()->deallocate(std::move(block));
         }
 
         device = other.device;

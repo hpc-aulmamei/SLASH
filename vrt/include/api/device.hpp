@@ -222,9 +222,14 @@ class Device {
 }  // namespace impl
 
 class Device {
-    std::shared_ptr<impl::Device> internal;
+    std::shared_ptr<impl::Device> handle;
 
    public:
+    /**
+     * @brief Default constructor for an empty device.
+     */
+    Device() = default;
+
     /**
      * @brief Constructor for Device.
      * @param bdf The Bus:Device.Function identifier.
@@ -232,44 +237,76 @@ class Device {
      * @param program Flag indicating whether to program the device.
      */
     Device(const std::string& bdf, const std::string& vrtbinPath, bool program = true,
-           ProgramType programType = ProgramType::FLASH) : internal(new impl::Device(bdf, vrtbinPath, program, programType)) {}
+           ProgramType programType = ProgramType::FLASH) : handle(new impl::Device(bdf, vrtbinPath, program, programType)) {}
 
-    Device() = delete;
+    /**
+     * @brief Constructor from a device handle.
+     * @param handle The handle device handle
+     */
+    Device(std::shared_ptr<impl::Device> handle) : handle(handle) {}
+
+    /**
+     * @brief Default copy constructor
+     */
+    Device(const Device&) = default;
+
+    /**
+     * @brief Default copy assignment
+     */
+    Device& operator=(const Device&) = default;
+
+    /**
+     * @brief Default move constructor
+     */
+    Device(Device&&) = default;
+
+    /**
+     * @brief Default move assignment
+     */
+    Device& operator=(Device&&) = default;
 
     /**
      * @brief Gets a kernel by name.
      * @param name The name of the kernel.
      * @return The Kernel object.
      */
-    vrt::Kernel getKernel(const std::string& name) { return internal->getKernel(name); }
+    vrt::Kernel getKernel(const std::string& name) {
+        return handle->getKernel(name);
+    }
 
     /**
      * @brief Gets the Bus:Device.Function identifier.
      * @return The Bus:Device.Function identifier.
      */
-    std::string getBdf() { return internal->getBdf(); }
+    std::string
+    getBdf() {
+        return handle->getBdf();
+    }
 
     /**
      * @brief Sets device clock frequency.
      */
-    void setFrequency(uint64_t freq) { internal->setFrequency(freq); }
+    void setFrequency(uint64_t freq) { handle->setFrequency(freq); }
 
     /**
      * @brief Gets the clock frequency.
      */
-    uint64_t getFrequency() { return internal->getFrequency(); }
+    uint64_t getFrequency() { return handle->getFrequency(); }
 
     /**
      * @brief Gets the maximum frequency.
      */
-    uint64_t getMaxFrequency() { return internal->getMaxFrequency(); }
+    uint64_t getMaxFrequency() { return handle->getMaxFrequency(); }
 
     /**
      * @brief Gets the platform.
      */
-    Platform getPlatform() { return internal->getPlatform(); }
+    Platform getPlatform() { return handle->getPlatform(); }
 
-    std::shared_ptr<impl::Device> getInternal() const { return internal; }
+    /**
+     * @brief Return the internal device handle.
+     */
+    std::shared_ptr<impl::Device> getHandle() const { return handle; }
 };
 
 }  // namespace vrt
