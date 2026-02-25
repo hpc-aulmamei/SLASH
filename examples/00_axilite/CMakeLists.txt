@@ -68,7 +68,6 @@ build_emu(
 include_directories(${REPO_ROOT}/vrt/include
                     /usr/local/vrt/include
                     /usr/local/include
-                    /usr/include/ami
                     /usr/include/libxml2
                     /usr/include/jsoncpp)
 
@@ -79,5 +78,5 @@ set(EXE_SOURCES 00_axilite.cpp)
 add_executable(${PROJECT_NAME} ${EXE_SOURCES})
 
 # Link the library to the executable
-target_link_libraries(${PROJECT_NAME} vrt vrtd vrtdpp ami xml2 zmq jsoncpp)
+target_link_libraries(${PROJECT_NAME} vrt vrtd vrtdpp xml2 zmq jsoncpp)
  

@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
         std::string bdf = argv[1];
         std::string vrtbinFile = argv[2];
         vrt::utils::Logger::setLogLevel(vrt::utils::LogLevel::DEBUG);
-        uint32_t size = 1024 * 1024;
+        uint32_t size = 1024;
 
         vrt::Device device(bdf, vrtbinFile);
         vrt::Kernel vadd_0(device, "vadd_0");

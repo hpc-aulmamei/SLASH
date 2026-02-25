@@ -25,7 +25,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(/usr/local/vrt/include
-                    /usr/include/ami
                     /usr/include/libxml2
                     /usr/include/jsoncpp)
 
@@ -33,4 +32,4 @@ set(EXE_SOURCES 03_example.cpp)
 
 add_executable(${PROJECT_NAME} ${EXE_SOURCES})
 
-target_link_libraries(${PROJECT_NAME} vrt ami xml2 zmq jsoncpp)
+target_link_libraries(${PROJECT_NAME} vrt xml2 zmq jsoncpp)
