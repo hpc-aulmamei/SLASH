@@ -289,6 +289,15 @@ class Device {
     void setFrequency(uint64_t freq) { handle->setFrequency(freq); }
 
     /**
+     * @brief Cleans up device-side resources (simulation/emulation/hardware helpers).
+     */
+    void cleanup() {
+        if (handle) {
+            handle->cleanup();
+        }
+    }
+
+    /**
      * @brief Gets the clock frequency.
      */
     uint64_t getFrequency() { return handle->getFrequency(); }
