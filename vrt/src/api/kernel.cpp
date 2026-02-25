@@ -32,13 +32,13 @@ Kernel::Kernel(const std::string& name, uint64_t baseAddr, uint64_t range,
     this->registers = registers;
 }
 
-Kernel::Kernel(Device& device, const std::string& kernelName)
+Kernel::Kernel(Device device, const std::string& kernelName)
     : Kernel(device.getKernel(kernelName)) {
     deviceBdf = device.getBdf();
     this->platform = device.getPlatform();
-    this->server = device.getZmqServer();
+    this->server = device.getHandle()->getZmqServer();
     if (this->platform == Platform::HARDWARE) {
-        const auto& vrtdDevice = device.getVrtdDevice();
+        const auto& vrtdDevice = device.getHandle()->getVrtdDevice();
         this->vrtdBar = vrtdDevice.getBar(bar);
     }
 }

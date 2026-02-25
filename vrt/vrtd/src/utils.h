@@ -42,10 +42,10 @@
 /* ---- type-specific helpers ---- */
 #if HAVE_STDBIT
 static inline uint32_t bit_ceil_u32(uint32_t n) {
-    return stdc_bit_ceil((unsigned int)(x));
+    return stdc_bit_ceil((unsigned int)(n));
 }
 static inline uint64_t bit_ceil_u64(uint64_t n) {
-   return stdc_bit_ceil((unsigned long long)(x));
+   return stdc_bit_ceil((unsigned long long)(n));
 }
 #else
 static inline uint32_t bit_ceil_u32(uint32_t n) {

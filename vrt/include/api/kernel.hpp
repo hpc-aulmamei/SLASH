@@ -75,11 +75,21 @@ class Kernel {
     Kernel() = default;
 
     /**
+     * @brief Default copy constructor for Kernel.
+     */
+    Kernel(const Kernel&) = default;
+
+    /**
+     * @brief Default move constructor for Kernel.
+     */
+    Kernel(Kernel&&) = default;
+
+    /**
      * @brief Constructor for Kernel using a Device object.
      * @param device The Device object.
      * @param kernelName The name of the kernel.
      */
-    Kernel(vrt::Device& device, const std::string& kernelName);
+    Kernel(vrt::Device device, const std::string& kernelName);
 
     /**
      * @brief Sets the vrtd BAR handle for hardware access.
@@ -255,20 +265,6 @@ class Kernel {
      * @brief Destructor for Kernel.
      */
     ~Kernel();
-
-    /**
-     * @brief Copy constructor.
-     *
-     * @param other The kernel to copy from.
-     */
-    Kernel(const Kernel& other) = default;
-
-    /**
-     * @brief Move constructor.
-     *
-     * @param other The kernel to move from.
-     */
-    Kernel(Kernel&& other) noexcept = default;
 
     /**
      * @brief Copy assignment operator.
