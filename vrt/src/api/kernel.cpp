@@ -93,6 +93,10 @@ uint32_t Kernel::read(uint32_t offset) {
                                             static_cast<size_t>(barOffset));
         return *ptr;
     } else if (platform == Platform::EMULATION) {
+        auto fetchRoute = emuFetchScalarArgByOffset.find(offset);
+        if (fetchRoute != emuFetchScalarArgByOffset.end()) {
+            return server->fetchScalar(name, fetchRoute->second, offset);
+        }
         currentRegisterIndex = 4;
         std::size_t argIdx = 0;
         while (currentRegisterIndex < registers.size()) {
@@ -101,7 +105,7 @@ uint32_t Kernel::read(uint32_t offset) {
                 currentRegisterIndex += 2;
             } else {
                 if (registers.at(currentRegisterIndex).getOffset() == offset) {
-                    return server->fetchScalar(name, "arg" + std::to_string(argIdx));
+                    return server->fetchScalar(name, "arg" + std::to_string(argIdx), offset);
                 }
                 currentRegisterIndex++;
             }
@@ -115,8 +119,18 @@ uint32_t Kernel::read(uint32_t offset) {
 
 void Kernel::setVrtdBar(const std::optional<vrtd::Bar>& bar) { this->vrtdBar = bar; }
 
+void Kernel::setEmuCallArgKinds(const std::vector<std::string>& kinds) { emuCallArgKinds = kinds; }
+
+void Kernel::setEmuFetchScalarArgByOffset(const std::map<uint32_t, std::string>& routes) {
+    emuFetchScalarArgByOffset = routes;
+}
+
 void Kernel::wait() {
     if (platform == Platform::EMULATION) {
+        Json::Value command;
+        command["command"] = "wait";
+        command["function"] = name;
+        server->sendCommand(command);
         return;
     }
     // ap_ctrl_hs: wait for ap_done (CTRL[1]) instead of checking exact control word values.

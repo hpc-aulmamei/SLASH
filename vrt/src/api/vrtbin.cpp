@@ -203,6 +203,11 @@ Vrtbin::Vrtbin(std::string vrtbinPath, const std::string& bdf) {
     } else if (this->platform == Platform::EMULATION) {
         const std::filesystem::path emuPath = findExtractedFile("vpp_emu");
         emulationExecPath = emuPath.empty() ? std::string() : emuPath.string();
+        const std::filesystem::path emuManifestPath = findExtractedFile("emu_manifest.json");
+        if (!emuManifestPath.empty()) {
+            emulationManifestPath = (metadataPath / "emu_manifest.json").string();
+            copy(emuManifestPath.string(), emulationManifestPath);
+        }
 
     } else {
         const std::filesystem::path simPath = findExtractedFile("vpp_sim");
@@ -355,6 +360,8 @@ std::string Vrtbin::getPdiPath() { return pdiPath; }
 std::vector<std::string> Vrtbin::getPdiPaths() { return pdiPaths; }
 
 std::string Vrtbin::getEmulationExec() { return emulationExecPath; }
+
+std::string Vrtbin::getEmulationManifest() { return emulationManifestPath; }
 
 std::string Vrtbin::getSimulationExec() { return simulationExecPath; }
 

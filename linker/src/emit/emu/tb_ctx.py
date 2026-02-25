@@ -464,7 +464,19 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 reg_off = int(getattr(regs[reg_idx], "address_offset", 0) or 0)
 
                 if _is_split_reg_name(reg_name):
+                    # Preserve the logical value name (e.g. "sum" from "sum_1") so a
+                    # following "<name>_ctrl" validity register can be synthesized.
+                    prev_value_reg_name = reg_name.rsplit("_", 1)[0]
                     if logical_arg_idx < len(non_stream_args):
+                        hi_reg = regs[reg_idx + 1] if (reg_idx + 1) < len(regs) else None
+                        hi_reg_name = (
+                            getattr(hi_reg, "name", "") or "" if hi_reg is not None else ""
+                        )
+                        hi_reg_off = (
+                            int(getattr(hi_reg, "address_offset", 0) or 0)
+                            if hi_reg is not None
+                            else None
+                        )
                         fetch_scalar_cases.append(
                             {
                                 "inst": inst_name,
@@ -477,6 +489,22 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                                 "register_split": True,
                             }
                         )
+                        # Expose the high 32-bit word of the same logical scalar for
+                        # split 64-bit AXI-Lite register reads (e.g. sum_2).
+                        if hi_reg_off is not None:
+                            fetch_scalar_cases.append(
+                                {
+                                    "inst": inst_name,
+                                    "arg": f"arg{fetch_arg_idx}",
+                                    "kind": "var_u32_hi",
+                                    "var": non_stream_args[logical_arg_idx]["var"],
+                                    "source": "register_metadata",
+                                    "register_name": hi_reg_name,
+                                    "register_offset": hi_reg_off,
+                                    "register_split": True,
+                                    "register_split_part": "hi",
+                                }
+                            )
                         logical_arg_idx += 1
                     fetch_arg_idx += 1
                     reg_idx += 2
@@ -537,7 +565,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
         {
             c["var"]
             for c in fetch_scalar_cases
-            if c.get("kind") == "var" and isinstance(c.get("var"), str)
+            if c.get("kind") in ("var", "var_u32_hi") and isinstance(c.get("var"), str)
         }
     )
 
@@ -548,7 +576,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
             "arg": c["arg"],
             "kind": c["kind"],
         }
-        if c["kind"] == "var":
+        if c["kind"] in ("var", "var_u32_hi"):
             entry["var_symbol"] = c["var"]
         elif c["kind"] == "const_u32":
             entry["value"] = int(c["value"])

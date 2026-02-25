@@ -576,7 +576,7 @@ void zmq_ctx_setup_and_run() {
         } else if (command == "reg") {
             uint64_t addr = root["addr"].asUInt64();
             uint32_t val = root["val"].asUInt();
-            std::cout << "Writing value: " << std::hex << val << " to address: " << addr
+            std::cout << "Writing value: " << std::hex << "0x" << val << " to address: " << addr
                       << std::endl;
             {
                 std::unique_lock<std::mutex> lock(mtx);

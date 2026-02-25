@@ -20,6 +20,8 @@
 
 #include "utils/zmq_server.hpp"
 
+#include <limits>
+
 namespace vrt {
 
 ZmqServer::ZmqServer() : context(1), socket(context, ZMQ_REQ) { socket.connect(address); }
@@ -56,11 +58,18 @@ void ZmqServer::sendCommand(const Json::Value& command) {
 }
 
 uint32_t ZmqServer::fetchScalar(const std::string& function, const std::string& argIdx) {
+    return fetchScalar(function, argIdx, std::numeric_limits<uint32_t>::max());
+}
+
+uint32_t ZmqServer::fetchScalar(const std::string& function, const std::string& argIdx, uint32_t offset) {
     Json::Value command;
     command["command"] = "fetch";
     command["type"] = "scalar";
     command["function"] = function;
     command["arg"] = argIdx;
+    if (offset != std::numeric_limits<uint32_t>::max()) {
+        command["offset"] = offset;
+    }
 
     Json::StreamWriterBuilder writer;
     std::string commandStr = Json::writeString(writer, command);
