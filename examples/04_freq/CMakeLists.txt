@@ -28,7 +28,7 @@ set(CMAKE_CXX_FLAGS "-O3")
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
 include("${REPO_ROOT}/cmake/ProjectInit.cmake")
 
-set(SLASH_PROJECT "vadd")
+set(SLASH_PROJECT "freq")
 set(CFG_FILE "${CMAKE_CURRENT_LIST_DIR}/config.cfg")
 
 set(HLS_BUILD_DIR "${CMAKE_CURRENT_LIST_DIR}/hls")
@@ -67,7 +67,6 @@ build_emu(
 include_directories(${REPO_ROOT}/vrt/include
                     /usr/local/vrt/include
                     /usr/local/include
-                    /usr/include/ami
                     /usr/include/libxml2
                     /usr/include/jsoncpp)
 
@@ -78,4 +77,4 @@ set(EXE_SOURCES 04_freq.cpp)
 add_executable(${PROJECT_NAME} ${EXE_SOURCES})
 
 # Link the library to the executable
-target_link_libraries(${PROJECT_NAME} vrt vrtd vrtdpp ami xml2 zmq jsoncpp)
+target_link_libraries(${PROJECT_NAME} vrt vrtd vrtdpp xml2 zmq jsoncpp)
