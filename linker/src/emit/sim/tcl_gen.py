@@ -23,6 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 import logging
 import re
+import xml.etree.ElementTree as ET
 from typing import List, Tuple
 
 from emit.render import render_template
@@ -36,6 +37,38 @@ from core.kernel import KernelInstance
 from core.port import BusType
 
 logger = logging.getLogger(__name__)
+
+_IPXACT_NS = {
+    "spirit": "http://www.spiritconsortium.org/XMLSchema/SPIRIT/1685-2009",
+}
+
+
+def _xml_text(el: ET.Element | None) -> str | None:
+    if el is None or el.text is None:
+        return None
+    txt = el.text.strip()
+    return txt if txt else None
+
+
+def _find_sim_checkpoint_dcp(component_xml: Path) -> str | None:
+    """
+    Return the relative DCP path from the xilinx_simulationcheckpoint_view_fileset, if present.
+    """
+    root = ET.parse(component_xml).getroot()
+    for fs in root.findall("spirit:fileSets/spirit:fileSet", _IPXACT_NS):
+        if _xml_text(fs.find("spirit:name", _IPXACT_NS)) != "xilinx_simulationcheckpoint_view_fileset":
+            continue
+        for f in fs.findall("spirit:file", _IPXACT_NS):
+            rel = _xml_text(f.find("spirit:name", _IPXACT_NS))
+            if not rel:
+                continue
+            user_types = {
+                (_xml_text(uft) or "").lower()
+                for uft in f.findall("spirit:userFileType", _IPXACT_NS)
+            }
+            if "dcp" in user_types or rel.lower().endswith(".dcp"):
+                return rel
+    return None
 
 
 def _sanitize_bd_name(s: str) -> str:
@@ -222,12 +255,26 @@ def generate_sim_tcl(args) -> None:
 
     # 1) Parse kernels
     kernel_library = {}
+    kernel_sim_meta: dict[str, dict] = {}
     for kpath in args.kernels:
-        kfile = Path(kpath)
+        kfile = Path(kpath).resolve()
         if not kfile.exists():
             raise FileNotFoundError(f"Kernel file not found: {kfile}")
         k = parse_component_xml(kfile)
         kernel_library[k.name] = k
+
+        sim_checkpoint_rel = _find_sim_checkpoint_dcp(kfile)
+        sim_checkpoint_abs = None
+        if sim_checkpoint_rel is not None:
+            sim_checkpoint_abs = (kfile.parent / sim_checkpoint_rel).resolve()
+            if not sim_checkpoint_abs.exists():
+                raise FileNotFoundError(
+                    f"Simulation checkpoint DCP from component.xml not found: {sim_checkpoint_abs}"
+                )
+        kernel_sim_meta[k.name] = {
+            "component_xml": str(kfile),
+            "sim_checkpoint_dcp": str(sim_checkpoint_abs) if sim_checkpoint_abs else None,
+        }
 
     # 2) Parse connectivity config
     cfg = parse_connectivity_file(args.cfg)
@@ -243,6 +290,23 @@ def generate_sim_tcl(args) -> None:
         inst = instances[iname]
         vlnv = inst.kernel.vlnv or f"xilinx.com:hls:{inst.kernel.name}:1.0"
         kernels_ctx.append({"name": iname, "vlnv": vlnv})
+
+    sim_checkpoint_netlists_ctx = []
+    sim_ckpt_out_dir = sim_root / "checkpoint_funcsim"
+    for iname in sorted(instances.keys()):
+        inst = instances[iname]
+        sim_meta = kernel_sim_meta.get(inst.kernel.name, {})
+        dcp_path = sim_meta.get("sim_checkpoint_dcp")
+        if not dcp_path:
+            continue
+        top_mod = f"top_{iname}_0"
+        sim_checkpoint_netlists_ctx.append({
+            "inst": iname,
+            "dcp_path": dcp_path,
+            "funcsim_v_path": str((sim_ckpt_out_dir / f"{top_mod}.v").resolve()),
+            "rename_top": top_mod,
+            "rename_prefix": f"{top_mod}_",
+        })
 
     axilite_endpoints = [f"{iname}/{pname}" for iname, pname in axilite_ports]
     axilite_sc_ctx = _build_fanout_tree(
@@ -284,7 +348,7 @@ def generate_sim_tcl(args) -> None:
         axilite_addr_ctx.append({
             "inst": item["inst"],
             "busif": item["busif"],
-            "segment": item.get("segment", "Reg"),
+            "segment": item["segment"],
             "offset_hex": f"0x{item['offset']:X}",
             "range_hex": f"0x{item['range']:X}",
         })
@@ -313,6 +377,7 @@ def generate_sim_tcl(args) -> None:
             "bd_name": "top",
             "part": "xcv80-lsva4737-2MHP-e-S",
             "kernels": kernels_ctx,
+            "sim_checkpoint_netlists": sim_checkpoint_netlists_ctx,
             "axilite_scs": axilite_sc_ctx,
             "mem_reduce_nodes": mem_reduce_nodes,
             "mem_roots": mem_roots_ctx,

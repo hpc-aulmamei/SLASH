@@ -35,6 +35,22 @@ set_property ip_repo_paths "${ip_repo_path}" [current_project]
 update_ip_catalog
 update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
+
+# --- Preprocess checkpoint-backed kernels into funcsim Verilog (per instance) ---
+{% if sim_checkpoint_netlists %}
+file mkdir [file join ${sim_root} checkpoint_funcsim]
+{% for ck in sim_checkpoint_netlists %}
+if {![file exists "{{ ck.dcp_path }}"]} {
+  error "Simulation checkpoint DCP not found for instance {{ ck.inst }}: {{ ck.dcp_path }}"
+}
+open_checkpoint "{{ ck.dcp_path }}"
+write_verilog -force -mode funcsim -rename_top {{ ck.rename_top }} -prefix {{ ck.rename_prefix }} "{{ ck.funcsim_v_path }}"
+close_design
+add_files -norecurse "{{ ck.funcsim_v_path }}"
+{% endfor %}
+update_compile_order -fileset sources_1
+update_compile_order -fileset sim_1
+{% endif %}
 create_bd_design ${bd_name}
 current_bd_design ${bd_name}
 
