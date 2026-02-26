@@ -23,6 +23,8 @@
 #include <cmath>
 #include <iostream>
 
+#include "sim_exec_log.hpp"
+
 using namespace Xsi;
 
 Loader::Loader(const std::string& design_libname, const std::string& simkernel_libname)
@@ -50,7 +52,7 @@ Loader::~Loader() { close(); }
 bool Loader::isopen() const { return (_design_handle != NULL); }
 
 void Loader::open(p_xsi_setup_info setup_info) {
-    std::cout << "Before open\n";
+    SIM_EXEC_LOG(std::cout << "Before open\n");
     _design_handle = _xsi_open(setup_info);
 }
 
