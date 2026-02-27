@@ -28,7 +28,8 @@ import re
 from emit.render import render_template
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from emit.hw.user_region.addr_ctx import build_axilite_address_context
-from emit.emu.tb_ctx import build_tb_context, infer_sol1_json_from_component_xml
+from emit.emu.tb_ctx import build_tb_context
+from emit.hls_meta import infer_hls_json_from_component_xml
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -89,7 +90,7 @@ def generate_emu_tcl(args) -> None:
 
     # 4) Build tb.cpp context from HLS metadata
     kernel_hls_by_type = {
-        ktype: infer_sol1_json_from_component_xml(Path(comp_xml))
+        ktype: infer_hls_json_from_component_xml(Path(comp_xml))
         for ktype, comp_xml in kernel_compxml_by_type.items()
     }
     tb_ctx = build_tb_context(instances, streams, kernel_hls_by_type)
@@ -126,6 +127,7 @@ def generate_emu_tcl(args) -> None:
         axilite_ctx.get("axilite_addr", []),
         clock_hz=clock_hz,
         platform="Emulation",
+        kernel_hls_by_type=kernel_hls_by_type,
         network=getattr(cfg, "network", None),
     )
     system_map_template = Path(args.system_map_template)

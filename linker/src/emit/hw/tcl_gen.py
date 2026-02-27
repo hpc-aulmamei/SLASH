@@ -41,6 +41,7 @@ from emit.hw.user_region.addr_ctx import build_axilite_address_context
 from emit.hw.user_region.param_ctx import build_data_width_param_context
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from emit.hw.service_region.service_layer_ctx import *
+from emit.hls_meta import infer_hls_json_from_component_xml
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -252,6 +253,7 @@ def generate_tcl(args) -> None:
 
     # 1) Parse kernels
     kernel_library = {}
+    kernel_compxml_by_type: dict[str, Path] = {}
 
     logger.info("Loading kernels")
     for kpath in args.kernels:
@@ -261,6 +263,7 @@ def generate_tcl(args) -> None:
 
         k = parse_component_xml(kfile)
         kernel_library[k.name] = k
+        kernel_compxml_by_type[k.name] = kfile.resolve()
 
         print_kernel(k)
 
@@ -271,6 +274,17 @@ def generate_tcl(args) -> None:
     # 3) Make instances & stream edges
     instances, streams = apply_config_to_instances(cfg, kernel_library)
     print_instances(instances, streams)
+    kernel_hls_by_type: dict[str, Path] = {}
+    for ktype, comp_xml in kernel_compxml_by_type.items():
+        try:
+            kernel_hls_by_type[ktype] = infer_hls_json_from_component_xml(comp_xml)
+        except FileNotFoundError:
+            logger.warning(
+                "No HLS metadata found for kernel type '%s' from component %s; "
+                "system_map functional_args will use heuristic fallback.",
+                ktype,
+                comp_xml,
+            )
 
     # 4) Build context for kernel adds (+clocks/resets) and render
     ctx = build_kernel_add_context(instances)
@@ -345,6 +359,7 @@ def generate_tcl(args) -> None:
         axilite_ctx.get("axilite_addr", []),
         clock_hz=clock_hz,
         platform="Hardware",
+        kernel_hls_by_type=kernel_hls_by_type,
         network=getattr(cfg, "network", None),
     )
     system_map_template = Path(args.system_map_template)

@@ -21,46 +21,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-import json
 import re
 
 from core.port import BusType
+from emit.hls_meta import (
+    infer_hls_json_from_component_xml,
+    load_hls_metadata,
+    parse_hls_args,
+)
 
 
 def infer_sol1_json_from_component_xml(component_xml: Path) -> Path:
-    """
-    Given:
-      .../sol1/impl/ip/component.xml
-      .../hls/impl/ip/component.xml
-    Return (preferred order):
-      .../hls_data.json (alongside the solution dir)
-      .../hls/hls_data.json (sibling to sol1)
-      .../sol1_data.json (legacy)
-    """
-    p = component_xml.resolve()
-    # ip -> impl -> <solution>
-    sol_dir = p.parents[2]
-
-    # Prefer new HLS metadata if present in the solution dir.
-    hls_json = sol_dir / "hls_data.json"
-    if hls_json.exists():
-        return hls_json
-
-    # Some flows keep hls_data.json in a sibling "hls" dir when component lives in "sol1".
-    if sol_dir.name != "hls":
-        sibling_hls = sol_dir.parent / "hls" / "hls_data.json"
-        if sibling_hls.exists():
-            return sibling_hls
-
-    # Legacy fallback.
-    sol1_json = sol_dir / "sol1_data.json"
-    if sol1_json.exists():
-        return sol1_json
-
-    raise FileNotFoundError(
-        "Cannot find HLS metadata inferred from "
-        f"{p} -> tried: {hls_json}, {sol_dir.parent / 'hls' / 'hls_data.json'}, {sol1_json}"
-    )
+    # Backward-compatible wrapper for existing callers in this module tree.
+    return infer_hls_json_from_component_xml(component_xml)
 
 
 def _norm_stream_type(src: str) -> str:
@@ -218,24 +191,25 @@ def _call_kind_for_cpp_type(cpp_t: str) -> str:
 
 
 def parse_sol1_data(sol1_json: Path) -> dict:
-    d = json.loads(sol1_json.read_text())
-    top = d["Top"]
+    d = load_hls_metadata(sol1_json, strict=True)
+    assert d is not None  # strict=True guarantees dict or exception
+    top = str(d.get("Top", "") or "")
     args = []
-    for arg_name, info in d["Args"].items():
-        idx = int(info["index"])
-        src_type = info["srcType"]
+    for order_idx, info in enumerate(parse_hls_args(d)):
+        idx = info["index"] if info["index"] is not None else order_idx
+        src_type = info["src_type"]
         cpp_type = _norm_stream_type(src_type)
 
         # interface name if present (axis_in/axis_out/m_axi_gmem0)
         iface = None
-        for ref in info.get("hwRefs", []):
+        for ref in info.get("hw_refs", []):
             if ref.get("type") == "interface":
                 iface = ref.get("interface")
                 break
 
         args.append(
             {
-                "name": arg_name,
+                "name": info["name"],
                 "index": idx,
                 "direction": info.get("direction"),
                 "srcType": src_type,

@@ -19,13 +19,18 @@
 # ##################################################################################################
 
 from __future__ import annotations
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import re
 
 from core.kernel import KernelInstance
 from core.port import BusType
 from core.regs import AddressBlock
+from emit.hls_meta import load_hls_metadata, parse_hls_args
 
 DEFAULT_CLOCK_HZ = 200_000_000
+_REG_SPLIT_RE = re.compile(r"^(.*)_\d+$")
+_CONTROL_REGS = {"ctrl", "gier", "ip_ier", "ip_isr"}
 
 
 def resolve_system_map_clock(
@@ -51,6 +56,10 @@ def resolve_system_map_clock(
 def _format_hex(value: int) -> str:
     if value == 0:
         return "0"
+    return hex(value)
+
+
+def _format_hex_prefixed(value: int) -> str:
     return hex(value)
 
 
@@ -94,6 +103,164 @@ def _select_register_block(kernel, busif: str) -> Optional[AddressBlock]:
             return mm.address_blocks[0]
 
     return None
+
+
+def _register_stem(name: str) -> str:
+    m = _REG_SPLIT_RE.fullmatch(name or "")
+    return m.group(1) if m else name
+
+
+def _is_split_register_name(name: str) -> bool:
+    return _REG_SPLIT_RE.fullmatch(name or "") is not None
+
+
+def _access_flags(access: Optional[str]) -> tuple[int, int]:
+    norm = _normalize_access(access)
+    return (1 if "R" in norm else 0, 1 if "W" in norm else 0)
+
+
+def _build_functional_args_from_hls(
+    hls_data: dict,
+    busif: str,
+    reg_block: Optional[AddressBlock],
+) -> List[dict]:
+    if reg_block is None or not reg_block.registers:
+        return []
+
+    reg_by_name = {str(r.name): r for r in reg_block.registers if getattr(r, "name", None)}
+    out: List[tuple[int, int, dict]] = []
+
+    for order_idx, arg in enumerate(parse_hls_args(hls_data)):
+        idx = arg["index"] if arg["index"] is not None else order_idx
+        refs = []
+        seen_names = set()
+        for ref in arg.get("hw_refs", []):
+            ref_type = str(ref.get("type", "")).lower()
+            if ref_type != "register":
+                continue
+            usage = str(ref.get("usage", "")).lower()
+            if usage not in {"data", "address"}:
+                continue
+            iface = str(ref.get("interface", "") or "")
+            if iface and iface.lower() != busif.lower():
+                continue
+            reg_name = str(ref.get("name", "") or "")
+            if not reg_name or reg_name in seen_names:
+                continue
+            reg = reg_by_name.get(reg_name)
+            if reg is None:
+                continue
+            seen_names.add(reg_name)
+            refs.append(reg)
+
+        if not refs:
+            continue
+
+        r_flag = 0
+        w_flag = 0
+        for reg in refs:
+            r, w = _access_flags(getattr(reg, "access", None))
+            r_flag = max(r_flag, r)
+            w_flag = max(w_flag, w)
+        if r_flag == 0 and w_flag == 0:
+            continue
+
+        base_offset = min(int(getattr(reg, "address_offset", 0) or 0) for reg in refs)
+        src_size = arg.get("src_size")
+        if src_size is None or src_size <= 0:
+            src_size = sum(int(getattr(reg, "size", 32) or 32) for reg in refs)
+        logical_name = _register_stem(str(getattr(refs[0], "name", "") or arg["name"]))
+        arg_type = "buffer" if "*" in str(arg.get("src_type", "")) else "scalar"
+
+        out.append(
+            (
+                int(idx),
+                base_offset,
+                {
+                    "idx": int(idx),
+                    "name": logical_name,
+                    "type": arg_type,
+                    "offset": _format_hex_prefixed(base_offset),
+                    "range": str(int(src_size)),
+                    "r": int(r_flag),
+                    "w": int(w_flag),
+                },
+            )
+        )
+
+    out.sort(key=lambda item: (item[0], item[1], item[2]["name"]))
+    dense: List[dict] = []
+    for new_idx, (_, _, item) in enumerate(out):
+        cloned = dict(item)
+        cloned["idx"] = new_idx
+        dense.append(cloned)
+    return dense
+
+
+def _is_control_or_status_register(name: str) -> bool:
+    low = (name or "").strip().lower()
+    return low in _CONTROL_REGS or low.endswith("_ctrl")
+
+
+def _infer_fallback_type(stem: str, is_split: bool) -> str:
+    low = stem.lower()
+    if is_split and (low.endswith("_r") or "ptr" in low):
+        return "buffer"
+    return "scalar"
+
+
+def _build_functional_args_fallback(reg_block: Optional[AddressBlock]) -> List[dict]:
+    if reg_block is None or not reg_block.registers:
+        return []
+
+    groups: Dict[str, dict] = {}
+    for reg in sorted(reg_block.registers, key=lambda r: r.address_offset):
+        reg_name = str(getattr(reg, "name", "") or "")
+        if not reg_name or _is_control_or_status_register(reg_name):
+            continue
+        stem = _register_stem(reg_name)
+        g = groups.get(stem)
+        if g is None:
+            g = {
+                "name": stem,
+                "offset": int(getattr(reg, "address_offset", 0) or 0),
+                "regs": [],
+                "split": False,
+            }
+            groups[stem] = g
+        g["regs"].append(reg)
+        g["split"] = bool(g["split"] or _is_split_register_name(reg_name))
+        g["offset"] = min(g["offset"], int(getattr(reg, "address_offset", 0) or 0))
+
+    ordered = sorted(groups.values(), key=lambda g: (g["offset"], g["name"]))
+    out: List[dict] = []
+    next_idx = 0
+    for g in ordered:
+        r_flag = 0
+        w_flag = 0
+        total_range = 0
+        for reg in g["regs"]:
+            r, w = _access_flags(getattr(reg, "access", None))
+            r_flag = max(r_flag, r)
+            w_flag = max(w_flag, w)
+            total_range += int(getattr(reg, "size", 32) or 32)
+        if r_flag == 0 and w_flag == 0:
+            continue
+
+        out.append(
+            {
+                "idx": next_idx,
+                "name": g["name"],
+                "type": _infer_fallback_type(g["name"], bool(g["split"])),
+                "offset": _format_hex_prefixed(int(g["offset"])),
+                "range": str(int(total_range)),
+                "r": int(r_flag),
+                "w": int(w_flag),
+            }
+        )
+        next_idx += 1
+
+    return out
 
 
 def _coerce_optional_int(v) -> Optional[int]:
@@ -154,6 +321,7 @@ def build_system_map_context(
     axilite_addr: List[dict],
     *,
     clock_hz: int,
+    kernel_hls_by_type: Optional[Dict[str, Path]] = None,
     platform: str = "Hardware",
     num_mem_ports: int = 8,
     num_virt: int = 4,
@@ -164,6 +332,19 @@ def build_system_map_context(
         axilite_by_inst.setdefault(entry["inst"], []).append(entry)
 
     mem_indices = _assign_mem_indices(instances, num_mem_ports=num_mem_ports)
+
+    hls_by_type = kernel_hls_by_type or {}
+    hls_cache: Dict[str, Optional[dict]] = {}
+
+    def _kernel_hls_data(kernel_type: str) -> Optional[dict]:
+        if kernel_type in hls_cache:
+            return hls_cache[kernel_type]
+        hls_path = hls_by_type.get(kernel_type)
+        if hls_path is None:
+            hls_cache[kernel_type] = None
+            return None
+        hls_cache[kernel_type] = load_hls_metadata(Path(hls_path), strict=False)
+        return hls_cache[kernel_type]
 
     kernels: List[dict] = []
     for inst_name in sorted(instances.keys()):
@@ -199,6 +380,15 @@ def build_system_map_context(
                         "range": str(reg.size),
                     }
                 )
+        hls_data = _kernel_hls_data(inst.kernel.name)
+        if hls_data is not None:
+            functional_args = _build_functional_args_from_hls(
+                hls_data,
+                selected["busif"],
+                reg_block,
+            )
+        else:
+            functional_args = _build_functional_args_fallback(reg_block)
 
         connections: List[dict] = []
         mem_sp = inst.params.get("mem_sp", {}) or {}
@@ -223,6 +413,7 @@ def build_system_map_context(
                 "base_addr": _format_hex(int(selected["offset"])),
                 "range": _format_hex(int(selected["range"])),
                 "registers": registers,
+                "functional_args": functional_args,
                 "connections": connections,
             }
         )
