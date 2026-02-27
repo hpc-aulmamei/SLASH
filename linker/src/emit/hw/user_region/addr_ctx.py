@@ -36,9 +36,14 @@ def _ab_for_axilite(inst: KernelInstance, busif: str) -> AddressBlock:
       - otherwise, raise a ValueError
     """
     k = inst.kernel
-    for ab in mm.address_blocks:
-        if (ab.usage or "").lower() == "register" and ab.range:
-            return ab
+    for mm in k.memory_maps:
+        if (not mm.name) or (mm.name.lower() != busif.lower()):
+            continue
+
+        for ab in mm.address_blocks:
+            if (ab.usage or "").lower() == "register" and ab.range:
+                return ab
+    
     # Otherwise first register block anywhere
     for mm in k.memory_maps:
         for ab in mm.address_blocks:
