@@ -22,6 +22,7 @@
 #define QDMA_CONNECTION_HPP
 
 #include <string>
+#include <cstdint>
 
 namespace vrt {
 

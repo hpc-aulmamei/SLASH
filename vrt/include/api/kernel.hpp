@@ -58,6 +58,8 @@ class Kernel {
     std::shared_ptr<ZmqServer> server;         ///< Pointer to ZeroMQ server for communication
     std::map<uint32_t, uint32_t> registerMap;  ///< Map of register offsets to values
     std::optional<vrtd::Bar> vrtdBar;          ///< vrtd BAR handle for hardware access
+    std::vector<std::string> emuCallArgKinds;  ///< Optional EMU arg kind metadata from emu_manifest.json
+    std::map<uint32_t, std::string> emuFetchScalarArgByOffset;  ///< Optional EMU fetch routing by register offset
    public:
     /**
      * @brief Constructor for Kernel.
@@ -75,11 +77,21 @@ class Kernel {
     Kernel() = default;
 
     /**
+     * @brief Default copy constructor for Kernel.
+     */
+    Kernel(const Kernel&) = default;
+
+    /**
+     * @brief Default move constructor for Kernel.
+     */
+    Kernel(Kernel&&) = default;
+
+    /**
      * @brief Constructor for Kernel using a Device object.
      * @param device The Device object.
      * @param kernelName The name of the kernel.
      */
-    Kernel(vrt::Device& device, const std::string& kernelName);
+    Kernel(vrt::Device device, const std::string& kernelName);
 
     /**
      * @brief Sets the vrtd BAR handle for hardware access.
@@ -117,6 +129,18 @@ class Kernel {
      * @param platform The platform to set.
      */
     void setPlatform(Platform platform);
+
+    /**
+     * @brief Sets EMU call argument kinds loaded from emu_manifest.json.
+     *        Index corresponds to argN in EMU call JSON.
+     */
+    void setEmuCallArgKinds(const std::vector<std::string>& kinds);
+
+    /**
+     * @brief Sets EMU scalar fetch routing keyed by register offset.
+     *        Used by Kernel::read() in EMULATION mode.
+     */
+    void setEmuFetchScalarArgByOffset(const std::map<uint32_t, std::string>& routes);
 
     /**
      * @brief Writes batch register to PCIe BAR.
@@ -163,7 +187,7 @@ class Kernel {
 
         } else if (platform == Platform::EMULATION) {
             Json::Value command;
-            command["command"] = "call";
+            command["command"] = "start";
             command["function"] = name;
             int argIdx = 0;
             (processEmuArg(args, command, argIdx), ...);
@@ -230,15 +254,33 @@ class Kernel {
     void processEmuArg(T arg, Json::Value& command, int& argIndex) {
         if (currentRegisterIndex < registers.size()) {
             std::regex re(".*_\\d+$");  // Regular expression to match strings ending with _nr
-            if (std::regex_match(registers.at(currentRegisterIndex).getRegisterName(), re)) {
+            const bool isSplitReg =
+                std::regex_match(registers.at(currentRegisterIndex).getRegisterName(), re);
+
+            std::string emuKind;
+            if (platform == Platform::EMULATION &&
+                static_cast<std::size_t>(argIndex) < emuCallArgKinds.size()) {
+                emuKind = emuCallArgKinds[static_cast<std::size_t>(argIndex)];
+            }
+
+            if (emuKind.empty()) {
+                throw std::runtime_error("EMU manifest arg kind missing for kernel '" + name +
+                                         "' at arg" + std::to_string(argIndex));
+            }
+
+            if (emuKind == "buffer") {
                 command["args"]["arg" + std::to_string(argIndex)]["type"] = "buffer";
                 command["args"]["arg" + std::to_string(argIndex)]["name"] = std::to_string(arg);
-                currentRegisterIndex += 2;
-            } else {
+            } else if (emuKind == "scalar") {
                 command["args"]["arg" + std::to_string(argIndex)]["type"] = "scalar";
                 command["args"]["arg" + std::to_string(argIndex)]["value"] = arg;
-                currentRegisterIndex++;
+            } else {
+                throw std::runtime_error("Unsupported EMU manifest arg kind '" + emuKind +
+                                         "' for kernel '" + name + "' at arg" +
+                                         std::to_string(argIndex));
             }
+
+            currentRegisterIndex += isSplitReg ? 2 : 1;
             argIndex++;
         } else {
             throw std::runtime_error("Not enough registers to process all arguments.");
@@ -255,20 +297,6 @@ class Kernel {
      * @brief Destructor for Kernel.
      */
     ~Kernel();
-
-    /**
-     * @brief Copy constructor.
-     *
-     * @param other The kernel to copy from.
-     */
-    Kernel(const Kernel& other) = default;
-
-    /**
-     * @brief Move constructor.
-     *
-     * @param other The kernel to move from.
-     */
-    Kernel(Kernel&& other) noexcept = default;
 
     /**
      * @brief Copy assignment operator.

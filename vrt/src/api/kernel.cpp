@@ -32,13 +32,13 @@ Kernel::Kernel(const std::string& name, uint64_t baseAddr, uint64_t range,
     this->registers = registers;
 }
 
-Kernel::Kernel(Device& device, const std::string& kernelName)
+Kernel::Kernel(Device device, const std::string& kernelName)
     : Kernel(device.getKernel(kernelName)) {
     deviceBdf = device.getBdf();
     this->platform = device.getPlatform();
-    this->server = device.getZmqServer();
+    this->server = device.getHandle()->getZmqServer();
     if (this->platform == Platform::HARDWARE) {
-        const auto& vrtdDevice = device.getVrtdDevice();
+        const auto& vrtdDevice = device.getHandle()->getVrtdDevice();
         this->vrtdBar = vrtdDevice.getBar(bar);
     }
 }
@@ -93,20 +93,7 @@ uint32_t Kernel::read(uint32_t offset) {
                                             static_cast<size_t>(barOffset));
         return *ptr;
     } else if (platform == Platform::EMULATION) {
-        currentRegisterIndex = 4;
-        std::size_t argIdx = 0;
-        while (currentRegisterIndex < registers.size()) {
-            std::regex re(".*_\\d+$");
-            if (std::regex_match(registers.at(currentRegisterIndex).getRegisterName(), re)) {
-                currentRegisterIndex += 2;
-            } else {
-                if (registers.at(currentRegisterIndex).getOffset() == offset) {
-                    return server->fetchScalar(name, "arg" + std::to_string(argIdx));
-                }
-                currentRegisterIndex++;
-            }
-            argIdx++;
-        }
+        return server->readRegister(name, offset);
     } else if (platform == Platform::SIMULATION) {
         return server->fetchScalarSim(baseAddr + offset);
     }
@@ -115,8 +102,18 @@ uint32_t Kernel::read(uint32_t offset) {
 
 void Kernel::setVrtdBar(const std::optional<vrtd::Bar>& bar) { this->vrtdBar = bar; }
 
+void Kernel::setEmuCallArgKinds(const std::vector<std::string>& kinds) { emuCallArgKinds = kinds; }
+
+void Kernel::setEmuFetchScalarArgByOffset(const std::map<uint32_t, std::string>& routes) {
+    emuFetchScalarArgByOffset = routes;
+}
+
 void Kernel::wait() {
     if (platform == Platform::EMULATION) {
+        Json::Value command;
+        command["command"] = "wait";
+        command["function"] = name;
+        server->sendCommand(command);
         return;
     }
     // ap_ctrl_hs: wait for ap_done (CTRL[1]) instead of checking exact control word values.

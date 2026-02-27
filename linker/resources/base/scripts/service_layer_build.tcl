@@ -108,8 +108,7 @@ set opt_post_hook [lindex [get_files -of_objects [get_filesets utils_1] [list "*
 if {$opt_post_hook eq ""} {
     error "Failed to import service-layer opt.post hook into utils_1: $service_layer_eth_opt_post_tcl"
 }
-set_property STEPS.OPT_DESIGN.TCL.POST $opt_post_hook [get_runs impl_1]
-puts "Attached impl_1 post-opt hook: $opt_post_hook"
+
 
 set imported_bd [file join $rm_work_dir "${rm_proj_name}.srcs" "sources_1" "bd" "service_layer" "service_layer.bd"]
 open_bd_design $imported_bd
@@ -125,6 +124,8 @@ set rm_synth_dcp [file join $rm_work_dir "${rm_proj_name}.runs" "${rm_name}_synt
 add_files $rm_synth_dcp
 set_property SCOPED_TO_CELLS {top_i/service_layer} [get_files $rm_synth_dcp]
 set_property strategy Congestion_SSI_SpreadLogic_high [get_runs impl_1]
+set_property STEPS.OPT_DESIGN.TCL.POST $opt_post_hook [get_runs impl_1]
+puts "Attached impl_1 post-opt hook: $opt_post_hook"
 
 launch_runs impl_1 -jobs $jobs
 wait_on_run impl_1

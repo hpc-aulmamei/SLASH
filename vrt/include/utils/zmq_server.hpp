@@ -77,6 +77,28 @@ class ZmqServer {
     uint32_t fetchScalar(const std::string& function, const std::string& argIdx);
 
     /**
+     * @brief Fetches a scalar value from the server with an optional register offset hint.
+     *
+     * The offset is used by EMU runtimes that support manifest route disambiguation for split
+     * registers (e.g., low/high words of 64-bit AXI-Lite values).
+     *
+     * @param function The function name associated with the scalar value.
+     * @param argIdx The argument index or identifier.
+     * @param offset The kernel register offset being read.
+     * @return The requested scalar value.
+     */
+    uint32_t fetchScalar(const std::string& function, const std::string& argIdx, uint32_t offset);
+
+    /**
+     * @brief Reads an emulated kernel register by function instance and register offset.
+     *
+     * @param function The kernel instance name.
+     * @param offset The AXI-Lite register offset.
+     * @return The 32-bit register value.
+     */
+    uint32_t readRegister(const std::string& function, uint32_t offset);
+
+    /**
      * @brief Fetches a named buffer from the server.
      *
      * @param name The name identifier of the buffer to fetch.

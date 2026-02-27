@@ -28,6 +28,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "sim_exec_log.hpp"
+
 using namespace std;
 
 XSI_DUT::XSI_DUT(const string& design_libname, const string& simkernel_libname,
@@ -39,9 +41,9 @@ XSI_DUT::XSI_DUT(const string& design_libname, const string& simkernel_libname,
     info.logFileName = NULL;
     info.wdbFileName = const_cast<char*>(wdbName.c_str());
     xsi.open(&info);
-    std::cout << "XSI opened" << std::endl;
+    SIM_EXEC_LOG(std::cout << "XSI opened" << std::endl);
     if (trace) {
-        std::cout << "Waveform enabled" << std::endl;
+        SIM_EXEC_LOG(std::cout << "Waveform enabled" << std::endl);
         xsi.trace_all();
     }
     for (int i = 0; i < xsi.get_num_ports(); i++) {
@@ -62,10 +64,11 @@ XSI_DUT::XSI_DUT(const string& design_libname, const string& simkernel_libname,
     clk = clock_name;
     clk_half_period = (unsigned int)(clock_period_ns * pow(10, -9) / xsi.get_time_precision() / 2);
     if (clk_half_period == 0) throw invalid_argument("Calculated half period is zero");
-    std::cout << "Using " << rst << " as " << (rst_active_low ? "active-low" : "active-high")
-              << " reset" << endl;
-    std::cout << "Using " << clk << " as clock with half-period of " << clk_half_period
-              << " simulation steps" << endl;
+    SIM_EXEC_LOG(std::cout << "Using " << rst << " as "
+                           << (rst_active_low ? "active-low" : "active-high") << " reset"
+                           << endl);
+    SIM_EXEC_LOG(std::cout << "Using " << clk << " as clock with half-period of "
+                           << clk_half_period << " simulation steps" << endl);
     cycle_count = 0;
 }
 
@@ -88,8 +91,9 @@ uint64_t XSI_DUT::get_cycle_count() { return cycle_count; }
 void XSI_DUT::list_ports() {
     map<string, port_parameters>::iterator it = port_map.begin();
     while (it != port_map.end()) {
-        std::cout << it->first << " (ID: " << it->second.port_id << ", " << it->second.port_bits
-                  << "b, " << (it->second.is_input ? "I)" : "O)") << endl;
+        SIM_EXEC_LOG(std::cout << it->first << " (ID: " << it->second.port_id << ", "
+                               << it->second.port_bits << "b, "
+                               << (it->second.is_input ? "I)" : "O)") << endl);
         it++;
     }
 }

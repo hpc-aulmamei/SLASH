@@ -99,6 +99,24 @@ def _copy_with_optional_sudo(src_files: list[Path], destination: Path) -> None:
             )
 
 
+def _copy_tree_with_optional_sudo(src_dir: Path, destination: Path) -> None:
+    target_dir = destination / src_dir.name
+    needs_sudo = False
+    try:
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src_dir, target_dir, dirs_exist_ok=True)
+    except PermissionError:
+        needs_sudo = True
+
+    if needs_sudo:
+        logger.info(
+            "Permission denied writing to %s. Requesting sudo for install directory copy.",
+            target_dir,
+        )
+        subprocess.run(["sudo", "mkdir", "-p", str(target_dir)], check=True)
+        subprocess.run(["sudo", "cp", "-a", f"{src_dir}/.", str(target_dir)], check=True)
+
+
 def _ensure_boot_device_pcie_in_bif(bif_path: Path) -> None:
     if not bif_path.exists():
         raise FileNotFoundError(f"Expected BIF file not found: {bif_path}")
@@ -349,9 +367,9 @@ def install_abstract_shell(
     )
 
     impl_dir = get_hw_build_dir() / "slash.runs" / "impl_1"
-    base_bd_sources = (
-        get_hw_build_dir() / "slash.srcs" / "sources_1" / "bd" / "slash_base" / "slash_base.bd",
-        get_hw_build_dir() / "slash.srcs" / "sources_1" / "bd" / "service_layer" / "service_layer.bd",
+    bd_source_dirs = (
+        get_hw_build_dir() / "slash.srcs" / "sources_1" / "bd" / "slash_base",
+        get_hw_build_dir() / "slash.srcs" / "sources_1" / "bd" / "service_layer",
     )
     results_base_dir = _default_results_dir() / "results" / "base"
     dcp_sources = (
@@ -366,11 +384,10 @@ def install_abstract_shell(
             raise FileNotFoundError(f"Expected install artifact not found: {src}")
     _copy_with_optional_sudo(list(dcp_sources), destination)
 
-    for src in base_bd_sources:
-        if not src.exists():
-            raise FileNotFoundError(f"Expected install BD not found: {src}")
-    _copy_with_optional_sudo([base_bd_sources[0]], destination / "slash_base")
-    _copy_with_optional_sudo([base_bd_sources[1]], destination / "service_layer")
+    for src_dir in bd_source_dirs:
+        if not src_dir.is_dir():
+            raise FileNotFoundError(f"Expected install BD directory not found: {src_dir}")
+        _copy_tree_with_optional_sudo(src_dir, destination)
 
     generate_base_pdi_with_aved(project_name=project_name, workdir=workdir)
     aved_pdi = results_base_dir / f"{AVED_DESIGN_NAME}.pdi"

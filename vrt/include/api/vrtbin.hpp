@@ -49,6 +49,7 @@ class Vrtbin {
     std::vector<std::string> pdiPaths;                              ///< Paths to all discovered PDI files
     std::string tempExtractPath;                                    ///< Temporary extraction path
     std::string emulationExecPath;                                  ///< Path to the emulation executable
+    std::string emulationManifestPath;                              ///< Path to emu manifest (if present)
     std::string simulationExecPath;                                 ///< Path to the simulation executable
     Platform platform;                                              ///< Platform type
     /**
@@ -97,6 +98,12 @@ class Vrtbin {
      * @return The path to the emulation executable file.
      */
     std::string getEmulationExec();
+
+    /**
+     * @brief Gets the emulation manifest file (if present in EMU vrtbin).
+     * @return The path to the emulation manifest file, or empty string if absent.
+     */
+    std::string getEmulationManifest();
 
     /**
      * @brief Gets the simulation executable file.

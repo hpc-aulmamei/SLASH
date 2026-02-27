@@ -95,15 +95,15 @@ class StreamingBuffer {
     void sync();
 
    private:
-    T* localBuffer;            ///< Pointer to the local buffer.
-    size_t size;               ///< Size of the buffer.
-    StreamDirection syncType;  ///< Synchronization type (direction).
-    Device device;             ///< Device associated with the buffer.
-    Kernel kernel;             ///< Kernel associated with the buffer.
-    std::size_t index;         ///< Index of the buffer.
-    std::string name;          ///< Name of the buffer.
-    std::string portName;      ///< Name of the port associated with the buffer.
-    QdmaIntf* qdmaInterface = nullptr;   ///< Pointer to the QDMA interface.
+    T* localBuffer;                     ///< Pointer to the local buffer.
+    size_t size;                        ///< Size of the buffer.
+    StreamDirection syncType;           ///< Synchronization type (direction).
+    Device device;                      ///< Device associated with the buffer.
+    Kernel kernel;                      ///< Kernel associated with the buffer.
+    std::size_t index;                  ///< Index of the buffer.
+    std::string name;                   ///< Name of the buffer.
+    std::string portName;               ///< Name of the port associated with the buffer.
+    QdmaIntf* qdmaInterface = nullptr;  ///< Pointer to the QDMA interface.
 };
 
 template <typename T>
@@ -129,7 +129,7 @@ StreamingBuffer<T>::StreamingBuffer(Device device, Kernel kernel, const std::str
     localBuffer = new T[size];
     Platform platform = device.getPlatform();
     if (platform == Platform::HARDWARE) {
-        for (auto& qdmaIntf : device.getQdmaInterfaces()) {
+        for (auto& qdmaIntf : device.getHandle()->getQdmaInterfaces()) {
             if (qdmaIntf->getQueueIdx() == index) {
                 qdmaInterface = qdmaIntf;
             }
@@ -162,7 +162,7 @@ template <typename T>
 void StreamingBuffer<T>::sync() {
     Platform platform = device.getPlatform();
     if (platform == Platform::EMULATION) {
-        ZmqServer* server = device.getZmqServer();
+        ZmqServer* server = device.getHandle()->getZmqServer();
         if (syncType == StreamDirection::HOST_TO_DEVICE) {
             std::vector<uint8_t> sendData;
             std::size_t dataSize = size * sizeof(T);

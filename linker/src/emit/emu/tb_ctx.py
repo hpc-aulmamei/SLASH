@@ -417,6 +417,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 "missing_stream_bindings": has_missing_stream,
                 "call_arg_count": len(manifest_call_args),
                 "call_args": manifest_call_args,
+                "registers": [],
                 "args": [
                     {
                         "name": a["name"],
@@ -451,6 +452,16 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
         regs = []
         if reg_block is not None and getattr(reg_block, "registers", None):
             regs = sorted(reg_block.registers, key=lambda r: r.address_offset)
+        manifest_kernels[-1]["registers"] = [
+            {
+                "name": (getattr(r, "name", "") or ""),
+                "offset": int(getattr(r, "address_offset", 0) or 0),
+                "width": int(getattr(r, "range", 32) or 32),
+                "access": (getattr(r, "access", "") or ""),
+                "description": (getattr(r, "description", "") or ""),
+            }
+            for r in regs
+        ]
 
         # Mirror vrt::Kernel::read() emulation indexing, which starts after the
         # first 4 control registers and synthesizes argN based on register order.
@@ -464,7 +475,19 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 reg_off = int(getattr(regs[reg_idx], "address_offset", 0) or 0)
 
                 if _is_split_reg_name(reg_name):
+                    # Preserve the logical value name (e.g. "sum" from "sum_1") so a
+                    # following "<name>_ctrl" validity register can be synthesized.
+                    prev_value_reg_name = reg_name.rsplit("_", 1)[0]
                     if logical_arg_idx < len(non_stream_args):
+                        hi_reg = regs[reg_idx + 1] if (reg_idx + 1) < len(regs) else None
+                        hi_reg_name = (
+                            getattr(hi_reg, "name", "") or "" if hi_reg is not None else ""
+                        )
+                        hi_reg_off = (
+                            int(getattr(hi_reg, "address_offset", 0) or 0)
+                            if hi_reg is not None
+                            else None
+                        )
                         fetch_scalar_cases.append(
                             {
                                 "inst": inst_name,
@@ -477,6 +500,22 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                                 "register_split": True,
                             }
                         )
+                        # Expose the high 32-bit word of the same logical scalar for
+                        # split 64-bit AXI-Lite register reads (e.g. sum_2).
+                        if hi_reg_off is not None:
+                            fetch_scalar_cases.append(
+                                {
+                                    "inst": inst_name,
+                                    "arg": f"arg{fetch_arg_idx}",
+                                    "kind": "var_u32_hi",
+                                    "var": non_stream_args[logical_arg_idx]["var"],
+                                    "source": "register_metadata",
+                                    "register_name": hi_reg_name,
+                                    "register_offset": hi_reg_off,
+                                    "register_split": True,
+                                    "register_split_part": "hi",
+                                }
+                            )
                         logical_arg_idx += 1
                     fetch_arg_idx += 1
                     reg_idx += 2
@@ -520,24 +559,17 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
 
                 fetch_arg_idx += 1
                 reg_idx += 1
-        else:
-            # Fallback if register metadata is unavailable.
-            for idx, arg in enumerate(non_stream_args):
-                fetch_scalar_cases.append(
-                    {
-                        "inst": inst_name,
-                        "arg": f"arg{idx}",
-                        "kind": "var",
-                        "var": arg["var"],
-                        "source": "fallback_no_register_metadata",
-                    }
-                )
+        elif non_stream_args:
+            raise RuntimeError(
+                "EMU fetch metadata generation requires register metadata for "
+                f"kernel instance '{inst_name}'"
+            )
 
     fetch_scalar_var_symbols = sorted(
         {
             c["var"]
             for c in fetch_scalar_cases
-            if c.get("kind") == "var" and isinstance(c.get("var"), str)
+            if c.get("kind") in ("var", "var_u32_hi") and isinstance(c.get("var"), str)
         }
     )
 
@@ -548,7 +580,7 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
             "arg": c["arg"],
             "kind": c["kind"],
         }
-        if c["kind"] == "var":
+        if c["kind"] in ("var", "var_u32_hi"):
             entry["var_symbol"] = c["var"]
         elif c["kind"] == "const_u32":
             entry["value"] = int(c["value"])
@@ -592,7 +624,16 @@ def build_tb_context(instances: dict, streams: list, kernel_sol1_by_type: dict[s
                 }
                 for s in stream_routes
             ],
-            "commands": ["populate", "stream_in", "stream_out", "call", "fetch", "exit"],
+            "commands": [
+                "populate",
+                "stream_in",
+                "stream_out",
+                "call",
+                "wait",
+                "read_register",
+                "fetch",
+                "exit",
+            ],
             "fetch": {
                 "schema_version": 1,
                 "scalar": manifest_fetch_scalar,

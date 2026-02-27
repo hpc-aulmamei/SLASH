@@ -33,6 +33,7 @@
 #include <thread>
 #include <zmq.hpp>
 
+#include "sim_exec_log.hpp"
 #include "xsi_dut.hpp"
 #include "xsi_loader.hpp"
 
@@ -195,8 +196,9 @@ void mem_read_fsm(XSI_DUT* dut, std::queue<ap_uint<64>>& addr, std::queue<uint32
                 nbytes_to_4k_boundary = (curr_addr / 2048 + 1) * 2048 - curr_addr;
                 nbytes_this_transfer = std::min(curr_nbytes, nbytes_to_4k_boundary);
                 nbeats = (nbytes_this_transfer + 7) / 8;  // 64b data, 8B per beat
-                std::cout << "Read start addr: " << curr_addr << " len: " << nbytes_this_transfer
-                          << " (" << nbeats << ")" << std::endl;
+                SIM_EXEC_LOG(std::cout << "Read start addr: " << curr_addr
+                                       << " len: " << nbytes_this_transfer << " (" << nbeats
+                                       << ")" << std::endl);
                 dut->write(mem.arsize(), 3);          // set size to 8B
                 dut->write(mem.arlen(), nbeats - 1);  // set len to nbeats - 1
                 dut->write(mem.arburst(), 1);         // set burst to incr
@@ -216,8 +218,9 @@ void mem_read_fsm(XSI_DUT* dut, std::queue<ap_uint<64>>& addr, std::queue<uint32
             nbytes_to_4k_boundary = (curr_addr / 2048 + 1) * 2048 - curr_addr;
             nbytes_this_transfer = std::min(curr_nbytes, nbytes_to_4k_boundary);
             nbeats = (nbytes_this_transfer + 7) / 8;  // 64b data, 8B per beat
-            std::cout << "Read continue addr: " << curr_addr << " len: " << nbytes_this_transfer
-                      << " (" << nbeats << ")" << std::endl;
+            SIM_EXEC_LOG(std::cout << "Read continue addr: " << curr_addr
+                                   << " len: " << nbytes_this_transfer << " (" << nbeats << ")"
+                                   << std::endl);
             dut->write(mem.arsize(), 3);          // set size to 8B
             dut->write(mem.arlen(), nbeats - 1);  // set len to nbeats - 1
             dut->write(mem.arburst(), 1);         // set burst to incr
@@ -289,8 +292,9 @@ void mem_write_fsm(XSI_DUT* dut, std::queue<ap_uint<64>>& addr, std::queue<uint3
                 nbytes_to_4k_boundary = (curr_addr / 2048 + 1) * 2048 - curr_addr;
                 nbytes_this_transfer = std::min(nbytes_to_4k_boundary, curr_nbytes);
                 nbeats = (nbytes_this_transfer + 7) / 8;  // number of 64B beats in transfer
-                std::cout << "Write start addr=" << curr_addr << " len=" << nbytes_this_transfer
-                          << " (" << nbeats << ")" << std::endl;
+                SIM_EXEC_LOG(std::cout << "Write start addr=" << curr_addr
+                                       << " len=" << nbytes_this_transfer << " (" << nbeats
+                                       << ")" << std::endl);
                 dut->write(mem.awsize(), 3);  // 64B width
                 dut->write(mem.awlen(), nbeats - 1);
                 dut->write(mem.awburst(), 1);  // INCR
@@ -309,8 +313,9 @@ void mem_write_fsm(XSI_DUT* dut, std::queue<ap_uint<64>>& addr, std::queue<uint3
             nbytes_to_4k_boundary = (curr_addr / 2048 + 1) * 2048 - curr_addr;
             nbytes_this_transfer = std::min(nbytes_to_4k_boundary, curr_nbytes);
             nbeats = (nbytes_this_transfer + 7) / 8;  // number of 64B beats in transfer
-            std::cout << "Write continue addr=" << curr_addr << " len=" << nbytes_this_transfer
-                      << " (" << nbeats << ")" << std::endl;
+            SIM_EXEC_LOG(std::cout << "Write continue addr=" << curr_addr
+                                   << " len=" << nbytes_this_transfer << " (" << nbeats << ")"
+                                   << std::endl);
             dut->write(mem.awsize(), 3);  // 64B width
             dut->write(mem.awlen(), nbeats - 1);
             dut->write(mem.awburst(), 1);  // INCR
@@ -483,7 +488,8 @@ void fetchBuffer(ap_uint<64> addr, uint64_t len, std::vector<uint8_t>& data) {
         memReadAddr.push(addr);
         memReadLen.push(len);
     }
-    std::cout << std::hex << "Reading from address: " << addr << " length: " << len << std::endl;
+    SIM_EXEC_LOG(std::cout << std::hex << "Reading from address: " << addr << " length: " << len
+                           << std::endl);
     {
         std::unique_lock<std::mutex> lock(mtx);
         cv_mem_read.wait(lock, [] { return !mem_read_busy; });
@@ -491,7 +497,8 @@ void fetchBuffer(ap_uint<64> addr, uint64_t len, std::vector<uint8_t>& data) {
     while (data.size() < len && !memReadVal.empty()) {
         uint64_t temp = memReadVal.front();
         memReadVal.pop();
-        std::cout << std::showbase << std::hex << "Read value: " << temp << std::dec << std::endl;
+        SIM_EXEC_LOG(std::cout << std::showbase << std::hex << "Read value: " << temp << std::dec
+                               << std::endl);
         for (int i = 0; i < 8 && data.size() < len; ++i) {
             data.push_back(static_cast<uint8_t>((temp >> (i * 8)) & 0xFF));
         }
@@ -524,7 +531,7 @@ void zmq_ctx_setup_and_run() {
 
     while (!stop) {
         zmq::message_t request;
-        socket.recv(&request);
+        (void)socket.recv(request, zmq::recv_flags::none);
         std::string req_str(static_cast<char*>(request.data()), request.size());
         Json::Value root;
         Json::Reader reader;
@@ -535,14 +542,14 @@ void zmq_ctx_setup_and_run() {
             uint64_t addr = root["addr"].asUInt64();
             uint64_t bufferSize = root["size"].asUInt64();
             zmq::message_t data;
-            socket.recv(&data);
+            (void)socket.recv(data, zmq::recv_flags::none);
             void* buffer = new uint8_t[bufferSize];
             std::memcpy(buffer, data.data(), bufferSize);
             std::vector<uint8_t> vec(static_cast<uint8_t*>(buffer),
                                      static_cast<uint8_t*>(buffer) + bufferSize);
             socket.send(zmq::message_t("OK", 2), zmq::send_flags::none);
-            std::cout << "Received data of size: " << std::hex << bufferSize
-                      << " at address: " << addr << std::endl;
+            SIM_EXEC_LOG(std::cout << "Received data of size: " << std::hex << bufferSize
+                                   << " at address: " << addr << std::endl);
 
             { writeBuffer(addr, vec); }
         } else if (command == "fetch") {
@@ -551,8 +558,8 @@ void zmq_ctx_setup_and_run() {
             if (type == "buffer") {
                 uint64_t addr = root["addr"].asUInt64();
                 uint64_t bufferSize = root["size"].asUInt64();  // sent as no of bytes
-                std::cout << "Fetching buffer of size: " << std::dec << bufferSize
-                          << " from address: " << std::hex << addr << std::endl;
+                SIM_EXEC_LOG(std::cout << "Fetching buffer of size: " << std::dec << bufferSize
+                                       << " from address: " << std::hex << addr << std::endl);
                 std::vector<uint8_t> vec;
                 { fetchBuffer(addr, bufferSize, vec); }
                 response = createJsonBuffer(vec.data(), vec.size());
@@ -576,8 +583,8 @@ void zmq_ctx_setup_and_run() {
         } else if (command == "reg") {
             uint64_t addr = root["addr"].asUInt64();
             uint32_t val = root["val"].asUInt();
-            std::cout << "Writing value: " << std::hex << val << " to address: " << addr
-                      << std::endl;
+            SIM_EXEC_LOG(std::cout << "Writing value: " << std::hex << "0x" << val
+                                   << " to address: " << addr << std::endl);
             {
                 std::unique_lock<std::mutex> lock(mtx);
                 cv_control_write.wait(lock, [] { return !control_write_busy; });
@@ -602,14 +609,14 @@ void zmq_ctx_setup_and_run() {
 int main() {
     std::string simengine_libname = "libxv_simulator_kernel.so";
     std::string design_libname = "xsim.dir/top_wrapper_behav/xsimk.so";
-    std::cout << "Sim Engine DLL: " << simengine_libname << std::endl;
-    std::cout << "Design DLL: " << design_libname << std::endl;
+    SIM_EXEC_LOG(std::cout << "Sim Engine DLL: " << simengine_libname << std::endl);
+    SIM_EXEC_LOG(std::cout << "Design DLL: " << design_libname << std::endl);
     XSI_DUT dut(design_libname, simengine_libname, "rst", true, "clk", 4, "test.wdb", true);
 
-    std::cout << "DUT initialized";
-    std::cout << "Initial cycle count: " << dut.get_cycle_count() << std::endl;
+    SIM_EXEC_LOG(std::cout << "DUT initialized");
+    SIM_EXEC_LOG(std::cout << "Initial cycle count: " << dut.get_cycle_count() << std::endl);
     dut.reset_design();
-    std::cout << "Cycle count after reset: " << dut.get_cycle_count() << std::endl;
+    SIM_EXEC_LOG(std::cout << "Cycle count after reset: " << dut.get_cycle_count() << std::endl);
     signal(SIGINT, finish);
 
     std::thread worker(zmq_ctx_setup_and_run);

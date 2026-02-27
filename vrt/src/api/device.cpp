@@ -20,16 +20,20 @@
 
 #include "api/device.hpp"
 
-#include "utils/filesystem_cache.hpp"
+#include <unistd.h>
 
+#include <cctype>
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <limits>
-#include <unistd.h>
 #include <vrtd/bar.hpp>
 
+#include "utils/filesystem_cache.hpp"
+
 namespace vrt {
+namespace impl {
 
 namespace {
 
@@ -74,6 +78,116 @@ std::string makeExecFromBinaryDirCommand(const std::string& execPath) {
     return "cd " + shellQuote(dir) + " && exec ./" + shellQuote(file);
 }
 
+bool parseEmuArgIndex(const std::string& argName, std::size_t& outIdx) {
+    if (argName.size() < 4 || argName.rfind("arg", 0) != 0) {
+        return false;
+    }
+    std::size_t value = 0;
+    bool hasDigit = false;
+    for (std::size_t i = 3; i < argName.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(argName[i]);
+        if (!std::isdigit(c)) {
+            return false;
+        }
+        hasDigit = true;
+        value = value * 10 + static_cast<std::size_t>(c - '0');
+    }
+    if (!hasDigit) {
+        return false;
+    }
+    outIdx = value;
+    return true;
+}
+
+void applyEmuManifestToKernels(const std::string& manifestPath, std::map<std::string, Kernel>& kernels) {
+    if (manifestPath.empty()) {
+        throw std::runtime_error("EMU manifest missing from vrtbin");
+    }
+
+    std::ifstream in(manifestPath);
+    if (!in.is_open()) {
+        throw std::runtime_error("EMU manifest path unreadable: " + manifestPath);
+    }
+
+    Json::Value root;
+    Json::Reader reader;
+    if (!reader.parse(in, root) || !root.isObject()) {
+        throw std::runtime_error("Failed to parse EMU manifest: " + manifestPath);
+    }
+
+    std::size_t appliedCallKinds = 0;
+    std::size_t appliedFetchRoutes = 0;
+
+    const Json::Value manifestKernels = root["kernels"];
+    if (!manifestKernels.isArray()) {
+        throw std::runtime_error("EMU manifest missing required array: kernels");
+    }
+    if (manifestKernels.isArray()) {
+        for (const auto& k : manifestKernels) {
+            if (!k.isObject()) continue;
+            const std::string instance = k.get("instance", "").asString();
+            if (instance.empty()) continue;
+            auto it = kernels.find(instance);
+            if (it == kernels.end()) continue;
+
+            std::vector<std::string> kinds;
+            const Json::Value callArgs = k["call_args"];
+            if (callArgs.isArray()) {
+                for (const auto& ca : callArgs) {
+                    if (!ca.isObject()) continue;
+                    const std::string argName = ca.get("arg", "").asString();
+                    const std::string kind = ca.get("kind", "").asString();
+                    std::size_t idx = 0;
+                    if (kind.empty() || !parseEmuArgIndex(argName, idx)) continue;
+                    if (idx >= kinds.size()) {
+                        kinds.resize(idx + 1);
+                    }
+                    kinds[idx] = kind;
+                }
+            }
+            if (!kinds.empty()) {
+                it->second.setEmuCallArgKinds(kinds);
+                appliedCallKinds += 1;
+            }
+        }
+    }
+
+    std::map<std::string, std::map<uint32_t, std::string>> fetchRoutesByKernel;
+    const Json::Value fetch = root["fetch"];
+    if (!fetch.isObject()) {
+        throw std::runtime_error("EMU manifest missing required object: fetch");
+    }
+    const Json::Value fetchScalar = fetch["scalar"];
+    if (!fetchScalar.isArray()) {
+        throw std::runtime_error("EMU manifest missing required array: fetch.scalar");
+    }
+    if (fetchScalar.isArray()) {
+        for (const auto& route : fetchScalar) {
+            if (!route.isObject()) continue;
+            const std::string functionName = route.get("function", "").asString();
+            const std::string argName = route.get("arg", "").asString();
+            if (functionName.empty() || argName.empty()) continue;
+            const Json::Value source = route["source"];
+            if (!source.isObject()) continue;
+            const Json::Value regOff = source["register_offset"];
+            if (!regOff.isUInt() && !regOff.isInt()) continue;
+            const uint32_t offset = regOff.asUInt();
+            fetchRoutesByKernel[functionName][offset] = argName;
+        }
+    }
+
+    for (auto& kv : fetchRoutesByKernel) {
+        auto it = kernels.find(kv.first);
+        if (it == kernels.end()) continue;
+        it->second.setEmuFetchScalarArgByOffset(kv.second);
+        appliedFetchRoutes += kv.second.size();
+    }
+
+    utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
+                       "Applied EMU manifest metadata: call-kind kernels={}, fetch routes={}",
+                       appliedCallKinds, appliedFetchRoutes);
+}
+
 }  // namespace
 
 Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool program,
@@ -103,6 +217,7 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
         }
     } else if (platform == Platform::EMULATION) {
         parseSystemMap();
+        applyEmuManifestToKernels(this->vrtbin.getEmulationManifest(), kernels);
         std::string emulationExecPath = this->vrtbin.getEmulationExec();
         if (emulationExecPath.empty()) {
             throw std::runtime_error("Emulation executable vpp_emu not found in vrtbin");
@@ -248,4 +363,5 @@ const vrtd::Device& Device::getVrtdDevice() const {
 
 std::vector<QdmaIntf*> Device::getQdmaInterfaces() { return qdmaIntfs; }
 
+}  // namespace impl
 }  // namespace vrt

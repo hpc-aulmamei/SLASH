@@ -26,6 +26,7 @@
 #include <vrtd/bar_file_ptr.hpp>
 
 #include <stdexcept>
+#include <cstdint>
 
 namespace vrtd {
 
