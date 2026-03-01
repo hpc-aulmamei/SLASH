@@ -23,6 +23,24 @@
 #include "api/device.hpp"
 
 namespace vrt {
+namespace {
+
+uint64_t resolveBarOffset(uint64_t absoluteAddr, uint64_t accessSize, uint64_t barLen) {
+    if (barLen == 0) {
+        throw std::runtime_error("BAR length is zero");
+    }
+
+    // Design model: BAR maps a contiguous AXI window. Kernel base addresses
+    // are absolute within that window; register offsets are relative to kernel base.
+    const uint64_t barWindowBase = absoluteAddr - (absoluteAddr % barLen);
+    const uint64_t barOffset = absoluteAddr - barWindowBase;
+    if (barOffset + accessSize > barLen) {
+        throw std::runtime_error("BAR access out of range");
+    }
+    return barOffset;
+}
+
+}  // namespace
 
 Kernel::Kernel(const std::string& name, uint64_t baseAddr, uint64_t range,
                const std::vector<Register>& registers) {
@@ -53,14 +71,8 @@ void Kernel::write(uint32_t offset, uint32_t value) {
         }
 
         auto barFile = vrtdBar->openBarFile();
-        uint64_t barStart = vrtdBar->getStartAddress();
-        if (baseAddr < barStart) {
-            throw std::runtime_error("Kernel base address below BAR start");
-        }
-        uint64_t barOffset = (baseAddr - barStart) + offset;
-        if (barOffset + sizeof(uint32_t) > barFile.getLen()) {
-            throw std::runtime_error("BAR write out of range");
-        }
+        const uint64_t absoluteAddr = baseAddr + static_cast<uint64_t>(offset);
+        uint64_t barOffset = resolveBarOffset(absoluteAddr, sizeof(uint32_t), barFile.getLen());
         auto ptr = barFile.getPtr<uint32_t>(vrtd::BarFile::Direction::Write,
                                             static_cast<size_t>(barOffset));
         *ptr = value;
@@ -81,14 +93,8 @@ uint32_t Kernel::read(uint32_t offset) {
         }
 
         auto barFile = vrtdBar->openBarFile();
-        uint64_t barStart = vrtdBar->getStartAddress();
-        if (baseAddr < barStart) {
-            throw std::runtime_error("Kernel base address below BAR start");
-        }
-        uint64_t barOffset = (baseAddr - barStart) + offset;
-        if (barOffset + sizeof(uint32_t) > barFile.getLen()) {
-            throw std::runtime_error("BAR read out of range");
-        }
+        const uint64_t absoluteAddr = baseAddr + static_cast<uint64_t>(offset);
+        uint64_t barOffset = resolveBarOffset(absoluteAddr, sizeof(uint32_t), barFile.getLen());
         auto ptr = barFile.getPtr<uint32_t>(vrtd::BarFile::Direction::Read,
                                             static_cast<size_t>(barOffset));
         return *ptr;
@@ -153,14 +159,11 @@ void Kernel::writeBatch() {
     }
 
     auto barFile = vrtdBar->openBarFile();
-    uint64_t barStart = vrtdBar->getStartAddress();
-    if (baseAddr < barStart) {
-        free(buf);
-        throw std::runtime_error("Kernel base address below BAR start");
-    }
-    uint64_t barOffset = baseAddr - barStart;
     uint64_t byteCount = static_cast<uint64_t>(noOfPhysicalRegisters) * sizeof(uint32_t);
-    if (barOffset + byteCount > barFile.getLen()) {
+    uint64_t barOffset = 0;
+    try {
+        barOffset = resolveBarOffset(baseAddr, byteCount, barFile.getLen());
+    } catch (const std::runtime_error&) {
         free(buf);
         throw std::runtime_error("BAR write range out of range");
     }
@@ -173,5 +176,6 @@ void Kernel::writeBatch() {
     return;
 }
 std::string Kernel::getName() const { return name; }
+uint64_t Kernel::getPhysAddr() const { return baseAddr; }
 
 }  // namespace vrt

@@ -32,6 +32,7 @@ struct design_writer {
     uint32_t qid;
     int fd;
     bool qpair_created;
+    bool qpair_started;
     pthread_t thread;
     pthread_mutex_t mutex;
     pthread_cond_t cond;

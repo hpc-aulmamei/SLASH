@@ -48,7 +48,7 @@ const char *Error::what() const noexcept {
         return "Requested resouce doesn't exist";
 
     case VRTD_RET_INTERNAL_ERROR:
-        return "Internal error in vrtd daemon";
+        return "Internal error in vrtd daemon or local libvrtd";
 
     case VRTD_RET_AUTH_ERROR:
         return "Missing permission";

@@ -45,6 +45,7 @@ static int buffer_init(struct buffer *buf,
 {
     if (buf == NULL) {
         errno = EINVAL;
+        (void) sd_journal_print(LOG_ERR, "Failed to initialize buffer: invalid output pointer");
         return -1;
     }
 
@@ -65,6 +66,14 @@ static int buffer_init(struct buffer *buf,
 
     if (qdma == NULL || map == NULL || size == 0 || client_id == 0) {
         errno = EINVAL;
+        (void) sd_journal_print(
+            LOG_ERR,
+            "Failed to initialize buffer: invalid arguments (qdma=%p map=%p size=%llu client_id=%llu)",
+            (void *)qdma,
+            (void *)map,
+            (unsigned long long)size,
+            (unsigned long long)client_id
+        );
         goto fail;
     }
 
@@ -81,6 +90,11 @@ static int buffer_init(struct buffer *buf,
         break;
     default:
         errno = EINVAL;
+        (void) sd_journal_print(
+            LOG_ERR,
+            "Failed to initialize buffer: invalid allocation direction %u",
+            (unsigned int)alloc_dir
+        );
         goto fail;
     }
 
@@ -96,6 +110,15 @@ static int buffer_init(struct buffer *buf,
     );
     if (ares != ALLOCATION_RESULT_SUCCESS) {
         errno = (ares == ALLOCATION_RESULT_NO_MEMORY) ? ENOMEM : EINVAL;
+        (void) sd_journal_print(
+            LOG_ERR,
+            "Failed to allocate device memory for buffer (result=%d alloc_type=%u size=%llu alloc_arg=%llu client_id=%llu): %m",
+            (int)ares,
+            (unsigned int)alloc_type,
+            (unsigned long long)size,
+            (unsigned long long)alloc_arg,
+            (unsigned long long)client_id
+        );
         goto fail;
     }
 
@@ -116,6 +139,7 @@ static int buffer_init(struct buffer *buf,
     qpair.size = sizeof(qpair);
 
     if (slash_qdma_qpair_add(qdma, &qpair) != 0) {
+        (void) sd_journal_print(LOG_ERR, "Failed to add buffer qpair: %m");
         goto fail;
     }
 
@@ -123,11 +147,13 @@ static int buffer_init(struct buffer *buf,
     buf->qpair_created = true;
 
     if (slash_qdma_qpair_start(qdma, buf->qid) != 0) {
+        (void) sd_journal_print(LOG_ERR, "Failed to start buffer qpair %u: %m", buf->qid);
         goto fail;
     }
 
     int fd = slash_qdma_qpair_get_fd(qdma, buf->qid, O_CLOEXEC);
     if (fd < 0) {
+        (void) sd_journal_print(LOG_ERR, "Failed to get fd for buffer qpair %u: %m", buf->qid);
         goto fail;
     }
     buf->fd = fd;

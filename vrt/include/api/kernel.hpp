@@ -30,6 +30,7 @@
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "register/register.hpp"
@@ -60,6 +61,29 @@ class Kernel {
     std::optional<vrtd::Bar> vrtdBar;          ///< vrtd BAR handle for hardware access
     std::vector<std::string> emuCallArgKinds;  ///< Optional EMU arg kind metadata from emu_manifest.json
     std::map<uint32_t, std::string> emuFetchScalarArgByOffset;  ///< Optional EMU fetch routing by register offset
+
+    template <typename T, typename = void>
+    struct HasPhysAddr : std::false_type {};
+
+    template <typename T>
+    struct HasPhysAddr<T, std::void_t<decltype(std::declval<const T&>().getPhysAddr())>>
+        : std::true_type {};
+
+    template <typename T>
+    static uint64_t resolveKernelArgImpl(T&& arg, std::true_type) {
+        return static_cast<uint64_t>(arg.getPhysAddr());
+    }
+
+    template <typename T>
+    static decltype(auto) resolveKernelArgImpl(T&& arg, std::false_type) {
+        return std::forward<T>(arg);
+    }
+
+    template <typename T>
+    static decltype(auto) resolveKernelArg(T&& arg) {
+        using ArgT = std::remove_reference_t<T>;
+        return resolveKernelArgImpl(std::forward<T>(arg), HasPhysAddr<ArgT>{});
+    }
    public:
     /**
      * @brief Constructor for Kernel.
@@ -152,10 +176,10 @@ class Kernel {
      * @param args The arguments to pass to the kernel.
      */
     template <typename... Args>
-    void call(Args... args) {
+    void call(Args&&... args) {
         currentRegisterIndex = 4;
         if (platform == Platform::HARDWARE) {
-            (processArg(args), ...);
+            (processArg(std::forward<Args>(args)), ...);
             this->writeBatch();
             this->startKernel();
             this->wait();
@@ -164,10 +188,10 @@ class Kernel {
             command["command"] = "call";
             command["function"] = name;
             int argIdx = 0;
-            (processEmuArg(args, command, argIdx), ...);
+            (processEmuArg(std::forward<Args>(args), command, argIdx), ...);
             server->sendCommand(command);
         } else if (platform == Platform::SIMULATION) {
-            (processSimArg(args), ...);
+            (processSimArg(std::forward<Args>(args)), ...);
             this->startKernel();
             this->wait();
         }
@@ -178,10 +202,10 @@ class Kernel {
      * @param args The arguments to pass to the kernel.
      */
     template <typename... Args>
-    void start(Args... args) {
+    void start(Args&&... args) {
         currentRegisterIndex = 4;
         if (platform == Platform::HARDWARE) {
-            (processArg(args), ...);
+            (processArg(std::forward<Args>(args)), ...);
             this->writeBatch();
             this->startKernel();
 
@@ -190,10 +214,10 @@ class Kernel {
             command["command"] = "start";
             command["function"] = name;
             int argIdx = 0;
-            (processEmuArg(args, command, argIdx), ...);
+            (processEmuArg(std::forward<Args>(args), command, argIdx), ...);
             server->sendCommand(command);
         } else if (platform == Platform::SIMULATION) {
-            (processSimArg(args), ...);
+            (processSimArg(std::forward<Args>(args)), ...);
             this->startKernel();
         }
     }
@@ -203,17 +227,20 @@ class Kernel {
      * @param arg The argument to process.
      */
     template <typename T>
-    void processArg(T arg) {
+    void processArg(T&& arg) {
+        decltype(auto) resolvedArg = resolveKernelArg(std::forward<T>(arg));
         if (currentRegisterIndex < registers.size()) {
             std::regex re(".*_\\d+$");  // Regular expression to match strings ending with _nr
             if (std::regex_match(registers.at(currentRegisterIndex).getRegisterName(), re)) {
                 this->registerMap[registers.at(currentRegisterIndex).getOffset()] =
-                    arg & 0xFFFFFFFF;
+                    static_cast<uint32_t>(static_cast<uint64_t>(resolvedArg) & 0xFFFFFFFFULL);
                 this->registerMap[registers.at(currentRegisterIndex + 1).getOffset()] =
-                    static_cast<uint32_t>((static_cast<uint64_t>(arg) >> 32) & 0xFFFFFFFF);
+                    static_cast<uint32_t>((static_cast<uint64_t>(resolvedArg) >> 32) &
+                                          0xFFFFFFFFULL);
                 currentRegisterIndex += 2;
             } else {
-                this->registerMap[registers.at(currentRegisterIndex).getOffset()] = arg;
+                this->registerMap[registers.at(currentRegisterIndex).getOffset()] =
+                    static_cast<uint32_t>(resolvedArg);
                 currentRegisterIndex++;
             }
 
@@ -228,16 +255,21 @@ class Kernel {
      * @param arg The argument to process.
      */
     template <typename T>
-    void processSimArg(T arg) {
+    void processSimArg(T&& arg) {
+        decltype(auto) resolvedArg = resolveKernelArg(std::forward<T>(arg));
         if (currentRegisterIndex < registers.size()) {
             std::regex re(".*_\\d+$");  // Regular expression to match strings ending with _nr
             if (std::regex_match(registers.at(currentRegisterIndex).getRegisterName(), re)) {
-                this->write(registers.at(currentRegisterIndex).getOffset(), arg & 0xFFFFFFFF);
+                this->write(registers.at(currentRegisterIndex).getOffset(),
+                            static_cast<uint32_t>(static_cast<uint64_t>(resolvedArg) &
+                                                  0xFFFFFFFFULL));
                 this->write(registers.at(currentRegisterIndex + 1).getOffset(),
-                            static_cast<uint32_t>((static_cast<uint64_t>(arg) >> 32) & 0xFFFFFFFF));
+                            static_cast<uint32_t>((static_cast<uint64_t>(resolvedArg) >> 32) &
+                                                  0xFFFFFFFFULL));
                 currentRegisterIndex += 2;
             } else {
-                this->write(registers.at(currentRegisterIndex).getOffset(), arg);
+                this->write(registers.at(currentRegisterIndex).getOffset(),
+                            static_cast<uint32_t>(resolvedArg));
                 currentRegisterIndex++;
             }
         }
@@ -251,7 +283,8 @@ class Kernel {
      * @param argIndex The index of the argument.
      */
     template <typename T>
-    void processEmuArg(T arg, Json::Value& command, int& argIndex) {
+    void processEmuArg(T&& arg, Json::Value& command, int& argIndex) {
+        decltype(auto) resolvedArg = resolveKernelArg(std::forward<T>(arg));
         if (currentRegisterIndex < registers.size()) {
             std::regex re(".*_\\d+$");  // Regular expression to match strings ending with _nr
             const bool isSplitReg =
@@ -270,10 +303,11 @@ class Kernel {
 
             if (emuKind == "buffer") {
                 command["args"]["arg" + std::to_string(argIndex)]["type"] = "buffer";
-                command["args"]["arg" + std::to_string(argIndex)]["name"] = std::to_string(arg);
+                command["args"]["arg" + std::to_string(argIndex)]["name"] =
+                    std::to_string(static_cast<uint64_t>(resolvedArg));
             } else if (emuKind == "scalar") {
                 command["args"]["arg" + std::to_string(argIndex)]["type"] = "scalar";
-                command["args"]["arg" + std::to_string(argIndex)]["value"] = arg;
+                command["args"]["arg" + std::to_string(argIndex)]["value"] = resolvedArg;
             } else {
                 throw std::runtime_error("Unsupported EMU manifest arg kind '" + emuKind +
                                          "' for kernel '" + name + "' at arg" +
@@ -292,6 +326,12 @@ class Kernel {
      * @return The name of the kernel.
      */
     std::string getName() const;
+
+    /**
+     * @brief Getter for the kernel base physical address.
+     * @return The physical base address of the kernel.
+     */
+    uint64_t getPhysAddr() const;
 
     /**
      * @brief Destructor for Kernel.

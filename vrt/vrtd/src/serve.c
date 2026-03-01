@@ -1390,12 +1390,26 @@ static uint16_t client_handle_request_clock_op(
             }
         } else if (req_body->op == VRTD_CLOCK_OP_SET) {
             if (rate == 0) {
+                (void) sd_journal_print(
+                    LOG_WARNING,
+                    "Received set frequency request with zero rate for service region"
+                );
                 return VRTD_RET_INVALID_ARGUMENT;
             }
             if (clock_driver_set_service_region_rate_hz(d->clock_driver, &rate) != 0) {
+                (void) sd_journal_print(
+                    LOG_ERR,
+                    "Failed to set service region frequency to %u Hz: %m",
+                    req_body->rate_hz
+                );
                 return VRTD_RET_INTERNAL_ERROR;
             }
         } else {
+            (void) sd_journal_print(
+                LOG_WARNING,
+                "Received invalid clock op %u for service region",
+                (unsigned int)req_body->op
+            );
             return VRTD_RET_INVALID_ARGUMENT;
         }
         break;
@@ -1406,16 +1420,35 @@ static uint16_t client_handle_request_clock_op(
             }
         } else if (req_body->op == VRTD_CLOCK_OP_SET) {
             if (rate == 0) {
+                (void) sd_journal_print(
+                    LOG_WARNING,
+                    "Received set frequency request with zero rate for user region"
+                );
                 return VRTD_RET_INVALID_ARGUMENT;
             }
             if (clock_driver_set_user_region_rate_hz(d->clock_driver, &rate) != 0) {
+                (void) sd_journal_print(
+                    LOG_ERR,
+                    "Failed to set user region frequency to %u Hz: %m",
+                    req_body->rate_hz
+                );
                 return VRTD_RET_INTERNAL_ERROR;
             }
         } else {
+            (void) sd_journal_print(
+                LOG_WARNING,
+                "Received invalid clock op %u for user region",
+                (unsigned int)req_body->op
+            );
             return VRTD_RET_INVALID_ARGUMENT;
         }
         break;
     default:
+        (void) sd_journal_print(
+            LOG_WARNING,
+            "Received clock request with invalid region %u",
+            (unsigned int)req_body->region
+        );
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
