@@ -166,11 +166,31 @@ def _build_functional_args_from_hls(
             continue
 
         base_offset = min(int(getattr(reg, "address_offset", 0) or 0) for reg in refs)
-        src_size = arg.get("src_size")
-        if src_size is None or src_size <= 0:
-            src_size = sum(int(getattr(reg, "size", 32) or 32) for reg in refs)
         logical_name = _register_stem(str(getattr(refs[0], "name", "") or arg["name"]))
-        arg_type = "buffer" if "*" in str(arg.get("src_type", "")) else "scalar"
+        src_type = str(arg.get("src_type", ""))
+        src_size = arg.get("src_size")
+        reg_bits = sum(int(getattr(reg, "size", 32) or 32) for reg in refs)
+        has_address_ref = any(
+            str(ref.get("usage", "")).lower() == "address" for ref in (arg.get("hw_refs", []) or [])
+        )
+        arg_type = "buffer" if ("*" in src_type or has_address_ref) else "scalar"
+
+        if arg_type == "buffer":
+            if reg_bits > 0 and src_size is not None and src_size > 0:
+                range_bits = max(int(src_size), int(reg_bits))
+            elif reg_bits > 0:
+                range_bits = int(reg_bits)
+            elif src_size is not None and src_size > 0:
+                range_bits = int(src_size)
+            else:
+                range_bits = 32
+        else:
+            if src_size is not None and src_size > 0:
+                range_bits = int(src_size)
+            elif reg_bits > 0:
+                range_bits = int(reg_bits)
+            else:
+                range_bits = 32
 
         out.append(
             (
@@ -181,7 +201,7 @@ def _build_functional_args_from_hls(
                     "name": logical_name,
                     "type": arg_type,
                     "offset": _format_hex_prefixed(base_offset),
-                    "range": str(int(src_size)),
+                    "range": str(int(range_bits)),
                     "r": int(r_flag),
                     "w": int(w_flag),
                 },
