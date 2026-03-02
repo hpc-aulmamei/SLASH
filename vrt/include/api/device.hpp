@@ -106,6 +106,8 @@ class Device {
     std::vector<QdmaIntf*> qdmaIntfs;                           ///< Vector of QDMA interfaces for streaming
     std::shared_ptr<vrtd::Session> vrtdSession;                 ///< vrtd session for hardware access
     std::optional<vrtd::Device> vrtdDevice;                     ///< vrtd device handle (requires session)
+    std::thread runtimeThread;                                  ///< sw_emu/sim runtime launcher thread
+    bool cleanupDone = false;                                   ///< Guard to make cleanup idempotent
    public:
     QdmaIntf qdmaIntf;  ///< QDMA interface object
 

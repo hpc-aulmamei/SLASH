@@ -133,7 +133,7 @@ std::string Kernel::buildArgApiUsageMessage(std::string_view reason, std::string
     oss << "- Choose exactly one style per launch; do not mix setArg(...) with "
         << opName << "(...)\n";
     oss << "- If " << opName
-        << "() is used (no positional args) and functional_args exist, every arg must be set via setArg\n";
+        << "() is used (no positional args) and functional_args exist, every writable arg must be set via setArg\n";
     oss << "- If no functional_args metadata exists, argument APIs are unavailable; use write(offset, value) then "
         << opName << "()\n";
 
@@ -165,6 +165,9 @@ void Kernel::ensureNoSetArgValuesWhenPassingArgs(std::size_t providedArgCount,
 void Kernel::ensureSetArgValuesCompleteForLaunch(std::string_view opName) const {
     std::vector<std::string> missing;
     for (const FunctionalArg& argMeta : functionalArgs) {
+        if (!argMeta.writable) {
+            continue;
+        }
         if (setArgValues.find(argMeta.idx) == setArgValues.end()) {
             missing.push_back("'" + argMeta.name + "'(idx " + std::to_string(argMeta.idx) + ")");
         }
@@ -271,6 +274,9 @@ void Kernel::writeArgToEmulation(Json::Value& command, const FunctionalArg& argM
 void Kernel::applySetArgsToRegisterMap() {
     registerMap.clear();
     for (const FunctionalArg& argMeta : functionalArgs) {
+        if (!argMeta.writable) {
+            continue;
+        }
         const uint64_t value = setArgValues.at(argMeta.idx);
         writeArgToRegisterMap(argMeta, value);
     }
@@ -278,6 +284,9 @@ void Kernel::applySetArgsToRegisterMap() {
 
 void Kernel::applySetArgsToSimulation() {
     for (const FunctionalArg& argMeta : functionalArgs) {
+        if (!argMeta.writable) {
+            continue;
+        }
         const uint64_t value = setArgValues.at(argMeta.idx);
         writeArgToSimulation(argMeta, value);
     }
@@ -285,6 +294,9 @@ void Kernel::applySetArgsToSimulation() {
 
 void Kernel::applySetArgsToEmulation(Json::Value& command) const {
     for (const FunctionalArg& argMeta : functionalArgs) {
+        if (!argMeta.writable) {
+            continue;
+        }
         const uint64_t value = setArgValues.at(argMeta.idx);
         writeArgToEmulation(command, argMeta, value);
     }
@@ -308,6 +320,8 @@ void Kernel::wait() {
     while ((read(0x00) & 0x2u) == 0u) {
     }
 }
+
+void Kernel::start() { this->start<>(); }
 
 void Kernel::startKernel(bool autorestart) {
     if (autorestart) {

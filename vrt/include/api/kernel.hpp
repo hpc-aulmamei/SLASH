@@ -334,6 +334,11 @@ class Kernel {
 
     /**
      * @brief Starts the kernel.
+     */
+    void start();
+
+    /**
+     * @brief Starts the kernel with arguments.
      * @param args The arguments to pass to the kernel.
      */
     template <typename... Args>
