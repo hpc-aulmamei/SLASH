@@ -256,10 +256,7 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
 }
 
 Device::~Device() {
-    try {
-        cleanup();
-    } catch (...) {
-    }
+    cleanup();
 }
 
 void Device::parseSystemMap() {
@@ -299,15 +296,10 @@ void Device::cleanup() {
     } else if (platform == Platform::EMULATION || platform == Platform::SIMULATION) {
         Json::Value exit;
         exit["command"] = "exit";
-        try {
-            zmqServer->sendCommand(exit);
-        } catch (...) {
-        }
+        zmqServer->sendCommand(exit);
     }
 
-    if (runtimeThread.joinable()) {
-        runtimeThread.join();
-    }
+    runtimeThread.join();
 }
 
 std::string Device::getBdf() { return bdf; }
