@@ -23,7 +23,7 @@
 module sim_mem
 #(
     parameter MEM_WIDTH = 64,
-    parameter MEM_DEPTH_LOG = 24,
+    parameter MEM_DEPTH_LOG = 26,
     parameter READ_LATENCY = 50
 )(
 

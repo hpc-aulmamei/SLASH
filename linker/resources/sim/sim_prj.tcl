@@ -38,6 +38,7 @@ update_compile_order -fileset sim_1
 
 # --- Preprocess checkpoint-backed kernels into funcsim Verilog (per instance) ---
 {% if sim_checkpoint_netlists %}
+set slash_ckpt_vlog_files [list]
 file mkdir [file join ${sim_root} checkpoint_funcsim]
 {% for ck in sim_checkpoint_netlists %}
 if {![file exists "{{ ck.dcp_path }}"]} {
@@ -46,7 +47,18 @@ if {![file exists "{{ ck.dcp_path }}"]} {
 open_checkpoint "{{ ck.dcp_path }}"
 write_verilog -force -mode funcsim -rename_top {{ ck.rename_top }} -prefix {{ ck.rename_prefix }} "{{ ck.funcsim_v_path }}"
 close_design
-add_files -norecurse "{{ ck.funcsim_v_path }}"
+set ckpt_funcsim_file "{{ ck.funcsim_v_path }}"
+lappend slash_ckpt_vlog_files ${ckpt_funcsim_file}
+add_files -fileset sim_1 -norecurse ${ckpt_funcsim_file}
+set ckpt_funcsim_obj [get_files -all ${ckpt_funcsim_file}]
+if {[llength ${ckpt_funcsim_obj}] > 0} {
+  # Ensure checkpoint-derived netlists participate in simulation only.
+  catch { set_property USED_IN_SIMULATION true ${ckpt_funcsim_obj} }
+  catch { set_property USED_IN_SYNTHESIS false ${ckpt_funcsim_obj} }
+  catch { set_property USED_IN_IMPLEMENTATION false ${ckpt_funcsim_obj} }
+  catch { set_property IS_USER_DISABLED false ${ckpt_funcsim_obj} }
+  catch { set_property IS_ENABLED true ${ckpt_funcsim_obj} }
+}
 {% endfor %}
 update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
@@ -167,10 +179,49 @@ assign_bd_address -offset 0x60000000000 -range 128M [get_bd_addr_segs /bram_ctrl
 save_bd_design
 validate_bd_design
 add_files -norecurse [make_wrapper -files [get_files "${bd_name}.bd"] -top]
+set_property top top_wrapper [current_fileset]
 update_compile_order -fileset sources_1
+set_property top top_wrapper [get_filesets sim_1]
+set_property top_lib xil_defaultlib [get_filesets sim_1]
 update_compile_order -fileset sim_1
 set_property -name {xsim.elaborate.xelab.more_options} -value {-dll} -objects [get_filesets sim_1]
 set_property generate_scripts_only 1 [current_fileset -simset]
 launch_simulation -scripts_only
+{% if sim_checkpoint_netlists %}
+# Vivado may mark checkpoint-derived netlists as AutoDisabled in the project file.
+# Ensure they are present in the generated XSIM compile project.
+set vlog_prj [file join ${sim_prj_dir} "sim_prj.sim" "sim_1" "behav" "xsim" "top_wrapper_vlog.prj"]
+if {[file exists ${vlog_prj}]} {
+  set fh [open ${vlog_prj} r]
+  set prj_data [read ${fh}]
+  close ${fh}
+
+  set missing_ckpt [list]
+  foreach f ${slash_ckpt_vlog_files} {
+    if {[string first ${f} ${prj_data}] < 0} {
+      lappend missing_ckpt ${f}
+    }
+  }
+
+  if {[llength ${missing_ckpt}] > 0} {
+    set insert_block "\n# SLASH checkpoint-backed kernel netlists\n"
+    foreach f ${missing_ckpt} {
+      append insert_block "verilog xil_defaultlib \"${f}\"\n"
+    }
+
+    set marker "# compile glbl module"
+    set idx [string first ${marker} ${prj_data}]
+    if {$idx >= 0} {
+      set new_data "[string range ${prj_data} 0 [expr {$idx - 1}]]${insert_block}[string range ${prj_data} ${idx} end]"
+    } else {
+      set new_data "${prj_data}${insert_block}"
+    }
+
+    set fh [open ${vlog_prj} w]
+    puts -nonewline ${fh} ${new_data}
+    close ${fh}
+  }
+}
+{% endif %}
 close_project
 exit

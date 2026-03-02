@@ -30,6 +30,7 @@ from emit.render import render_template
 from emit.hw.user_region.addr_ctx import build_axilite_address_context
 from emit.hw.service_region.stream_ctx import build_stream_connect_context
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
+from emit.hls_meta import infer_hls_json_from_component_xml
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -256,12 +257,22 @@ def generate_sim_tcl(args) -> None:
     # 1) Parse kernels
     kernel_library = {}
     kernel_sim_meta: dict[str, dict] = {}
+    kernel_hls_by_type: dict[str, Path] = {}
     for kpath in args.kernels:
         kfile = Path(kpath).resolve()
         if not kfile.exists():
             raise FileNotFoundError(f"Kernel file not found: {kfile}")
         k = parse_component_xml(kfile)
         kernel_library[k.name] = k
+        try:
+            kernel_hls_by_type[k.name] = infer_hls_json_from_component_xml(kfile)
+        except FileNotFoundError:
+            logger.warning(
+                "No HLS metadata found for kernel type '%s' from component %s; "
+                "system_map functional_args will use heuristic fallback.",
+                k.name,
+                kfile,
+            )
 
         sim_checkpoint_rel = _find_sim_checkpoint_dcp(kfile)
         sim_checkpoint_abs = None
@@ -397,6 +408,7 @@ def generate_sim_tcl(args) -> None:
         axilite_ctx.get("axilite_addr", []),
         clock_hz=clock_hz,
         platform="Simulation",
+        kernel_hls_by_type=kernel_hls_by_type,
         network=getattr(cfg, "network", None),
     )
     system_map_template = Path(args.system_map_template)

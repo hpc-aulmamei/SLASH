@@ -227,7 +227,16 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type, uint8_t port
         startAddress = detail::reserveFakePhysAddr(size * sizeof(T), type);
         localBuffer = new T[size];
         ownsLocalBuffer = true;
-    }
+        if (platform == Platform::EMULATION) {
+            // send initial buffer so it is populated in the emulation environment
+            std::shared_ptr<ZmqServer> server = this->device.getHandle()->getZmqServer();
+            std::vector<uint8_t> sendData;
+            std::size_t dataSize = size * sizeof(T);
+            sendData.resize(dataSize);
+            std::memcpy(sendData.data(), localBuffer, dataSize);
+            server->sendBuffer(std::to_string(getPhysAddr()), sendData);
+        }
+    } 
 }
 
 template <typename T>
