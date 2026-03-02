@@ -153,7 +153,7 @@ public:
     virtual UntypedBuffer *getUntypedBuffer() const noexcept = 0;
 };
 
-/* >32MB */
+/* >64MB */
 class LargeBlock : public Block {
     std::unique_ptr<vrtd::Buffer> backingBuffer;
     std::unique_ptr<UntypedBuffer> untypedBuffer;
@@ -275,8 +275,8 @@ protected:
     }
 };
 
-class LargeBlockSuperblock : public LargeBlock, private BuddySuperblockBase<21, 36> {
-    using Buddy = BuddySuperblockBase<21, 36>;  // 2MB - 64MB
+class LargeBlockSuperblock : public LargeBlock, private BuddySuperblockBase<21, 26> {
+    using Buddy = BuddySuperblockBase<21, 26>;  // 2MB - 64MB
 public:
     static constexpr size_t MAX_SIZE = 1ULL << Buddy::kMax; // 64MB
 
@@ -288,7 +288,7 @@ public:
     bool isFree() const;
 };
 
-/* 2MB - 32MB */
+/* 2MB - 64MB */
 class MediumBlock : public Block {
     std::unique_ptr<UntypedBuffer> untypedBuffer;
     LargeBlockSuperblock *backingBlockSuperblock;
@@ -299,10 +299,10 @@ public:
     UntypedBuffer *getUntypedBuffer() const noexcept override;
 };
 
-class MediumBlockSuperblock : public MediumBlock, private BuddySuperblockBase<12, 20> {
-    using Buddy = BuddySuperblockBase<12, 20>;  // 4KB - 1MB
+class MediumBlockSuperblock : public MediumBlock, private BuddySuperblockBase<12, 21> {
+    using Buddy = BuddySuperblockBase<12, 21>;  // 4KB - 2MB
 public:
-    static constexpr size_t MAX_SIZE = 1ULL << Buddy::kMax; // 1MB
+    static constexpr size_t MAX_SIZE = 1ULL << Buddy::kMax; // 2MB
 
     MediumBlockSuperblock(LargeBlockSuperblock *backingSuperblock, UntypedBuffer untypedBuffer);
     ~MediumBlockSuperblock() override;
@@ -312,7 +312,7 @@ public:
     bool isFree() const;
 };
 
-/* <2MB */
+/* <=2MB */
 class SmallBlock : public Block {
     std::unique_ptr<UntypedBuffer> untypedBuffer;
     MediumBlockSuperblock *backingBlockSuperblock;

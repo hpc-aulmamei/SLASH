@@ -18,4 +18,8 @@ cmake -B ../vrt/vrtd/build -S ../vrt/vrtd -GNinja
 cmake --build ../vrt/vrtd/build
 sudo cmake --install ../vrt/vrtd/build
 
+cmake -B ../vrt/build -S ../vrt -GNinja
+cmake --build ../vrt/build
+sudo cmake --install ../vrt/build
+
 sudo systemctl start vrtd.service

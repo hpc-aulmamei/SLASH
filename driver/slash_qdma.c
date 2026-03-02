@@ -79,6 +79,11 @@ typedef int (*slash_qdma_queue_cmd_fn)(unsigned long qdma_handle,
                                        char *errbuf,
                                        int errbuf_sz);
 
+static int slash_qdma_queue_remove_safe(unsigned long qdma_handle,
+                                        unsigned long qhndl,
+                                        char *errbuf,
+                                        int errbuf_sz);
+
 __attribute__((unused))
 static enum queue_type_t slash_qdma_dir_to_qtype(u32 dir_bit)
 {
@@ -111,6 +116,43 @@ static u32 slash_qdma_qtype_to_dir(enum queue_type_t qtype)
 static inline bool slash_qdma_qhndl_is_valid(unsigned long qhndl)
 {
     return qhndl != QDMA_QUEUE_IDX_INVALID;
+}
+
+static int slash_qdma_queue_remove_safe(unsigned long qdma_handle,
+                                        unsigned long qhndl,
+                                        char *errbuf,
+                                        int errbuf_sz)
+{
+    struct qdma_q_state qstate = {0};
+    int err;
+
+    if (!errbuf || errbuf_sz <= 0)
+        return -EINVAL;
+
+    errbuf[0] = '\0';
+
+    err = qdma_get_queue_state(qdma_handle, qhndl, &qstate, errbuf, errbuf_sz);
+    if (err)
+        return err;
+
+    switch (qstate.qstate) {
+    case Q_STATE_ONLINE:
+        err = qdma_queue_stop(qdma_handle, qhndl, errbuf, errbuf_sz);
+        if (err)
+            return err;
+        break;
+    case Q_STATE_ENABLED:
+        break;
+    case Q_STATE_DISABLED:
+        /* Queue is already removed. */
+        return 0;
+    default:
+        snprintf(errbuf, errbuf_sz, "queue in unexpected state %u",
+                 qstate.qstate);
+        return -EINVAL;
+    }
+
+    return qdma_queue_remove(qdma_handle, qhndl, errbuf, errbuf_sz);
 }
 
 static inline struct slash_qdma_qpair_entry *
@@ -823,13 +865,14 @@ static void slash_qdma_ioctl_qpair_rm_q(struct miscdevice *misc,
         return;
     }
 
-    err = qdma_queue_remove(qdma_dev->qdma_handle, qhndl,
-                        errbuf, sizeof(errbuf));
+    err = slash_qdma_queue_remove_safe(qdma_dev->qdma_handle, qhndl,
+                                       errbuf, sizeof(errbuf));
 
     if (err) {
         dev_err(&qdma_dev->pdev->dev,
                 "qdma: queue remove failed (type=%u): %d (%s)\n",
                 qtype, err, errbuf);
+        return;
     }
 
     entry->qhndl[qtype] = QDMA_QUEUE_IDX_INVALID;
@@ -917,7 +960,7 @@ static int slash_qdma_ioctl_qpair_op(struct miscdevice *misc,
         break;
     case SLASH_QDMA_QUEUE_OP_DEL:
         ret = slash_qdma_ioctl_qpair_op_apply(qdma_dev, entry, req,
-                                          qdma_queue_remove,
+                                          slash_qdma_queue_remove_safe,
                                           "remove", false);
         if (!ret)
             slash_qdma_qpair_remove(qdma_dev, req->qid);

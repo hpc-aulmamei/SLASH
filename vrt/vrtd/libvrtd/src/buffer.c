@@ -23,6 +23,7 @@
 #include <vrtd/vrtd.h>
 
 #include <assert.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -70,8 +71,20 @@ enum vrtd_ret vrtd_buffer_create_raw(
         0   /* offset */
     );
     if (buffer->buf == MAP_FAILED) {
-        free(buffer);
-        return VRTD_RET_INTERNAL_ERROR;
+        // Huge pages are an optimization, not a hard requirement.
+        // Fall back to normal anonymous mapping when hugepage mmap fails.
+        buffer->buf = mmap(
+            NULL, /* address (let the kernel choose) */
+            size,
+            PROT_READ | PROT_WRITE,
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE,
+            -1, /* fd */
+            0   /* offset */
+        );
+        if (buffer->buf == MAP_FAILED) {
+            free(buffer);
+            return VRTD_RET_INTERNAL_ERROR;
+        }
     }
 
     buffer->sock_fd    = sock_fd;

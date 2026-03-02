@@ -23,6 +23,27 @@
 #include <vrtd/device.hpp>
 
 namespace vrt {
+namespace {
+
+bool matchesAllocation(const UntypedBuffer* buffer, BufferAllocType type, BufferAllocDir dir,
+                       HBMRegion region) {
+    if (buffer == nullptr) {
+        return false;
+    }
+
+    if (buffer->getAllocType() != type || buffer->getAllocDir() != dir) {
+        return false;
+    }
+
+    // Region is meaningful only for explicit HBM allocations.
+    if (type == BufferAllocType::Hbm) {
+        return buffer->getHBMRegion() == region;
+    }
+
+    return true;
+}
+
+}  // namespace
 
 
 UntypedBuffer::UntypedBuffer(std::nullptr_t) noexcept
@@ -222,6 +243,9 @@ std::unique_ptr<Block> Allocator::allocate(vrtd::Device& device, BufferAllocType
 
     if (size > MediumBlockSuperblock::MAX_SIZE) {
         for (auto& superblock : largeBlockSuperblocks) {
+            if (!matchesAllocation(superblock->getUntypedBuffer(), type, dir, region)) {
+                continue;
+            }
             try {
                 UntypedBuffer buffer = superblock->allocate(size);
                 return std::make_unique<MediumBlock>(superblock.get(), buffer);
@@ -237,6 +261,9 @@ std::unique_ptr<Block> Allocator::allocate(vrtd::Device& device, BufferAllocType
     }
 
     for (auto& superblock : mediumBlockSuperblocks) {
+        if (!matchesAllocation(superblock->getUntypedBuffer(), type, dir, region)) {
+            continue;
+        }
         try {
             UntypedBuffer buffer = superblock->allocate(size);
             return std::make_unique<SmallBlock>(superblock.get(), buffer);
@@ -246,6 +273,9 @@ std::unique_ptr<Block> Allocator::allocate(vrtd::Device& device, BufferAllocType
     }
 
     for (auto& superblock : largeBlockSuperblocks) {
+        if (!matchesAllocation(superblock->getUntypedBuffer(), type, dir, region)) {
+            continue;
+        }
         try {
             UntypedBuffer backing = superblock->allocate(MediumBlockSuperblock::MAX_SIZE);
             mediumBlockSuperblocks.emplace_back(

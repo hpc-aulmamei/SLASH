@@ -21,6 +21,7 @@
 #include "api/vrtbin.hpp"
 
 #include <tar.h>
+#include <zlib.h>
 
 #include <algorithm>
 #include <array>
@@ -61,6 +62,17 @@ static_assert(sizeof(TarHeader) == TAR_BLOCK_SIZE, "Invalid tar header size");
 
 bool isZeroBlock(const std::array<char, TAR_BLOCK_SIZE>& block) {
     return std::all_of(block.begin(), block.end(), [](char c) { return c == '\0'; });
+}
+
+bool hasGzipMagic(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
+    std::array<unsigned char, 2> magic{};
+    file.read(reinterpret_cast<char*>(magic.data()), static_cast<std::streamsize>(magic.size()));
+    return file.gcount() == static_cast<std::streamsize>(magic.size()) && magic[0] == 0x1Fu &&
+           magic[1] == 0x8Bu;
 }
 
 uint64_t parseOctal(const char* field, std::size_t len) {
@@ -119,6 +131,63 @@ void streamCopy(std::istream& src, std::ostream& dst, uint64_t size) {
         }
         size -= static_cast<uint64_t>(chunk);
     }
+}
+
+void decompressGzipToTar(const std::string& gzipPath, const std::filesystem::path& tarPath) {
+    gzFile gz = gzopen(gzipPath.c_str(), "rb");
+    if (gz == nullptr) {
+        throw std::runtime_error("Cannot open gzip archive: " + gzipPath);
+    }
+
+    std::ofstream out(tarPath, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+        gzclose(gz);
+        throw std::runtime_error("Failed to create temporary tar stream: " + tarPath.string());
+    }
+
+    std::array<char, 1 << 16> buffer{};
+    while (true) {
+        const int bytesRead = gzread(gz, buffer.data(), static_cast<unsigned int>(buffer.size()));
+        if (bytesRead > 0) {
+            out.write(buffer.data(), static_cast<std::streamsize>(bytesRead));
+            if (!out) {
+                gzclose(gz);
+                throw std::runtime_error("Failed writing temporary tar stream: " +
+                                         tarPath.string());
+            }
+            continue;
+        }
+        if (bytesRead == 0) {
+            break;
+        }
+
+        int zerr = Z_OK;
+        const char* zmsg = gzerror(gz, &zerr);
+        const std::string err = zmsg == nullptr ? "unknown gzip error" : zmsg;
+        gzclose(gz);
+        throw std::runtime_error("Failed to decompress gzip archive: " + err);
+    }
+
+    const int closeRc = gzclose(gz);
+    if (closeRc != Z_OK) {
+        throw std::runtime_error("Failed to finalize gzip decompression");
+    }
+}
+
+bool hasValidTarChecksum(const std::array<char, TAR_BLOCK_SIZE>& raw) {
+    TarHeader header{};
+    std::memcpy(&header, raw.data(), sizeof(header));
+    const uint64_t expected = parseOctal(header.chksum, sizeof(header.chksum));
+
+    uint64_t actual = 0;
+    for (std::size_t i = 0; i < raw.size(); ++i) {
+        if (i >= 148 && i < 156) {
+            actual += static_cast<unsigned char>(' ');
+        } else {
+            actual += static_cast<unsigned char>(raw[i]);
+        }
+    }
+    return expected == actual;
 }
 
 std::filesystem::path sanitizeArchivePath(const std::string& entryName) {
@@ -225,102 +294,139 @@ void Vrtbin::extract() {
         throw std::runtime_error("Failed to initialize extraction path: " + tempExtractPath);
     }
 
-    std::ifstream archive(vrtbinPath, std::ios::binary);
+    std::filesystem::path archivePath = vrtbinPath;
+    bool cleanupArchivePath = false;
+    if (hasGzipMagic(vrtbinPath)) {
+        archivePath = std::filesystem::path(tempExtractPath).parent_path() /
+                      (std::filesystem::path(tempExtractPath).filename().string() + ".tmp.tar");
+        cleanupArchivePath = true;
+        try {
+            decompressGzipToTar(vrtbinPath, archivePath);
+        } catch (...) {
+            std::error_code cleanupEc;
+            std::filesystem::remove(archivePath, cleanupEc);
+            throw;
+        }
+    }
+    auto cleanupArchive = [&]() {
+        if (!cleanupArchivePath) {
+            return;
+        }
+        std::error_code cleanupEc;
+        std::filesystem::remove(archivePath, cleanupEc);
+    };
+
+    std::ifstream archive(archivePath, std::ios::binary);
     if (!archive.is_open()) {
-        throw std::runtime_error("Cannot open tar archive: " + vrtbinPath);
+        cleanupArchive();
+        throw std::runtime_error("Cannot open tar archive: " + archivePath.string());
     }
 
-    std::string pendingLongName;
-    while (true) {
-        std::array<char, TAR_BLOCK_SIZE> raw{};
-        archive.read(raw.data(), static_cast<std::streamsize>(raw.size()));
-        if (archive.gcount() == 0) {
-            break;
-        }
-        if (archive.gcount() != static_cast<std::streamsize>(raw.size())) {
-            throw std::runtime_error("Invalid tar archive: truncated header");
-        }
-        if (isZeroBlock(raw)) {
-            break;
-        }
+    try {
+        std::string pendingLongName;
+        while (true) {
+            std::array<char, TAR_BLOCK_SIZE> raw{};
+            archive.read(raw.data(), static_cast<std::streamsize>(raw.size()));
+            if (archive.gcount() == 0) {
+                break;
+            }
+            if (archive.gcount() != static_cast<std::streamsize>(raw.size())) {
+                throw std::runtime_error("Invalid tar archive: truncated header");
+            }
+            if (isZeroBlock(raw)) {
+                break;
+            }
+            if (!hasValidTarChecksum(raw)) {
+                throw std::runtime_error("Invalid tar archive: header checksum mismatch");
+            }
 
-        TarHeader header{};
-        std::memcpy(&header, raw.data(), sizeof(header));
+            TarHeader header{};
+            std::memcpy(&header, raw.data(), sizeof(header));
 
-        uint64_t payloadSize = parseOctal(header.size, sizeof(header.size));
-        char typeflag = header.typeflag;
-        std::string entryName;
-        if (!pendingLongName.empty()) {
-            entryName = pendingLongName;
-            pendingLongName.clear();
-        } else {
-            std::string name = readField(header.name, sizeof(header.name));
-            std::string prefix = readField(header.prefix, sizeof(header.prefix));
-            entryName = prefix.empty() ? name : (prefix + "/" + name);
-        }
+            uint64_t payloadSize = parseOctal(header.size, sizeof(header.size));
+            const uint64_t headerSize = payloadSize;
+            char typeflag = header.typeflag;
+            std::string entryName;
+            if (!pendingLongName.empty()) {
+                entryName = pendingLongName;
+                pendingLongName.clear();
+            } else {
+                std::string name = readField(header.name, sizeof(header.name));
+                std::string prefix = readField(header.prefix, sizeof(header.prefix));
+                entryName = prefix.empty() ? name : (prefix + "/" + name);
+            }
 
-        if (typeflag == TAR_LONGNAME_TYPE) {
-            std::string longName(payloadSize, '\0');
+            if (typeflag == TAR_LONGNAME_TYPE) {
+                std::string longName(payloadSize, '\0');
+                if (payloadSize > 0) {
+                    archive.read(longName.data(), static_cast<std::streamsize>(payloadSize));
+                    if (archive.gcount() != static_cast<std::streamsize>(payloadSize)) {
+                        throw std::runtime_error("Invalid tar archive: truncated long name");
+                    }
+                }
+                std::size_t nul = longName.find('\0');
+                if (nul != std::string::npos) {
+                    longName.resize(nul);
+                }
+                pendingLongName = longName;
+                payloadSize = 0;
+            } else {
+                const std::filesystem::path relPath = sanitizeArchivePath(entryName);
+                if (!relPath.empty()) {
+                    const std::filesystem::path outPath =
+                        std::filesystem::path(tempExtractPath) / relPath;
+                    if (typeflag == DIRTYPE) {
+                        std::filesystem::create_directories(outPath);
+                    } else if (isRegularTarType(typeflag)) {
+                        const auto parent = outPath.parent_path();
+                        if (!parent.empty()) {
+                            std::filesystem::create_directories(parent);
+                        }
+                        std::ofstream out(outPath, std::ios::binary | std::ios::trunc);
+                        if (!out.is_open()) {
+                            throw std::runtime_error("Failed to create extracted file: " +
+                                                     outPath.string());
+                        }
+                        streamCopy(archive, out, payloadSize);
+                        out.flush();
+                        if (!out) {
+                            throw std::runtime_error("Failed writing extracted file: " +
+                                                     outPath.string());
+                        }
+                        out.close();
+                        if (!out) {
+                            throw std::runtime_error("Failed closing extracted file: " +
+                                                     outPath.string());
+                        }
+                        std::error_code permEc;
+                        const uint64_t mode = parseOctal(header.mode, sizeof(header.mode));
+                        std::filesystem::permissions(
+                            outPath, tarModeToPerms(mode),
+                            std::filesystem::perm_options::replace, permEc);
+                        if (permEc) {
+                            throw std::runtime_error(
+                                "Failed setting permissions on extracted file " + outPath.string() +
+                                ": " + permEc.message());
+                        }
+                        payloadSize = 0;
+                    }
+                }
+            }
+
             if (payloadSize > 0) {
-                archive.read(longName.data(), static_cast<std::streamsize>(payloadSize));
-                if (archive.gcount() != static_cast<std::streamsize>(payloadSize)) {
-                    throw std::runtime_error("Invalid tar archive: truncated long name");
-                }
+                streamSkip(archive, payloadSize);
             }
-            std::size_t nul = longName.find('\0');
-            if (nul != std::string::npos) {
-                longName.resize(nul);
-            }
-            pendingLongName = longName;
-            payloadSize = 0;
-        } else {
-            const std::filesystem::path relPath = sanitizeArchivePath(entryName);
-            if (!relPath.empty()) {
-                const std::filesystem::path outPath = std::filesystem::path(tempExtractPath) / relPath;
-                if (typeflag == DIRTYPE) {
-                    std::filesystem::create_directories(outPath);
-                } else if (isRegularTarType(typeflag)) {
-                    const auto parent = outPath.parent_path();
-                    if (!parent.empty()) {
-                        std::filesystem::create_directories(parent);
-                    }
-                    std::ofstream out(outPath, std::ios::binary | std::ios::trunc);
-                    if (!out.is_open()) {
-                        throw std::runtime_error("Failed to create extracted file: " +
-                                                 outPath.string());
-                    }
-                    streamCopy(archive, out, payloadSize);
-                    out.flush();
-                    if (!out) {
-                        throw std::runtime_error("Failed writing extracted file: " +
-                                                 outPath.string());
-                    }
-                    out.close();
-                    if (!out) {
-                        throw std::runtime_error("Failed closing extracted file: " +
-                                                 outPath.string());
-                    }
-                    std::error_code permEc;
-                    const uint64_t mode = parseOctal(header.mode, sizeof(header.mode));
-                    std::filesystem::permissions(outPath, tarModeToPerms(mode),
-                                                 std::filesystem::perm_options::replace, permEc);
-                    if (permEc) {
-                        throw std::runtime_error("Failed setting permissions on extracted file " +
-                                                 outPath.string() + ": " + permEc.message());
-                    }
-                    payloadSize = 0;
-                }
+            const uint64_t padding =
+                (TAR_BLOCK_SIZE - (headerSize % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE;
+            if (padding > 0) {
+                streamSkip(archive, padding);
             }
         }
-
-        if (payloadSize > 0) {
-            streamSkip(archive, payloadSize);
-        }
-        const uint64_t padding = (TAR_BLOCK_SIZE - (parseOctal(header.size, sizeof(header.size)) % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE;
-        if (padding > 0) {
-            streamSkip(archive, padding);
-        }
+    } catch (...) {
+        cleanupArchive();
+        throw;
     }
+    cleanupArchive();
 }
 
 void Vrtbin::copy(const std::string& source, const std::string& destination) {

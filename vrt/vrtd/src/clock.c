@@ -86,7 +86,9 @@
 
 #define CLOCK_DRIVER_DEFAULT_PRIM_IN_HZ 100000000u
 #define CLOCK_DRIVER_DEFAULT_MIN_ERR_HZ 500000u
-#define CLOCK_DRIVER_DEFAULT_LOCK_TIMEOUT_MS 1000u
+#define CLOCK_DRIVER_DEFAULT_MAX_CANDIDATES 50u
+#define CLOCK_DRIVER_DEFAULT_O_WINDOW 6u
+#define CLOCK_DRIVER_DEFAULT_LOCK_TIMEOUT_MS 200u
 
 static int clock_driver_init(struct clock_driver *clk, struct slash_ctldev *ctl)
 {
@@ -445,79 +447,134 @@ static uint64_t clock_driver_program_mdo_and_reconfig(
     return clock_driver_get_rate_hz(clk, wizard_offset, clock_id);
 }
 
-static int clock_driver_calculate_divisors_hz(struct clock_driver *clk, uint32_t target_hz)
+struct clock_candidate {
+    uint64_t diff_hz;
+    uint64_t achieved_hz;
+    uint32_t m;
+    uint32_t d;
+    uint32_t o;
+    uint64_t fvco_hz;
+};
+
+static int clock_driver_candidate_cmp(
+    const struct clock_candidate *a,
+    const struct clock_candidate *b
+)
 {
-    if (clk == NULL || target_hz == 0) {
-        errno = EINVAL;
-        return -1;
+    if (a->diff_hz != b->diff_hz) {
+        return (a->diff_hz < b->diff_hz) ? -1 : 1;
+    }
+
+    // Prefer o divisible by 4 (stable/easy-to-represent output divisors).
+    uint32_t ao4 = (a->o % 4u == 0u) ? 0u : 1u;
+    uint32_t bo4 = (b->o % 4u == 0u) ? 0u : 1u;
+    if (ao4 != bo4) {
+        return (ao4 < bo4) ? -1 : 1;
+    }
+
+    // Then prefer even o, then higher VCO for better jitter behavior.
+    uint32_t ao2 = (a->o % 2u == 0u) ? 0u : 1u;
+    uint32_t bo2 = (b->o % 2u == 0u) ? 0u : 1u;
+    if (ao2 != bo2) {
+        return (ao2 < bo2) ? -1 : 1;
+    }
+
+    if (a->fvco_hz != b->fvco_hz) {
+        return (a->fvco_hz > b->fvco_hz) ? -1 : 1;
+    }
+
+    if (a->o != b->o) {
+        return (a->o < b->o) ? -1 : 1;
+    }
+
+    return 0;
+}
+
+static size_t clock_driver_generate_candidates(
+    struct clock_driver *clk,
+    uint32_t target_hz,
+    struct clock_candidate *cands,
+    size_t max_candidates
+)
+{
+    if (clk == NULL || target_hz == 0 || cands == NULL || max_candidates == 0) {
+        return 0;
     }
 
     uint64_t vco_min_hz = (uint64_t)XCLK_VCO_MIN * XCLK_MHZ;
     uint64_t vco_max_hz = (uint64_t)XCLK_VCO_MAX * XCLK_MHZ;
-    uint64_t best_diff_hz = UINT64_MAX;
-    uint32_t best_m = 0;
-    uint32_t best_d = 0;
-    uint32_t best_o = 0;
-    uint64_t best_achieved_hz = 0;
-    int found = 0;
+    size_t count = 0;
 
     for (uint32_t m = XCLK_M_MIN; m <= XCLK_M_MAX; ++m) {
+        uint64_t numerator = (uint64_t)clk->prim_in_hz * m;
         for (uint32_t d = XCLK_D_MIN; d <= XCLK_D_MAX; ++d) {
-            uint64_t fvco_hz = (uint64_t)clk->prim_in_hz * m / d;
+            uint64_t fvco_hz = numerator / d;
             if (fvco_hz < vco_min_hz || fvco_hz > vco_max_hz) {
                 continue;
             }
 
-            for (uint32_t o = XCLK_O_MIN; o <= XCLK_O_MAX; ++o) {
-                uint32_t divo = clock_driver_effective_divo_from_o(o);
-                uint64_t achieved_hz = fvco_hz / divo;
+            uint64_t o_est = (fvco_hz + target_hz / 2u) / target_hz;
+            if (o_est < XCLK_O_MIN) {
+                o_est = XCLK_O_MIN;
+            } else if (o_est > XCLK_O_MAX) {
+                o_est = XCLK_O_MAX;
+            }
+
+            uint32_t o_lo = (o_est > CLOCK_DRIVER_DEFAULT_O_WINDOW)
+                ? (uint32_t)(o_est - CLOCK_DRIVER_DEFAULT_O_WINDOW)
+                : XCLK_O_MIN;
+            if (o_lo < XCLK_O_MIN) {
+                o_lo = XCLK_O_MIN;
+            }
+
+            uint32_t o_hi = (uint32_t)(o_est + CLOCK_DRIVER_DEFAULT_O_WINDOW);
+            if (o_hi > XCLK_O_MAX) {
+                o_hi = XCLK_O_MAX;
+            }
+
+            for (uint32_t o = o_lo; o <= o_hi; ++o) {
+                uint64_t achieved_hz = fvco_hz / o;
                 uint64_t diff_hz = (achieved_hz > target_hz)
                     ? (achieved_hz - target_hz)
                     : (target_hz - achieved_hz);
+                struct clock_candidate candidate = {
+                    .diff_hz = diff_hz,
+                    .achieved_hz = achieved_hz,
+                    .m = m,
+                    .d = d,
+                    .o = o,
+                    .fvco_hz = fvco_hz,
+                };
 
-                if (diff_hz < best_diff_hz) {
-                    best_diff_hz = diff_hz;
-                    best_m = m;
-                    best_d = d;
-                    best_o = o;
-                    best_achieved_hz = achieved_hz;
-                    found = 1;
+                if (count < max_candidates) {
+                    cands[count++] = candidate;
+                    continue;
+                }
 
-                    if (best_diff_hz == 0) {
-                        clk->m = best_m;
-                        clk->d = best_d;
-                        clk->o = best_o;
-                        (void) sd_journal_print(
-                            LOG_INFO,
-                            "clock_driver: target_hz=%u exact_match m=%u d=%u o=%u achieved_hz=%" PRIu64,
-                            target_hz, best_m, best_d, best_o, best_achieved_hz
-                        );
-                        return 0;
+                size_t worst_index = 0;
+                for (size_t i = 1; i < count; ++i) {
+                    if (clock_driver_candidate_cmp(&cands[worst_index], &cands[i]) < 0) {
+                        worst_index = i;
                     }
+                }
+                if (clock_driver_candidate_cmp(&candidate, &cands[worst_index]) < 0) {
+                    cands[worst_index] = candidate;
                 }
             }
         }
     }
 
-    if (!found) {
-        (void) sd_journal_print(
-            LOG_WARNING,
-            "clock_driver: no valid divisors for target_hz=%u prim_in_hz=%u",
-            target_hz, clk->prim_in_hz
-        );
-        errno = ERANGE;
-        return -1;
+    for (size_t i = 0; i < count; ++i) {
+        for (size_t j = i + 1; j < count; ++j) {
+            if (clock_driver_candidate_cmp(&cands[j], &cands[i]) < 0) {
+                struct clock_candidate tmp = cands[i];
+                cands[i] = cands[j];
+                cands[j] = tmp;
+            }
+        }
     }
 
-    clk->m = best_m;
-    clk->d = best_d;
-    clk->o = best_o;
-    (void) sd_journal_print(
-        LOG_INFO,
-        "clock_driver: target_hz=%u best_match m=%u d=%u o=%u achieved_hz=%" PRIu64 " diff_hz=%" PRIu64,
-        target_hz, best_m, best_d, best_o, best_achieved_hz, best_diff_hz
-    );
-    return 0;
+    return count;
 }
 
 static int clock_driver_try_set_rate_hz(
@@ -529,45 +586,97 @@ static int clock_driver_try_set_rate_hz(
 {
     if (clk == NULL || rate_hz_inout == NULL || *rate_hz_inout == 0) {
         errno = EINVAL;
+        (void) sd_journal_print(
+            LOG_WARNING,
+            "clock_driver: invalid set_rate arguments (clk=%p rate_ptr=%p rate_hz=%u)",
+            (void *)clk,
+            (void *)rate_hz_inout,
+            (rate_hz_inout != NULL) ? *rate_hz_inout : 0u
+        );
         return -1;
     }
 
-    if (clock_driver_calculate_divisors_hz(clk, *rate_hz_inout) != 0) {
+    struct clock_candidate candidates[CLOCK_DRIVER_DEFAULT_MAX_CANDIDATES];
+    size_t count = clock_driver_generate_candidates(
+        clk,
+        *rate_hz_inout,
+        candidates,
+        CLOCK_DRIVER_DEFAULT_MAX_CANDIDATES
+    );
+    if (count == 0) {
+        errno = ERANGE;
+        (void) sd_journal_print(
+            LOG_WARNING,
+            "clock_driver: failed to calculate divisors for request_hz=%u: %m",
+            *rate_hz_inout
+        );
         return -1;
     }
 
-    uint64_t predicted_fvco_hz = ((uint64_t)clk->prim_in_hz * clk->m) / clk->d;
-    uint32_t predicted_divo = clock_driver_effective_divo_from_o(clk->o);
-    uint64_t predicted_rate_hz = predicted_fvco_hz / predicted_divo;
-    (void) sd_journal_print(
-        LOG_INFO,
-        "clock_driver: request_hz=%u selecting m=%u d=%u o=%u predicted_divo=%u predicted_fvco_hz=%" PRIu64 " predicted_rate_hz=%" PRIu64,
-        *rate_hz_inout, clk->m, clk->d, clk->o, predicted_divo, predicted_fvco_hz, predicted_rate_hz
-    );
-    clock_driver_log_state(clk, wizard_offset, clock_id, "before_program");
+    for (size_t i = 0; i < count; ++i) {
+        const struct clock_candidate *cand = &candidates[i];
+        clk->m = cand->m;
+        clk->d = cand->d;
+        clk->o = cand->o;
 
-    int ok = 0;
-    uint64_t reported = clock_driver_program_mdo_and_reconfig(
-        clk, wizard_offset, clock_id, CLOCK_DRIVER_DEFAULT_LOCK_TIMEOUT_MS, &ok
-    );
-
-    clock_driver_log_state(clk, wizard_offset, clock_id, "after_program");
-
-    if (ok == 0) {
+        uint64_t predicted_fvco_hz = ((uint64_t)clk->prim_in_hz * clk->m) / clk->d;
+        uint32_t predicted_divo = clock_driver_effective_divo_from_o(clk->o);
+        uint64_t predicted_rate_hz = predicted_fvco_hz / predicted_divo;
         (void) sd_journal_print(
             LOG_INFO,
-            "clock_driver: set_rate request_hz=%u reported_hz=%" PRIu64 " m=%u d=%u o=%u",
-            *rate_hz_inout, reported, clk->m, clk->d, clk->o
+            "clock_driver: request_hz=%u trying candidate=%zu/%zu m=%u d=%u o=%u est_hz=%" PRIu64
+            " diff_hz=%" PRIu64 " predicted_divo=%u predicted_rate_hz=%" PRIu64,
+            *rate_hz_inout,
+            i + 1u,
+            count,
+            clk->m,
+            clk->d,
+            clk->o,
+            cand->achieved_hz,
+            cand->diff_hz,
+            predicted_divo,
+            predicted_rate_hz
         );
-        *rate_hz_inout = (uint32_t)reported;
-        return 0;
+
+        clock_driver_log_state(clk, wizard_offset, clock_id, "before_program");
+
+        int ok = 0;
+        uint64_t reported = clock_driver_program_mdo_and_reconfig(
+            clk, wizard_offset, clock_id, CLOCK_DRIVER_DEFAULT_LOCK_TIMEOUT_MS, &ok
+        );
+
+        clock_driver_log_state(clk, wizard_offset, clock_id, "after_program");
+
+        if (ok == 0) {
+            (void) sd_journal_print(
+                LOG_INFO,
+                "clock_driver: set_rate request_hz=%u reported_hz=%" PRIu64
+                " m=%u d=%u o=%u candidate=%zu/%zu",
+                *rate_hz_inout,
+                reported,
+                clk->m,
+                clk->d,
+                clk->o,
+                i + 1u,
+                count
+            );
+            *rate_hz_inout = (uint32_t)reported;
+            return 0;
+        }
+
+        (void) sd_journal_print(
+            LOG_WARNING,
+            "clock_driver: lock timeout request_hz=%u candidate=%zu/%zu m=%u d=%u o=%u timeout_ms=%u",
+            *rate_hz_inout,
+            i + 1u,
+            count,
+            clk->m,
+            clk->d,
+            clk->o,
+            CLOCK_DRIVER_DEFAULT_LOCK_TIMEOUT_MS
+        );
     }
 
-    (void) sd_journal_print(
-        LOG_WARNING,
-        "clock_driver: lock timeout request_hz=%u m=%u d=%u o=%u timeout_ms=%u",
-        *rate_hz_inout, clk->m, clk->d, clk->o, CLOCK_DRIVER_DEFAULT_LOCK_TIMEOUT_MS
-    );
     errno = ETIMEDOUT;
     return -1;
 }
@@ -594,14 +703,23 @@ int clock_driver_get_service_region_rate_hz(struct clock_driver *clk, uint32_t *
 int clock_driver_set_service_region_rate_hz(struct clock_driver *clk, uint32_t *rate_hz_inout)
 {
     if (clock_driver_check_wizard_bounds(clk, CLOCK_DRIVER_SERVICE_REGION_WIZARD_OFFSET) != 0) {
+        (void) sd_journal_print(LOG_ERR, "clock_driver: service region wizard bounds check failed: %m");
         return -1;
     }
-    return clock_driver_try_set_rate_hz(
+    int ret = clock_driver_try_set_rate_hz(
         clk,
         CLOCK_DRIVER_SERVICE_REGION_WIZARD_OFFSET,
         CLOCK_DRIVER_WIZARD_CLKOUT_ID,
         rate_hz_inout
     );
+    if (ret != 0) {
+        (void) sd_journal_print(
+            LOG_WARNING,
+            "clock_driver: failed to set service region frequency request_hz=%u: %m",
+            (rate_hz_inout != NULL) ? *rate_hz_inout : 0u
+        );
+    }
+    return ret;
 }
 
 int clock_driver_get_user_region_rate_hz(struct clock_driver *clk, uint32_t *rate_hz_out)
@@ -626,12 +744,21 @@ int clock_driver_get_user_region_rate_hz(struct clock_driver *clk, uint32_t *rat
 int clock_driver_set_user_region_rate_hz(struct clock_driver *clk, uint32_t *rate_hz_inout)
 {
     if (clock_driver_check_wizard_bounds(clk, CLOCK_DRIVER_USER_REGION_WIZARD_OFFSET) != 0) {
+        (void) sd_journal_print(LOG_ERR, "clock_driver: user region wizard bounds check failed: %m");
         return -1;
     }
-    return clock_driver_try_set_rate_hz(
+    int ret = clock_driver_try_set_rate_hz(
         clk,
         CLOCK_DRIVER_USER_REGION_WIZARD_OFFSET,
         CLOCK_DRIVER_WIZARD_CLKOUT_ID,
         rate_hz_inout
     );
+    if (ret != 0) {
+        (void) sd_journal_print(
+            LOG_WARNING,
+            "clock_driver: failed to set user region frequency request_hz=%u: %m",
+            (rate_hz_inout != NULL) ? *rate_hz_inout : 0u
+        );
+    }
+    return ret;
 }
