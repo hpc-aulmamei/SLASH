@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
         }
         std::string bdf = argv[1];
         std::string vrtbinFile = argv[2];
-        uint32_t size = 1024 * 1024;
+        uint32_t size = 1024*4;
         vrt::utils::Logger::setLogLevel(vrt::utils::LogLevel::DEBUG);
         vrt::Device device(bdf, vrtbinFile);
 
@@ -45,8 +45,12 @@ int main(int argc, char* argv[]) {
             buffer_in[i] = static_cast<uint64_t>(i);
         }
         buffer_in.sync(vrt::SyncType::HOST_TO_DEVICE);
-        dma_in.start(buffer_in.getPhysAddr(), size);
-        dma_out.start(size, buffer_out.getPhysAddr());
+        dma_in.setArg(0, buffer_in);
+        dma_in.setArg(1, size);
+        dma_out.setArg(0, size);
+        dma_out.setArg(1, buffer_out);
+        dma_in.start();
+        dma_out.start();
         dma_in.wait();
         dma_out.wait();
         buffer_out.sync(vrt::SyncType::DEVICE_TO_HOST);

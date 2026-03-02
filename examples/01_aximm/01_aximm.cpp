@@ -53,8 +53,14 @@ int main(int argc, char* argv[]) {
             in_buff[i] = i;
         }
         in_buff.sync(vrt::SyncType::HOST_TO_DEVICE);
-        offset.start(size, in_buff.getPhysAddr(), m, n);
-        dma.start(size, out_buff.getPhysAddr());
+        offset.setArg(0, size);
+        offset.setArg(1, in_buff);
+        offset.setArg(2, m);
+        offset.setArg(3, n);
+        dma.setArg(0, size);
+        dma.setArg(1, out_buff);
+        offset.start();
+        dma.start();
         offset.wait();
         dma.wait();
         out_buff.sync(vrt::SyncType::DEVICE_TO_HOST);
