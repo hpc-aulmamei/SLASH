@@ -392,7 +392,7 @@ Buffer<T>::Buffer(Buffer&& other) noexcept
     other.startAddress = 0;
     other.localBuffer = nullptr;
     other.size = 0;
-    other.device = nullptr;
+    other.device = Device{};
     other.view = nullptr;
     other.ownsLocalBuffer = false;
 }
@@ -425,7 +425,7 @@ Buffer<T>& Buffer<T>::operator=(Buffer&& other) noexcept {
         other.startAddress = 0;
         other.localBuffer = nullptr;
         other.size = 0;
-        other.device = nullptr;
+        other.device = Device{};
         other.view = nullptr;
         other.ownsLocalBuffer = false;
     }
