@@ -30,6 +30,7 @@ from emit.metadata.system_map_ctx import build_system_map_context, resolve_syste
 from emit.hw.user_region.addr_ctx import build_axilite_address_context
 from emit.emu.tb_ctx import build_tb_context
 from emit.hls_meta import infer_hls_json_from_component_xml
+from core.results_dir import resolve_linker_results_root
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -48,14 +49,18 @@ def _sanitize_project_name(s: str) -> str:
 
 
 def _results_root() -> Path:
-    # linker/src/emit/emu -> linker/results
-    return Path(__file__).resolve().parents[3] / "results"
+    return resolve_linker_results_root()
+
+def _resources_root() -> Path:
+    # linker/src/emit/emu -> linker/resources
+    return Path(__file__).resolve().parents[3] / "resources"
 
 
 def generate_emu_tcl(args) -> None:
-    args.tb_template = getattr(args, "tb_template", "../resources/sw_emu/tb.cpp")
+    resources_root = _resources_root()
+    args.tb_template = getattr(args, "tb_template", str(resources_root / "sw_emu" / "tb.cpp"))
     args.system_map_out = getattr(args, "system_map_out", "system_map.xml")
-    args.system_map_template = getattr(args, "system_map_template", "../resources/system_map.xml")
+    args.system_map_template = getattr(args, "system_map_template", str(resources_root / "system_map.xml"))
 
     project = _sanitize_project_name(args.project)
     results_root = _results_root()

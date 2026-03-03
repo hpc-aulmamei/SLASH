@@ -31,6 +31,7 @@ from emit.hw.user_region.addr_ctx import build_axilite_address_context
 from emit.hw.service_region.stream_ctx import build_stream_connect_context
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from emit.hls_meta import infer_hls_json_from_component_xml
+from core.results_dir import resolve_linker_results_root
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -82,8 +83,11 @@ def _sanitize_bd_name(s: str) -> str:
 
 
 def _results_root() -> Path:
-    # linker/src/emit/sim -> linker/results
-    return Path(__file__).resolve().parents[3] / "results"
+    return resolve_linker_results_root()
+
+def _resources_root() -> Path:
+    # linker/src/emit/sim -> linker/resources
+    return Path(__file__).resolve().parents[3] / "resources"
 
 
 def _collect_ports(
@@ -236,11 +240,12 @@ def _classify_mem_targets(instances: dict[str, KernelInstance]) -> tuple[List[st
 
 
 def generate_sim_tcl(args) -> None:
+    resources_root = _resources_root()
     args.sim_out = getattr(args, "sim_out", "run_pre.tcl")
-    args.sim_template = getattr(args, "sim_template", "../resources/sim/sim_prj.tcl")
-    args.sim_mem = getattr(args, "sim_mem", "../resources/sim/sim_mem.v")
+    args.sim_template = getattr(args, "sim_template", str(resources_root / "sim" / "sim_prj.tcl"))
+    args.sim_mem = getattr(args, "sim_mem", str(resources_root / "sim" / "sim_mem.v"))
     args.system_map_out = getattr(args, "system_map_out", "system_map.xml")
-    args.system_map_template = getattr(args, "system_map_template", "../resources/system_map.xml")
+    args.system_map_template = getattr(args, "system_map_template", str(resources_root / "system_map.xml"))
 
     project = _sanitize_bd_name(args.project)
     results_root = _results_root()

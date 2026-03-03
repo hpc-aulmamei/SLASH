@@ -32,13 +32,13 @@ import tarfile
 from typing import Iterable, Optional
 
 from emit.emu.tb_ctx import infer_sol1_json_from_component_xml
+from core.results_dir import resolve_linker_results_root
 
 logger = logging.getLogger(__name__)
 
 
 def _results_root() -> Path:
-    # linker/src/emit/emu -> linker/results
-    return Path(__file__).resolve().parents[3] / "results"
+    return resolve_linker_results_root()
 
 
 def _emu_root(project_name: str) -> Path:

@@ -29,12 +29,13 @@ import tarfile
 import tempfile
 from typing import Iterable, Optional
 
+from core.results_dir import resolve_linker_results_root
+
 logger = logging.getLogger(__name__)
 
 
 def _results_root() -> Path:
-    # linker/src/emit/sim -> linker/results
-    return Path(__file__).resolve().parents[3] / "results"
+    return resolve_linker_results_root()
 
 
 def _repo_root() -> Path:

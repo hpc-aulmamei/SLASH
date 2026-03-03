@@ -27,12 +27,12 @@ import shutil
 import subprocess
 from typing import Optional
 from emit.metadata.report_util import convert_report_utilization_to_xml
+from core.results_dir import resolve_linker_results_root
 
 logger = logging.getLogger(__name__)
 
 AVED_DESIGN_NAME = "amd_v80_gen5x8_25.1"
 HW_BUILD_DIR_ENV_KEYS = ("SLASH_HW_BUILD_DIR", "slash_hw_build_dir")
-_HW_BUILD_DIR_ENV_WARNED = False
 
 
 def _default_create_project_tcl() -> Path:
@@ -46,28 +46,30 @@ def _default_service_layer_rm_build_tcl() -> Path:
     return Path(__file__).resolve().parents[3] / "resources" / "base" / "scripts" / "service_layer_build.tcl"
 
 def get_hw_build_dir() -> Path:
-    global _HW_BUILD_DIR_ENV_WARNED
     for key in HW_BUILD_DIR_ENV_KEYS:
         configured_build_dir = os.getenv(key)
         if configured_build_dir:
             return Path(configured_build_dir).expanduser().resolve()
 
-    default_dir = Path(__file__).resolve().parents[3] / "resources" / "base" / "build"
-    if not _HW_BUILD_DIR_ENV_WARNED:
-        logger.warning(
-            "No HW build-dir env var set (%s). Using default: %s",
-            ", ".join(HW_BUILD_DIR_ENV_KEYS),
-            default_dir,
-        )
-        _HW_BUILD_DIR_ENV_WARNED = True
-    return default_dir
+    raise SystemExit(
+        "ERROR: Missing required HW build directory environment variable. "
+        "Set SLASH_HW_BUILD_DIR (or slash_hw_build_dir) to an absolute writable path."
+    )
 
 def _default_pdi_dir() -> Path:
     return get_hw_build_dir()
 
 def _default_results_dir() -> Path:
-    # linker/src/emit/hw -> linker/results
+    # linker/src/emit/hw -> linker root
     return Path(__file__).resolve().parents[3]
+
+
+def _default_project_results_root() -> Path:
+    return resolve_linker_results_root()
+
+
+def _default_install_dir() -> Path:
+    return _default_results_dir() / "results" / "base"
 
 
 def _copy_checked(src: Path, dest: Path) -> None:
@@ -77,44 +79,16 @@ def _copy_checked(src: Path, dest: Path) -> None:
     shutil.copy2(src, dest)
 
 
-def _copy_with_optional_sudo(src_files: list[Path], destination: Path) -> None:
-    needs_sudo = False
-    try:
-        destination.mkdir(parents=True, exist_ok=True)
-        for src in src_files:
-            shutil.copy2(src, destination / src.name)
-    except PermissionError:
-        needs_sudo = True
-
-    if needs_sudo:
-        logger.info(
-            "Permission denied writing to %s. Requesting sudo for final install copy.",
-            destination,
-        )
-        subprocess.run(["sudo", "mkdir", "-p", str(destination)], check=True)
-        for src in src_files:
-            subprocess.run(
-                ["sudo", "install", "-m", "0644", str(src), str(destination / src.name)],
-                check=True,
-            )
+def _copy_files(src_files: list[Path], destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    for src in src_files:
+        shutil.copy2(src, destination / src.name)
 
 
-def _copy_tree_with_optional_sudo(src_dir: Path, destination: Path) -> None:
+def _copy_tree(src_dir: Path, destination: Path) -> None:
     target_dir = destination / src_dir.name
-    needs_sudo = False
-    try:
-        target_dir.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src_dir, target_dir, dirs_exist_ok=True)
-    except PermissionError:
-        needs_sudo = True
-
-    if needs_sudo:
-        logger.info(
-            "Permission denied writing to %s. Requesting sudo for install directory copy.",
-            target_dir,
-        )
-        subprocess.run(["sudo", "mkdir", "-p", str(target_dir)], check=True)
-        subprocess.run(["sudo", "cp", "-a", f"{src_dir}/.", str(target_dir)], check=True)
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src_dir, target_dir, dirs_exist_ok=True)
 
 
 def _ensure_boot_device_pcie_in_bif(bif_path: Path) -> None:
@@ -211,7 +185,7 @@ def create_build_project(
     if not tcl.exists():
         raise FileNotFoundError(f"create_project.tcl not found: {tcl}")
 
-    log_path = Path(__file__).resolve().parents[3] / "results" / project_name / "vivado.log"
+    log_path = _default_project_results_root() / project_name / "vivado.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -253,13 +227,12 @@ def _run_rm_build(
     if not tcl.exists():
         raise FileNotFoundError(f"RM build Tcl not found: {tcl}")
 
-    linker_root = _default_results_dir()
-    linker_results_dir = linker_root / "results"
+    linker_results_dir = _default_project_results_root()
     hw_build_dir = get_hw_build_dir()
     logs_dir = hw_build_dir / "logs"
     artifact_out_dir = hw_build_dir / "slash.runs" / f"{project_name}_impl_1"
     rm_work_dir = hw_build_dir / "rm" / f"{rm_kind}_{project_name}"
-    install_root = (install_dir if install_dir else Path("/opt/amd/slash")).expanduser().resolve()
+    install_root = (install_dir if install_dir else _default_install_dir()).expanduser().resolve()
 
     logs_dir.mkdir(parents=True, exist_ok=True)
     artifact_out_dir.mkdir(parents=True, exist_ok=True)
@@ -354,7 +327,10 @@ def install_abstract_shell(
     vivado_bin: str = "vivado",
     workdir: Optional[Path] = None,
 ) -> None:
-    # `build_project.tcl` writes abstract-shell DCPs into linker/results/base.
+    # Install flow requires an explicit HW build root.
+    get_hw_build_dir()
+
+    # `build_project.tcl` writes abstract-shell DCPs into <linker>/results/base.
     # Ensure it exists before Vivado runs to avoid write_abstract_shell failures.
     (_default_results_dir() / "results" / "base").mkdir(parents=True, exist_ok=True)
 
@@ -377,23 +353,24 @@ def install_abstract_shell(
         results_base_dir / "abs_shell_slash.dcp",
         results_base_dir / "abs_shell_service_layer.dcp",
     )
-    destination = install_dir if install_dir else Path("/opt/amd/slash")
+    destination = (install_dir if install_dir else _default_install_dir()).expanduser().resolve()
+    destination.mkdir(parents=True, exist_ok=True)
 
     for src in dcp_sources:
         if not src.exists():
             raise FileNotFoundError(f"Expected install artifact not found: {src}")
-    _copy_with_optional_sudo(list(dcp_sources), destination)
+    _copy_files(list(dcp_sources), destination)
 
     for src_dir in bd_source_dirs:
         if not src_dir.is_dir():
             raise FileNotFoundError(f"Expected install BD directory not found: {src_dir}")
-        _copy_tree_with_optional_sudo(src_dir, destination)
+        _copy_tree(src_dir, destination)
 
     generate_base_pdi_with_aved(project_name=project_name, workdir=workdir)
     aved_pdi = results_base_dir / f"{AVED_DESIGN_NAME}.pdi"
     if not aved_pdi.exists():
         raise FileNotFoundError(f"Expected AVED PDI not found in results/base: {aved_pdi}")
-    _copy_with_optional_sudo([aved_pdi], destination)
+    _copy_files([aved_pdi], destination)
 
 def generate_image(
     project_name: str,
@@ -401,7 +378,7 @@ def generate_image(
     include_service_layer: bool = True,
 ) -> None:
     impl_dir = _default_pdi_dir() / "slash.runs" / f"{project_name}_impl_1"
-    dest_dir = _default_results_dir() / "results" / project_name / "images"
+    dest_dir = _default_project_results_root() / project_name / "images"
     logger.info("Generating PDI images for project %s", project_name)
     logger.info("PDI source dir: %s", impl_dir)
     logger.info("PDI destination dir: %s", dest_dir)
@@ -429,7 +406,7 @@ def generate_image(
     logger.info("PDI image generation complete for %s", project_name)
 
 def generate_util_report(project_name: str) -> None:
-    report_dir = _default_results_dir() / "results" / project_name
+    report_dir = _default_project_results_root() / project_name
 
     report_file = report_dir / f"report_utilization_{project_name}.txt"
     xml_file = report_dir / f"report_utilization_{project_name}.xml"

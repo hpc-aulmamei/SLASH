@@ -20,6 +20,7 @@
 
 include_guard(GLOBAL)
 include(FindVivado)
+include("${CMAKE_CURRENT_LIST_DIR}/ResolveSlashLinkerResults.cmake")
 
 function(build_hw)
   set(options USE_SYMLINK)
@@ -130,7 +131,7 @@ function(build_hw)
     endif()
   endforeach()
 
-  set(_linker_results_dir "${BHW_LINKER_DIR}/results")
+  resolve_slash_linker_results_dir(_linker_results_dir)
   set(_linker_info "${_linker_results_dir}/${BHW_PROJECT}/.linker_info.json")
   set(_slash_bd_tcl "${_linker_results_dir}/${BHW_PROJECT}/bd/slash_${BHW_PROJECT}.tcl")
   set(_service_bd_tcl "${_linker_results_dir}/${BHW_PROJECT}/bd/service_layer_${BHW_PROJECT}.tcl")
@@ -167,7 +168,10 @@ function(build_hw)
     set(_publish_cmd "${CMAKE_COMMAND}" -E copy_if_different "${_src_vbin}" "${_dst_vbin}")
   endif()
 
-  set(_env_hw "${CMAKE_COMMAND}" -E env "SLASH_HW_BUILD_DIR=${_hw_work_root}")
+  set(_env_hw "${CMAKE_COMMAND}" -E env
+    "SLASH_HW_BUILD_DIR=${_hw_work_root}"
+    "SLASH_LINKER_RESULTS_DIR=${_linker_results_dir}"
+  )
   set(_service_rm_extra_args "")
   if(DEFINED EN_SERVICE_LAYER AND EN_SERVICE_LAYER)
     list(APPEND _service_rm_extra_args --force)
@@ -256,7 +260,7 @@ function(build_hw)
     VERBATIM
   )
 
-  # [6/9] Publish utilization report to linker/results for XML conversion compatibility.
+  # [6/9] Publish utilization report to linker results root for XML conversion compatibility.
   get_filename_component(_linker_util_dir "${_linker_util_report}" DIRECTORY)
   add_custom_command(
     OUTPUT "${_publish_util_stamp}"

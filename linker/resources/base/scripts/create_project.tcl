@@ -66,19 +66,16 @@ set design_name "slash"
 set bd_slash_name        "slash_${project_name}"
 set bd_service_layer_name "service_layer_${project_name}"
 
-# Build directory override:
-# 1) Tcl variable `slash_hw_build_dir` (if pre-set by caller)
-# 2) env `SLASH_HW_BUILD_DIR` (or `slash_hw_build_dir`)
-# 3) default ../build
-set default_project_build_dir [file normalize [file join $src_dir ".." "build"]]
-if {[info exists slash_hw_build_dir] && $slash_hw_build_dir ne ""} {
-  set project_build_dir [file normalize $slash_hw_build_dir]
-} elseif {[info exists ::env(SLASH_HW_BUILD_DIR)] && $::env(SLASH_HW_BUILD_DIR) ne ""} {
+# Build directory:
+# env `SLASH_HW_BUILD_DIR` (or `slash_hw_build_dir`) if provided,
+# otherwise default under current working directory.
+if {[info exists ::env(SLASH_HW_BUILD_DIR)] && $::env(SLASH_HW_BUILD_DIR) ne ""} {
   set project_build_dir [file normalize $::env(SLASH_HW_BUILD_DIR)]
 } elseif {[info exists ::env(slash_hw_build_dir)] && $::env(slash_hw_build_dir) ne ""} {
   set project_build_dir [file normalize $::env(slash_hw_build_dir)]
 } else {
-  set project_build_dir $default_project_build_dir
+  set project_build_dir [file normalize [file join $cwd ".slash_hw_build" $project_name]]
+  puts "INFO: SLASH_HW_BUILD_DIR not set; defaulting build dir to '$project_build_dir'."
 }
 
 puts "PROJECT:        $project_name"

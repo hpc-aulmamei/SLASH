@@ -19,6 +19,7 @@
 # ##################################################################################################
 
 include_guard(GLOBAL)
+include("${CMAKE_CURRENT_LIST_DIR}/ResolveSlashLinkerResults.cmake")
 
 function(build_emu)
   find_package(Vitis REQUIRED)
@@ -110,10 +111,11 @@ function(build_emu)
     set(_py "python3")
   endif()
 
-  set(_emu_root "${BEMU_LINKER_DIR}/results/${BEMU_PROJECT}/sw_emu")
+  resolve_slash_linker_results_dir(_linker_results_dir)
+  set(_emu_root "${_linker_results_dir}/${BEMU_PROJECT}/sw_emu")
   set(_src_vpp "${_emu_root}/vpp_emu")
-  set(_src_system_map "${BEMU_LINKER_DIR}/results/${BEMU_PROJECT}/system_map.xml")
-  set(_src_vbin "${BEMU_LINKER_DIR}/results/${BEMU_PROJECT}/${BEMU_PROJECT}_emu.vbin")
+  set(_src_system_map "${_linker_results_dir}/${BEMU_PROJECT}/system_map.xml")
+  set(_src_vbin "${_linker_results_dir}/${BEMU_PROJECT}/${BEMU_PROJECT}_emu.vbin")
 
   set(_dst_vbin "${BEMU_OUT_DIR}/${BEMU_PROJECT}_emu.vbin")
   set(_stamp "${BEMU_OUT_DIR}/.${BEMU_PROJECT}_emu.stamp")
@@ -123,6 +125,10 @@ function(build_emu)
   else()
     set(_publish_vbin_cmd "${CMAKE_COMMAND}" -E copy_if_different "${_src_vbin}" "${_dst_vbin}")
   endif()
+
+  set(_env_linker "${CMAKE_COMMAND}" -E env
+    "SLASH_LINKER_RESULTS_DIR=${_linker_results_dir}"
+  )
 
   set(_emu_args "--platform" "emu")
   if(NOT "${BEMU_TB_TEMPLATE}" STREQUAL "")
@@ -148,7 +154,7 @@ function(build_emu)
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${BEMU_OUT_DIR}"
 
     # Run linker init (emulation platform)
-    COMMAND "${_py}" "${_main_py}"
+    COMMAND ${_env_linker} "${_py}" "${_main_py}"
             init
             -p "${BEMU_PROJECT}"
             --cfg "${BEMU_CFG}"
@@ -156,13 +162,13 @@ function(build_emu)
             ${_emu_args}
 
     # Build emulation project (generates tb.cpp + vpp_emu)
-    COMMAND "${_py}" "${_main_py}"
+    COMMAND ${_env_linker} "${_py}" "${_main_py}"
             build_hw_project
             -p "${BEMU_PROJECT}"
             --emu
 
     # Package emulation artifacts into <project>_emu.vrtbin
-    COMMAND "${_py}" "${_main_py}"
+    COMMAND ${_env_linker} "${_py}" "${_main_py}"
             create_metadata
             -p "${BEMU_PROJECT}"
             --emu

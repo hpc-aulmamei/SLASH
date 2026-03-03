@@ -20,6 +20,7 @@
 
 include_guard(GLOBAL)
 include(FindVivado)
+include("${CMAKE_CURRENT_LIST_DIR}/ResolveSlashLinkerResults.cmake")
 
 function(build_sim)
   set(options USE_SYMLINK)
@@ -110,7 +111,8 @@ function(build_sim)
     set(_py "python3")
   endif()
 
-  set(_sim_root "${BSIM_LINKER_DIR}/results/${BSIM_PROJECT}/sim")
+  resolve_slash_linker_results_dir(_linker_results_dir)
+  set(_sim_root "${_linker_results_dir}/${BSIM_PROJECT}/sim")
   set(_src_vpp "${_sim_root}/vpp_sim")
   set(_src_xsim "${_sim_root}/xsim.dir")
   set(_src_system_map "${_sim_root}/system_map.xml")
@@ -127,6 +129,10 @@ function(build_sim)
   else()
     set(_publish_vbin_cmd "${CMAKE_COMMAND}" -E copy_if_different "${_src_vbin}" "${_dst_vbin}")
   endif()
+
+  set(_env_linker "${CMAKE_COMMAND}" -E env
+    "SLASH_LINKER_RESULTS_DIR=${_linker_results_dir}"
+  )
 
   set(_sim_args "--platform" "sim")
   if(NOT "${BSIM_SIM_TEMPLATE}" STREQUAL "")
@@ -163,7 +169,7 @@ function(build_sim)
     COMMAND "${CMAKE_COMMAND}" -E make_directory "${BSIM_OUT_DIR}"
 
     # Run linker init (simulation platform)
-    COMMAND "${_py}" "${_main_py}"
+    COMMAND ${_env_linker} "${_py}" "${_main_py}"
             init
             -p "${BSIM_PROJECT}"
             --cfg "${BSIM_CFG}"
@@ -171,7 +177,7 @@ function(build_sim)
             ${_sim_args}
 
     # Build simulation project
-    COMMAND "${_py}" "${_main_py}"
+    COMMAND ${_env_linker} "${_py}" "${_main_py}"
             build_hw_project
             -p "${BSIM_PROJECT}"
             --sim

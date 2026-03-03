@@ -64,7 +64,8 @@ set util_report_file [file normalize $util_report_file]
 set abs_shell_dcp [file join $install_dir "abs_shell_slash.dcp"]
 set base_bd [file join $install_dir "slash_base" "slash_base.bd"]
 set generated_bd_tcl [file join $linker_results_dir $proj_name "bd" "slash_${proj_name}.tcl"]
-set linker_root [file dirname $linker_results_dir]
+set script_dir [file dirname [file normalize [info script]]]
+set linker_root [file normalize [file join $script_dir ".." ".." ".."]]
 set base_ip_repo [file join $linker_root "resources" "base" "iprepo"]
 
 _require_dir $ip_repo "IP repository directory"

@@ -42,6 +42,7 @@ from emit.hw.user_region.param_ctx import build_data_width_param_context
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from emit.hw.service_region.service_layer_ctx import *
 from emit.hls_meta import infer_hls_json_from_component_xml
+from core.results_dir import resolve_linker_results_root
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -50,6 +51,18 @@ from core.bd_ports import load_bd_ports_from_file
 logger = logging.getLogger(__name__)
 
 _RX_SRC_PIN_RE = re.compile(r"^/?dcmac_axis_noc_s_(\d+)/M00_AXIS$")
+
+def _linker_root() -> Path:
+    # linker/src/emit/hw -> linker
+    return Path(__file__).resolve().parents[3]
+
+
+def _resources_root() -> Path:
+    return _linker_root() / "resources"
+
+
+def _results_root() -> Path:
+    return resolve_linker_results_root()
 
 
 def _sanitize_bd_name(s: str) -> str:
@@ -236,9 +249,10 @@ def generate_tcl(args) -> None:
     @param args Parsed CLI arguments.
     """
     project = _sanitize_bd_name(args.project)
-    default_slash_out = f"../results/{project}/bd/slash_{project}.tcl"
-    default_service_out = f"../results/{project}/bd/service_layer_{project}.tcl"
-    default_system_map_out = f"../results/{project}/system_map.xml"
+    results_root = _results_root()
+    default_slash_out = str(results_root / project / "bd" / f"slash_{project}.tcl")
+    default_service_out = str(results_root / project / "bd" / f"service_layer_{project}.tcl")
+    default_system_map_out = str(results_root / project / "system_map.xml")
     # If user didn’t override --out / --service-out, generate suffixed names:
     if args.out == "slash.tcl":
         args.out = default_slash_out
