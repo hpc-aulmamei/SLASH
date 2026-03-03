@@ -210,10 +210,11 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
         }
         parseSystemMap();
         if (vrtdDevice.has_value()) {
-            if (clockFreq > std::numeric_limits<uint32_t>::max()) {
-                throw std::runtime_error("Clock frequency from system map exceeds vrtd clock API limits");
+            if (clockFreq > CLOCK_MAX_FREQ) {
+                utils::Logger::log(utils::LogLevel::WARN, __PRETTY_FUNCTION__,
+                           "Clock frequency {} exceeds maximum frequency {}", clockFreq, CLOCK_MAX_FREQ);
+                vrtdDevice->setUserClockRate(static_cast<uint32_t>(CLOCK_MAX_FREQ));
             }
-            vrtdDevice->setUserClockRate(static_cast<uint32_t>(clockFreq));
         }
     } else if (platform == Platform::EMULATION) {
         parseSystemMap();
@@ -228,7 +229,7 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
         }
 
         const std::string emuCommand = makeExecFromBinaryDirCommand(emulationExecPath);
-        std::thread([emuCommand]() { std::system(emuCommand.c_str()); }).detach();
+        runtimeThread = std::thread([emuCommand]() { std::system(emuCommand.c_str()); });
 
     } else {
         parseSystemMap();
@@ -242,7 +243,7 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
         }
 
         const std::string simCommand = makeExecFromBinaryDirCommand(simulationExecPath);
-        std::thread([simCommand]() { std::system(simCommand.c_str()); }).detach();
+        runtimeThread = std::thread([simCommand]() { std::system(simCommand.c_str()); });
         Json::Value command;
         command["command"] = "start";
         zmqServer->sendCommand(command);
@@ -255,7 +256,9 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
     }
 }
 
-Device::~Device() = default;
+Device::~Device() {
+    cleanup();
+}
 
 void Device::parseSystemMap() {
     XMLParser parser(systemMap);
@@ -272,17 +275,32 @@ void Device::parseSystemMap() {
     this->qdmaConnections = parser.getQdmaConnections();
 }
 
-Kernel Device::getKernel(const std::string& name) { return kernels[name]; }
+Kernel Device::getKernel(const std::string& name) {
+    auto it = kernels.find(name);
+    if (it == kernels.end()) {
+        throw std::runtime_error("Kernel '" + name + "' not found in system_map metadata");
+    }
+    return it->second;
+}
 
 void Device::cleanup() {
+    if (cleanupDone) {
+        return;
+    }
+    cleanupDone = true;
+
     if (platform == Platform::HARDWARE) {
         for (auto qdmaIntf_ : qdmaIntfs) {
             delete qdmaIntf_;
         }
+        qdmaIntfs.clear();
     } else if (platform == Platform::EMULATION || platform == Platform::SIMULATION) {
         Json::Value exit;
         exit["command"] = "exit";
         zmqServer->sendCommand(exit);
+    }
+    if (runtimeThread.joinable()) {
+        runtimeThread.join();
     }
 }
 

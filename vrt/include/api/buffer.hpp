@@ -183,6 +183,9 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type)
         view = block->getUntypedBuffer();
         startAddress = view->getPhysAddr();
         localBuffer = static_cast<T*>(view->data());
+        utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
+                           "Allocated buffer final_space_bytes={} phys_addr={x}",
+                           view->getSize(), startAddress);
     } else {
         startAddress = detail::reserveFakePhysAddr(size * sizeof(T), type);
         localBuffer = new T[size];
@@ -223,6 +226,9 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type, uint8_t port
         view = block->getUntypedBuffer();
         startAddress = view->getPhysAddr();
         localBuffer = static_cast<T*>(view->data());
+        utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
+                           "Allocated buffer final_space_bytes={} phys_addr={x}",
+                           view->getSize(), startAddress);
     } else {
         startAddress = detail::reserveFakePhysAddr(size * sizeof(T), type);
         localBuffer = new T[size];
@@ -386,7 +392,7 @@ Buffer<T>::Buffer(Buffer&& other) noexcept
     other.startAddress = 0;
     other.localBuffer = nullptr;
     other.size = 0;
-    other.device = nullptr;
+    other.device = Device{};
     other.view = nullptr;
     other.ownsLocalBuffer = false;
 }
@@ -419,7 +425,7 @@ Buffer<T>& Buffer<T>::operator=(Buffer&& other) noexcept {
         other.startAddress = 0;
         other.localBuffer = nullptr;
         other.size = 0;
-        other.device = nullptr;
+        other.device = Device{};
         other.view = nullptr;
         other.ownsLocalBuffer = false;
     }

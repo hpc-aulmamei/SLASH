@@ -87,6 +87,7 @@ namespace impl {
 class Device {
     static constexpr uint64_t QDMA_LOGIC_BASE = 0x20100020000;  ///< Base address for QDMA logic
     static constexpr uint32_t QDMA_LOGIC_OFFSET = 0x1000;       /// Offset for QDMA logic
+    static constexpr uint32_t CLOCK_MAX_FREQ = 333333333;
     uint8_t bar = 0;                                            ///< Base Address Register (BAR)
     uint64_t offset = 0;                                        ///< Offset for memory operations
     uint16_t pci_bdf = 0;                                       ///< PCI Bus:Device.Function identifier
@@ -106,6 +107,8 @@ class Device {
     std::vector<QdmaIntf*> qdmaIntfs;                           ///< Vector of QDMA interfaces for streaming
     std::shared_ptr<vrtd::Session> vrtdSession;                 ///< vrtd session for hardware access
     std::optional<vrtd::Device> vrtdDevice;                     ///< vrtd device handle (requires session)
+    std::thread runtimeThread;                                  ///< sw_emu/sim runtime launcher thread
+    bool cleanupDone = false;                                   ///< Guard to make cleanup idempotent
    public:
     QdmaIntf qdmaIntf;  ///< QDMA interface object
 

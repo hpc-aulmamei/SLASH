@@ -79,8 +79,11 @@ int main(int argc, char* argv[]) {
             std::memcpy(buffer.get(), hostInput.data(), size * sizeof(float));
             buffer.sync(vrt::SyncType::HOST_TO_DEVICE);
         }
-        increment.start(size, buffer.getPhysAddr());
-        accumulate.start(size);
+        increment.setArg(0, size);
+        increment.setArg(1, buffer);
+        increment.start();
+        accumulate.setArg(0, size);
+        accumulate.start();
         auto start = std::chrono::high_resolution_clock::now();
         increment.wait();
         accumulate.wait();

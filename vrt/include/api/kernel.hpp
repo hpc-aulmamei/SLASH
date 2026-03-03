@@ -23,13 +23,17 @@
 
 #include <json/json.h>
 
+#include <algorithm>
+#include <cctype>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <optional>
-#include <regex>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "register/register.hpp"
@@ -43,6 +47,16 @@ class Device;
 template <typename T>
 class Buffer;
 
+struct FunctionalArg {
+    uint32_t idx = 0;
+    std::string name;
+    std::string type;
+    uint32_t offset = 0;
+    uint32_t range = 32;
+    bool readable = false;
+    bool writable = false;
+};
+
 /**
  * @brief Class representing a kernel.
  */
@@ -52,14 +66,90 @@ class Kernel {
     uint64_t baseAddr;                                        ///< Base address of the kernel
     uint64_t range;                                           ///< Address range of the kernel
     std::vector<Register> registers;                          ///< List of registers in the kernel
-    size_t currentRegisterIndex = 4;           ///< Index of the current register being processed
+    std::vector<FunctionalArg> functionalArgs;                ///< Parsed function arguments from system_map.xml
+    size_t currentArgIndex = 0;                               ///< Current call argument index
     std::string deviceBdf;                     ///< BDF of the device
     Platform platform;                         ///< Platform of the device
     std::shared_ptr<ZmqServer> server;         ///< Pointer to ZeroMQ server for communication
     std::map<uint32_t, uint32_t> registerMap;  ///< Map of register offsets to values
+    std::map<uint32_t, uint64_t> setArgValues; ///< Values assigned through setArg(idx/name, value)
     std::optional<vrtd::Bar> vrtdBar;          ///< vrtd BAR handle for hardware access
     std::vector<std::string> emuCallArgKinds;  ///< Optional EMU arg kind metadata from emu_manifest.json
     std::map<uint32_t, std::string> emuFetchScalarArgByOffset;  ///< Optional EMU fetch routing by register offset
+
+    template <typename T, typename = void>
+    struct HasPhysAddr : std::false_type {};
+
+    template <typename T>
+    struct HasPhysAddr<T, std::void_t<decltype(std::declval<const T&>().getPhysAddr())>>
+        : std::true_type {};
+
+    template <typename T>
+    static uint64_t resolveKernelArgImpl(T&& arg, std::true_type) {
+        return static_cast<uint64_t>(arg.getPhysAddr());
+    }
+
+    template <typename T>
+    static decltype(auto) resolveKernelArgImpl(T&& arg, std::false_type) {
+        return std::forward<T>(arg);
+    }
+
+    template <typename T>
+    static decltype(auto) resolveKernelArg(T&& arg) {
+        using ArgT = std::remove_reference_t<T>;
+        return resolveKernelArgImpl(std::forward<T>(arg), HasPhysAddr<ArgT>{});
+    }
+
+    static uint32_t argWordCount(const FunctionalArg& arg) {
+        const uint32_t bits = (arg.range == 0) ? 32u : arg.range;
+        return std::max<uint32_t>(1u, (bits + 31u) / 32u);
+    }
+
+    static uint32_t argWordValue(uint64_t value, uint32_t wordIdx) {
+        if (wordIdx == 0) return static_cast<uint32_t>(value & 0xFFFFFFFFULL);
+        if (wordIdx == 1) return static_cast<uint32_t>((value >> 32) & 0xFFFFFFFFULL);
+        return 0u;
+    }
+
+    static std::string normalizeArgType(std::string value) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return value;
+    }
+
+    void ensureFunctionalArgsForCall(std::size_t providedArgCount, std::string_view opName) const {
+        if (providedArgCount == 0) {
+            return;
+        }
+        if (functionalArgs.empty()) {
+            throwArgApiMisuse(
+                "This kernel has no functional_args metadata in system_map.xml, "
+                "so argument-based launch is unavailable.",
+                opName);
+        }
+        if (providedArgCount > functionalArgs.size()) {
+            throwArgApiMisuse(
+                "Too many positional arguments were provided (" + std::to_string(providedArgCount) +
+                    "); kernel metadata defines " + std::to_string(functionalArgs.size()) +
+                    " functional argument(s).",
+                opName);
+        }
+    }
+
+    std::string buildArgApiUsageMessage(std::string_view reason, std::string_view opName) const;
+    [[noreturn]] void throwArgApiMisuse(std::string_view reason, std::string_view opName) const;
+    void ensureNoSetArgValuesWhenPassingArgs(std::size_t providedArgCount, std::string_view opName) const;
+    void ensureSetArgValuesCompleteForLaunch(std::string_view opName) const;
+    const FunctionalArg& functionalArgByIdx(uint32_t idx) const;
+    uint32_t functionalArgIdxByName(std::string_view argName) const;
+    void setArgResolved(uint32_t idx, uint64_t value);
+    void writeArgToRegisterMap(const FunctionalArg& argMeta, uint64_t value);
+    void writeArgToSimulation(const FunctionalArg& argMeta, uint64_t value);
+    void writeArgToEmulation(Json::Value& command, const FunctionalArg& argMeta, uint64_t value) const;
+    void applySetArgsToRegisterMap();
+    void applySetArgsToSimulation();
+    void applySetArgsToEmulation(Json::Value& command) const;
    public:
     /**
      * @brief Constructor for Kernel.
@@ -67,9 +157,11 @@ class Kernel {
      * @param baseAddr The base address of the kernel.
      * @param range The address range of the kernel.
      * @param registers The list of registers in the kernel.
+     * @param functionalArgs Parsed function-argument metadata from system_map.xml.
      */
     Kernel(const std::string& name, uint64_t baseAddr, uint64_t range,
-           const std::vector<Register>& registers);
+           const std::vector<Register>& registers,
+           const std::vector<FunctionalArg>& functionalArgs = {});
 
     /**
      * @brief Default constructor for Kernel.
@@ -131,6 +223,16 @@ class Kernel {
     void setPlatform(Platform platform);
 
     /**
+     * @brief Sets parsed function argument metadata.
+     */
+    void setFunctionalArgs(const std::vector<FunctionalArg>& args);
+
+    /**
+     * @brief Returns true when function argument metadata is available.
+     */
+    bool hasFunctionalArgs() const;
+
+    /**
      * @brief Sets EMU call argument kinds loaded from emu_manifest.json.
      *        Index corresponds to argN in EMU call JSON.
      */
@@ -143,6 +245,28 @@ class Kernel {
     void setEmuFetchScalarArgByOffset(const std::map<uint32_t, std::string>& routes);
 
     /**
+     * @brief Set argument value by argument index from functional_args metadata.
+     */
+    template <typename T>
+    void setArg(int idx, T&& value) {
+        if (idx < 0) {
+            throwArgApiMisuse("setArg(index, value) received a negative argument index.",
+                              "setArg");
+        }
+        decltype(auto) resolvedValue = resolveKernelArg(std::forward<T>(value));
+        setArgResolved(static_cast<uint32_t>(idx), static_cast<uint64_t>(resolvedValue));
+    }
+
+    /**
+     * @brief Set argument value by argument name from functional_args metadata.
+     */
+    template <typename T>
+    void setArg(std::string_view argName, T&& value) {
+        decltype(auto) resolvedValue = resolveKernelArg(std::forward<T>(value));
+        setArgResolved(functionalArgIdxByName(argName), static_cast<uint64_t>(resolvedValue));
+    }
+
+    /**
      * @brief Writes batch register to PCIe BAR.
      */
     void writeBatch();
@@ -152,22 +276,57 @@ class Kernel {
      * @param args The arguments to pass to the kernel.
      */
     template <typename... Args>
-    void call(Args... args) {
-        currentRegisterIndex = 4;
+    void call(Args&&... args) {
+        const std::size_t providedArgCount = sizeof...(Args);
+        currentArgIndex = 0;
+        registerMap.clear();
+        ensureNoSetArgValuesWhenPassingArgs(providedArgCount, "call");
+        ensureFunctionalArgsForCall(providedArgCount, "call");
+
         if (platform == Platform::HARDWARE) {
-            (processArg(args), ...);
-            this->writeBatch();
+            if constexpr (sizeof...(Args) > 0) {
+                (processArg(std::forward<Args>(args)), ...);
+                this->writeBatch();
+            } else if (!setArgValues.empty()) {
+                ensureSetArgValuesCompleteForLaunch("call");
+                applySetArgsToRegisterMap();
+                this->writeBatch();
+            } else if (!functionalArgs.empty()) {
+                throwArgApiMisuse(
+                    "call() was invoked without positional args and no setArg values were provided, "
+                    "but this kernel has functional arguments.",
+                    "call");
+            }
             this->startKernel();
             this->wait();
         } else if (platform == Platform::EMULATION) {
             Json::Value command;
             command["command"] = "call";
             command["function"] = name;
-            int argIdx = 0;
-            (processEmuArg(args, command, argIdx), ...);
+            if constexpr (sizeof...(Args) > 0) {
+                (processEmuArg(std::forward<Args>(args), command), ...);
+            } else if (!setArgValues.empty()) {
+                ensureSetArgValuesCompleteForLaunch("call");
+                applySetArgsToEmulation(command);
+            } else if (!functionalArgs.empty()) {
+                throwArgApiMisuse(
+                    "call() was invoked without positional args and no setArg values were provided, "
+                    "but this kernel has functional arguments.",
+                    "call");
+            }
             server->sendCommand(command);
         } else if (platform == Platform::SIMULATION) {
-            (processSimArg(args), ...);
+            if constexpr (sizeof...(Args) > 0) {
+                (processSimArg(std::forward<Args>(args)), ...);
+            } else if (!setArgValues.empty()) {
+                ensureSetArgValuesCompleteForLaunch("call");
+                applySetArgsToSimulation();
+            } else if (!functionalArgs.empty()) {
+                throwArgApiMisuse(
+                    "call() was invoked without positional args and no setArg values were provided, "
+                    "but this kernel has functional arguments.",
+                    "call");
+            }
             this->startKernel();
             this->wait();
         }
@@ -175,25 +334,64 @@ class Kernel {
 
     /**
      * @brief Starts the kernel.
+     */
+    void start();
+
+    /**
+     * @brief Starts the kernel with arguments.
      * @param args The arguments to pass to the kernel.
      */
     template <typename... Args>
-    void start(Args... args) {
-        currentRegisterIndex = 4;
+    void start(Args&&... args) {
+        const std::size_t providedArgCount = sizeof...(Args);
+        currentArgIndex = 0;
+        registerMap.clear();
+        ensureNoSetArgValuesWhenPassingArgs(providedArgCount, "start");
+        ensureFunctionalArgsForCall(providedArgCount, "start");
         if (platform == Platform::HARDWARE) {
-            (processArg(args), ...);
-            this->writeBatch();
+            if constexpr (sizeof...(Args) > 0) {
+                (processArg(std::forward<Args>(args)), ...);
+                this->writeBatch();
+            } else if (!setArgValues.empty()) {
+                ensureSetArgValuesCompleteForLaunch("start");
+                applySetArgsToRegisterMap();
+                this->writeBatch();
+            } else if (!functionalArgs.empty()) {
+                throwArgApiMisuse(
+                    "start() was invoked without positional args and no setArg values were provided, "
+                    "but this kernel has functional arguments.",
+                    "start");
+            }
             this->startKernel();
 
         } else if (platform == Platform::EMULATION) {
             Json::Value command;
             command["command"] = "start";
             command["function"] = name;
-            int argIdx = 0;
-            (processEmuArg(args, command, argIdx), ...);
+            if constexpr (sizeof...(Args) > 0) {
+                (processEmuArg(std::forward<Args>(args), command), ...);
+            } else if (!setArgValues.empty()) {
+                ensureSetArgValuesCompleteForLaunch("start");
+                applySetArgsToEmulation(command);
+            } else if (!functionalArgs.empty()) {
+                throwArgApiMisuse(
+                    "start() was invoked without positional args and no setArg values were provided, "
+                    "but this kernel has functional arguments.",
+                    "start");
+            }
             server->sendCommand(command);
         } else if (platform == Platform::SIMULATION) {
-            (processSimArg(args), ...);
+            if constexpr (sizeof...(Args) > 0) {
+                (processSimArg(std::forward<Args>(args)), ...);
+            } else if (!setArgValues.empty()) {
+                ensureSetArgValuesCompleteForLaunch("start");
+                applySetArgsToSimulation();
+            } else if (!functionalArgs.empty()) {
+                throwArgApiMisuse(
+                    "start() was invoked without positional args and no setArg values were provided, "
+                    "but this kernel has functional arguments.",
+                    "start");
+            }
             this->startKernel();
         }
     }
@@ -203,23 +401,19 @@ class Kernel {
      * @param arg The argument to process.
      */
     template <typename T>
-    void processArg(T arg) {
-        if (currentRegisterIndex < registers.size()) {
-            std::regex re(".*_\\d+$");  // Regular expression to match strings ending with _nr
-            if (std::regex_match(registers.at(currentRegisterIndex).getRegisterName(), re)) {
-                this->registerMap[registers.at(currentRegisterIndex).getOffset()] =
-                    arg & 0xFFFFFFFF;
-                this->registerMap[registers.at(currentRegisterIndex + 1).getOffset()] =
-                    static_cast<uint32_t>((static_cast<uint64_t>(arg) >> 32) & 0xFFFFFFFF);
-                currentRegisterIndex += 2;
-            } else {
-                this->registerMap[registers.at(currentRegisterIndex).getOffset()] = arg;
-                currentRegisterIndex++;
-            }
-
-        } else {
-            throw std::runtime_error("Not enough registers to process all arguments.");
+    void processArg(T&& arg) {
+        if (currentArgIndex >= functionalArgs.size()) {
+            throwArgApiMisuse(
+                "Positional argument index " + std::to_string(currentArgIndex) +
+                    " exceeds available functional_args entries.",
+                "start/call");
         }
+
+        decltype(auto) resolvedArg = resolveKernelArg(std::forward<T>(arg));
+        const uint64_t value = static_cast<uint64_t>(resolvedArg);
+        const FunctionalArg& argMeta = functionalArgs.at(currentArgIndex);
+        writeArgToRegisterMap(argMeta, value);
+        currentArgIndex++;
     }
 
     /**
@@ -228,19 +422,19 @@ class Kernel {
      * @param arg The argument to process.
      */
     template <typename T>
-    void processSimArg(T arg) {
-        if (currentRegisterIndex < registers.size()) {
-            std::regex re(".*_\\d+$");  // Regular expression to match strings ending with _nr
-            if (std::regex_match(registers.at(currentRegisterIndex).getRegisterName(), re)) {
-                this->write(registers.at(currentRegisterIndex).getOffset(), arg & 0xFFFFFFFF);
-                this->write(registers.at(currentRegisterIndex + 1).getOffset(),
-                            static_cast<uint32_t>((static_cast<uint64_t>(arg) >> 32) & 0xFFFFFFFF));
-                currentRegisterIndex += 2;
-            } else {
-                this->write(registers.at(currentRegisterIndex).getOffset(), arg);
-                currentRegisterIndex++;
-            }
+    void processSimArg(T&& arg) {
+        if (currentArgIndex >= functionalArgs.size()) {
+            throwArgApiMisuse(
+                "Positional argument index " + std::to_string(currentArgIndex) +
+                    " exceeds available functional_args entries.",
+                "start/call");
         }
+
+        decltype(auto) resolvedArg = resolveKernelArg(std::forward<T>(arg));
+        const uint64_t value = static_cast<uint64_t>(resolvedArg);
+        const FunctionalArg& argMeta = functionalArgs.at(currentArgIndex);
+        writeArgToSimulation(argMeta, value);
+        currentArgIndex++;
     }
 
     /**
@@ -248,43 +442,20 @@ class Kernel {
      * @tparam T The type of the argument.
      * @param arg The argument to process.
      * @param command The JSON command to update.
-     * @param argIndex The index of the argument.
      */
     template <typename T>
-    void processEmuArg(T arg, Json::Value& command, int& argIndex) {
-        if (currentRegisterIndex < registers.size()) {
-            std::regex re(".*_\\d+$");  // Regular expression to match strings ending with _nr
-            const bool isSplitReg =
-                std::regex_match(registers.at(currentRegisterIndex).getRegisterName(), re);
-
-            std::string emuKind;
-            if (platform == Platform::EMULATION &&
-                static_cast<std::size_t>(argIndex) < emuCallArgKinds.size()) {
-                emuKind = emuCallArgKinds[static_cast<std::size_t>(argIndex)];
-            }
-
-            if (emuKind.empty()) {
-                throw std::runtime_error("EMU manifest arg kind missing for kernel '" + name +
-                                         "' at arg" + std::to_string(argIndex));
-            }
-
-            if (emuKind == "buffer") {
-                command["args"]["arg" + std::to_string(argIndex)]["type"] = "buffer";
-                command["args"]["arg" + std::to_string(argIndex)]["name"] = std::to_string(arg);
-            } else if (emuKind == "scalar") {
-                command["args"]["arg" + std::to_string(argIndex)]["type"] = "scalar";
-                command["args"]["arg" + std::to_string(argIndex)]["value"] = arg;
-            } else {
-                throw std::runtime_error("Unsupported EMU manifest arg kind '" + emuKind +
-                                         "' for kernel '" + name + "' at arg" +
-                                         std::to_string(argIndex));
-            }
-
-            currentRegisterIndex += isSplitReg ? 2 : 1;
-            argIndex++;
-        } else {
-            throw std::runtime_error("Not enough registers to process all arguments.");
+    void processEmuArg(T&& arg, Json::Value& command) {
+        if (currentArgIndex >= functionalArgs.size()) {
+            throwArgApiMisuse(
+                "Positional argument index " + std::to_string(currentArgIndex) +
+                    " exceeds available functional_args entries.",
+                "start/call");
         }
+
+        decltype(auto) resolvedArg = resolveKernelArg(std::forward<T>(arg));
+        const FunctionalArg& argMeta = functionalArgs.at(currentArgIndex);
+        writeArgToEmulation(command, argMeta, static_cast<uint64_t>(resolvedArg));
+        currentArgIndex++;
     }
 
     /**
@@ -292,6 +463,12 @@ class Kernel {
      * @return The name of the kernel.
      */
     std::string getName() const;
+
+    /**
+     * @brief Getter for the kernel base physical address.
+     * @return The physical base address of the kernel.
+     */
+    uint64_t getPhysAddr() const;
 
     /**
      * @brief Destructor for Kernel.

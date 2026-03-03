@@ -45,6 +45,24 @@
 #define SLASH_QDMA_MAX_QPAIRS 256
 #define SLASH_QDMA_QPAIR_ID_RANGE XA_LIMIT(0, SLASH_QDMA_MAX_QPAIRS - 1)
 
+#ifndef SLASH_QDMA_OP_DEBUG
+#define SLASH_QDMA_OP_DEBUG 0
+#endif
+
+#if SLASH_QDMA_OP_DEBUG
+#define SLASH_QDMA_OP_LOG(fmt, ...) \
+    pr_info("slash: qdma: " fmt, ##__VA_ARGS__)
+#define SLASH_QDMA_OP_DEV_LOG(dev, fmt, ...) \
+    dev_info((dev), "slash: qdma: " fmt, ##__VA_ARGS__)
+#else
+#define SLASH_QDMA_OP_LOG(fmt, ...) \
+    do {                             \
+    } while (0)
+#define SLASH_QDMA_OP_DEV_LOG(dev, fmt, ...) \
+    do {                                      \
+    } while (0)
+#endif
+
 struct slash_qdma_dev;
 
 struct slash_qdma_qpair_entry {
@@ -79,6 +97,11 @@ typedef int (*slash_qdma_queue_cmd_fn)(unsigned long qdma_handle,
                                        char *errbuf,
                                        int errbuf_sz);
 
+static int slash_qdma_queue_remove_safe(unsigned long qdma_handle,
+                                        unsigned long qhndl,
+                                        char *errbuf,
+                                        int errbuf_sz);
+
 __attribute__((unused))
 static enum queue_type_t slash_qdma_dir_to_qtype(u32 dir_bit)
 {
@@ -111,6 +134,68 @@ static u32 slash_qdma_qtype_to_dir(enum queue_type_t qtype)
 static inline bool slash_qdma_qhndl_is_valid(unsigned long qhndl)
 {
     return qhndl != QDMA_QUEUE_IDX_INVALID;
+}
+
+static int slash_qdma_queue_remove_safe(unsigned long qdma_handle,
+                                        unsigned long qhndl,
+                                        char *errbuf,
+                                        int errbuf_sz)
+{
+    struct qdma_q_state qstate = {0};
+    int err;
+
+    if (!errbuf || errbuf_sz <= 0)
+        return -EINVAL;
+
+    errbuf[0] = '\0';
+
+    SLASH_QDMA_OP_LOG("qdma_get_queue_state start: handle=%lu qhndl=%lu\n",
+                      qdma_handle, qhndl);
+    err = qdma_get_queue_state(qdma_handle, qhndl, &qstate, errbuf, errbuf_sz);
+    if (err) {
+        SLASH_QDMA_OP_LOG("qdma_get_queue_state failed: qhndl=%lu err=%d (%s)\n",
+                          qhndl, err, errbuf);
+        return err;
+    }
+    SLASH_QDMA_OP_LOG("qdma_get_queue_state done: qhndl=%lu state=%u\n",
+                      qhndl, qstate.qstate);
+
+    switch (qstate.qstate) {
+    case Q_STATE_ONLINE:
+        SLASH_QDMA_OP_LOG("qdma_queue_stop start: qhndl=%lu\n", qhndl);
+        err = qdma_queue_stop(qdma_handle, qhndl, errbuf, errbuf_sz);
+        if (err) {
+            SLASH_QDMA_OP_LOG("qdma_queue_stop failed: qhndl=%lu err=%d (%s)\n",
+                              qhndl, err, errbuf);
+            return err;
+        }
+        SLASH_QDMA_OP_LOG("qdma_queue_stop done: qhndl=%lu\n", qhndl);
+        break;
+    case Q_STATE_ENABLED:
+        break;
+    case Q_STATE_DISABLED:
+        /* Queue is already removed. */
+        SLASH_QDMA_OP_LOG("queue already disabled, skip remove: qhndl=%lu\n",
+                          qhndl);
+        return 0;
+    default:
+        snprintf(errbuf, errbuf_sz, "queue in unexpected state %u",
+                 qstate.qstate);
+        SLASH_QDMA_OP_LOG("qdma_get_queue_state unexpected state: qhndl=%lu state=%u\n",
+                          qhndl, qstate.qstate);
+        return -EINVAL;
+    }
+
+    SLASH_QDMA_OP_LOG("qdma_queue_remove start: qhndl=%lu\n", qhndl);
+    err = qdma_queue_remove(qdma_handle, qhndl, errbuf, errbuf_sz);
+    if (err) {
+        SLASH_QDMA_OP_LOG("qdma_queue_remove failed: qhndl=%lu err=%d (%s)\n",
+                          qhndl, err, errbuf);
+        return err;
+    }
+    SLASH_QDMA_OP_LOG("qdma_queue_remove done: qhndl=%lu\n", qhndl);
+
+    return 0;
 }
 
 static inline struct slash_qdma_qpair_entry *
@@ -258,35 +343,44 @@ int __init slash_qdma_init(unsigned int num_threads, char *debugfs)
 {
     int err;
 
-    pr_debug("slash: initializing qdma\n");
+    SLASH_QDMA_OP_LOG("init start: num_threads=%u debugfs=%s\n",
+                      num_threads, debugfs ? debugfs : "(null)");
 
     err = libqdma_init(num_threads, debugfs);
     if (err) {
+        SLASH_QDMA_OP_LOG("libqdma_init failed: err=%d\n", err);
         pr_err("slash: libqdma_init failed: %d\n", err);
         return err;
     }
+    SLASH_QDMA_OP_LOG("libqdma_init done\n");
 
     err = pci_register_driver(&slash_qdma_driver);
     if (err) {
+        SLASH_QDMA_OP_LOG("pci_register_driver failed: err=%d\n", err);
         pr_err("slash: register qdma driver failed: %d\n", err);
         goto err_exit_libqdma;
     }
+    SLASH_QDMA_OP_LOG("pci_register_driver done\n");
 
     return 0;
 
 err_exit_libqdma:
+    SLASH_QDMA_OP_LOG("libqdma_exit start (init rollback)\n");
     libqdma_exit();
+    SLASH_QDMA_OP_LOG("libqdma_exit done (init rollback)\n");
 
     return err;
 }
 
 void __exit slash_qdma_exit(void)
 {
-    pr_debug("slash: deinitializing qdma\n");
+    SLASH_QDMA_OP_LOG("exit start\n");
 
     pci_unregister_driver(&slash_qdma_driver);
+    SLASH_QDMA_OP_LOG("pci_unregister_driver done\n");
 
     libqdma_exit();
+    SLASH_QDMA_OP_LOG("libqdma_exit done\n");
 }
 
 /* --- PCI Operations --- */
@@ -300,7 +394,9 @@ static int slash_qdma_probe(struct pci_dev *pdev, const struct pci_device_id *id
     memset(&conf, 0, sizeof(conf));
 
     dev_info(&pdev->dev, "slash: qdma: probe start for %s\n", pci_name(pdev));
-    dev_dbg(&pdev->dev, "slash: qdma: vendor=0x%04x device=0x%04x fn=%u\n", pdev->vendor, pdev->device, PCI_FUNC(pdev->devfn));
+    SLASH_QDMA_OP_DEV_LOG(&pdev->dev,
+                          "probe details: vendor=0x%04x device=0x%04x fn=%u\n",
+                          pdev->vendor, pdev->device, PCI_FUNC(pdev->devfn));
 
     if (PCI_FUNC(pdev->devfn) != SLASH_QDMA_PF) {
         dev_err(&pdev->dev, "slash: expected PF %u, got %u\n", SLASH_QDMA_PF, PCI_FUNC(pdev->devfn));
@@ -313,11 +409,19 @@ static int slash_qdma_probe(struct pci_dev *pdev, const struct pci_device_id *id
     }
 
     slash_qdma_conf_options(&conf, pdev);
+    SLASH_QDMA_OP_DEV_LOG(&pdev->dev,
+                          "qdma_device_open start: name=%s qsets_max=%d qsets_base=%d\n",
+                          SLASH_NAME, conf.qsets_max, conf.qsets_base);
     err = qdma_device_open(SLASH_NAME, &conf, &device->qdma_handle);
     if (err) {
+        SLASH_QDMA_OP_DEV_LOG(&pdev->dev, "qdma_device_open failed: err=%d\n",
+                              err);
         dev_err(&pdev->dev, "slash: qdma: could not open qdma device %d", err);
         goto err_free;
     }
+    SLASH_QDMA_OP_DEV_LOG(&pdev->dev,
+                          "qdma_device_open done: handle=%lu\n",
+                          device->qdma_handle);
     device->have_qdma_handle = true;
 
     err = misc_register(&device->misc);
@@ -447,9 +551,17 @@ static void slash_qdma_destroy_qdma_device(struct slash_qdma_dev *device)
     }
 
     if (device->have_qdma_handle) {
+        SLASH_QDMA_OP_DEV_LOG(&device->pdev->dev,
+                              "qdma_device_close start: handle=%lu\n",
+                              device->qdma_handle);
         err = qdma_device_close(device->pdev, device->qdma_handle);
         if (err) {
+            SLASH_QDMA_OP_DEV_LOG(&device->pdev->dev,
+                                  "qdma_device_close failed: err=%d\n", err);
             dev_err(&device->pdev->dev, "Error in qdma_device_close: %d\n", err);
+        } else {
+            SLASH_QDMA_OP_DEV_LOG(&device->pdev->dev,
+                                  "qdma_device_close done\n");
         }
         device->have_qdma_handle = false;
     }
@@ -516,7 +628,7 @@ static long slash_qdma_fop_ioctl(struct file *file, unsigned int op, unsigned lo
     if (!qdma_dev)
         return -ENODEV;
 
-    dev_dbg(&qdma_dev->pdev->dev, "qdma: ioctl op=0x%x\n", op);
+    SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev, "ioctl op=0x%x\n", op);
 
     mutex_lock(&qdma_dev->lock);
     if (qdma_dev->hw_shutdown || !qdma_dev->have_qdma_handle) {
@@ -793,14 +905,23 @@ static int slash_qdma_ioctl_qpair_add_q(struct miscdevice *misc,
         break;
     }
 
+    SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                          "qdma_queue_add start: qid=%u type=%u mode=%u\n",
+                          req->qid, qtype, req->mode);
     err = qdma_queue_add(qdma_dev->qdma_handle, &qconf, &qhndl,
                             errbuf, sizeof(errbuf));
     if (err) {
+        SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                              "qdma_queue_add failed: qid=%u type=%u err=%d (%s)\n",
+                              req->qid, qtype, err, errbuf);
         dev_err(&qdma_dev->pdev->dev,
                 "qdma: queue add failed (qid=%u, type=%u): %d (%s)\n",
                 req->qid, qtype, err, errbuf);
         return err;
     }
+    SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                          "qdma_queue_add done: qid=%u type=%u qhndl=%lu\n",
+                          req->qid, qtype, qhndl);
 
     entry->qhndl[qtype] = qhndl;
     entry->dir_mask |= dir_bit;
@@ -823,14 +944,24 @@ static void slash_qdma_ioctl_qpair_rm_q(struct miscdevice *misc,
         return;
     }
 
-    err = qdma_queue_remove(qdma_dev->qdma_handle, qhndl,
-                        errbuf, sizeof(errbuf));
+    SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                          "queue_remove_safe start: type=%u qhndl=%lu\n",
+                          qtype, qhndl);
+    err = slash_qdma_queue_remove_safe(qdma_dev->qdma_handle, qhndl,
+                                       errbuf, sizeof(errbuf));
 
     if (err) {
+        SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                              "queue_remove_safe failed: type=%u qhndl=%lu err=%d (%s)\n",
+                              qtype, qhndl, err, errbuf);
         dev_err(&qdma_dev->pdev->dev,
                 "qdma: queue remove failed (type=%u): %d (%s)\n",
                 qtype, err, errbuf);
+        return;
     }
+    SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                          "queue_remove_safe done: type=%u qhndl=%lu\n",
+                          qtype, qhndl);
 
     entry->qhndl[qtype] = QDMA_QUEUE_IDX_INVALID;
     entry->dir_mask &= ~slash_qdma_qtype_to_dir(qtype);
@@ -917,7 +1048,7 @@ static int slash_qdma_ioctl_qpair_op(struct miscdevice *misc,
         break;
     case SLASH_QDMA_QUEUE_OP_DEL:
         ret = slash_qdma_ioctl_qpair_op_apply(qdma_dev, entry, req,
-                                          qdma_queue_remove,
+                                          slash_qdma_queue_remove_safe,
                                           "remove", false);
         if (!ret)
             slash_qdma_qpair_remove(qdma_dev, req->qid);
@@ -950,9 +1081,15 @@ static int slash_qdma_ioctl_qpair_op_apply(struct slash_qdma_dev *qdma_dev,
             !slash_qdma_qhndl_is_valid(entry->qhndl[qtype]))
             continue;
 
+        SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                              "qdma_queue_%s start: qid=%u type=%u qhndl=%lu\n",
+                              op_name, req->qid, qtype, entry->qhndl[qtype]);
         err = fn(qdma_dev->qdma_handle, entry->qhndl[qtype],
                  errbuf, (int)sizeof(errbuf));
         if (err) {
+            SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                                  "qdma_queue_%s failed: qid=%u type=%u qhndl=%lu err=%d (%s)\n",
+                                  op_name, req->qid, qtype, entry->qhndl[qtype], err, errbuf);
             dev_err(&qdma_dev->pdev->dev,
                     "qdma: queue %s failed (qid=%u, type=%u): %d (%s)\n",
                     op_name, req->qid, qtype, err, errbuf);
@@ -962,6 +1099,10 @@ static int slash_qdma_ioctl_qpair_op_apply(struct slash_qdma_dev *qdma_dev,
 
             if (!first_err)
                 first_err = err;
+        } else {
+            SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                                  "qdma_queue_%s done: qid=%u type=%u qhndl=%lu\n",
+                                  op_name, req->qid, qtype, entry->qhndl[qtype]);
         }
     }
 
@@ -1139,7 +1280,14 @@ static ssize_t slash_qdma_qpair_read_write(struct file *file, char __user *buf,
     req->fp_done = NULL;
     req->h2c_eot = 1;
 
+    SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                          "qdma_request_submit start: qid=%u qhndl=%lu write=%d count=%zu ep_addr=0x%llx\n",
+                          ctx->qid, qhndl, req->write, req->count,
+                          (unsigned long long)req->ep_addr);
     res = qdma_request_submit(qdma_dev->qdma_handle, qhndl, req);
+    SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                          "qdma_request_submit done: qid=%u qhndl=%lu res=%zd\n",
+                          ctx->qid, qhndl, res);
     if (res > 0)
         *ppos += res;
 

@@ -44,6 +44,9 @@
 
 #define READ_ENTIRE_FILE_ALLOCATION_STEP (2 * 1024 * 1024) // 2 MiB
 
+static int design_writer_open_qpair(struct design_writer *writer);
+static void design_writer_release_qpair(struct design_writer *writer);
+
 static int realloc_alligned_memory(void **bufp, size_t old_size, size_t new_size)
 {
     void *new_buf;
@@ -116,11 +119,15 @@ static int write_all_at_pos(int fd, const void *buf, size_t len, off_t pos)
         PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Failed to seek design writer file descriptor to position 0x%lx", (unsigned long)(pos + off));
 
         ssize_t n = write(fd, (const uint8_t *)buf + off, len - off);
-        if (n != (ssize_t)len) {
+        if (n == -1) {
             if (errno == EINTR) {
                 continue;
             }
             PROPAGATE_ERROR_STDC_LOG(-1, LOG_ERR, "Failed to write to design writer file descriptor");
+        }
+        if (n == 0) {
+            errno = EIO;
+            PROPAGATE_ERROR_STDC_LOG(-1, LOG_ERR, "Short write to design writer file descriptor");
         }
 
         off += (size_t)n;
@@ -142,7 +149,14 @@ static int design_writer_transfer(struct design_writer *writer, int input_fd)
     ssize_t bytes_read = read_entire_file(input_fd, &file_data);
     PROPAGATE_ERROR_LOG(bytes_read, LOG_ERR, "Failed to read entire input file for design writer transfer");
 
-    write_all_at_pos(writer->fd, file_data, (size_t)bytes_read, VRTD_DESIGN_WRITER_SEEK_ADDR);
+    // int ret = design_writer_open_qpair(writer);
+    // PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to initialize design writer qpair");
+
+    int ret = write_all_at_pos(writer->fd, file_data, (size_t)bytes_read, VRTD_DESIGN_WRITER_SEEK_ADDR);
+    int saved_errno = errno;
+    // design_writer_release_qpair(writer);
+    // errno = saved_errno;
+    // PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to transfer design writer payload");
 
     return 0;
 }
@@ -213,32 +227,16 @@ static void cleanup_mutex_unlockp(pthread_mutex_t **mutexp)
     *mutexp = NULL;
 }
 
-static void design_writer_release_resources(struct design_writer *writer)
+static void design_writer_release_qpair(struct design_writer *writer)
 {
-    bool should_stop_qpair = writer->qpair_created &&
-        writer->qdma != NULL &&
-        (writer->fd >= 0 || writer->thread_started);
-
-    if (writer->mutex_initialized) {
-        (void) pthread_mutex_lock(&writer->mutex);
-        writer->stop = true;
-        if (writer->cond_initialized) {
-            (void) pthread_cond_broadcast(&writer->cond);
-        }
-        (void) pthread_mutex_unlock(&writer->mutex);
+    if (writer == NULL) {
+        return;
     }
 
-    if (writer->thread_started) {
-        (void) pthread_cancel(writer->thread);
-        (void) pthread_join(writer->thread, NULL);
-        writer->thread_started = false;
-    }
-
-    cleanup_close_fd(&writer->input_fd);
     cleanup_close_fd(&writer->fd);
 
     if (writer->qpair_created && writer->qdma != NULL) {
-        if (should_stop_qpair && slash_qdma_qpair_stop(writer->qdma, writer->qid) == -1) {
+        if (writer->qpair_started && slash_qdma_qpair_stop(writer->qdma, writer->qid) == -1) {
             (void) sd_journal_print(
                 LOG_WARNING,
                 "Error stopping design writer qpair %u: %m (ignored)",
@@ -255,8 +253,32 @@ static void design_writer_release_resources(struct design_writer *writer)
         }
     }
 
-    writer->qdma = NULL;
+    writer->qid = 0;
+    writer->qpair_started = false;
     writer->qpair_created = false;
+}
+
+static void design_writer_release_resources(struct design_writer *writer)
+{
+    if (writer->mutex_initialized) {
+        (void) pthread_mutex_lock(&writer->mutex);
+        writer->stop = true;
+        if (writer->cond_initialized) {
+            (void) pthread_cond_broadcast(&writer->cond);
+        }
+        (void) pthread_mutex_unlock(&writer->mutex);
+    }
+
+    if (writer->thread_started) {
+        (void) pthread_cancel(writer->thread);
+        (void) pthread_join(writer->thread, NULL);
+        writer->thread_started = false;
+    }
+
+    cleanup_close_fd(&writer->input_fd);
+    design_writer_release_qpair(writer);
+
+    writer->qdma = NULL;
 
     if (writer->cond_initialized) {
         (void) pthread_cond_destroy(&writer->cond);
@@ -302,7 +324,7 @@ static int design_writer_init_sync_primitives(struct design_writer *writer)
     return 0;
 }
 
-static int design_writer_init_qpair(struct design_writer *writer)
+static int design_writer_open_qpair(struct design_writer *writer)
 {
     struct slash_qdma_qpair_add qpair = {0};
     qpair.size = sizeof(qpair);
@@ -317,12 +339,22 @@ static int design_writer_init_qpair(struct design_writer *writer)
 
     writer->qid = qpair.qid;
     writer->qpair_created = true;
+    writer->qpair_started = false;
 
     ret = slash_qdma_qpair_start(writer->qdma, writer->qid);
-    PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Failed to start design writer QDMA qpair");
+    if (ret == -1) {
+        (void) sd_journal_print(LOG_ERR, "Failed to start design writer QDMA qpair: %m");
+        design_writer_release_qpair(writer);
+        return -1;
+    }
+    writer->qpair_started = true;
 
     writer->fd = slash_qdma_qpair_get_fd(writer->qdma, writer->qid, O_CLOEXEC);
-    PROPAGATE_ERROR_STDC_LOG(writer->fd, LOG_ERR, "Failed to get design writer QDMA file descriptor");
+    if (writer->fd == -1) {
+        (void) sd_journal_print(LOG_ERR, "Failed to get design writer QDMA file descriptor: %m");
+        design_writer_release_qpair(writer);
+        return -1;
+    }
 
     return 0;
 }
@@ -352,6 +384,7 @@ static int design_writer_init(struct design_writer *writer, struct slash_qdma *q
         .qid = 0,
         .fd = -1,
         .qpair_created = false,
+        .qpair_started = false,
         .thread = 0,
         .input_fd = -1,
         .busy = false,
@@ -365,11 +398,11 @@ static int design_writer_init(struct design_writer *writer, struct slash_qdma *q
     _cleanup_(cleanup_design_writer_resourcesp)
     struct design_writer *writer_rollback = writer;
 
-    int ret = design_writer_init_sync_primitives(writer);
-    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to initialize design writer synchronization primitives");
-
-    ret = design_writer_init_qpair(writer);
+    int ret = design_writer_open_qpair(writer);
     PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to initialize design writer qpair");
+
+    ret = design_writer_init_sync_primitives(writer);
+    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to initialize design writer synchronization primitives");
 
     ret = design_writer_start_thread(writer);
     PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to start design writer worker thread");

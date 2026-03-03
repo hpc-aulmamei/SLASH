@@ -41,12 +41,13 @@ int main(int argc, char* argv[]) {
 
         std::cout << "Current set frequency: "<< device.getFrequency() << " Hz" << std::endl;
         std::cout << "Max frequency: "<< device.getMaxFrequency() << " Hz" << std::endl;
-        device.setFrequency(500000000);
+
+        device.setFrequency(300000000);
         std::cout << "Current set frequency: "<< device.getFrequency() << " Hz" << std::endl;
 
-        vrt::Buffer<int> a(device, size, vrt::MemoryRangeType::HBM);
-        vrt::Buffer<int> b(device, size, vrt::MemoryRangeType::HBM);
-        vrt::Buffer<int> c(device, size, vrt::MemoryRangeType::HBM);
+        vrt::Buffer<int> a(device, size, vrt::MemoryRangeType::HBM, 0);
+        vrt::Buffer<int> b(device, size, vrt::MemoryRangeType::HBM, 1);
+        vrt::Buffer<int> c(device, size, vrt::MemoryRangeType::HBM, 2);
 
         for (int i = 0; i < size; i++) {
             a[i] = i;
@@ -54,7 +55,12 @@ int main(int argc, char* argv[]) {
         }
         a.sync(vrt::SyncType::HOST_TO_DEVICE);
         b.sync(vrt::SyncType::HOST_TO_DEVICE);
-        vadd_0.start(a.getPhysAddr(), b.getPhysAddr(), c.getPhysAddr(), size);
+        vadd_0.setArg(0, a);
+        vadd_0.setArg(1, b);
+        vadd_0.setArg(2, c);
+        vadd_0.setArg(3, size);
+        vadd_0.start();
+        //vadd_0.start(a, b, c, size);
         vadd_0.wait();
         c.sync(vrt::SyncType::DEVICE_TO_HOST);
         for (int i = 0; i < size; i++) {

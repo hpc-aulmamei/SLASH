@@ -19,6 +19,7 @@ KDIR        ?= /lib/modules/$(shell uname -r)/build
 PWD         := $(shell pwd)
 
 QDMA_DRV_ROOT := ../submodules/qdma_drv/QDMA/linux-kernel/driver
+SLASH_QDMA_OP_DEBUG ?= 0
 
 obj-m          := $(MODULE).o
 $(MODULE)-objs := $(MODULE)_main.o $(MODULE)_ctldev.o $(MODULE)_pcie.o $(MODULE)_dmabuf.o $(MODULE)_hotplug.o $(MODULE)_qdma.o
@@ -32,7 +33,8 @@ ccflags-y += \
 	-I$(src)/$(QDMA_DRV_ROOT)/libqdma/qdma_access/qdma_cpm4_access \
 	-I$(src)/$(QDMA_DRV_ROOT)/libqdma/qdma_access/qdma_soft_access \
 	\
-	-DTANDEM_BOOT_SUPPORTED=1
+	-DTANDEM_BOOT_SUPPORTED=1 \
+	-DSLASH_QDMA_OP_DEBUG=$(SLASH_QDMA_OP_DEBUG)
 
 
 LIBQDMA_OBJS := \

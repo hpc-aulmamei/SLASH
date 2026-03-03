@@ -64,8 +64,8 @@ build_emu(
 )
 
 # Include directories
-include_directories(${REPO_ROOT}/vrt/include
-                    /usr/local/vrt/include
+# Keep headers in lockstep with the installed shared libraries (linked below).
+include_directories(/usr/local/vrt/include
                     /usr/local/include
                     /usr/include/libxml2
                     /usr/include/jsoncpp)
