@@ -210,10 +210,11 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
         }
         parseSystemMap();
         if (vrtdDevice.has_value()) {
-            if (clockFreq > std::numeric_limits<uint32_t>::max()) {
-                throw std::runtime_error("Clock frequency from system map exceeds vrtd clock API limits");
+            if (clockFreq > CLOCK_MAX_FREQ) {
+                utils::Logger::log(utils::LogLevel::WARN, __PRETTY_FUNCTION__,
+                           "Clock frequency {} exceeds maximum frequency {}", clockFreq, CLOCK_MAX_FREQ);
+                vrtdDevice->setUserClockRate(static_cast<uint32_t>(CLOCK_MAX_FREQ));
             }
-            vrtdDevice->setUserClockRate(static_cast<uint32_t>(clockFreq));
         }
     } else if (platform == Platform::EMULATION) {
         parseSystemMap();
@@ -298,8 +299,9 @@ void Device::cleanup() {
         exit["command"] = "exit";
         zmqServer->sendCommand(exit);
     }
-
-    runtimeThread.join();
+    if (runtimeThread.joinable()) {
+        runtimeThread.join();
+    }
 }
 
 std::string Device::getBdf() { return bdf; }

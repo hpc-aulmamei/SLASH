@@ -10,7 +10,7 @@ sudo systemctl stop vrtd.service
 
 sudo rmmod qdma-pf
 sudo rmmod slash
-sudo insmod /lib/modules/5.15.0-168-generic/extra/slash.ko
+sudo insmod /lib/modules/5.15.0-171-generic/extra/slash.ko
 
 echo 1 | sudo tee /sys/bus/pci/rescan
 

@@ -149,14 +149,14 @@ static int design_writer_transfer(struct design_writer *writer, int input_fd)
     ssize_t bytes_read = read_entire_file(input_fd, &file_data);
     PROPAGATE_ERROR_LOG(bytes_read, LOG_ERR, "Failed to read entire input file for design writer transfer");
 
-    int ret = design_writer_open_qpair(writer);
-    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to initialize design writer qpair");
+    // int ret = design_writer_open_qpair(writer);
+    // PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to initialize design writer qpair");
 
-    ret = write_all_at_pos(writer->fd, file_data, (size_t)bytes_read, VRTD_DESIGN_WRITER_SEEK_ADDR);
+    int ret = write_all_at_pos(writer->fd, file_data, (size_t)bytes_read, VRTD_DESIGN_WRITER_SEEK_ADDR);
     int saved_errno = errno;
-    design_writer_release_qpair(writer);
-    errno = saved_errno;
-    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to transfer design writer payload");
+    // design_writer_release_qpair(writer);
+    // errno = saved_errno;
+    // PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to transfer design writer payload");
 
     return 0;
 }
@@ -398,7 +398,10 @@ static int design_writer_init(struct design_writer *writer, struct slash_qdma *q
     _cleanup_(cleanup_design_writer_resourcesp)
     struct design_writer *writer_rollback = writer;
 
-    int ret = design_writer_init_sync_primitives(writer);
+    int ret = design_writer_open_qpair(writer);
+    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to initialize design writer qpair");
+
+    ret = design_writer_init_sync_primitives(writer);
     PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to initialize design writer synchronization primitives");
 
     ret = design_writer_start_thread(writer);
