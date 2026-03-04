@@ -82,7 +82,16 @@ def _copy_checked(src: Path, dest: Path) -> None:
 def _copy_files(src_files: list[Path], destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     for src in src_files:
-        shutil.copy2(src, destination / src.name)
+        dst = destination / src.name
+        # Allow install_dir to match the staging directory without failing on no-op copies.
+        if dst.exists():
+            try:
+                if src.samefile(dst):
+                    logger.info("Skipping copy because source and destination are the same file: %s", src)
+                    continue
+            except FileNotFoundError:
+                pass
+        shutil.copy2(src, dst)
 
 
 def _copy_tree(src_dir: Path, destination: Path) -> None:
