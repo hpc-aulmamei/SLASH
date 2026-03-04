@@ -56,6 +56,8 @@ Thumbs.db
 
 .clang-format
 .cache
+**/linker_results/
+**/linker_results_*/
 
 __pycache__/
 *.pyc

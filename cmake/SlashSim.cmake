@@ -111,8 +111,9 @@ function(build_sim)
     set(_py "python3")
   endif()
 
-  resolve_slash_linker_results_dir(_linker_results_dir)
-  set(_sim_root "${_linker_results_dir}/${BSIM_PROJECT}/sim")
+  resolve_slash_linker_results_dir(_linker_results_root "${BSIM_OUT_DIR}" "${BSIM_PROJECT}")
+  resolve_slash_linker_platform_results_dir(_sim_root "${BSIM_OUT_DIR}" "${BSIM_PROJECT}" "sim")
+  set(_linker_info "${_linker_results_root}/.linker_info.json")
   set(_src_vpp "${_sim_root}/vpp_sim")
   set(_src_xsim "${_sim_root}/xsim.dir")
   set(_src_system_map "${_sim_root}/system_map.xml")
@@ -130,23 +131,9 @@ function(build_sim)
     set(_publish_vbin_cmd "${CMAKE_COMMAND}" -E copy_if_different "${_src_vbin}" "${_dst_vbin}")
   endif()
 
-  set(_env_linker "${CMAKE_COMMAND}" -E env
-    "SLASH_LINKER_RESULTS_DIR=${_linker_results_dir}"
-  )
+  set(_env_linker "${CMAKE_COMMAND}" -E env)
 
   set(_sim_args "--platform" "sim")
-  if(NOT "${BSIM_SIM_TEMPLATE}" STREQUAL "")
-    list(APPEND _sim_args "--sim-template" "${BSIM_SIM_TEMPLATE}")
-  endif()
-  if(NOT "${BSIM_SIM_MEM}" STREQUAL "")
-    list(APPEND _sim_args "--sim-mem" "${BSIM_SIM_MEM}")
-  endif()
-  if(NOT "${BSIM_SIM_OUT}" STREQUAL "")
-    list(APPEND _sim_args "--sim-out" "${BSIM_SIM_OUT}")
-  endif()
-  if(NOT "${BSIM_SYSTEM_MAP_OUT}" STREQUAL "")
-    list(APPEND _sim_args "--system-map-out" "${BSIM_SYSTEM_MAP_OUT}")
-  endif()
 
   set(_extra_deps "")
   foreach(dep IN ITEMS BSIM_SIM_TEMPLATE BSIM_SIM_MEM)
@@ -180,6 +167,7 @@ function(build_sim)
     COMMAND ${_env_linker} "${_py}" "${_main_py}"
             build_hw_project
             -p "${BSIM_PROJECT}"
+            --linker-info "${_linker_info}"
             --sim
 
     COMMAND "${CMAKE_COMMAND}" -E echo "Publishing SIM vbin:"
@@ -190,7 +178,7 @@ function(build_sim)
 
     COMMAND "${CMAKE_COMMAND}" -E touch "${_stamp}"
 
-    WORKING_DIRECTORY "${_main_dir}"
+    WORKING_DIRECTORY "${BSIM_OUT_DIR}"
 
     DEPENDS
       "${_main_py}"

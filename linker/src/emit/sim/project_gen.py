@@ -29,13 +29,15 @@ import tarfile
 import tempfile
 from typing import Iterable, Optional
 
-from core.results_dir import resolve_linker_results_root
+from core.results_dir import resolve_linker_platform_dir
 
 logger = logging.getLogger(__name__)
 
 
-def _results_root() -> Path:
-    return resolve_linker_results_root()
+def _results_root(project_name: str, results_dir: Optional[Path] = None) -> Path:
+    if results_dir is not None:
+        return Path(results_dir).resolve()
+    return resolve_linker_platform_dir(project_name, "sim")
 
 
 def _repo_root() -> Path:
@@ -43,12 +45,12 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[4]
 
 
-def _sim_root(project_name: str) -> Path:
-    return _results_root() / project_name / "sim"
+def _sim_root(project_name: str, results_dir: Optional[Path] = None) -> Path:
+    return _results_root(project_name, results_dir)
 
 
-def _sim_prj_dir(project_name: str) -> Path:
-    return _sim_root(project_name) / "sim_prj"
+def _sim_prj_dir(project_name: str, results_dir: Optional[Path] = None) -> Path:
+    return _sim_root(project_name, results_dir) / "sim_prj"
 
 
 def _copy_kernels_to_iprepo(component_xmls: Iterable[str | Path], iprepo_dir: Path) -> None:
@@ -73,8 +75,9 @@ def create_sim_project(
     component_xmls: Iterable[str | Path],
     vivado_bin: str = "vivado",
     sim_tcl: Optional[Path] = None,
+    results_dir: Optional[Path] = None,
 ) -> None:
-    sim_root = _sim_root(project_name)
+    sim_root = _sim_root(project_name, results_dir)
     sim_root.mkdir(parents=True, exist_ok=True)
     # Clean generated subfolders but keep run_pre.tcl if already generated.
     for sub in ["sim_prj", "iprepo", "build", "xsim.dir"]:
@@ -95,7 +98,7 @@ def create_sim_project(
     if not tcl.exists():
         raise FileNotFoundError(f"Simulation TCL not found: {tcl}")
 
-    log_path = _results_root() / project_name / "vivado.log"
+    log_path = _results_root(project_name, results_dir) / "vivado.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -114,9 +117,10 @@ def create_sim_project(
 def build_sim_project(
     project_name: str,
     sim_src_dir: Optional[Path] = None,
+    results_dir: Optional[Path] = None,
 ) -> None:
-    sim_root = _sim_root(project_name)
-    sim_prj_dir = _sim_prj_dir(project_name)
+    sim_root = _sim_root(project_name, results_dir)
+    sim_prj_dir = _sim_prj_dir(project_name, results_dir)
 
     xsim_dir = sim_prj_dir / "sim_prj.sim" / "sim_1" / "behav" / "xsim"
     if not xsim_dir.exists():

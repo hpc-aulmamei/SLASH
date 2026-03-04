@@ -59,7 +59,7 @@ set artifact_out_dir [file normalize $artifact_out_dir]
 
 set abs_shell_dcp [file join $install_dir "abs_shell_service_layer.dcp"]
 set base_bd [file join $install_dir "service_layer" "service_layer.bd"]
-set generated_bd_tcl [file join $linker_results_dir $proj_name "bd" "service_layer_${proj_name}.tcl"]
+set generated_bd_tcl [file join $linker_results_dir "bd" "service_layer_${proj_name}.tcl"]
 set script_dir [file dirname [file normalize [info script]]]
 set linker_root [file normalize [file join $script_dir ".." ".." ".."]]
 set base_ip_repo [file join $linker_root "resources" "base" "iprepo"]
