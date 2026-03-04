@@ -190,8 +190,6 @@ enum vrtd_ret vrtd_buffer_sync_to_device(
                 return VRTD_RET_INTERNAL_ERROR;
             }
             bytes_written += bw;
-
-            fprintf(stderr, "Wrote: %zd\n", bytes_written);
         }
     }
 
@@ -234,8 +232,6 @@ enum vrtd_ret vrtd_buffer_sync_from_device(
                 return VRTD_RET_INTERNAL_ERROR;
             }
             bytes_read += br;
-
-            fprintf(stderr, "Read: %zd\n", bytes_read);
         }
     }
 

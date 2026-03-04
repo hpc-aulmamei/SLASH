@@ -814,7 +814,7 @@ static int client_finalize_pending_design_write(struct client *client)
 
     uint16_t design_write_ret = VRTD_RET_OK;
     if (transfer_error == 0) {
-        design_write_ret = device_refresh_pf2_after_design_write(d);
+       // design_write_ret = device_refresh_pf2_after_design_write(d);
     } else {
         design_write_ret = VRTD_RET_INTERNAL_ERROR;
     }

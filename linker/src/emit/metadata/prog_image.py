@@ -24,12 +24,13 @@ import tarfile
 from pathlib import Path
 from typing import Iterable, Optional
 
+from core.results_dir import resolve_linker_results_root
+
 logger = logging.getLogger(__name__)
 
 
 def _default_results_root() -> Path:
-    # linker/src/emit/metadata -> linker/results
-    return Path(__file__).resolve().parents[3] / "results"
+    return resolve_linker_results_root()
 
 
 def _iter_files(paths: Iterable[Path]) -> Iterable[Path]:
@@ -42,7 +43,7 @@ def build_vbin(project_name: str, results_dir: Optional[Path] = None) -> Path:
     """! @brief Build a compressed .vbin tarball for a project.
 
     @param project_name Project name used to locate results and name the archive.
-    @param results_dir Optional override of the results root (defaults to linker/results).
+    @param results_dir Optional override of the results root (defaults to resolved linker results root).
     @return Path to the generated .vbin file.
     """
     results_root = Path(results_dir) if results_dir else _default_results_root()
