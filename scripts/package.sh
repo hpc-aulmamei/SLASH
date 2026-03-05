@@ -44,6 +44,8 @@ rsync vrt/vrtd/udev/99-vrtd.rules   debian/vrtd.udev
 # This means that `..` has to be writable by the user building, which is inconvenient.
 dpkg-buildpackage \
     --no-sign \
+    --pre-clean \
+    --post-clean \
     --buildinfo-option="-u${ARTIFACTS_DIR}" \
     --buildinfo-file"=${ARTIFACTS_DIR}/slash_${DPKG_PARSED_VERSION}_${DPKG_ARCH}.buildinfo" \
     --changes-option="-u${ARTIFACTS_DIR}" \
