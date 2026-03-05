@@ -54,7 +54,7 @@ SLASH/VRT System Full
 
 %package -n     slash-devel
 Summary:        SLASH/VRT System Full (development files)
-Requires:       slash-sim-emu-dev = %{version}-%{release}
+Requires:       slash-sim-emu-devel = %{version}-%{release}
 Requires:       libslash-devel = %{version}-%{release}
 Requires:       libvrtd-devel = %{version}-%{release}
 BuildArch:      noarch
@@ -149,6 +149,7 @@ VRT Runtime (development files)
 %package -n     v80++
 Summary:        SLASH Linker
 Requires:       python3
+Requires:       python3-jinja2
 BuildArch:      noarch
 
 %description -n v80++
