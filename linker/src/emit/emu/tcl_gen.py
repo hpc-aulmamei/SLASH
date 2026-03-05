@@ -30,7 +30,7 @@ from emit.metadata.system_map_ctx import build_system_map_context, resolve_syste
 from emit.hw.user_region.addr_ctx import build_axilite_address_context
 from emit.emu.tb_ctx import build_tb_context
 from emit.hls_meta import infer_hls_json_from_component_xml
-from core.results_dir import resolve_linker_results_root
+from core.results_dir import resolve_linker_platform_dir
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -48,8 +48,8 @@ def _sanitize_project_name(s: str) -> str:
     return s2
 
 
-def _results_root() -> Path:
-    return resolve_linker_results_root()
+def _results_root(project_name: str) -> Path:
+    return resolve_linker_platform_dir(project_name, "emu")
 
 def _resources_root() -> Path:
     # linker/src/emit/emu -> linker/resources
@@ -63,8 +63,8 @@ def generate_emu_tcl(args) -> None:
     args.system_map_template = getattr(args, "system_map_template", str(resources_root / "system_map.xml"))
 
     project = _sanitize_project_name(args.project)
-    results_root = _results_root()
-    emu_root = results_root / project / "sw_emu"
+    results_root = _results_root(project)
+    emu_root = results_root / "sw_emu"
     emu_root.mkdir(parents=True, exist_ok=True)
 
     if getattr(args, "tb_out", None) is None:
@@ -72,7 +72,7 @@ def generate_emu_tcl(args) -> None:
     if getattr(args, "emu_manifest_out", None) is None:
         args.emu_manifest_out = str(emu_root / "emu_manifest.json")
 
-    default_system_map_out = results_root / project / "system_map.xml"
+    default_system_map_out = results_root / "system_map.xml"
     if args.system_map_out == "system_map.xml":
         args.system_map_out = str(default_system_map_out)
 

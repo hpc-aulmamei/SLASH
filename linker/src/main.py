@@ -22,7 +22,6 @@ import argparse
 import json
 import logging
 import os
-import re
 import sys
 import threading
 import time
@@ -46,7 +45,11 @@ from emit.emu.project_gen import build_emu_project, package_emu_artifacts
 
 from emit.metadata.prog_image import build_vbin
 from parser.config_parser import parse_connectivity_file
-from core.results_dir import resolve_linker_results_root
+from core.results_dir import (
+    resolve_linker_platform_dir,
+    resolve_linker_results_root,
+    sanitize_project_name,
+)
 
 HW_STEPS = (
     "create_project",
@@ -77,10 +80,6 @@ _LINKER_ROOT_DIR = _LINKER_SRC_DIR.parent
 _LINKER_RESOURCES_DIR = _LINKER_ROOT_DIR / "resources"
 _DEFAULT_INSTALL_DIR = _LINKER_ROOT_DIR / "results" / "base"
 
-
-def _results_root() -> Path:
-    return resolve_linker_results_root()
-
 _DEFAULT_COMMON_PATHS: dict[str, Path] = {
     "bd_ports": _LINKER_RESOURCES_DIR / "bd_ports.txt",
     "template": _LINKER_RESOURCES_DIR / "slash.tcl",
@@ -89,6 +88,25 @@ _DEFAULT_COMMON_PATHS: dict[str, Path] = {
     "sim_mem": _LINKER_RESOURCES_DIR / "sim" / "sim_mem.v",
     "system_map_template": _LINKER_RESOURCES_DIR / "system_map.xml",
     "tb_template": _LINKER_RESOURCES_DIR / "sw_emu" / "tb.cpp",
+}
+
+_INTERNAL_COMMON_DEFAULTS: dict[str, str | None] = {
+    "bd_ports": str(_DEFAULT_COMMON_PATHS["bd_ports"]),
+    "template": str(_DEFAULT_COMMON_PATHS["template"]),
+    "out": "slash.tcl",
+    "service_template": str(_DEFAULT_COMMON_PATHS["service_template"]),
+    "service_out": "service_layer_gen.tcl",
+    "sim_template": str(_DEFAULT_COMMON_PATHS["sim_template"]),
+    "sim_out": "run_pre.tcl",
+    "sim_mem": str(_DEFAULT_COMMON_PATHS["sim_mem"]),
+    "system_map_template": str(_DEFAULT_COMMON_PATHS["system_map_template"]),
+    "system_map_out": "system_map.xml",
+    "proj_root": None,
+    "tb_template": str(_DEFAULT_COMMON_PATHS["tb_template"]),
+    "tb_out": None,
+    "emu_manifest_out": None,
+    "clock_hz": None,
+    "ip_repository": None,
 }
 
 _PATH_ARG_KEYS = {
@@ -111,15 +129,6 @@ _PATH_ARG_KEYS = {
 }
 
 
-def _sanitize_project_name(name: str) -> str:
-    s2 = re.sub(r"[^A-Za-z0-9_]+", "_", str(name).strip())
-    if not s2:
-        s2 = "proj"
-    if s2[0].isdigit():
-        s2 = "_" + s2
-    return s2
-
-
 def _abs_path(value: str, base_dir: Path) -> str:
     p = Path(value).expanduser()
     if not p.is_absolute():
@@ -132,27 +141,38 @@ def _materialize_default_output_paths(args: argparse.Namespace) -> None:
     if not project:
         return
 
-    project_name = _sanitize_project_name(project)
-    project_results = _results_root() / project_name
+    project_name = sanitize_project_name(project)
+    project_results = resolve_linker_results_root(project_name)
+    hw_results = resolve_linker_platform_dir(project_name, "hw", results_root=project_results)
+    sim_results = resolve_linker_platform_dir(project_name, "sim", results_root=project_results)
+    emu_results = resolve_linker_platform_dir(project_name, "emu", results_root=project_results)
     platform = getattr(args, "platform", None) or "hw"
 
-    if hasattr(args, "out") and getattr(args, "out") == "slash.tcl":
-        args.out = str(project_results / "bd" / f"slash_{project_name}.tcl")
-    if hasattr(args, "service_out") and getattr(args, "service_out") == "service_layer_gen.tcl":
-        args.service_out = str(project_results / "bd" / f"service_layer_{project_name}.tcl")
-    if hasattr(args, "sim_out") and getattr(args, "sim_out") == "run_pre.tcl":
-        args.sim_out = str(project_results / "sim" / "run_pre.tcl")
-    if hasattr(args, "system_map_out") and getattr(args, "system_map_out") == "system_map.xml":
+    if getattr(args, "out", None) == "slash.tcl":
+        args.out = str(hw_results / "bd" / f"slash_{project_name}.tcl")
+    if getattr(args, "service_out", None) == "service_layer_gen.tcl":
+        args.service_out = str(hw_results / "bd" / f"service_layer_{project_name}.tcl")
+    if getattr(args, "sim_out", None) == "run_pre.tcl":
+        args.sim_out = str(sim_results / "run_pre.tcl")
+    if getattr(args, "system_map_out", None) == "system_map.xml":
         if platform == "sim":
-            args.system_map_out = str(project_results / "sim" / "system_map.xml")
+            args.system_map_out = str(sim_results / "system_map.xml")
+        elif platform == "emu":
+            args.system_map_out = str(emu_results / "system_map.xml")
         else:
-            args.system_map_out = str(project_results / "system_map.xml")
+            args.system_map_out = str(hw_results / "system_map.xml")
 
     if platform == "emu":
-        if hasattr(args, "tb_out") and getattr(args, "tb_out", None) is None:
-            args.tb_out = str(project_results / "sw_emu" / "tb.cpp")
-        if hasattr(args, "emu_manifest_out") and getattr(args, "emu_manifest_out", None) is None:
-            args.emu_manifest_out = str(project_results / "sw_emu" / "emu_manifest.json")
+        if getattr(args, "tb_out", None) is None:
+            args.tb_out = str(emu_results / "sw_emu" / "tb.cpp")
+        if getattr(args, "emu_manifest_out", None) is None:
+            args.emu_manifest_out = str(emu_results / "sw_emu" / "emu_manifest.json")
+
+
+def _apply_internal_common_defaults(args: argparse.Namespace) -> None:
+    for key, default in _INTERNAL_COMMON_DEFAULTS.items():
+        if not hasattr(args, key) or getattr(args, key) is None:
+            setattr(args, key, default)
 
 
 def _normalize_path_args(
@@ -161,6 +181,7 @@ def _normalize_path_args(
     base_dir: Path,
     materialize_defaults: bool = True,
 ) -> None:
+    _apply_internal_common_defaults(args)
     if materialize_defaults:
         _materialize_default_output_paths(args)
 
@@ -194,16 +215,16 @@ def _steps_for_platform(platform: str) -> tuple[str, ...]:
 
 
 def _linker_info_path(project_name: str) -> Path:
-    return _results_root() / project_name / ".linker_info.json"
+    return resolve_linker_results_root(project_name) / ".linker_info.json"
 
 
-def _save_linker_info(args: argparse.Namespace, stage: str) -> Path:
+def _save_linker_info(args: argparse.Namespace, stage: str, *, out_path: Path | None = None) -> Path:
     _normalize_path_args(args, base_dir=Path.cwd())
     steps = _steps_for_platform(args.platform)
     if stage not in steps:
         raise ValueError(f"Unknown stage '{stage}'. Expected one of: {', '.join(steps)}")
 
-    out_path = _linker_info_path(args.project)
+    out_path = out_path.resolve() if out_path is not None else _linker_info_path(args.project)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     args_payload = {k: v for k, v in vars(args).items() if k not in {"command", "func"}}
 
@@ -384,43 +405,15 @@ def _add_common_args(ap: argparse.ArgumentParser) -> None:
                     help="List of component.xml files to load as kernel types.")
     ap.add_argument("--platform", choices=["hw", "sim", "emu"], default="hw",
                     help="Target platform (hw, sim, or emu).")
-    ap.add_argument("--bd-ports", required=False, default=str(_DEFAULT_COMMON_PATHS["bd_ports"]),
-                    help=f"Path to BD ports mapping file (default: {_DEFAULT_COMMON_PATHS['bd_ports']}).")
-    ap.add_argument("--template", default=str(_DEFAULT_COMMON_PATHS["template"]),
-                    help=f"Path to Jinja2 Tcl template (default: {_DEFAULT_COMMON_PATHS['template']}).")
-    ap.add_argument("--out", default="slash.tcl",
-                    help="Path to write rendered Tcl (default: slash.tcl).")
-    ap.add_argument("--service-template", required=False, default=str(_DEFAULT_COMMON_PATHS["service_template"]),
-                help=f"Path to service layer Jinja2 template (default: {_DEFAULT_COMMON_PATHS['service_template']})")
-    ap.add_argument("--service-out", required=False, default="service_layer_gen.tcl",
-                    help="Path to write rendered service-layer Tcl (default: <results_root>/<project>/bd/service_layer_<project>.tcl).")
-    ap.add_argument("--sim-template", default=str(_DEFAULT_COMMON_PATHS["sim_template"]),
-                    help=f"Path to simulation Tcl template (default: {_DEFAULT_COMMON_PATHS['sim_template']}).")
-    ap.add_argument("--sim-out", default="run_pre.tcl",
-                    help="Path to write simulation Tcl (default: <results_root>/<project>/sim/run_pre.tcl).")
-    ap.add_argument("--sim-mem", default=str(_DEFAULT_COMMON_PATHS["sim_mem"]),
-                    help=f"Path to sim_mem.v for simulation project (default: {_DEFAULT_COMMON_PATHS['sim_mem']}).")
-    ap.add_argument("--system-map-template", required=False, default=str(_DEFAULT_COMMON_PATHS["system_map_template"]),
-                    help=f"Path to system_map.xml Jinja2 template (default: {_DEFAULT_COMMON_PATHS['system_map_template']}).")
-    ap.add_argument("--system-map-out", required=False, default="system_map.xml",
-                    help="Path to write system_map.xml (default: <results_root>/<project>[/sim]/system_map.xml by platform).")
-    ap.add_argument("--proj-root", default=None,
-                   help="Project root (defaults to parent of src/).")
     ap.add_argument("-p", "--project", required=True, help="Project name to suffix TCLs and BD clones.")
-    ap.add_argument("--clock-hz", required=False, type=int,
-                    help="System clock frequency in Hz for system_map.xml (default: from [clock], else 200000000).")
-    ap.add_argument("--tb-template", default=str(_DEFAULT_COMMON_PATHS["tb_template"]),
-                    help=f"Path to tb.cpp Jinja2 template (default: {_DEFAULT_COMMON_PATHS['tb_template']}).")
-    ap.add_argument("--tb-out", default=None,
-                    help="Output tb.cpp path (default for emu: <results_root>/<project>/sw_emu/tb.cpp).")
     ap.add_argument("--ip-repository", required=False, default=None,
-                    help="Optional IP repository path (string, stored for project generation).")
+                    help="IP repository path (stored for linker stages).")
 
 
 def _add_linker_info_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("-p", "--project", required=True, help="Project name to locate linker info.")
     ap.add_argument("--linker-info", default=None,
-                    help="Optional path to .linker_info.json (overrides <results_root>/<project> lookup).")
+                    help="Optional path to .linker_info.json (overrides default <cwd>/linker_results_<project> lookup).")
     ap.add_argument("--platform", choices=["hw", "sim", "emu"], default=None,
                     help="Override platform for this stage (hw, sim, or emu).")
     ap.add_argument("--sim", dest="platform", action="store_const", const="sim",
@@ -466,6 +459,7 @@ def _stage_init(args: argparse.Namespace) -> None:
 
 def _stage_generate_tcl(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+    info_path = info_path.resolve()
     payload = _load_linker_info(info_path)
     platform = _resolve_platform(payload, args)
     _require_stage(payload, required_stage="create_project", path=info_path, platform=platform)
@@ -478,11 +472,12 @@ def _stage_generate_tcl(args: argparse.Namespace) -> None:
         generate_emu_tcl(info_args)
     else:
         generate_tcl(info_args)
-    _save_linker_info(info_args, stage="generate_tcl")
+    _save_linker_info(info_args, stage="generate_tcl", out_path=info_path)
 
 
 def _stage_create_hw_project(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+    info_path = info_path.resolve()
     payload = _load_linker_info(info_path)
     platform = _resolve_platform(payload, args)
     _require_stage(payload, required_stage="generate_tcl", path=info_path, platform=platform)
@@ -494,6 +489,9 @@ def _stage_create_hw_project(args: argparse.Namespace) -> None:
             project_name=info_args.project,
             component_xmls=info_args.kernels,
             sim_tcl=Path(info_args.sim_out),
+            results_dir=resolve_linker_platform_dir(
+                info_args.project, "sim", results_root=info_path.parent
+            ),
         )
     elif info_args.platform == "emu":
         pass
@@ -502,12 +500,16 @@ def _stage_create_hw_project(args: argparse.Namespace) -> None:
             project_name=info_args.project,
             ip_repository=info_args.ip_repository,
             action="create",
+            results_dir=resolve_linker_platform_dir(
+                info_args.project, "hw", results_root=info_path.parent
+            ),
         )
-    _save_linker_info(info_args, stage="create_hw_project")
+    _save_linker_info(info_args, stage="create_hw_project", out_path=info_path)
 
 
 def _stage_build_hw_project(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+    info_path = info_path.resolve()
     payload = _load_linker_info(info_path)
     platform = _resolve_platform(payload, args)
     _require_stage(payload, required_stage="create_hw_project", path=info_path, platform=platform)
@@ -515,36 +517,49 @@ def _stage_build_hw_project(args: argparse.Namespace) -> None:
     info_args.platform = platform
     _normalize_path_args(info_args, base_dir=_LINKER_SRC_DIR)
     if info_args.platform == "sim":
-        build_sim_project(project_name=info_args.project)
+        build_sim_project(
+            project_name=info_args.project,
+            results_dir=resolve_linker_platform_dir(
+                info_args.project, "sim", results_root=info_path.parent
+            ),
+        )
     elif info_args.platform == "emu":
         build_emu_project(
             project_name=info_args.project,
             component_xmls=info_args.kernels,
             tb_cpp=Path(info_args.tb_out) if getattr(info_args, "tb_out", None) else None,
+            results_dir=resolve_linker_platform_dir(
+                info_args.project, "emu", results_root=info_path.parent
+            ),
         )
     else:
         create_build_project(
             project_name=info_args.project,
             ip_repository=info_args.ip_repository,
             action="build",
+            results_dir=resolve_linker_platform_dir(
+                info_args.project, "hw", results_root=info_path.parent
+            ),
         )
         generate_base_pdi_with_aved(project_name=info_args.project)
-    _save_linker_info(info_args, stage="build_hw_project")
+    _save_linker_info(info_args, stage="build_hw_project", out_path=info_path)
 
 
 def _stage_complete_hw_build(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+    info_path = info_path.resolve()
     payload = _load_linker_info(info_path)
     platform = _resolve_platform(payload, args)
     _require_stage(payload, required_stage="generate_tcl", path=info_path, platform=platform)
     info_args = argparse.Namespace(**payload["args"])
     info_args.platform = platform
     _normalize_path_args(info_args, base_dir=_LINKER_SRC_DIR)
-    _save_linker_info(info_args, stage="build_hw_project")
+    _save_linker_info(info_args, stage="build_hw_project", out_path=info_path)
 
 
 def _build_service_layer_rm(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+    info_path = info_path.resolve()
     payload = _load_linker_info(info_path)
     platform = _resolve_platform(payload, args)
     if platform != "hw":
@@ -566,11 +581,15 @@ def _build_service_layer_rm(args: argparse.Namespace) -> None:
         vivado_bin=args.vivado_bin,
         workdir=Path(args.workdir) if args.workdir else None,
         jobs=args.jobs,
+        linker_results_dir=resolve_linker_platform_dir(
+            info_args.project, "hw", results_root=info_path.parent
+        ),
     )
 
 
 def _build_slash_rm(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+    info_path = info_path.resolve()
     payload = _load_linker_info(info_path)
     platform = _resolve_platform(payload, args)
     if platform != "hw":
@@ -589,11 +608,15 @@ def _build_slash_rm(args: argparse.Namespace) -> None:
         vivado_bin=args.vivado_bin,
         workdir=Path(args.workdir) if args.workdir else None,
         jobs=args.jobs,
+        linker_results_dir=resolve_linker_platform_dir(
+            info_args.project, "hw", results_root=info_path.parent
+        ),
     )
 
 
 def _stage_create_metadata(args: argparse.Namespace) -> None:
     info_path = Path(args.linker_info) if args.linker_info else _linker_info_path(args.project)
+    info_path = info_path.resolve()
     payload = _load_linker_info(info_path)
     platform = _resolve_platform(payload, args)
     required_stage = "build_hw_project"
@@ -604,13 +627,25 @@ def _stage_create_metadata(args: argparse.Namespace) -> None:
     if info_args.platform == "sim":
         pass
     elif info_args.platform == "emu":
-        package_emu_artifacts(project_name=info_args.project)
+        package_emu_artifacts(
+            project_name=info_args.project,
+            results_dir=resolve_linker_platform_dir(
+                info_args.project, "emu", results_root=info_path.parent
+            ),
+        )
     else:
         include_service_layer = _hw_has_enabled_eth(getattr(info_args, "cfg", None))
-        generate_image(project_name=info_args.project, include_service_layer=include_service_layer)
-        generate_util_report(project_name=info_args.project)
-        build_vbin(project_name=info_args.project)
-    _save_linker_info(info_args, stage="create_metadata")
+        hw_results_dir = resolve_linker_platform_dir(
+            info_args.project, "hw", results_root=info_path.parent
+        )
+        generate_image(
+            project_name=info_args.project,
+            include_service_layer=include_service_layer,
+            results_dir=hw_results_dir,
+        )
+        generate_util_report(project_name=info_args.project, results_dir=hw_results_dir)
+        build_vbin(project_name=info_args.project, results_dir=hw_results_dir)
+    _save_linker_info(info_args, stage="create_metadata", out_path=info_path)
 
 
 def _stage_clean(args: argparse.Namespace) -> None:
@@ -792,12 +827,12 @@ def main():
         ap_clean = sub.add_parser(
             "clean",
             help="Remove generated linker artifacts and reset stage to init state.",
-            description="Delete everything under <results_root>/<project> except .linker_info.json and reset stage state.",
+            description="Delete everything under <cwd>/linker_results_<project> except .linker_info.json and reset stage state.",
             formatter_class=argparse.RawTextHelpFormatter,
         )
         ap_clean.add_argument("-p", "--project", required=True, help="Project name to locate linker info.")
         ap_clean.add_argument("--linker-info", default=None,
-                              help="Optional path to .linker_info.json (overrides <results_root>/<project> lookup).")
+                              help="Optional path to .linker_info.json (overrides default <cwd>/linker_results_<project> lookup).")
         ap_clean.set_defaults(func=_stage_clean)
 
         ap_install = sub.add_parser(

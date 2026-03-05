@@ -1,35 +1,50 @@
 from __future__ import annotations
 
-import os
+import re
 from pathlib import Path
 
-_RESULTS_ENV = "SLASH_LINKER_RESULTS_DIR"
-_XDG_CACHE_ENV = "XDG_CACHE_HOME"
-_HOME_ENV = "HOME"
-_FALLBACK_CACHE_ROOT = Path("/home/user/.cache")
+_PROJECT_RESULTS_PREFIX = "linker_results_"
+_PLATFORMS = {"hw", "sim", "emu"}
 
 
-def resolve_linker_results_root() -> Path:
-    """Resolve the linker results root using environment precedence."""
-    if _RESULTS_ENV in os.environ:
-        raw = os.environ.get(_RESULTS_ENV, "").strip()
-        if raw == "":
-            raise SystemExit(
-                f"ERROR: {_RESULTS_ENV} is set but empty. Set it to an absolute directory path."
-            )
-        env_path = Path(raw).expanduser()
-        if not env_path.is_absolute():
-            raise SystemExit(
-                f"ERROR: {_RESULTS_ENV} must be an absolute path, got: {raw!r}"
-            )
-        return env_path.resolve()
+def sanitize_project_name(name: str) -> str:
+    """Sanitize a project name for filesystem-safe linker result directories."""
+    s2 = re.sub(r"[^A-Za-z0-9_]+", "_", str(name).strip())
+    if not s2:
+        s2 = "proj"
+    if s2[0].isdigit():
+        s2 = "_" + s2
+    return s2
 
-    xdg_cache_home = os.environ.get(_XDG_CACHE_ENV, "").strip()
-    if xdg_cache_home:
-        return (Path(xdg_cache_home).expanduser() / "slash" / "linker_results").resolve()
 
-    home = os.environ.get(_HOME_ENV, "").strip()
-    if home:
-        return (Path(home).expanduser() / ".cache" / "slash" / "linker_results").resolve()
+def resolve_linker_results_root(project_name: str | None = None) -> Path:
+    """Resolve linker results to local directories in the current working directory.
 
-    return _FALLBACK_CACHE_ROOT / "slash" / "linker_results"
+    - If project_name is provided: <cwd>/linker_results_<project>
+    - Otherwise: <cwd>/linker_results
+    """
+    cwd = Path.cwd().resolve()
+    if project_name is None:
+        return cwd / "linker_results"
+    return cwd / f"{_PROJECT_RESULTS_PREFIX}{sanitize_project_name(project_name)}"
+
+
+def resolve_linker_platform_dir(
+    project_name: str,
+    platform: str,
+    *,
+    results_root: Path | None = None,
+) -> Path:
+    """Resolve a platform-specific results directory for a project.
+
+    The returned path is:
+      <results_root>/<platform>
+    where results_root defaults to resolve_linker_results_root(project_name).
+    """
+    plat = str(platform).strip().lower()
+    if plat not in _PLATFORMS:
+        raise ValueError(
+            f"Unsupported platform '{platform}'. Expected one of: {', '.join(sorted(_PLATFORMS))}"
+        )
+    root = Path(results_root).resolve() if results_root is not None else resolve_linker_results_root(project_name)
+    return root / plat

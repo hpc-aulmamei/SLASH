@@ -20,29 +20,37 @@
 
 include_guard(GLOBAL)
 
-function(resolve_slash_linker_results_dir out_var)
-  if(DEFINED ENV{SLASH_LINKER_RESULTS_DIR})
-    set(_env_results "$ENV{SLASH_LINKER_RESULTS_DIR}")
-    string(STRIP "${_env_results}" _env_results)
-    if("${_env_results}" STREQUAL "")
-      message(FATAL_ERROR
-        "SLASH_LINKER_RESULTS_DIR is set but empty. Set it to an absolute directory path."
-      )
-    endif()
-    if(NOT IS_ABSOLUTE "${_env_results}")
-      message(FATAL_ERROR
-        "SLASH_LINKER_RESULTS_DIR must be an absolute path, got: '${_env_results}'"
-      )
-    endif()
-    set(_resolved "${_env_results}")
-  elseif(DEFINED ENV{XDG_CACHE_HOME} AND NOT "$ENV{XDG_CACHE_HOME}" STREQUAL "")
-    set(_resolved "$ENV{XDG_CACHE_HOME}/slash/linker_results")
-  elseif(DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
-    set(_resolved "$ENV{HOME}/.cache/slash/linker_results")
-  else()
-    set(_resolved "/home/user/.cache/slash/linker_results")
+function(resolve_slash_linker_results_dir out_var base_dir project_name)
+  if("${base_dir}" STREQUAL "")
+    message(FATAL_ERROR "resolve_slash_linker_results_dir(): base_dir is required")
+  endif()
+  if("${project_name}" STREQUAL "")
+    message(FATAL_ERROR "resolve_slash_linker_results_dir(): project_name is required")
   endif()
 
-  file(TO_CMAKE_PATH "${_resolved}" _resolved_norm)
-  set(${out_var} "${_resolved_norm}" PARENT_SCOPE)
+  string(REGEX REPLACE "[^A-Za-z0-9_]+" "_" _project_sanitized "${project_name}")
+  if("${_project_sanitized}" STREQUAL "")
+    set(_project_sanitized "proj")
+  endif()
+  string(SUBSTRING "${_project_sanitized}" 0 1 _first_char)
+  if(_first_char MATCHES "^[0-9]$")
+    set(_project_sanitized "_${_project_sanitized}")
+  endif()
+
+  get_filename_component(_base_abs "${base_dir}" ABSOLUTE)
+  file(TO_CMAKE_PATH "${_base_abs}" _base_norm)
+  set(_resolved "${_base_norm}/linker_results_${_project_sanitized}")
+  set(${out_var} "${_resolved}" PARENT_SCOPE)
+endfunction()
+
+function(resolve_slash_linker_platform_results_dir out_var base_dir project_name platform)
+  resolve_slash_linker_results_dir(_results_root "${base_dir}" "${project_name}")
+  string(TOLOWER "${platform}" _platform_norm)
+  if(NOT "${_platform_norm}" MATCHES "^(hw|sim|emu)$")
+    message(FATAL_ERROR
+      "resolve_slash_linker_platform_results_dir(): unsupported platform '${platform}' "
+      "(expected: hw, sim, emu)"
+    )
+  endif()
+  set(${out_var} "${_results_root}/${_platform_norm}" PARENT_SCOPE)
 endfunction()

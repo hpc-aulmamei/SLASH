@@ -31,7 +31,7 @@ from emit.hw.user_region.addr_ctx import build_axilite_address_context
 from emit.hw.service_region.stream_ctx import build_stream_connect_context
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from emit.hls_meta import infer_hls_json_from_component_xml
-from core.results_dir import resolve_linker_results_root
+from core.results_dir import resolve_linker_platform_dir
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -82,8 +82,8 @@ def _sanitize_bd_name(s: str) -> str:
     return s2
 
 
-def _results_root() -> Path:
-    return resolve_linker_results_root()
+def _results_root(project_name: str) -> Path:
+    return resolve_linker_platform_dir(project_name, "sim")
 
 def _resources_root() -> Path:
     # linker/src/emit/sim -> linker/resources
@@ -248,8 +248,8 @@ def generate_sim_tcl(args) -> None:
     args.system_map_template = getattr(args, "system_map_template", str(resources_root / "system_map.xml"))
 
     project = _sanitize_bd_name(args.project)
-    results_root = _results_root()
-    sim_root = results_root / project / "sim"
+    results_root = _results_root(project)
+    sim_root = results_root
     sim_root.mkdir(parents=True, exist_ok=True)
 
     default_sim_out = sim_root / "run_pre.tcl"

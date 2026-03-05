@@ -131,10 +131,11 @@ function(build_hw)
     endif()
   endforeach()
 
-  resolve_slash_linker_results_dir(_linker_results_dir)
-  set(_linker_info "${_linker_results_dir}/${BHW_PROJECT}/.linker_info.json")
-  set(_slash_bd_tcl "${_linker_results_dir}/${BHW_PROJECT}/bd/slash_${BHW_PROJECT}.tcl")
-  set(_service_bd_tcl "${_linker_results_dir}/${BHW_PROJECT}/bd/service_layer_${BHW_PROJECT}.tcl")
+  resolve_slash_linker_results_dir(_linker_results_root "${BHW_OUT_DIR}" "${BHW_PROJECT}")
+  resolve_slash_linker_platform_results_dir(_hw_results_dir "${BHW_OUT_DIR}" "${BHW_PROJECT}" "hw")
+  set(_linker_info "${_linker_results_root}/.linker_info.json")
+  set(_slash_bd_tcl "${_hw_results_dir}/bd/slash_${BHW_PROJECT}.tcl")
+  set(_service_bd_tcl "${_hw_results_dir}/bd/service_layer_${BHW_PROJECT}.tcl")
 
   set(_hw_work_root "${BHW_OUT_DIR}/${BHW_PROJECT}_hw_build")
   set(_stamps_dir "${_hw_work_root}/stamps")
@@ -144,7 +145,7 @@ function(build_hw)
   set(_rm_slash_work_dir "${_hw_work_root}/rm/slash_${BHW_PROJECT}")
   set(_rm_artifact_dir "${_hw_work_root}/slash.runs/${BHW_PROJECT}_impl_1")
   set(_raw_util_report "${_reports_dir}/report_utilization_${BHW_PROJECT}.txt")
-  set(_linker_util_report "${_linker_results_dir}/${BHW_PROJECT}/report_utilization_${BHW_PROJECT}.txt")
+  set(_linker_util_report "${_hw_results_dir}/report_utilization_${BHW_PROJECT}.txt")
 
   set(_service_partial_pdi "${_rm_artifact_dir}/top_i_service_layer_service_layer_${BHW_PROJECT}_inst_0_partial.pdi")
   set(_slash_partial_pdi "${_rm_artifact_dir}/top_i_slash_slash_${BHW_PROJECT}_inst_0_partial.pdi")
@@ -158,7 +159,7 @@ function(build_hw)
   set(_linker_complete_hw_build_stamp "${_stamps_dir}/linker_complete_hw_build.stamp")
   set(_linker_create_metadata_stamp "${_stamps_dir}/linker_create_metadata.stamp")
 
-  set(_src_vbin "${_linker_results_dir}/${BHW_PROJECT}/${BHW_PROJECT}_hw.vbin")
+  set(_src_vbin "${_hw_results_dir}/${BHW_PROJECT}_hw.vbin")
   set(_dst_vbin "${BHW_OUT_DIR}/${BHW_PROJECT}_hw.vbin")
   set(_final_publish_stamp "${_stamps_dir}/publish_vbin.stamp")
 
@@ -170,7 +171,6 @@ function(build_hw)
 
   set(_env_hw "${CMAKE_COMMAND}" -E env
     "SLASH_HW_BUILD_DIR=${_hw_work_root}"
-    "SLASH_LINKER_RESULTS_DIR=${_linker_results_dir}"
   )
   set(_service_rm_extra_args "")
   if(DEFINED EN_SERVICE_LAYER AND EN_SERVICE_LAYER)
@@ -199,7 +199,7 @@ function(build_hw)
             --kernels ${BHW_KERNELS}
             --ip-repository "${BHW_IP_REPO}"
     COMMAND "${CMAKE_COMMAND}" -E touch "${_linker_init_stamp}"
-    WORKING_DIRECTORY "${_main_dir}"
+    WORKING_DIRECTORY "${BHW_OUT_DIR}"
     DEPENDS "${_check_install_stamp}" "${_main_py}" "${BHW_CFG}" ${BHW_KERNELS}
     COMMENT "SLASH HW [2/9]: linker init"
     VERBATIM
