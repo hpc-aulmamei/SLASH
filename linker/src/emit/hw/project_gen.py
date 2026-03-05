@@ -27,7 +27,7 @@ import shutil
 import subprocess
 from typing import Optional
 from emit.metadata.report_util import convert_report_utilization_to_xml
-from core.results_dir import resolve_linker_results_root
+from core.results_dir import resolve_linker_platform_dir
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +64,10 @@ def _default_results_dir() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def _default_project_results_root() -> Path:
-    return resolve_linker_results_root()
+def _default_project_results_root(project_name: str, results_dir: Optional[Path] = None) -> Path:
+    if results_dir is not None:
+        return Path(results_dir).resolve()
+    return resolve_linker_platform_dir(project_name, "hw")
 
 
 def _default_install_dir() -> Path:
@@ -189,12 +191,13 @@ def create_build_project(
     vivado_bin: str = "vivado",
     workdir: Optional[Path] = None,
     action: Optional[str] = None,
+    results_dir: Optional[Path] = None,
 ) -> None:
     tcl = Path(tcl_path) if tcl_path else _default_create_project_tcl()
     if not tcl.exists():
         raise FileNotFoundError(f"create_project.tcl not found: {tcl}")
 
-    log_path = _default_project_results_root() / project_name / "vivado.log"
+    log_path = _default_project_results_root(project_name, results_dir) / "vivado.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -228,6 +231,7 @@ def _run_rm_build(
     workdir: Optional[Path] = None,
     jobs: int = 8,
     util_report_file: Optional[Path] = None,
+    linker_results_dir: Optional[Path] = None,
 ) -> None:
     if not ip_repository:
         raise ValueError("ip_repository is required for RM builds")
@@ -236,7 +240,7 @@ def _run_rm_build(
     if not tcl.exists():
         raise FileNotFoundError(f"RM build Tcl not found: {tcl}")
 
-    linker_results_dir = _default_project_results_root()
+    linker_results_root = _default_project_results_root(project_name, linker_results_dir)
     hw_build_dir = get_hw_build_dir()
     logs_dir = hw_build_dir / "logs"
     artifact_out_dir = hw_build_dir / "slash.runs" / f"{project_name}_impl_1"
@@ -267,7 +271,7 @@ def _run_rm_build(
         "--install-dir",
         str(install_root),
         "--linker-results-dir",
-        str(linker_results_dir),
+        str(linker_results_root),
         "--rm-work-dir",
         str(rm_work_dir),
         "--artifact-out-dir",
@@ -291,6 +295,7 @@ def build_service_layer_rm(
     install_dir: Optional[Path] = None,
     workdir: Optional[Path] = None,
     jobs: int = 8,
+    linker_results_dir: Optional[Path] = None,
 ) -> None:
     _run_rm_build(
         project_name=project_name,
@@ -301,6 +306,7 @@ def build_service_layer_rm(
         install_dir=install_dir,
         workdir=workdir,
         jobs=jobs,
+        linker_results_dir=linker_results_dir,
     )
 
 
@@ -312,6 +318,7 @@ def build_slash_rm(
     install_dir: Optional[Path] = None,
     workdir: Optional[Path] = None,
     jobs: int = 8,
+    linker_results_dir: Optional[Path] = None,
 ) -> None:
     hw_build_dir = get_hw_build_dir()
     util_report_file = hw_build_dir / "reports" / f"report_utilization_{project_name}.txt"
@@ -325,6 +332,7 @@ def build_slash_rm(
         workdir=workdir,
         jobs=jobs,
         util_report_file=util_report_file,
+        linker_results_dir=linker_results_dir,
     )
 
 
@@ -385,9 +393,10 @@ def generate_image(
     project_name: str,
     workdir: Optional[Path] = None,
     include_service_layer: bool = True,
+    results_dir: Optional[Path] = None,
 ) -> None:
     impl_dir = _default_pdi_dir() / "slash.runs" / f"{project_name}_impl_1"
-    dest_dir = _default_project_results_root() / project_name / "images"
+    dest_dir = _default_project_results_root(project_name, results_dir) / "images"
     logger.info("Generating PDI images for project %s", project_name)
     logger.info("PDI source dir: %s", impl_dir)
     logger.info("PDI destination dir: %s", dest_dir)
@@ -414,8 +423,8 @@ def generate_image(
         shutil.copy2(src, dest)
     logger.info("PDI image generation complete for %s", project_name)
 
-def generate_util_report(project_name: str) -> None:
-    report_dir = _default_project_results_root() / project_name
+def generate_util_report(project_name: str, results_dir: Optional[Path] = None) -> None:
+    report_dir = _default_project_results_root(project_name, results_dir)
 
     report_file = report_dir / f"report_utilization_{project_name}.txt"
     xml_file = report_dir / f"report_utilization_{project_name}.xml"

@@ -111,11 +111,13 @@ function(build_emu)
     set(_py "python3")
   endif()
 
-  resolve_slash_linker_results_dir(_linker_results_dir)
-  set(_emu_root "${_linker_results_dir}/${BEMU_PROJECT}/sw_emu")
+  resolve_slash_linker_results_dir(_linker_results_root "${BEMU_OUT_DIR}" "${BEMU_PROJECT}")
+  resolve_slash_linker_platform_results_dir(_emu_platform_root "${BEMU_OUT_DIR}" "${BEMU_PROJECT}" "emu")
+  set(_linker_info "${_linker_results_root}/.linker_info.json")
+  set(_emu_root "${_emu_platform_root}/sw_emu")
   set(_src_vpp "${_emu_root}/vpp_emu")
-  set(_src_system_map "${_linker_results_dir}/${BEMU_PROJECT}/system_map.xml")
-  set(_src_vbin "${_linker_results_dir}/${BEMU_PROJECT}/${BEMU_PROJECT}_emu.vbin")
+  set(_src_system_map "${_emu_platform_root}/system_map.xml")
+  set(_src_vbin "${_emu_platform_root}/${BEMU_PROJECT}_emu.vbin")
 
   set(_dst_vbin "${BEMU_OUT_DIR}/${BEMU_PROJECT}_emu.vbin")
   set(_stamp "${BEMU_OUT_DIR}/.${BEMU_PROJECT}_emu.stamp")
@@ -126,20 +128,9 @@ function(build_emu)
     set(_publish_vbin_cmd "${CMAKE_COMMAND}" -E copy_if_different "${_src_vbin}" "${_dst_vbin}")
   endif()
 
-  set(_env_linker "${CMAKE_COMMAND}" -E env
-    "SLASH_LINKER_RESULTS_DIR=${_linker_results_dir}"
-  )
+  set(_env_linker "${CMAKE_COMMAND}" -E env)
 
   set(_emu_args "--platform" "emu")
-  if(NOT "${BEMU_TB_TEMPLATE}" STREQUAL "")
-    list(APPEND _emu_args "--tb-template" "${BEMU_TB_TEMPLATE}")
-  endif()
-  if(NOT "${BEMU_TB_OUT}" STREQUAL "")
-    list(APPEND _emu_args "--tb-out" "${BEMU_TB_OUT}")
-  endif()
-  if(NOT "${BEMU_SYSTEM_MAP_OUT}" STREQUAL "")
-    list(APPEND _emu_args "--system-map-out" "${BEMU_SYSTEM_MAP_OUT}")
-  endif()
 
   set(_extra_deps "")
   foreach(dep IN ITEMS BEMU_TB_TEMPLATE)
@@ -165,12 +156,14 @@ function(build_emu)
     COMMAND ${_env_linker} "${_py}" "${_main_py}"
             build_hw_project
             -p "${BEMU_PROJECT}"
+            --linker-info "${_linker_info}"
             --emu
 
     # Package emulation artifacts into <project>_emu.vrtbin
     COMMAND ${_env_linker} "${_py}" "${_main_py}"
             create_metadata
             -p "${BEMU_PROJECT}"
+            --linker-info "${_linker_info}"
             --emu
 
     COMMAND "${CMAKE_COMMAND}" -E echo "Publishing EMU vbin:"
@@ -181,7 +174,7 @@ function(build_emu)
 
     COMMAND "${CMAKE_COMMAND}" -E touch "${_stamp}"
 
-    WORKING_DIRECTORY "${_main_dir}"
+    WORKING_DIRECTORY "${BEMU_OUT_DIR}"
 
     DEPENDS
       "${_main_py}"

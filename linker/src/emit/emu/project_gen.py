@@ -32,21 +32,23 @@ import tarfile
 from typing import Iterable, Optional
 
 from emit.emu.tb_ctx import infer_sol1_json_from_component_xml
-from core.results_dir import resolve_linker_results_root
+from core.results_dir import resolve_linker_platform_dir
 
 logger = logging.getLogger(__name__)
 
 
-def _results_root() -> Path:
-    return resolve_linker_results_root()
+def _results_root(project_name: str, results_dir: Optional[Path] = None) -> Path:
+    if results_dir is not None:
+        return Path(results_dir).resolve()
+    return resolve_linker_platform_dir(project_name, "emu")
 
 
-def _emu_root(project_name: str) -> Path:
-    return _results_root() / project_name / "sw_emu"
+def _emu_root(project_name: str, results_dir: Optional[Path] = None) -> Path:
+    return _results_root(project_name, results_dir) / "sw_emu"
 
 
-def _project_root(project_name: str) -> Path:
-    return _results_root() / project_name
+def _project_root(project_name: str, results_dir: Optional[Path] = None) -> Path:
+    return _results_root(project_name, results_dir)
 
 
 def _find_vitis_include() -> Path:
@@ -295,8 +297,9 @@ def build_emu_project(
     *,
     tb_cpp: Optional[Path] = None,
     output_name: str = "vpp_emu",
+    results_dir: Optional[Path] = None,
 ) -> None:
-    emu_root = _emu_root(project_name)
+    emu_root = _emu_root(project_name, results_dir)
     emu_root.mkdir(parents=True, exist_ok=True)
 
     tb_path = Path(tb_cpp) if tb_cpp else emu_root / "tb.cpp"
@@ -339,9 +342,10 @@ def package_emu_artifacts(
     project_name: str,
     *,
     output_name: Optional[str] = None,
+    results_dir: Optional[Path] = None,
 ) -> Path:
-    project_root = _project_root(project_name)
-    emu_root = _emu_root(project_name)
+    project_root = _project_root(project_name, results_dir)
+    emu_root = _emu_root(project_name, results_dir)
     system_map = project_root / "system_map.xml"
     vpp_emu = emu_root / "vpp_emu"
     emu_manifest = emu_root / "emu_manifest.json"
