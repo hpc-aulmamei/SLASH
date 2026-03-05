@@ -62,6 +62,7 @@ __pycache__/
 
 # Build files for package
 pbuild
+rpmbuild
 debian/tmp
 debian/*.log
 debian/*.substvars
@@ -89,4 +90,5 @@ debian/vrtd.socket
 debian/vrtd.udev
 
 # Output files for package
-deb
+/deb/
+/rpm/

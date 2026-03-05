@@ -1,4 +1,26 @@
+# ##################################################################################################
+#  The MIT License (MIT)
+#  Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
+# 
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+#  and associated documentation files (the "Software"), to deal in the Software without restriction,
+#  including without limitation the rights to use, copy, modify, merge, publish, distribute,
+#  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+# 
+#  The above copyright notice and this permission notice shall be included in all copies or
+#  substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# ##################################################################################################
+
 %global debug_package %{nil}
+%global dkms_name slash
+%global dkms_version 0.1
 
 Name:           slash
 Version:        %{_version}
@@ -18,6 +40,7 @@ BuildRequires:  jsoncpp-devel
 BuildRequires:  systemd-devel
 BuildRequires:  libxml2-devel
 BuildRequires:  zeromq-devel
+BuildRequires:  cppzmq-devel
 BuildRequires:  ninja-build
 BuildRequires:  pkg-config
 BuildRequires:  rsync
@@ -36,7 +59,7 @@ Requires:       libslash-devel = %{version}-%{release}
 Requires:       libvrtd-devel = %{version}-%{release}
 BuildArch:      noarch
 
-%description    slash-devel
+%description -n slash-devel
 SLASH/VRT System Full (development files)
 
 %package -n     slash-sim-emu
@@ -44,7 +67,7 @@ Summary:        SLASH/VRT System for simulation and emulation
 Requires:       libvrt = %{version}-%{release}
 BuildArch:      noarch
 
-%description    slash-sim-emu
+%description -n slash-sim-emu
 SLASH/VRT System for simulation and emulation
 
 %package -n     slash-sim-emu-devel
@@ -54,7 +77,7 @@ Requires:       v80++ = %{version}-%{release}
 Requires:       libvrt-devel = %{version}-%{release}
 BuildArch:      noarch
 
-%description    slash-sim-emu-devel
+%description -n slash-sim-emu-devel
 SLASH/VRT System for simulation and emulation (development files)
 
 %package -n     slash-dkms
@@ -142,7 +165,7 @@ bash scripts/pconfigure.sh %{_lib}
 bash scripts/pbuild.sh
 
 %install
-bash scripts/pinstall.sh %{buildroot} /usr/lib
+bash scripts/pinstall.sh %{buildroot} /usr/libexec
 
 # systemd units (mirrors debian/rules rsync lines)
 install -D -m 0644 vrt/vrtd/systemd/vrtd.service \
@@ -188,28 +211,29 @@ EOF
 %files
 # metapackage — empty
 
-%files dev
+%files -n slash-devel
 # metapackage — empty
 
-%files sim-emu
+%files -n slash-sim-emu
 # metapackage — empty
 
-%files sim-emu-dev
+%files -n slash-sim-emu-devel
 # metapackage — empty
 
 %files -n slash-dkms
-# TODO: add your DKMS source tree, e.g.:
-# %{_prefix}/src/%{name}-%{version}/
+%{_prefix}/src/%{dkms_name}-%{dkms_version}/
 
 %files -n libslash
 %{_libdir}/libslash.so
 %{_libdir}/libslash.so.*
 
 %files -n libslash-devel
+%{_includedir}/slash/
 %{_libdir}/cmake/slash/
 
 %files -n vrtd
 %{_bindir}/vrtd
+%{_bindir}/vrtd-*
 %{_unitdir}/vrtd.service
 %{_unitdir}/vrtd.socket
 %{_udevrulesdir}/99-vrtd.rules
@@ -230,8 +254,7 @@ EOF
 
 %files -n libvrt-devel
 %{_includedir}/vrt/
-%{_libdir}/pkgconfig/libvrt.pc
-%{_libdir}/cmake/libvrt/
+%{_libdir}/cmake/vrt/
 
 %files -n v80++
 %{_bindir}/v80++
