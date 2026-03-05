@@ -24,10 +24,16 @@ set -euxo pipefail
 
 cd "$(dirname "$0")/.."
 
+if [[ $# -ne 1 ]]; then
+    LIBDIR=lib
+else
+    LIBDIR="$1"
+fi
+
 COMMON_CMAKE_OPTIONS=(
     "-DCMAKE_INSTALL_PREFIX=/usr"
     "-DCMAKE_INSTALL_BINDIR=bin"
-    "-DCMAKE_INSTALL_LIBDIR=lib/${DEB_HOST_MULTIARCH}"
+    "-DCMAKE_INSTALL_LIBDIR=${LIBDIR}"
     "-DCMAKE_INSTALL_SYSCONF=/etc"
     "-DCMAKE_INSTALL_LOCALSTATEDIR=/var"
     # These get stripped to separate debug symbol deb files

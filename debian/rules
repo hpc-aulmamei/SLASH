@@ -27,7 +27,7 @@ ARTIFACTS_DIR=$(CURDIR)/deb
 	dh $@ --with dkms
 
 override_dh_auto_configure:
-	bash scripts/pconfigure.sh
+	bash scripts/pconfigure.sh lib/$(DEB_HOST_MULTIARCH)
 
 override_dh_auto_build:
 	bash scripts/pbuild.sh
