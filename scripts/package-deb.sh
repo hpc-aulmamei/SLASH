@@ -31,7 +31,9 @@ export DPKG_PARSED_VERSION="$(dpkg-parsechangelog -SVersion)"
 # Clean build
 mkdir -p deb
 rm -rf pbuild
-rm -rf debian/tmp
+rm -rf debian
+
+rsync -a packaging/debian/ ./debian/
 
 rsync vrt/vrtd/systemd/vrtd.service debian/vrtd.service
 rsync vrt/vrtd/systemd/vrtd.socket  debian/vrtd.socket
@@ -45,8 +47,6 @@ rsync vrt/vrtd/udev/99-vrtd.rules   debian/vrtd.udev
 # This means that `..` has to be writable by the user building, which is inconvenient.
 dpkg-buildpackage \
     --no-sign \
-    --pre-clean \
-    --post-clean \
     --buildinfo-option="-u${ARTIFACTS_DIR}" \
     --buildinfo-file"=${ARTIFACTS_DIR}/slash_${DPKG_PARSED_VERSION}_${DPKG_ARCH}.buildinfo" \
     --changes-option="-u${ARTIFACTS_DIR}" \
