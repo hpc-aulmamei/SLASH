@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# ##################################################################################################
+#  The MIT License (MIT)
+#  Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
+# 
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+#  and associated documentation files (the "Software"), to deal in the Software without restriction,
+#  including without limitation the rights to use, copy, modify, merge, publish, distribute,
+#  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+# 
+#  The above copyright notice and this permission notice shall be included in all copies or
+#  substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# ##################################################################################################
+
+set -euxo pipefail
+
+cd "$(dirname "$0")/.."
+
+export ARTIFACTS_DIR="${ARTIFACTS_DIR:-"$(pwd)"/deb}"
+export DPKG_ARCH="$(dpkg --print-architecture)"
+export DPKG_PARSED_VERSION="$(dpkg-parsechangelog -SVersion)"
+
+# Clean build
+mkdir -p deb
+rm -rf pbuild
+rm -rf debian/tmp
+
+rsync vrt/vrtd/systemd/vrtd.service debian/vrtd.service
+rsync vrt/vrtd/systemd/vrtd.socket  debian/vrtd.socket
+rsync vrt/vrtd/udev/99-vrtd.rules   debian/vrtd.udev
+
+# It should be noted that while the buildinfo file and the changes file are rerouted here
+# from their default location of `..`, the .dsc and .tar.xz files are rerouted by the debian/rules
+# file by manual move because there apparently is no way to convince dpkg-source to write anywhere other
+# than to `..`.
+#
+# This means that `..` has to be writable by the user building, which is inconvenient.
+dpkg-buildpackage \
+    --no-sign \
+    --pre-clean \
+    --post-clean \
+    --buildinfo-option="-u${ARTIFACTS_DIR}" \
+    --buildinfo-file"=${ARTIFACTS_DIR}/slash_${DPKG_PARSED_VERSION}_${DPKG_ARCH}.buildinfo" \
+    --changes-option="-u${ARTIFACTS_DIR}" \
+    --changes-file="${ARTIFACTS_DIR}/slash_${DPKG_PARSED_VERSION}_${DPKG_ARCH}.changes"
+
+cd "${ARTIFACTS_DIR:-deb}"
+apt-ftparchive packages . > Packages
+apt-ftparchive release . > Release

@@ -1,6 +1,6 @@
 /**
  * The MIT License (MIT)
- * Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -43,7 +43,16 @@ int devices_discover_and_open(struct device_ptr_array *devices)
     _cleanup_(globfree)
     glob_t g = {0};
 
-    int ret = glob("/dev/slash/ctl*", GLOB_ERR, NULL, &g);
+    int ret = glob("/dev/slash_ctl*", GLOB_ERR, NULL, &g);
+
+    if (ret == GLOB_NOMATCH) {
+        (void) sd_journal_print(
+            LOG_WARNING,
+            "No devices found matching /dev/slash_ctl*"
+        );
+        return 0; // not an error: just no devices
+    }
+
     if (ret != 0) {
         (void) sd_journal_print(
             LOG_ERR,
@@ -124,13 +133,13 @@ static int device_open(struct device *d, const char *path)
      * multiple devices or different naming schemes are supported.
      */
     {
-        const char *prefix = "/dev/slash/ctl";
+        const char *prefix = "/dev/slash_ctl";
         _cleanup_(cleanup_free)
         char *qdma_path = NULL;
 
         if (strncmp(path, prefix, strlen(prefix)) == 0) {
             const char *suffix = path + strlen(prefix);
-            int n = asprintf(&qdma_path, "/dev/slash/qdma_ctl%s", suffix);
+            int n = asprintf(&qdma_path, "/dev/slash_qdma_ctl%s", suffix);
             if (n < 0) {
                 qdma_path = NULL;
             }

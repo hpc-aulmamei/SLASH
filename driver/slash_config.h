@@ -1,5 +1,5 @@
 /**
- * Copyright (C) 2025 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  * This program is free software; you can redistribute it and/or modify it under the terms of the
  * GNU General Public License as published by the Free Software Foundation; version 2.
  *
@@ -26,9 +26,9 @@
 #define SLASH_NAME "slash"
 
 #define SLASH_CTLDEV_NAME_FMT "slash_ctl_%s" /* uses pci_name, appears in /sys/class/misc */
-#define SLASH_CTLDEV_NODENAME_FMT "slash/ctl%d" /* uses an incrementing variable, appears in /dev */
+#define SLASH_CTLDEV_NODENAME_FMT "slash_ctl%d" /* uses an incrementing variable, appears in /dev */
 #define SLASH_QDMA_CTLDEV_NAME_FMT "slash_qdma_ctl_%s"
-#define SLASH_QDMA_CTLDEV_NODENAME_FMT "slash/qdma_ctl%d"
+#define SLASH_QDMA_CTLDEV_NODENAME_FMT "slash_qdma_ctl%d"
 
 /* Mode of /dev device, prefer using an udev rule instead of changing this */
 #define SLASH_CTLDEV_MODE 0600

@@ -26,10 +26,10 @@
 #include <string>
 #include <vector>
 
-#include <api/buffer.hpp>
-#include <api/device.hpp>
-#include <api/kernel.hpp>
-#include <utils/logger.hpp>
+#include <vrt/buffer.hpp>
+#include <vrt/device.hpp>
+#include <vrt/kernel.hpp>
+#include <vrt/utils/logger.hpp>
 
 namespace {
 
