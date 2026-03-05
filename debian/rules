@@ -36,7 +36,7 @@ override_dh_auto_test:
 	true
 
 override_dh_auto_install:
-	bash scripts/pinstall.sh $(CURDIR)/debian/tmp
+	bash scripts/pinstall.sh $(CURDIR)/debian/tmp /usr/lib
 
 override_dh_builddeb:
 	mkdir -p $(ARTIFACTS_DIR)

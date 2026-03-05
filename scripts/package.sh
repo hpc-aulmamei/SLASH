@@ -31,6 +31,7 @@ export DPKG_PARSED_VERSION="$(dpkg-parsechangelog -SVersion)"
 # Clean build
 mkdir -p deb
 rm -rf pbuild
+rm -rf debian/tmp
 
 rsync vrt/vrtd/systemd/vrtd.service debian/vrtd.service
 rsync vrt/vrtd/systemd/vrtd.socket  debian/vrtd.socket

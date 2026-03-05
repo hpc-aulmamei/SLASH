@@ -137,21 +137,12 @@ SLASH Linker
 %autosetup -n %{name}-%{version}
 
 %build
-# Adapt cmake paths for RPM (no multiarch on RPM distros)
-cmake -B pbuild/vrt -S vrt -G Ninja \
-    -DVRT_INCLUDE_VRTD=ON \
-    -DVRTD_INCLUDE_LIBSLASH=ON \
-    -DCMAKE_INSTALL_PREFIX=%{_prefix} \
-    -DCMAKE_INSTALL_BINDIR=%{_bindir} \
-    -DCMAKE_INSTALL_LIBDIR=%{_libdir} \
-    -DCMAKE_INSTALL_SYSCONFDIR=%{_sysconfdir} \
-    -DCMAKE_INSTALL_LOCALSTATEDIR=%{_localstatedir} \
-    -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
-cmake --build pbuild/vrt
+bash scripts/pconfigure.sh %{_lib}
+bash scripts/pbuild.sh
 
 %install
-DESTDIR=%{buildroot} cmake --build pbuild/vrt --target install
+bash scripts/pinstall.sh %{buildroot} /usr/lib
 
 # Install systemd units
 install -D -m 0644 vrt/vrtd/systemd/vrtd.service %{buildroot}%{_unitdir}/vrtd.service
@@ -159,16 +150,6 @@ install -D -m 0644 vrt/vrtd/systemd/vrtd.socket  %{buildroot}%{_unitdir}/vrtd.so
 
 # Install udev rules
 install -D -m 0644 vrt/vrtd/udev/99-vrtd.rules %{buildroot}%{_udevrulesdir}/99-vrtd.rules
-
-# Install the linker
-mkdir -p %{buildroot}%{_prefix}/lib/slash/linker
-rsync --delete -a linker/ %{buildroot}%{_prefix}/lib/slash/linker/
-mkdir -p %{buildroot}%{_bindir}
-cat <<'EOFBIN' > %{buildroot}%{_bindir}/v80++
-#!/bin/sh
-python3 /usr/lib/slash/linker/src/main.py
-EOFBIN
-chmod 0755 %{buildroot}%{_bindir}/v80++
 
 # ---- File lists ----
 # You must list every file each subpackage owns.
@@ -191,13 +172,11 @@ chmod 0755 %{buildroot}%{_bindir}/v80++
 # %{_prefix}/src/%{name}-%{version}/
 
 %files -n libslash
+%{_libdir}/libslash.so
 %{_libdir}/libslash.so.*
 
 %files -n libslash-devel
-%{_libdir}/libslash.so
-%{_includedir}/slash/
-%{_libdir}/pkgconfig/libslash.pc
-%{_libdir}/cmake/libslash/
+%{_libdir}/cmake/slash/
 
 %files -n vrtd
 %{_bindir}/vrtd
@@ -206,19 +185,20 @@ chmod 0755 %{buildroot}%{_bindir}/v80++
 %{_udevrulesdir}/99-vrtd.rules
 
 %files -n libvrtd
+%{_libdir}/libvrtd.so
 %{_libdir}/libvrtd.so.*
+%{_libdir}/libvrtdpp.so
+%{_libdir}/libvrtdpp.so.*
 
 %files -n libvrtd-devel
-%{_libdir}/libvrtd.so
 %{_includedir}/vrtd/
-%{_libdir}/pkgconfig/libvrtd.pc
-%{_libdir}/cmake/libvrtd/
+%{_libdir}/cmake/vrtd/
 
 %files -n libvrt
+%{_libdir}/libvrt.so
 %{_libdir}/libvrt.so.*
 
 %files -n libvrt-devel
-%{_libdir}/libvrt.so
 %{_includedir}/vrt/
 %{_libdir}/pkgconfig/libvrt.pc
 %{_libdir}/cmake/libvrt/
@@ -238,14 +218,14 @@ chmod 0755 %{buildroot}%{_bindir}/v80++
 %post -n libvrt -p /sbin/ldconfig
 %postun -n libvrt -p /sbin/ldconfig
 
-%post -n vrtd
-%systemd_post vrtd.service vrtd.socket
+# %post -n vrtd
+# %systemd_post vrtd.service vrtd.socket
 
-%preun -n vrtd
-%systemd_preun vrtd.service vrtd.socket
+# %preun -n vrtd
+# %systemd_preun vrtd.service vrtd.socket
 
-%postun -n vrtd
-%systemd_postun_with_restart vrtd.service vrtd.socket
+# %postun -n vrtd
+# %systemd_postun_with_restart vrtd.service vrtd.socket
 
 %changelog
 * Thu Jun 12 2025 Vlad-Gabriel Serbu <Vlad-Gabriel.Serbu@amd.com> - %{_version}-1

@@ -24,8 +24,8 @@ set -euxo pipefail
 
 cd "$(dirname "$0")/.."
 
-if [[ $# -ne 1 ]]; then
-    echo "Must provide one argument: DESTDIR" 1>&2
+if [[ $# -ne 2 ]]; then
+    echo "Must provide one argument: DESTDIR APP_FILES_PREFIX" 1>&2
     exit 1
 fi
 
@@ -33,10 +33,11 @@ fi
 DESTDIR="$1" cmake --build pbuild/vrt --target install
 
 # Install the linker
-mkdir -p "$1/usr/lib/slash/linker"
-rsync --delete -a linker/ "$1/usr/lib/slash/linker/"
-cat <<'EOF' >"$1/usr/bin/v80++"
+mkdir -p "$1$2/slash/linker"
+rsync --delete -a linker/ "$1$2/slash/linker/"
+cat <<EOF >"$1/usr/bin/v80++"
 #!/bin/sh
 
-python3 /usr/lib/slash/linker/src/main.py "$@"
+python3 $2/slash/linker/src/main.py \"\$@\"
 EOF
+chmod 0755 "$1/usr/bin/v80++"
