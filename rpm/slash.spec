@@ -29,7 +29,7 @@ BuildRequires:  systemd-rpm-macros
 %description
 SLASH/VRT System Full
 
-%package        slash-devel
+%package -n     slash-devel
 Summary:        SLASH/VRT System Full (development files)
 Requires:       slash-sim-emu-dev = %{version}-%{release}
 Requires:       libslash-devel = %{version}-%{release}
@@ -39,7 +39,7 @@ BuildArch:      noarch
 %description    slash-devel
 SLASH/VRT System Full (development files)
 
-%package        slash-sim-emu
+%package -n     slash-sim-emu
 Summary:        SLASH/VRT System for simulation and emulation
 Requires:       libvrt = %{version}-%{release}
 BuildArch:      noarch
@@ -47,7 +47,7 @@ BuildArch:      noarch
 %description    slash-sim-emu
 SLASH/VRT System for simulation and emulation
 
-%package        slash-sim-emu-devel
+%package -n     slash-sim-emu-devel
 Summary:        SLASH/VRT System for simulation and emulation (development files)
 Requires:       slash-sim-emu = %{version}-%{release}
 Requires:       v80++ = %{version}-%{release}
@@ -144,12 +144,42 @@ bash scripts/pbuild.sh
 %install
 bash scripts/pinstall.sh %{buildroot} /usr/lib
 
-# Install systemd units
-install -D -m 0644 vrt/vrtd/systemd/vrtd.service %{buildroot}%{_unitdir}/vrtd.service
-install -D -m 0644 vrt/vrtd/systemd/vrtd.socket  %{buildroot}%{_unitdir}/vrtd.socket
+# systemd units (mirrors debian/rules rsync lines)
+install -D -m 0644 vrt/vrtd/systemd/vrtd.service \
+    %{buildroot}%{_unitdir}/vrtd.service
+install -D -m 0644 vrt/vrtd/systemd/vrtd.socket \
+    %{buildroot}%{_unitdir}/vrtd.socket
 
-# Install udev rules
-install -D -m 0644 vrt/vrtd/udev/99-vrtd.rules %{buildroot}%{_udevrulesdir}/99-vrtd.rules
+# udev rules (mirrors debian/vrtd.udev)
+install -D -m 0644 vrt/vrtd/udev/99-vrtd.rules \
+    %{buildroot}%{_udevrulesdir}/99-vrtd.rules
+
+# DKMS source tree (mirrors debian/slash-dkms.install exactly)
+install -d %{buildroot}%{_usrsrc}/%{dkms_name}-%{dkms_version}/driver/libslash/include/slash
+
+install -m 0644 driver/*.c      %{buildroot}%{_usrsrc}/%{dkms_name}-%{dkms_version}/driver/
+install -m 0644 driver/*.h      %{buildroot}%{_usrsrc}/%{dkms_name}-%{dkms_version}/driver/
+install -m 0644 driver/Makefile %{buildroot}%{_usrsrc}/%{dkms_name}-%{dkms_version}/driver/
+
+cp -a driver/libslash/include/slash/uapi \
+    %{buildroot}%{_usrsrc}/%{dkms_name}-%{dkms_version}/driver/libslash/include/slash/
+
+cp -a submodules/qdma_drv/QDMA/linux-kernel/driver/libqdma \
+    %{buildroot}%{_usrsrc}/%{dkms_name}-%{dkms_version}/driver/
+
+# DKMS config (equivalent to debian/slash-dkms.dkms)
+cat > %{buildroot}%{_usrsrc}/%{dkms_name}-%{dkms_version}/dkms.conf << 'EOF'
+PACKAGE_NAME="slash"
+PACKAGE_VERSION="0.1"
+
+BUILT_MODULE_NAME[0]="slash"
+BUILT_MODULE_LOCATION[0]="driver"
+DEST_MODULE_LOCATION[0]="/updates/dkms"
+AUTOINSTALL="yes"
+
+MAKE[0]="make -C driver KERNELDIR=/lib/modules/${kernelver}/build"
+CLEAN="make -C driver clean"
+EOF
 
 # ---- File lists ----
 # You must list every file each subpackage owns.
@@ -205,7 +235,7 @@ install -D -m 0644 vrt/vrtd/udev/99-vrtd.rules %{buildroot}%{_udevrulesdir}/99-v
 
 %files -n v80++
 %{_bindir}/v80++
-%{_prefix}/lib/slash/linker/
+%{_prefix}/libexec/slash/linker/
 
 # ---- Scriptlets ----
 
@@ -217,15 +247,6 @@ install -D -m 0644 vrt/vrtd/udev/99-vrtd.rules %{buildroot}%{_udevrulesdir}/99-v
 
 %post -n libvrt -p /sbin/ldconfig
 %postun -n libvrt -p /sbin/ldconfig
-
-# %post -n vrtd
-# %systemd_post vrtd.service vrtd.socket
-
-# %preun -n vrtd
-# %systemd_preun vrtd.service vrtd.socket
-
-# %postun -n vrtd
-# %systemd_postun_with_restart vrtd.service vrtd.socket
 
 %changelog
 * Thu Jun 12 2025 Vlad-Gabriel Serbu <Vlad-Gabriel.Serbu@amd.com> - %{_version}-1
