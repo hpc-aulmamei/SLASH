@@ -1,6 +1,6 @@
 # ##################################################################################################
 #  The MIT License (MIT)
-#  Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
 # 
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -41,7 +41,11 @@ target_include_directories(libvrtdpp
 )
 
 # CMake prepends lib for libraries so libvrtdpp would be output as liblibvrtdpp otherwise
-set_target_properties(libvrtdpp PROPERTIES OUTPUT_NAME vrtdpp)
+set_target_properties(libvrtdpp PROPERTIES
+  OUTPUT_NAME vrtdpp 
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${PROJECT_VERSION_MAJOR}
+)
 
 set_target_properties(libvrtdpp PROPERTIES
   CXX_STANDARD 20
@@ -50,3 +54,5 @@ set_target_properties(libvrtdpp PROPERTIES
 )
 
 target_link_libraries(libvrtdpp PUBLIC libvrtd)
+
+add_library(vrtd::libvrtdpp ALIAS libvrtdpp)
