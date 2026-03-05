@@ -33,7 +33,7 @@ Description: SLASH/VRT System Full (development files)
 
 Package: slash
 Architecture: all
-Depends: slash-sim-emu (= ${binary:Version}), slash-kernel-module (= ${binary:Version}), libslash (= ${binary:Version}), vrtd (= ${binary:Version}), libvrtd (= ${binary:Version})
+Depends: slash-sim-emu (= ${binary:Version}), slash-dkms (= ${binary:Version}), libslash (= ${binary:Version}), vrtd (= ${binary:Version}), libvrtd (= ${binary:Version})
 Description: SLASH/VRT System Full
 
 Package: slash-sim-emu-dev
@@ -69,22 +69,22 @@ Description: VRTd daemon for managing VRT devices
 
 Package: libvrtd
 Architecture: any
-Depends: libslash (= ${binary:Version}), libinih, libsystemd0, ${shlibs:Depends}, ${misc:Depends}
+Depends: libslash (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
 Description: Library for interacting with the VRTd daemon for managing VRT devices
 
 Package: libvrtd-dev
 Architecture: any
-Depends: libvrtd (= ${binary:Version}), libslash-dev (= ${binary:Version}), libinih-dev, libsystemd-dev, ${misc:Depends}
+Depends: libvrtd (= ${binary:Version}), libslash-dev (= ${binary:Version}), ${misc:Depends}
 Description: Library for interacting with the VRTd daemon for managing VRT devices (development files)
 
 Package: libvrt
 Architecture: any
-Depends: libvrtd (= ${binary:Version}), systemd-sysusers, libjsoncpp25, libxml2, libzmq5, zlib1g, ${shlibs:Depends}, ${misc:Depends}
+Depends: libvrtd (= ${binary:Version}), systemd-sysusers, ${shlibs:Depends}, ${misc:Depends}
 Description: VRT Runtime
 
 Package: libvrt-dev
 Architecture: any
-Depends: libvrt (= ${binary:Version}), libvrtd-dev (= ${binary:Version}), libjsoncpp-dev, libxml2-dev, libzmq3-dev, zlib1g-dev, co${misc:Depends}
+Depends: libvrt (= ${binary:Version}), libvrtd-dev (= ${binary:Version}), libjsoncpp-dev, libxml2-dev, libzmq3-dev, zlib1g-dev, ${misc:Depends}
 Description: VRT Runtime (development files)
 
 Package: v80++
