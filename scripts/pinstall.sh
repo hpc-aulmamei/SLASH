@@ -38,5 +38,5 @@ rsync --delete -a linker/ "$1/usr/lib/slash/linker/"
 cat <<'EOF' >"$1/usr/bin/v80++"
 #!/bin/sh
 
-python3 /usr/lib/slash/linker/src/main.py
+python3 /usr/lib/slash/linker/src/main.py "$@"
 EOF
