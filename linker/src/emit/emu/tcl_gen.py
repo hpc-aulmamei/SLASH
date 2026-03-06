@@ -31,6 +31,7 @@ from emit.hw.user_region.addr_ctx import build_axilite_address_context
 from emit.emu.tb_ctx import build_tb_context
 from emit.hls_meta import infer_hls_json_from_component_xml
 from core.results_dir import resolve_linker_platform_dir
+from core.linker_config import LinkerConfiguration
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -38,48 +39,14 @@ from parser.config_parser import parse_connectivity_file, apply_config_to_instan
 logger = logging.getLogger(__name__)
 
 
-def _sanitize_project_name(s: str) -> str:
-    # Keep letters/digits/underscore; don’t start with a digit.
-    s2 = re.sub(r"[^A-Za-z0-9_]+", "_", s.strip())
-    if not s2:
-        s2 = "proj"
-    if s2[0].isdigit():
-        s2 = "_" + s2
-    return s2
-
-
-def _results_root(project_name: str) -> Path:
-    return resolve_linker_platform_dir(project_name, "emu")
-
-def _resources_root() -> Path:
-    # linker/src/emit/emu -> linker/resources
-    return Path(__file__).resolve().parents[3] / "resources"
-
-
-def generate_emu_tcl(args) -> None:
-    resources_root = _resources_root()
-    args.tb_template = getattr(args, "tb_template", str(resources_root / "sw_emu" / "tb.cpp"))
-    args.system_map_out = getattr(args, "system_map_out", "system_map.xml")
-    args.system_map_template = getattr(args, "system_map_template", str(resources_root / "system_map.xml"))
-
-    project = _sanitize_project_name(args.project)
-    results_root = _results_root(project)
-    emu_root = results_root / "sw_emu"
-    emu_root.mkdir(parents=True, exist_ok=True)
-
-    if getattr(args, "tb_out", None) is None:
-        args.tb_out = str(emu_root / "tb.cpp")
-    if getattr(args, "emu_manifest_out", None) is None:
-        args.emu_manifest_out = str(emu_root / "emu_manifest.json")
-
-    default_system_map_out = results_root / "system_map.xml"
-    if args.system_map_out == "system_map.xml":
-        args.system_map_out = str(default_system_map_out)
+def generate_emu_tcl(config: LinkerConfiguration) -> None:
+    # Ensure the output directory exists
+    config.platform_results_dir.mkdir(parents=True, exist_ok=True)
 
     # 1) Parse kernels
     kernel_library = {}
     kernel_compxml_by_type = {}
-    for kpath in args.kernels:
+    for kpath in config.kernel_component_files:
         kfile = Path(kpath)
         if not kfile.exists():
             raise FileNotFoundError(f"Kernel file not found: {kfile}")
@@ -88,7 +55,7 @@ def generate_emu_tcl(args) -> None:
         kernel_compxml_by_type[k.name] = kfile.resolve()
 
     # 2) Parse connectivity config
-    cfg = parse_connectivity_file(args.cfg)
+    cfg = parse_connectivity_file(config.configuration_file)
 
     # 3) Make instances & stream edges
     instances, streams = apply_config_to_instances(cfg, kernel_library)
@@ -100,24 +67,25 @@ def generate_emu_tcl(args) -> None:
     }
     tb_ctx = build_tb_context(instances, streams, kernel_hls_by_type)
     if isinstance(tb_ctx.get("emu_manifest"), dict):
-        tb_ctx["emu_manifest"]["project"] = project
+        tb_ctx["emu_manifest"]["project"] = config._project_name
 
-    tb_template = Path(args.tb_template)
-    tb_out = Path(args.tb_out)
-    tb_out.parent.mkdir(parents=True, exist_ok=True)
+    # 4.1) Render tb.cpp
+    tb_template_path = config.resources_dir / "sw_emu" / "tb.cpp"
+    tb_path = config.platform_results_dir / "tb.cpp"
+    tb_path.parent.mkdir(parents=True, exist_ok=True)
     render_template(
-        template_dir=tb_template.parent,
-        template_name=tb_template.name,
-        out_path=tb_out,
+        template_dir=tb_template_path.parent,
+        template_name=tb_template_path.name,
+        out_path=tb_path,
         context=tb_ctx,
     )
-    logger.info("Rendered sw_emu tb.cpp to %s", tb_out)
+    logger.info("Rendered sw_emu tb.cpp to %s", tb_path)
 
-    manifest_out = Path(args.emu_manifest_out)
-    manifest_out.parent.mkdir(parents=True, exist_ok=True)
-    with manifest_out.open("w", encoding="utf-8") as f:
+    # 4.2) Render emu_manifest.json
+    emu_manifest_path = config.platform_results_dir / "emu_manifest.json"
+    with emu_manifest_path.open("w", encoding="utf-8") as f:
         json.dump(tb_ctx.get("emu_manifest", {}), f, indent=2, sort_keys=True)
-    logger.info("Rendered emu manifest to %s", manifest_out)
+    logger.info("Rendered emu manifest to %s", emu_manifest_path)
 
     # 5) Render system map (Emulation)
     axilite_ctx = build_axilite_address_context(
@@ -126,7 +94,7 @@ def generate_emu_tcl(args) -> None:
         base_offset=0x0202_0000_0000,
         min_align=0x0001_0000,
     )
-    clock_hz = resolve_system_map_clock(args.clock_hz, instances)
+    clock_hz = resolve_system_map_clock(config.clock_hz, instances)
     system_map_ctx = build_system_map_context(
         instances,
         axilite_ctx.get("axilite_addr", []),
@@ -135,13 +103,13 @@ def generate_emu_tcl(args) -> None:
         kernel_hls_by_type=kernel_hls_by_type,
         network=getattr(cfg, "network", None),
     )
-    system_map_template = Path(args.system_map_template)
-    system_map_out = Path(args.system_map_out)
-    system_map_out.parent.mkdir(parents=True, exist_ok=True)
+
+    system_map_template_path = config.resources_dir / "system_map.xml"
+    system_map_path = config.platform_results_dir / "system_map.xml"
     render_template(
-        template_dir=system_map_template.parent,
-        template_name=system_map_template.name,
-        out_path=system_map_out,
+        template_dir=system_map_template_path.parent,
+        template_name=system_map_template_path.name,
+        out_path=system_map_path,
         context=system_map_ctx,
     )
-    logger.info("Rendered system map to %s", system_map_out)
+    logger.info("Rendered system map to %s", system_map_path)
