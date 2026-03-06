@@ -1,5 +1,5 @@
 proc _slash_usage {} {
-    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> --util-report-file <path> [--install-dir <path>] [--jobs <n>]"
+    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> --util-report-file <path> [--install-dir <path>] [--jobs <n>] [--pre-synth-tcl <path> ...]"
 }
 
 proc _require_file {path label} {
@@ -25,9 +25,24 @@ array set opts {
     --jobs 8
 }
 
+set pre_synth_tcls [list]
+
 set idx 0
 while {$idx < [llength $argv]} {
     set key [lindex $argv $idx]
+    if {$key eq "--pre-synth-tcl"} {
+        incr idx
+        if {$idx >= [llength $argv]} {
+            error "Missing value for '$key'. [_slash_usage]"
+        }
+        set pre_synth_tcl [lindex $argv $idx]
+        if {$pre_synth_tcl eq ""} {
+            error "Empty value for '$key'. [_slash_usage]"
+        }
+        lappend pre_synth_tcls [file normalize $pre_synth_tcl]
+        incr idx
+        continue
+    }
     if {![info exists opts($key)]} {
         error "Unknown argument '$key'. [_slash_usage]"
     }
@@ -74,6 +89,9 @@ _require_dir $base_ip_repo "base IP repository directory"
 _require_file $abs_shell_dcp "abstract shell DCP"
 _require_file $base_bd "installed slash_base BD"
 _require_file $generated_bd_tcl "generated slash BD Tcl"
+foreach pre_synth_tcl $pre_synth_tcls {
+    _require_file $pre_synth_tcl "pre-synth Tcl"
+}
 
 puts "PROJECT NAME:      $proj_name"
 puts "IP REPO:           $ip_repo"
@@ -84,6 +102,7 @@ puts "RM WORK DIR:       $rm_work_dir"
 puts "ARTIFACT OUT DIR:  $artifact_out_dir"
 puts "UTIL REPORT FILE:  $util_report_file"
 puts "JOBS:              $jobs"
+puts "PRE-SYNTH TCLS:    $pre_synth_tcls"
 
 set slash_proj_name "slash_${proj_name}"
 set slash_rm_name "${slash_proj_name}_rm"
@@ -111,6 +130,10 @@ foreach p [get_bd_intf_ports] {
     set_property HDL_ATTRIBUTE.LOCKED {TRUE} $p
 }
 source $generated_bd_tcl
+foreach pre_synth_tcl $pre_synth_tcls {
+    puts "Sourcing pre-synth Tcl: $pre_synth_tcl"
+    source $pre_synth_tcl
+}
 
 launch_runs "${slash_rm_name}_synth_1" -jobs $jobs
 wait_on_run "${slash_rm_name}_synth_1"

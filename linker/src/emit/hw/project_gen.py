@@ -232,6 +232,7 @@ def _run_rm_build(
     jobs: int = 8,
     util_report_file: Optional[Path] = None,
     linker_results_dir: Optional[Path] = None,
+    pre_synth_tcls: Optional[list[Path]] = None,
 ) -> None:
     if not ip_repository:
         raise ValueError("ip_repository is required for RM builds")
@@ -284,6 +285,16 @@ def _run_rm_build(
         util_report_path.parent.mkdir(parents=True, exist_ok=True)
         cmd.extend(["--util-report-file", str(util_report_path)])
 
+    if rm_kind == "slash" and pre_synth_tcls:
+        resolved_pre_synth_tcls: list[Path] = []
+        for pre_synth_tcl in pre_synth_tcls:
+            resolved_pre_synth_tcl = pre_synth_tcl.expanduser().resolve()
+            if not resolved_pre_synth_tcl.exists() or not resolved_pre_synth_tcl.is_file():
+                raise FileNotFoundError(f"pre_synth Tcl not found: {resolved_pre_synth_tcl}")
+            resolved_pre_synth_tcls.append(resolved_pre_synth_tcl)
+        for resolved_pre_synth_tcl in resolved_pre_synth_tcls:
+            cmd.extend(["--pre-synth-tcl", str(resolved_pre_synth_tcl)])
+
     subprocess.run(cmd, cwd=str(workdir) if workdir else str(hw_build_dir), check=True)
 
 
@@ -319,6 +330,7 @@ def build_slash_rm(
     workdir: Optional[Path] = None,
     jobs: int = 8,
     linker_results_dir: Optional[Path] = None,
+    pre_synth_tcls: Optional[list[Path]] = None,
 ) -> None:
     hw_build_dir = get_hw_build_dir()
     util_report_file = hw_build_dir / "reports" / f"report_utilization_{project_name}.txt"
@@ -333,6 +345,7 @@ def build_slash_rm(
         jobs=jobs,
         util_report_file=util_report_file,
         linker_results_dir=linker_results_dir,
+        pre_synth_tcls=pre_synth_tcls,
     )
 
 

@@ -601,6 +601,9 @@ def _build_slash_rm(args: argparse.Namespace) -> None:
     ip_repository = getattr(info_args, "ip_repository", None)
     if not ip_repository:
         raise ValueError("Missing ip_repository in linker info; run init with --ip-repository")
+    cfg = parse_connectivity_file(info_args.cfg)
+    user_region = getattr(cfg, "user_region", None)
+    pre_synth_tcls = getattr(user_region, "pre_synth_tcls", []) if user_region is not None else []
     build_slash_rm(
         project_name=info_args.project,
         ip_repository=ip_repository,
@@ -611,6 +614,7 @@ def _build_slash_rm(args: argparse.Namespace) -> None:
         linker_results_dir=resolve_linker_platform_dir(
             info_args.project, "hw", results_root=info_path.parent
         ),
+        pre_synth_tcls=[Path(p) for p in pre_synth_tcls],
     )
 
 
