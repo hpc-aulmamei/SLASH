@@ -62,6 +62,7 @@ class LinkerConfiguration(object):
         ip_repository: Optional[Union[str, Path]],
         project_name: str,
         platform: Union[str, Platform],
+        vivado_bin: Union[str, Path],
         clock_hz: Optional[int]
     ):
         self._configuration_file: Path = Path(configuration_file).resolve()
@@ -80,6 +81,7 @@ class LinkerConfiguration(object):
 
         self._platform = Platform(platform)
         self._vitis_include_dir = _find_vitis_include()
+        self._vivado_bin = Path(vivado_bin).resolve()
         self._clock_hz = int(clock_hz) if clock_hz is not None else None
 
     @property
@@ -134,6 +136,10 @@ class LinkerConfiguration(object):
     @property
     def ip_repository(self) -> Optional[Path]:
         return self._ip_repository
+
+    @property
+    def vivado_bin(self) -> Path:
+        return self._vivado_bin
 
     @property
     def clock_hz(self) -> Optional[int]:

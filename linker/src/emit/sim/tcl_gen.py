@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -32,6 +32,7 @@ from emit.hw.service_region.stream_ctx import build_stream_connect_context
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from emit.hls_meta import infer_hls_json_from_component_xml
 from core.results_dir import resolve_linker_platform_dir
+from core.linker_config import LinkerConfiguration
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -71,23 +72,6 @@ def _find_sim_checkpoint_dcp(component_xml: Path) -> str | None:
             if "dcp" in user_types or rel.lower().endswith(".dcp"):
                 return rel
     return None
-
-
-def _sanitize_bd_name(s: str) -> str:
-    s2 = re.sub(r"[^A-Za-z0-9_]+", "_", s.strip())
-    if not s2:
-        s2 = "proj"
-    if s2[0].isdigit():
-        s2 = "_" + s2
-    return s2
-
-
-def _results_root(project_name: str) -> Path:
-    return resolve_linker_platform_dir(project_name, "sim")
-
-def _resources_root() -> Path:
-    # linker/src/emit/sim -> linker/resources
-    return Path(__file__).resolve().parents[3] / "resources"
 
 
 def _collect_ports(
@@ -188,7 +172,8 @@ def _build_fanout_tree(
     for idx, chunk_start in enumerate(range(0, len(endpoints), max_mi)):
         name = f"{base_name}_L0_{idx}"
         chunk = endpoints[chunk_start:chunk_start + max_mi]
-        mi = [{"slot_name": _fmt_sc_slot("M", i), "dst_pin": ep} for i, ep in enumerate(chunk)]
+        mi = [{"slot_name": _fmt_sc_slot("M", i), "dst_pin": ep}
+              for i, ep in enumerate(chunk)]
         nodes[name] = {"name": name, "num_mi": len(mi), "mi": mi}
         leaves.append(name)
 
@@ -202,7 +187,8 @@ def _build_fanout_tree(
             name = f"{base_name}_L{level}_{g_idx}"
             mi = []
             for i, child in enumerate(group):
-                mi.append({"slot_name": _fmt_sc_slot("M", i), "dst_pin": f"{child}/S00_AXI"})
+                mi.append({"slot_name": _fmt_sc_slot("M", i),
+                          "dst_pin": f"{child}/S00_AXI"})
                 child_parent[child] = (name, i)
             nodes[name] = {"name": name, "num_mi": len(mi), "mi": mi}
             next_level.append(name)
@@ -215,10 +201,12 @@ def _build_fanout_tree(
             n["si_from"] = {"type": "bd_port", "name": si_bd_port}
         else:
             parent, slot = child_parent[n["name"]]
-            n["si_from"] = {"type": "smartconnect", "prev": parent, "prev_slot_name": _fmt_sc_slot("M", slot)}
+            n["si_from"] = {"type": "smartconnect", "prev": parent,
+                            "prev_slot_name": _fmt_sc_slot("M", slot)}
 
     # Stable order: root first, then others by name
-    ordered = [nodes[root]] + [n for k, n in sorted(nodes.items()) if k != root]
+    ordered = [nodes[root]] + \
+        [n for k, n in sorted(nodes.items()) if k != root]
     return ordered
 
 
@@ -239,67 +227,51 @@ def _classify_mem_targets(instances: dict[str, KernelInstance]) -> tuple[List[st
     return mem0, mem1
 
 
-def generate_sim_tcl(args) -> None:
-    resources_root = _resources_root()
-    args.sim_out = getattr(args, "sim_out", "run_pre.tcl")
-    args.sim_template = getattr(args, "sim_template", str(resources_root / "sim" / "sim_prj.tcl"))
-    args.sim_mem = getattr(args, "sim_mem", str(resources_root / "sim" / "sim_mem.v"))
-    args.system_map_out = getattr(args, "system_map_out", "system_map.xml")
-    args.system_map_template = getattr(args, "system_map_template", str(resources_root / "system_map.xml"))
-
-    project = _sanitize_bd_name(args.project)
-    results_root = _results_root(project)
-    sim_root = results_root
-    sim_root.mkdir(parents=True, exist_ok=True)
-
-    default_sim_out = sim_root / "run_pre.tcl"
-    if args.sim_out == "run_pre.tcl":
-        args.sim_out = str(default_sim_out)
-    default_system_map_out = sim_root / "system_map.xml"
-    if args.system_map_out == "system_map.xml":
-        args.system_map_out = str(default_system_map_out)
+def generate_sim_tcl(config: LinkerConfiguration) -> None:
+    config.platform_results_dir.mkdir(parents=True, exist_ok=True)
 
     # 1) Parse kernels
     kernel_library = {}
     kernel_sim_meta: dict[str, dict] = {}
     kernel_hls_by_type: dict[str, Path] = {}
-    for kpath in args.kernels:
-        kfile = Path(kpath).resolve()
-        if not kfile.exists():
-            raise FileNotFoundError(f"Kernel file not found: {kfile}")
-        k = parse_component_xml(kfile)
+    for kpath in config.kernel_component_files:
+        if not kpath.exists():
+            raise FileNotFoundError(f"Kernel file not found: {kpath}")
+        k = parse_component_xml(kpath)
         kernel_library[k.name] = k
         try:
-            kernel_hls_by_type[k.name] = infer_hls_json_from_component_xml(kfile)
+            kernel_hls_by_type[k.name] = infer_hls_json_from_component_xml(
+                kpath)
         except FileNotFoundError:
             logger.warning(
                 "No HLS metadata found for kernel type '%s' from component %s; "
                 "system_map functional_args will use heuristic fallback.",
                 k.name,
-                kfile,
+                kpath,
             )
 
-        sim_checkpoint_rel = _find_sim_checkpoint_dcp(kfile)
+        sim_checkpoint_rel = _find_sim_checkpoint_dcp(kpath)
         sim_checkpoint_abs = None
         if sim_checkpoint_rel is not None:
-            sim_checkpoint_abs = (kfile.parent / sim_checkpoint_rel).resolve()
+            sim_checkpoint_abs = (kpath.parent / sim_checkpoint_rel).resolve()
             if not sim_checkpoint_abs.exists():
                 raise FileNotFoundError(
                     f"Simulation checkpoint DCP from component.xml not found: {sim_checkpoint_abs}"
                 )
         kernel_sim_meta[k.name] = {
-            "component_xml": str(kfile),
+            "component_xml": str(kpath),
             "sim_checkpoint_dcp": str(sim_checkpoint_abs) if sim_checkpoint_abs else None,
         }
 
     # 2) Parse connectivity config
-    cfg = parse_connectivity_file(args.cfg)
+    cfg = parse_connectivity_file(config.configuration_file)
 
     # 3) Make instances & stream edges
     instances, streams = apply_config_to_instances(cfg, kernel_library)
 
     # 4) Build template context
-    axilite_ports, axifull_ports, clock_ports, reset_ports = _collect_ports(instances)
+    axilite_ports, axifull_ports, clock_ports, reset_ports = _collect_ports(
+        instances)
 
     kernels_ctx = []
     for iname in sorted(instances.keys()):
@@ -308,7 +280,7 @@ def generate_sim_tcl(args) -> None:
         kernels_ctx.append({"name": iname, "vlnv": vlnv})
 
     sim_checkpoint_netlists_ctx = []
-    sim_ckpt_out_dir = sim_root / "checkpoint_funcsim"
+    sim_ckpt_out_dir = config.platform_results_dir / "checkpoint_funcsim"
     for iname in sorted(instances.keys()):
         inst = instances[iname]
         sim_meta = kernel_sim_meta.get(inst.kernel.name, {})
@@ -370,14 +342,14 @@ def generate_sim_tcl(args) -> None:
         })
 
     # 5) Render sim_prj.tcl template
-    sim_template = Path(args.sim_template)
-    sim_out = Path(args.sim_out)
-    sim_out.parent.mkdir(parents=True, exist_ok=True)
+    sim_template = config.resources_dir / "sim" / "sim_prj.tcl"
+    sim_out = config.platform_results_dir / "run_pre.tcl"
 
-    sim_mem_src = Path(args.sim_mem)
-    sim_mem_dst = sim_root / "sim_mem.v"
+    sim_mem_src = config.resources_dir / "sim" / "sim_mem.v"
+    sim_mem_dst = config.platform_results_dir / "sim_mem.v"
     if sim_mem_src.exists():
-        sim_mem_dst.write_text(sim_mem_src.read_text(encoding="utf-8"), encoding="utf-8")
+        sim_mem_dst.write_text(sim_mem_src.read_text(
+            encoding="utf-8"), encoding="utf-8")
     else:
         raise FileNotFoundError(f"sim_mem.v not found: {sim_mem_src}")
 
@@ -386,10 +358,10 @@ def generate_sim_tcl(args) -> None:
         template_name=sim_template.name,
         out_path=sim_out,
         context={
-            "sim_root": str(sim_root.resolve()),
-            "sim_prj_dir": str((sim_root / "sim_prj").resolve()),
-            "ip_repo_path": str((sim_root / "iprepo").resolve()),
-            "sim_mem_path": str(sim_mem_dst.resolve()),
+            "sim_root": config.platform_results_dir,
+            "sim_prj_dir": str(config.platform_results_dir / "sim_prj"),
+            "ip_repo_path": str(config.platform_results_dir / "iprepo"),
+            "sim_mem_path": str(sim_mem_dst),
             "bd_name": "top",
             "part": "xcv80-lsva4737-2MHP-e-S",
             "kernels": kernels_ctx,
@@ -407,7 +379,7 @@ def generate_sim_tcl(args) -> None:
     logger.info("Rendered simulation Tcl to %s", sim_out)
 
     # 6) Render system map (same as HW but marked as Simulation)
-    clock_hz = resolve_system_map_clock(args.clock_hz, instances)
+    clock_hz = resolve_system_map_clock(config.clock_hz, instances)
     system_map_ctx = build_system_map_context(
         instances,
         axilite_ctx.get("axilite_addr", []),
@@ -416,9 +388,8 @@ def generate_sim_tcl(args) -> None:
         kernel_hls_by_type=kernel_hls_by_type,
         network=getattr(cfg, "network", None),
     )
-    system_map_template = Path(args.system_map_template)
-    system_map_out = Path(args.system_map_out)
-    system_map_out.parent.mkdir(parents=True, exist_ok=True)
+    system_map_template = config.resources_dir / "system_map.xml"
+    system_map_out = config.platform_results_dir / "system_map.xml"
     render_template(
         template_dir=system_map_template.parent,
         template_name=system_map_template.name,

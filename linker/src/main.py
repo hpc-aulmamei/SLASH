@@ -493,10 +493,11 @@ def _stage_generate_tcl(args: argparse.Namespace) -> None:
         info_args.ip_repository,
         info_args.project,
         info_args.platform,
+        shutil.which("vivado"), # Change to argument!
         None
     )
     if info_args.platform == "sim":
-        generate_sim_tcl(info_args)
+        generate_sim_tcl(linker_config)
     elif info_args.platform == "emu":
         generate_emu_tcl(linker_config)
     else:
@@ -515,15 +516,17 @@ def _stage_create_hw_project(args: argparse.Namespace) -> None:
     info_args = argparse.Namespace(**payload["args"])
     info_args.platform = platform
     _normalize_path_args(info_args, base_dir=_LINKER_SRC_DIR)
+    linker_config = LinkerConfiguration(
+        info_args.cfg,
+        info_args.kernels,
+        info_args.ip_repository,
+        info_args.project,
+        info_args.platform,
+        shutil.which("vivado"), # Change to argument!
+        None
+    )
     if info_args.platform == "sim":
-        create_sim_project(
-            project_name=info_args.project,
-            component_xmls=info_args.kernels,
-            sim_tcl=Path(info_args.sim_out),
-            results_dir=resolve_linker_platform_dir(
-                info_args.project, "sim", results_root=info_path.parent
-            ),
-        )
+        create_sim_project(linker_config)
     elif info_args.platform == "emu":
         pass
     else:
@@ -555,15 +558,11 @@ def _stage_build_hw_project(args: argparse.Namespace) -> None:
         info_args.ip_repository,
         info_args.project,
         info_args.platform,
+        shutil.which("vivado"), # TODO: Change to argument!
         None
     )
     if info_args.platform == "sim":
-        build_sim_project(
-            project_name=info_args.project,
-            results_dir=resolve_linker_platform_dir(
-                info_args.project, "sim", results_root=info_path.parent
-            ),
-        )
+        build_sim_project(linker_config)
     elif info_args.platform == "emu":
         build_emu_project(linker_config)
     else:
@@ -676,6 +675,7 @@ def _stage_create_metadata(args: argparse.Namespace) -> None:
         info_args.ip_repository,
         info_args.project,
         info_args.platform,
+        shutil.which("vivado"), # TODO: Change to argument!
         None
     )
     if info_args.platform == "sim":
@@ -942,6 +942,7 @@ def main():
             args.ip_repository,
             args.project,
             args.platform,
+            shutil.which("vivado"), # TODO: Change to argument!
             None
         )
         _run_step("create_project", lambda: _save_linker_info(
