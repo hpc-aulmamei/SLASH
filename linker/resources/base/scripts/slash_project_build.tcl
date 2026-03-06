@@ -75,6 +75,7 @@ file mkdir [file dirname $util_report_file]
 set rm_work_dir [file normalize $rm_work_dir]
 set artifact_out_dir [file normalize $artifact_out_dir]
 set util_report_file [file normalize $util_report_file]
+set timing_report_file [file join $rm_work_dir "report_timing_${proj_name}.txt"]
 
 set abs_shell_dcp [file join $install_dir "abs_shell_slash.dcp"]
 set base_bd [file join $install_dir "slash_base" "slash_base.bd"]
@@ -101,6 +102,7 @@ puts "BASE IP REPO:      $base_ip_repo"
 puts "RM WORK DIR:       $rm_work_dir"
 puts "ARTIFACT OUT DIR:  $artifact_out_dir"
 puts "UTIL REPORT FILE:  $util_report_file"
+puts "TIMING REPORT:     $timing_report_file"
 puts "JOBS:              $jobs"
 puts "PRE-SYNTH TCLS:    $pre_synth_tcls"
 
@@ -146,6 +148,8 @@ set_property strategy Congestion_SSI_SpreadLogic_high [get_runs impl_1]
 launch_runs impl_1 -jobs $jobs
 wait_on_run impl_1
 open_run impl_1
+
+report_timing_summary -delay_type min_max -check_timing_verbose -max_paths 1 -input_pins -routable_nets -file $timing_report_file
 
 set partial_pdi [file join $artifact_out_dir "top_i_slash_slash_${proj_name}_inst_0_partial.pdi"]
 write_device_image -cell top_i/slash -force $partial_pdi

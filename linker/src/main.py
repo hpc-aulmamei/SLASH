@@ -44,6 +44,7 @@ from emit.sim.project_gen import create_sim_project, build_sim_project
 from emit.emu.project_gen import build_emu_project, package_emu_artifacts
 
 from emit.metadata.prog_image import build_vbin
+from emit.metadata.timing_freq import apply_timing_frequency_cap
 from parser.config_parser import parse_connectivity_file
 from core.results_dir import (
     resolve_linker_platform_dir,
@@ -648,6 +649,11 @@ def _stage_create_metadata(args: argparse.Namespace) -> None:
             results_dir=hw_results_dir,
         )
         generate_util_report(project_name=info_args.project, results_dir=hw_results_dir)
+        apply_timing_frequency_cap(
+            project_name=info_args.project,
+            system_map_path=hw_results_dir / "system_map.xml",
+            base_freq_hz=400_000_000,
+        )
         build_vbin(project_name=info_args.project, results_dir=hw_results_dir)
     _save_linker_info(info_args, stage="create_metadata", out_path=info_path)
 
