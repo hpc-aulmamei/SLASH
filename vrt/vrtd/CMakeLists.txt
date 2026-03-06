@@ -1,6 +1,6 @@
 # ##################################################################################################
 #  The MIT License (MIT)
-#  Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+#  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
 # 
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -27,13 +27,18 @@ project(vrtd
 
 # Optionally build examples
 option(VRTD_BUILD_EXAMPLES "Build example executables" OFF)
+option(VRTD_INCLUDE_LIBSLASH "Include libslash subdirectory instead of building from system" OFF)
 option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-find_package(slash REQUIRED)
+if(VRTD_INCLUDE_LIBSLASH)
+  add_subdirectory(../../driver/libslash libslash)
+else()
+  find_package(slash REQUIRED)
+endif()
 
 add_subdirectory(src)
 

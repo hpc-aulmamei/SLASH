@@ -41,7 +41,7 @@ set_target_properties(slash PROPERTIES
 # Public include dir (for consumers) and private include dir (for .c / private headers)
 target_include_directories(slash
   PUBLIC
-    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
     $<INSTALL_INTERFACE:include>
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
