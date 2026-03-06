@@ -89,5 +89,5 @@ Description: VRT Runtime (development files)
 
 Package: v80++
 Architecture: all
-Depends: python3, ${misc:Depends}
+Depends: python3 (>= 3.10), python3-jinja2, ${misc:Depends}
 Description: SLASH Linker

@@ -24,7 +24,7 @@ set -euxo pipefail
 
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-0.0.1}"
+VERSION="$(tr -d '[:space:]' < packaging/version)"
 TOPDIR="$(pwd)/rpmbuild"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$(pwd)/rpm}"
 

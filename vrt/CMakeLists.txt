@@ -19,10 +19,23 @@
 # ##################################################################################################
 
 cmake_minimum_required(VERSION 3.10)
+
+# Read version from packaging/version
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/version" VRT_VERSION)
+string(STRIP "${VRT_VERSION}" VRT_VERSION)
+
+# Parse into components
+string(REPLACE "." ";" VERSION_LIST "${VRT_VERSION}")
+list(GET VERSION_LIST 0 VRT_VERSION_MAJOR)
+list(GET VERSION_LIST 1 VRT_VERSION_MINOR)
+list(GET VERSION_LIST 2 VRT_VERSION_PATCH)
+
+message(STATUS "VRT version: ${VRT_VERSION} (${VRT_VERSION_MAJOR}.${VRT_VERSION_MINOR}.${VRT_VERSION_PATCH})")
+
 project(
   vrt
 
-  VERSION 0.1.0
+  VERSION ${VRT_VERSION}
   LANGUAGES C CXX
 )
 
@@ -35,6 +48,13 @@ include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 add_compile_options("-Wunused-result")
+
+# Generate the header
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/vrt_version.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/vrt/vrt_version.hpp"
+    @ONLY
+)
 
 file(
   GLOB
@@ -59,6 +79,7 @@ target_include_directories(
   
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
     $<INSTALL_INTERFACE:include>
     
   PRIVATE
@@ -111,7 +132,12 @@ target_link_libraries(vrt
 set_target_properties(vrt PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 install(
-  DIRECTORY ${CMAKE_SOURCE_DIR}/include/
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
+  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+)
+
+install(
+  DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/generated/
   DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
 )
 

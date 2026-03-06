@@ -20,9 +20,21 @@
 
 cmake_minimum_required(VERSION 3.16)
 
+# Read version from packaging/version
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/version" LIBSLASH_VERSION)
+string(STRIP "${LIBSLASH_VERSION}" LIBSLASH_VERSION)
+
+# Parse into components
+string(REPLACE "." ";" VERSION_LIST "${LIBSLASH_VERSION}")
+list(GET VERSION_LIST 0 LIBSLASH_VERSION_MAJOR)
+list(GET VERSION_LIST 1 LIBSLASH_VERSION_MINOR)
+list(GET VERSION_LIST 2 LIBSLASH_VERSION_PATCH)
+
+message(STATUS "LIBSLASH version: ${LIBSLASH_VERSION} (${LIBSLASH_VERSION_MAJOR}.${LIBSLASH_VERSION_MINOR}.${LIBSLASH_VERSION_PATCH})")
+
 project(libslash
-  VERSION 0.1.0
-  LANGUAGES C
+  VERSION ${LIBSLASH_VERSION}
+  LANGUAGES C CXX
 )
 
 # Allow user to choose shared vs static (standard CMake variable)

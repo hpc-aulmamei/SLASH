@@ -24,16 +24,21 @@ set -euxo pipefail
 
 cd "$(dirname "$0")/.."
 
+VERSION="$(tr -d '[:space:]' < packaging/version)"
+
 export ARTIFACTS_DIR="${ARTIFACTS_DIR:-"$(pwd)"/deb}"
 export DPKG_ARCH="$(dpkg --print-architecture)"
 export DPKG_PARSED_VERSION="$(dpkg-parsechangelog -SVersion)"
 
 # Clean build
+rm -rf deb
 mkdir -p deb
 rm -rf pbuild
 rm -rf debian
 
 rsync -a packaging/debian/ ./debian/
+
+sed -i "1s/(UNRELEASED) UNRELEASED;/(${VERSION}) unstable;/" debian/changelog
 
 rsync vrt/vrtd/systemd/vrtd.service debian/vrtd.service
 rsync vrt/vrtd/systemd/vrtd.socket  debian/vrtd.socket
@@ -47,6 +52,8 @@ rsync vrt/vrtd/udev/99-vrtd.rules   debian/vrtd.udev
 # This means that `..` has to be writable by the user building, which is inconvenient.
 dpkg-buildpackage \
     --no-sign \
+    --build=binary \
+    --diff-ignore='.*' \
     --buildinfo-option="-u${ARTIFACTS_DIR}" \
     --buildinfo-file"=${ARTIFACTS_DIR}/slash_${DPKG_PARSED_VERSION}_${DPKG_ARCH}.buildinfo" \
     --changes-option="-u${ARTIFACTS_DIR}" \

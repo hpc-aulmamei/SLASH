@@ -40,6 +40,5 @@ override_dh_auto_install:
 
 override_dh_builddeb:
 	mkdir -p $(ARTIFACTS_DIR)
-	mv ../slash_*.dsc ../slash_*.tar* $(ARTIFACTS_DIR)
 	dh_builddeb $@ --destdir=$(ARTIFACTS_DIR)
 

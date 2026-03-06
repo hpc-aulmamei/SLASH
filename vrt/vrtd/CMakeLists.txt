@@ -20,8 +20,20 @@
 
 cmake_minimum_required(VERSION 3.16)
 
+# Read version from packaging/version
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/version" VRTD_VERSION)
+string(STRIP "${VRTD_VERSION}" VRTD_VERSION)
+
+# Parse into components
+string(REPLACE "." ";" VERSION_LIST "${VRTD_VERSION}")
+list(GET VERSION_LIST 0 VRTD_VERSION_MAJOR)
+list(GET VERSION_LIST 1 VRTD_VERSION_MINOR)
+list(GET VERSION_LIST 2 VRTD_VERSION_PATCH)
+
+message(STATUS "VRTD version: ${VRTD_VERSION} (${VRTD_VERSION_MAJOR}.${VRTD_VERSION_MINOR}.${VRTD_VERSION_PATCH})")
+
 project(vrtd
-  VERSION 0.1.0
+  VERSION ${VRTD_VERSION}
   LANGUAGES C CXX
 )
 

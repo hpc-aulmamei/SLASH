@@ -21,20 +21,20 @@
 #ifndef VRT_VRT_VERSION_HPP
 #define VRT_VRT_VERSION_HPP
 
-#define GIT_TAG "v1.0.0"
-#define VRT_VERSION_MAJOR 1
-#define VRT_VERSION_MINOR 0
-#define VRT_VERSION_PATCH 0
-
 namespace vrt {
+
+constexpr char VERSION[] = "@VRT_VERSION@";
+constexpr unsigned int VERSION_MAJOR = @VRT_VERSION_MAJOR@;
+constexpr unsigned int VERSION_MINOR = @VRT_VERSION_MINOR@;
+constexpr unsigned int VERSION_PATCH = @VRT_VERSION_PATCH@;
 
 /**
  * @brief Returns the version of the VRT library as a string.
  *
  * @return A string representing the version of the VRT library.
  */
-inline const char* getVersion() {
-    return GIT_TAG;  // Returns the version string defined by GIT_TAG
+constexpr const char* getVersion() {
+    return VERSION;
 }
 
 }  // namespace vrt
