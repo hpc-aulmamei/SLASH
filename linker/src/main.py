@@ -494,6 +494,7 @@ def _stage_generate_tcl(args: argparse.Namespace) -> None:
         info_args.project,
         info_args.platform,
         shutil.which("vivado"), # Change to argument!
+        8, # TODO: Change to argument!
         None
     )
     if info_args.platform == "sim":
@@ -501,7 +502,7 @@ def _stage_generate_tcl(args: argparse.Namespace) -> None:
     elif info_args.platform == "emu":
         generate_emu_tcl(linker_config)
     else:
-        generate_tcl(info_args)
+        generate_tcl(linker_config)
     _save_linker_info(info_args, stage="generate_tcl", out_path=info_path)
 
 
@@ -523,6 +524,7 @@ def _stage_create_hw_project(args: argparse.Namespace) -> None:
         info_args.project,
         info_args.platform,
         shutil.which("vivado"), # Change to argument!
+        8, # TODO: Change to argument!
         None
     )
     if info_args.platform == "sim":
@@ -530,14 +532,7 @@ def _stage_create_hw_project(args: argparse.Namespace) -> None:
     elif info_args.platform == "emu":
         pass
     else:
-        create_build_project(
-            project_name=info_args.project,
-            ip_repository=info_args.ip_repository,
-            action="create",
-            results_dir=resolve_linker_platform_dir(
-                info_args.project, "hw", results_root=info_path.parent
-            ),
-        )
+        create_build_project(linker_config)
     _save_linker_info(info_args, stage="create_hw_project", out_path=info_path)
 
 
@@ -559,6 +554,7 @@ def _stage_build_hw_project(args: argparse.Namespace) -> None:
         info_args.project,
         info_args.platform,
         shutil.which("vivado"), # TODO: Change to argument!
+        8, # TODO: Change to argument!
         None
     )
     if info_args.platform == "sim":
@@ -566,15 +562,8 @@ def _stage_build_hw_project(args: argparse.Namespace) -> None:
     elif info_args.platform == "emu":
         build_emu_project(linker_config)
     else:
-        create_build_project(
-            project_name=info_args.project,
-            ip_repository=info_args.ip_repository,
-            action="build",
-            results_dir=resolve_linker_platform_dir(
-                info_args.project, "hw", results_root=info_path.parent
-            ),
-        )
-        generate_base_pdi_with_aved(project_name=info_args.project)
+        create_build_project(linker_config, action="build")
+        generate_base_pdi_with_aved(linker_config)
     _save_linker_info(info_args, stage="build_hw_project", out_path=info_path)
 
 
@@ -614,17 +603,17 @@ def _build_service_layer_rm(args: argparse.Namespace) -> None:
         print(
             f"INFO: No eth_* enabled in cfg for project '{info_args.project}'. Skipping service_layer RM build.")
         return
-    build_service_layer_rm(
-        project_name=info_args.project,
-        ip_repository=ip_repository,
-        install_dir=Path(args.install_dir),
-        vivado_bin=args.vivado_bin,
-        workdir=Path(args.workdir) if args.workdir else None,
-        jobs=args.jobs,
-        linker_results_dir=resolve_linker_platform_dir(
-            info_args.project, "hw", results_root=info_path.parent
-        ),
+    linker_config = LinkerConfiguration(
+        info_args.cfg,
+        info_args.kernels,
+        info_args.ip_repository,
+        info_args.project,
+        info_args.platform,
+        shutil.which("vivado"), # TODO: Change to argument!
+        8, # TODO: Change to argument!
+        None
     )
+    build_service_layer_rm(linker_config)
 
 
 def _build_slash_rm(args: argparse.Namespace) -> None:
@@ -644,17 +633,17 @@ def _build_slash_rm(args: argparse.Namespace) -> None:
     if not ip_repository:
         raise ValueError(
             "Missing ip_repository in linker info; run init with --ip-repository")
-    build_slash_rm(
-        project_name=info_args.project,
-        ip_repository=ip_repository,
-        install_dir=Path(args.install_dir),
-        vivado_bin=args.vivado_bin,
-        workdir=Path(args.workdir) if args.workdir else None,
-        jobs=args.jobs,
-        linker_results_dir=resolve_linker_platform_dir(
-            info_args.project, "hw", results_root=info_path.parent
-        ),
+    linker_config = LinkerConfiguration(
+        info_args.cfg,
+        info_args.kernels,
+        info_args.ip_repository,
+        info_args.project,
+        info_args.platform,
+        shutil.which("vivado"), # TODO: Change to argument!
+        8, # TODO: Change to argument!
+        None
     )
+    build_slash_rm(linker_config)
 
 
 def _stage_create_metadata(args: argparse.Namespace) -> None:
@@ -676,6 +665,7 @@ def _stage_create_metadata(args: argparse.Namespace) -> None:
         info_args.project,
         info_args.platform,
         shutil.which("vivado"), # TODO: Change to argument!
+        8, # TODO: Change to argument!
         None
     )
     if info_args.platform == "sim":
@@ -685,17 +675,9 @@ def _stage_create_metadata(args: argparse.Namespace) -> None:
     else:
         include_service_layer = _hw_has_enabled_eth(
             getattr(info_args, "cfg", None))
-        hw_results_dir = resolve_linker_platform_dir(
-            info_args.project, "hw", results_root=info_path.parent
-        )
-        generate_image(
-            project_name=info_args.project,
-            include_service_layer=include_service_layer,
-            results_dir=hw_results_dir,
-        )
-        generate_util_report(project_name=info_args.project,
-                             results_dir=hw_results_dir)
-        build_vbin(project_name=info_args.project, results_dir=hw_results_dir)
+        generate_image(linker_config, include_service_layer)
+        generate_util_report(linker_config)
+        build_vbin(linker_config)
     _save_linker_info(info_args, stage="create_metadata", out_path=info_path)
 
 
@@ -943,6 +925,7 @@ def main():
             args.project,
             args.platform,
             shutil.which("vivado"), # TODO: Change to argument!
+            8, # TODO: Change to argument!
             None
         )
         _run_step("create_project", lambda: _save_linker_info(
@@ -950,30 +933,23 @@ def main():
 
         def _do_generate_tcl() -> None:
             if args.platform == "sim":
-                generate_sim_tcl(args)
+                generate_sim_tcl(linker_config)
             elif args.platform == "emu":
                 generate_emu_tcl(linker_config)
             else:
-                generate_tcl(args)
+                generate_tcl(linker_config)
             _save_linker_info(args, stage="generate_tcl")
         _run_step("generate_tcl", _do_generate_tcl)
 
         def _do_build_all() -> None:
             if args.platform == "sim":
-                create_sim_project(
-                    project_name=args.project,
-                    component_xmls=args.kernels,
-                    sim_tcl=Path(args.sim_out),
-                )
-                build_sim_project(project_name=args.project)
+                create_sim_project(linker_config)
+                build_sim_project(linker_config)
             elif args.platform == "emu":
                 build_emu_project(linker_config)
             else:
-                create_build_project(
-                    project_name=args.project,
-                    ip_repository=args.ip_repository,
-                    action="all")
-                generate_base_pdi_with_aved(project_name=args.project)
+                create_build_project(linker_config, action="all")
+                generate_base_pdi_with_aved(linker_config)
             _save_linker_info(args, stage="build_hw_project")
         _run_step("build", _do_build_all)
 
@@ -983,9 +959,9 @@ def main():
             elif args.platform == "emu":
                 package_emu_artifacts(linker_config)
             else:
-                generate_image(project_name=args.project)
-                generate_util_report(project_name=args.project)
-                build_vbin(project_name=args.project)
+                generate_image(linker_config)
+                generate_util_report(linker_config)
+                build_vbin(linker_config)
             _save_linker_info(args, stage="create_metadata")
         _run_step("create_metadata", _do_create_metadata)
 

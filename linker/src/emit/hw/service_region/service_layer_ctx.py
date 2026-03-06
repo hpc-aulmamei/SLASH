@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Set, Dict, Any
+from core.linker_config import LinkerConfiguration
 
 @dataclass(frozen=True)
 class NetworkSpecView:
@@ -45,16 +46,11 @@ def build_service_layer_context(net) -> dict:
         "dual_qsfp_1": 0,
     }
 
-def compute_paths(proj_root: Path | None = None) -> Dict[str, Any]:
+def compute_paths(config: LinkerConfiguration) -> Dict[str, Any]:
     """
     Resolve absolute paths for service-layer assets regardless of CWD.
-    Assumes main.py is <root>/src/main.py if proj_root not provided.
     """
-    if proj_root is None:
-        # main.py is <root>/src/main.py  -> go up two levels
-        proj_root = Path(__file__).resolve().parents[4]
-
-    dcmac_dir = proj_root / "resources" / "dcmac"
+    dcmac_dir = config.resources_dir / "dcmac"
     dcmac_tcl = dcmac_dir / "tcl" / "dcmac.tcl"
     dcmac_hdl = dcmac_dir / "hdl"
 
@@ -68,7 +64,7 @@ def compute_paths(proj_root: Path | None = None) -> Dict[str, Any]:
     ]
 
     return {
-        "proj_root": str(proj_root),
+        "proj_root": str(config.linker_root_dir),
         "dcmac_tcl": str(dcmac_tcl),
         "dcmac_hdl_dir": str(dcmac_hdl),
         "dcmac_hdl_files": [str(dcmac_hdl / f) for f in hdl_files],

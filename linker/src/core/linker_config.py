@@ -63,13 +63,14 @@ class LinkerConfiguration(object):
         project_name: str,
         platform: Union[str, Platform],
         vivado_bin: Union[str, Path],
+        n_jobs: int,
         clock_hz: Optional[int]
     ):
-        self._configuration_file: Path = Path(configuration_file).resolve()
+        self._configuration_file: Path = Path(configuration_file).expanduser().resolve()
         self._kernel_component_files: List[Path] = [
-            Path(path).resolve() for path in kernel_component_files]
+            Path(path).expanduser().resolve() for path in kernel_component_files]
         self._ip_repository: Optional[Path] = Path(
-            ip_repository).resolve() if ip_repository is not None else None
+            ip_repository).expanduser().resolve() if ip_repository is not None else None
 
         # Sanitize the project name
         s2 = re.sub(r"[^A-Za-z0-9_]+", "_", str(project_name).strip())
@@ -81,8 +82,18 @@ class LinkerConfiguration(object):
 
         self._platform = Platform(platform)
         self._vitis_include_dir = _find_vitis_include()
-        self._vivado_bin = Path(vivado_bin).resolve()
+        self._vivado_bin = Path(vivado_bin).expanduser().resolve()
+        self._n_jobs = n_jobs
         self._clock_hz = int(clock_hz) if clock_hz is not None else None
+
+        # TODO: Turn this into a CLI argument or derive it from other arguments!
+        hw_build_dir = next(os.getenv(key) for key in ("SLASH_HW_BUILD_DIR", "slash_hw_build_dir"))
+        if hw_build_dir is None:
+            raise SystemExit(
+        "ERROR: Missing required HW build directory environment variable. "
+        "Set SLASH_HW_BUILD_DIR (or slash_hw_build_dir) to an absolute writable path.")
+        self._hardware_build_dir = Path(hw_build_dir).expanduser().resolve()
+
 
     @property
     def configuration_file(self) -> Path:
@@ -120,6 +131,10 @@ class LinkerConfiguration(object):
     @property
     def platform_results_dir(self) -> Path:
         return self.results_dir / str(self.platform.value)
+    
+    @property
+    def hardware_build_dir(self) -> Path:
+        return self._hardware_build_dir
 
     @property
     def resources_dir(self) -> Path:
@@ -140,6 +155,10 @@ class LinkerConfiguration(object):
     @property
     def vivado_bin(self) -> Path:
         return self._vivado_bin
+    
+    @property
+    def n_jobs(self) -> int:
+        return self._n_jobs
 
     @property
     def clock_hz(self) -> Optional[int]:

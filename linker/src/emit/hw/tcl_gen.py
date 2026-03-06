@@ -48,36 +48,11 @@ from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
 from core.bd_ports import load_bd_ports_from_file
 
+from core.linker_config import LinkerConfiguration
+
 logger = logging.getLogger(__name__)
 
 _RX_SRC_PIN_RE = re.compile(r"^/?dcmac_axis_noc_s_(\d+)/M00_AXIS$")
-
-def _linker_root() -> Path:
-    # linker/src/emit/hw -> linker
-    return Path(__file__).resolve().parents[3]
-
-
-def _resources_root() -> Path:
-    return _linker_root() / "resources"
-
-
-def _results_root(project_name: str) -> Path:
-    return resolve_linker_platform_dir(project_name, "hw")
-
-
-def _sanitize_bd_name(s: str) -> str:
-    """! @brief Sanitize a name for use as a block design identifier.
-
-    @param s Raw name string.
-    @return Sanitized name (letters/digits/underscore, non-digit prefix).
-    """
-    # BD names: keep letters/digits/underscore; don’t start with a digit
-    s2 = re.sub(r"[^A-Za-z0-9_]+", "_", s.strip())
-    if not s2:
-        s2 = "proj"
-    if s2[0].isdigit():
-        s2 = "_" + s2
-    return s2
 
 
 def _collect_used_targets(ctx: dict) -> set[str]:
@@ -243,26 +218,13 @@ def print_bd_ports(bd):
             print(f"  - {logical:12s} -> rtl={rtl:20s} {p.ptype.name:9s} width={wid:>4s} domain={dom:>4s} index={idx:>2s}")
 
 
-def generate_tcl(args) -> None:
+def generate_tcl(config: LinkerConfiguration) -> None:
     """! @brief Generate Tcl and system map artifacts from inputs.
 
     @param args Parsed CLI arguments.
     """
-    project = _sanitize_bd_name(args.project)
-    results_root = _results_root(project)
-    default_slash_out = str(results_root / "bd" / f"slash_{project}.tcl")
-    default_service_out = str(results_root / "bd" / f"service_layer_{project}.tcl")
-    default_system_map_out = str(results_root / "system_map.xml")
-    # If user didn’t override --out / --service-out, generate suffixed names:
-    if args.out == "slash.tcl":
-        args.out = default_slash_out
-    if args.service_out == "service_layer_gen.tcl":
-        args.service_out = default_service_out
-    if args.system_map_out == "system_map.xml":
-        args.system_map_out = default_system_map_out
-
     # 0) Load BD ports and print
-    bd = load_bd_ports_from_file(args.bd_ports)
+    bd = load_bd_ports_from_file(config.resources_dir / "bd_ports.txt")
     print_bd_ports(bd)
 
     # 1) Parse kernels
@@ -270,8 +232,7 @@ def generate_tcl(args) -> None:
     kernel_compxml_by_type: dict[str, Path] = {}
 
     logger.info("Loading kernels")
-    for kpath in args.kernels:
-        kfile = Path(kpath)
+    for kfile in config.kernel_component_files:
         if not kfile.exists():
             raise FileNotFoundError(f"Kernel file not found: {kfile}")
 
@@ -282,7 +243,7 @@ def generate_tcl(args) -> None:
         print_kernel(k)
 
     # 2) Parse connectivity config
-    cfg = parse_connectivity_file(args.cfg)
+    cfg = parse_connectivity_file(config.configuration_file)
     print_cfg(cfg)
 
     # 3) Make instances & stream edges
@@ -354,10 +315,10 @@ def generate_tcl(args) -> None:
         min_align=0x0001_0000,
     )
     ctx.update(axilite_ctx)
-    ctx["project_name"] = project
-    ctx["slash_bd_name"] = f"slash_{project}"
-    template_path = Path(args.template)   # resources/slash.tcl
-    out_path = Path(args.out)             # slash.tcl
+    ctx["project_name"] = config.project_name
+    ctx["slash_bd_name"] = f"slash_{config.project_name}"
+    template_path = config.resources_dir / "slash.tcl"   # resources/slash.tcl
+    out_path = config.platform_results_dir / "slash.tcl" # slash.tcl
     out_path.parent.mkdir(parents=True, exist_ok=True)
     render_template(
         template_dir=template_path.parent,
@@ -367,7 +328,7 @@ def generate_tcl(args) -> None:
     )
     logger.info("Rendered Tcl to %s", out_path)
 
-    clock_hz = resolve_system_map_clock(args.clock_hz, instances)
+    clock_hz = resolve_system_map_clock(config.clock_hz, instances)
     system_map_ctx = build_system_map_context(
         instances,
         axilite_ctx.get("axilite_addr", []),
@@ -376,8 +337,8 @@ def generate_tcl(args) -> None:
         kernel_hls_by_type=kernel_hls_by_type,
         network=getattr(cfg, "network", None),
     )
-    system_map_template = Path(args.system_map_template)
-    system_map_out = Path(args.system_map_out)
+    system_map_template = config.resources_dir / "system_map.xml"
+    system_map_out = config.platform_results_dir / "system_map.xml"
     system_map_out.parent.mkdir(parents=True, exist_ok=True)
     render_template(
         template_dir=system_map_template.parent,
@@ -387,18 +348,18 @@ def generate_tcl(args) -> None:
     )
     logger.info("Rendered system map to %s", system_map_out)
 
-    paths_ctx = compute_paths(Path(args.proj_root).resolve() if args.proj_root else None)
+    paths_ctx = compute_paths(config)
     svc_ctx = {}
     svc_ctx.update(build_service_layer_context(cfg.network))
     svc_ctx.update(build_service_axilite_ctx(cfg.network))    # SmartConnect + MI targets
     svc_ctx.update(build_service_noc_axis_ctx(cfg.network))
     svc_ctx.update(paths_ctx)                                 # absolute paths for dcmac sources
 
-    svc_ctx["project_name"] = project
-    svc_ctx["service_layer_bd_name"] = f"service_layer_{project}"
+    svc_ctx["project_name"] = config.project_name
+    svc_ctx["service_layer_bd_name"] = f"service_layer_{config.project_name}"
     # --- Render service-layer Tcl ---
-    svc_template = Path(args.service_template)
-    svc_out = Path(args.service_out)
+    svc_template = config.resources_dir / "service_layer.tcl"
+    svc_out = config.results_dir / "service_layer.tcl"
     svc_out.parent.mkdir(parents=True, exist_ok=True)
     render_template(
         template_dir=svc_template.parent,

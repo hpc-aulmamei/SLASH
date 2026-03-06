@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from core.results_dir import resolve_linker_platform_dir
+from core.linker_config import LinkerConfiguration
 
 logger = logging.getLogger(__name__)
 
@@ -39,18 +40,18 @@ def _iter_files(paths: Iterable[Path]) -> Iterable[Path]:
             yield p
 
 
-def build_vbin(project_name: str, results_dir: Optional[Path] = None) -> Path:
+def build_vbin(config: LinkerConfiguration) -> Path:
     """! @brief Build a compressed .vbin tarball for a project.
 
     @param project_name Project name used to locate results and name the archive.
     @param results_dir Optional override of the project results directory.
     @return Path to the generated .vbin file.
     """
-    project_dir = Path(results_dir).resolve() if results_dir else _default_results_root(project_name)
+    project_dir = config.platform_results_dir
     images_dir = project_dir / "images"
-    util_xml = project_dir / f"report_utilization_{project_name}.xml"
+    util_xml = project_dir / f"report_utilization_{config.project_name}.xml"
     system_map = project_dir / "system_map.xml"
-    out_path = project_dir / f"{project_name}_hw.vbin"
+    out_path = project_dir / f"{config.project_name}_hw.vbin"
 
     if not project_dir.exists():
         raise FileNotFoundError(f"Project results directory not found: {project_dir}")
