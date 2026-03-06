@@ -34,7 +34,7 @@ message(STATUS "LIBSLASH version: ${LIBSLASH_VERSION} (${LIBSLASH_VERSION_MAJOR}
 
 project(libslash
   VERSION ${LIBSLASH_VERSION}
-  LANGUAGES C CXX
+  LANGUAGES C
 )
 
 # Allow user to choose shared vs static (standard CMake variable)
