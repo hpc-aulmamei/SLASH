@@ -41,6 +41,18 @@ class NetworkSpec:
 class UserRegionSpec:
     pre_synth_tcls: list[str]
 
+
+@dataclass(frozen=True)
+class DebugNetSpec:
+    inst: str
+    port: str
+
+
+@dataclass
+class DebugSpec:
+    nets: list[DebugNetSpec]
+
+
 # -----------------------------
 # Parsing helpers
 # -----------------------------
@@ -48,6 +60,7 @@ class UserRegionSpec:
 _RE_TARGET = re.compile(r"^\s*([A-Za-z]+)\s*(\d*)\s*$")
 _RE_NK = re.compile(r"^\s*([^:]+)\s*:\s*(\d+)(?::(.*))?\s*$")
 _RE_ETH_KEY = re.compile(r"^eth_(\d+)$", re.IGNORECASE)
+_RE_DEBUG_NET = re.compile(r"^\s*([^.:\s]+)\.([^.:\s]+)\s*$")
 
 def _parse_target(s: str) -> MemoryTarget:
     m = _RE_TARGET.match(s)
@@ -113,6 +126,14 @@ def _parse_sp_value(val: str) -> SpMapping:
     target = _parse_target(right.strip())
     return SpMapping(inst=inst.strip(), port=port.strip(), target=target)
 
+
+def _parse_debug_net_value(val: str) -> DebugNetSpec:
+    m = _RE_DEBUG_NET.match(val)
+    if not m:
+        raise ValueError(f"Invalid debug net '{val}'. Expected '<instance>.<port>'.")
+    return DebugNetSpec(inst=m.group(1).strip(), port=m.group(2).strip())
+
+
 # -----------------------------
 # Main parser
 # -----------------------------
@@ -120,7 +141,7 @@ def _parse_sp_value(val: str) -> SpMapping:
 def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
     """
     Custom parser that supports repeated [clock] sections, [network] section,
-    [user_region] section, and a single [connectivity] section.
+    [user_region] section, [debug] section, and a single [connectivity] section.
     Lines beginning with '#' or ';' are ignored as comments.
     """
     cfg = ConnectivityConfig()
@@ -131,6 +152,7 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
     pending_clock: Dict[str, str] = {}
     enabled_eth: set[int] = set()
     pre_synth_tcls: list[str] = []
+    debug_nets: list[DebugNetSpec] = []
 
     def _commit_clock():
         nonlocal pending_clock
@@ -221,6 +243,16 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
                 # ignore unknown keys in [user_region] to be lenient
                 continue
 
+        elif section == "debug":
+            if "=" not in line:
+                raise ValueError(f"Invalid line in [debug] section: '{line}'")
+            k, v = [t.strip() for t in line.split("=", 1)]
+            if k.lower() != "net":
+                raise ValueError(
+                    f"Invalid key '{k}' in [debug] section. Only 'net=<instance>.<port>' is supported."
+                )
+            debug_nets.append(_parse_debug_net_value(v))
+
         else:
             pass
 
@@ -239,6 +271,12 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
         cfg.user_region = user_region  # type: ignore[attr-defined]
     except Exception:
         setattr(cfg, "user_region", user_region)
+
+    debug = DebugSpec(nets=debug_nets)
+    try:
+        cfg.debug = debug  # type: ignore[attr-defined]
+    except Exception:
+        setattr(cfg, "debug", debug)
 
     return cfg
 

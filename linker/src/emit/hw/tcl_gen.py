@@ -39,6 +39,7 @@ from emit.hw.service_region.stream_ctx import build_stream_connect_context
 from emit.hw.user_region.host_ctx import build_host_smartconnect_context
 from emit.hw.user_region.addr_ctx import build_axilite_address_context
 from emit.hw.user_region.param_ctx import build_data_width_param_context
+from emit.hw.user_region.debug_ctx import build_system_ila_debug_context
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from emit.hw.service_region.service_layer_ctx import *
 from emit.hls_meta import infer_hls_json_from_component_xml
@@ -191,6 +192,15 @@ def print_cfg(cfg):
     else:
         print("  (none)")
 
+    debug = getattr(cfg, "debug", None)
+    debug_nets = getattr(debug, "nets", []) if debug is not None else []
+    print("\n[debug] nets:")
+    if debug_nets:
+        for n in debug_nets:
+            print(f"  - {n.inst}.{n.port}")
+    else:
+        print("  (none)")
+
 
 def print_instances(instances, stream_edges):
     """! @brief Print instantiated kernels and stream edges to stdout.
@@ -328,6 +338,7 @@ def generate_tcl(args) -> None:
     ]
 
     ctx.update(build_stream_connect_context(instances, net_ctx["streams_leftover"]))
+    ctx.update(build_system_ila_debug_context(instances, getattr(cfg, "debug", None)))
 
     used_targets = _collect_used_targets(ctx)
 
