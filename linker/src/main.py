@@ -46,6 +46,7 @@ from emit.emu.project_gen import build_emu_project, package_emu_artifacts
 
 from emit.metadata.prog_image import build_vbin
 from core.linker_config import LinkerConfiguration, Platform
+from emit.metadata.timing_freq import apply_timing_frequency_cap
 from parser.config_parser import parse_connectivity_file
 from core.results_dir import (
     resolve_linker_platform_dir,
@@ -526,17 +527,21 @@ def _build_slash_rm(args: argparse.Namespace) -> None:
     _normalize_path_args(info_args, base_dir=_LINKER_SRC_DIR)
     ip_repository = getattr(info_args, "ip_repository", None)
     if not ip_repository:
-        raise ValueError(
-            "Missing ip_repository in linker info; run init with --ip-repository")
-    linker_config = LinkerConfiguration(
-        info_args.cfg,
-        info_args.kernels,
-        info_args.ip_repository,
-        info_args.project,
-        info_args.platform,
-        shutil.which("vivado"), # TODO: Change to argument!
-        8, # TODO: Change to argument!
-        None
+        raise ValueError("Missing ip_repository in linker info; run init with --ip-repository")
+    cfg = parse_connectivity_file(info_args.cfg)
+    user_region = getattr(cfg, "user_region", None)
+    pre_synth_tcls = getattr(user_region, "pre_synth_tcls", []) if user_region is not None else []
+    build_slash_rm(
+        project_name=info_args.project,
+        ip_repository=ip_repository,
+        install_dir=Path(args.install_dir),
+        vivado_bin=args.vivado_bin,
+        workdir=Path(args.workdir) if args.workdir else None,
+        jobs=args.jobs,
+        linker_results_dir=resolve_linker_platform_dir(
+            info_args.project, "hw", results_root=info_path.parent
+        ),
+        pre_synth_tcls=[Path(p) for p in pre_synth_tcls],
     )
     build_slash_rm(linker_config)
 
@@ -568,11 +573,22 @@ def _stage_create_metadata(args: argparse.Namespace) -> None:
     elif info_args.platform == "emu":
         package_emu_artifacts(linker_config)
     else:
-        include_service_layer = _hw_has_enabled_eth(
-            getattr(info_args, "cfg", None))
-        generate_image(linker_config, include_service_layer)
-        generate_util_report(linker_config)
-        build_vbin(linker_config)
+        include_service_layer = _hw_has_enabled_eth(getattr(info_args, "cfg", None))
+        hw_results_dir = resolve_linker_platform_dir(
+            info_args.project, "hw", results_root=info_path.parent
+        )
+        generate_image(
+            project_name=info_args.project,
+            include_service_layer=include_service_layer,
+            results_dir=hw_results_dir,
+        )
+        generate_util_report(project_name=info_args.project, results_dir=hw_results_dir)
+        apply_timing_frequency_cap(
+            project_name=info_args.project,
+            system_map_path=hw_results_dir / "system_map.xml",
+            base_freq_hz=400_000_000,
+        )
+        build_vbin(project_name=info_args.project, results_dir=hw_results_dir)
     _save_linker_info(info_args, stage="create_metadata", out_path=info_path)
 
 

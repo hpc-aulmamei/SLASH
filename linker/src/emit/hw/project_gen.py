@@ -241,6 +241,10 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
     util_report_path.parent.mkdir(parents=True, exist_ok=True)
     cmd.extend(["--util-report-file", str(util_report_path)])
 
+    if rm_kind == RM_KIND.SLASH_PROJECT:
+        for path in config.pre_synth_tcls:
+            cmd.extend(["--pre-synth-tcl", str(path)])
+
     subprocess.run(cmd, cwd=str(config.build_dir), check=True)
 
 
