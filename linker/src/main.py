@@ -27,6 +27,7 @@ import threading
 import time
 from pathlib import Path
 import shutil
+from typing import List, Optional
 
 from emit.hw.tcl_gen import generate_tcl
 from emit.hw.project_gen import (
@@ -181,59 +182,36 @@ def _apply_internal_common_defaults(args: argparse.Namespace) -> None:
             setattr(args, key, default)
 
 
-def _normalize_path_args(
-    args: argparse.Namespace,
-    *,
-    base_dir: Path,
-    materialize_defaults: bool = True,
-) -> None:
-    _apply_internal_common_defaults(args)
-    if materialize_defaults:
-        _materialize_default_output_paths(args)
-
-    if hasattr(args, "kernels") and getattr(args, "kernels") is not None:
-        args.kernels = [_abs_path(str(k), base_dir) for k in args.kernels]
-
-    for key in _PATH_ARG_KEYS:
-        if not hasattr(args, key):
-            continue
-        value = getattr(args, key)
-        if value is None:
-            continue
-        if isinstance(value, str) and value != "":
-            setattr(args, key, _abs_path(value, base_dir))
-
-
-def _stage_key(platform: str) -> str:
-    if platform == "sim":
+def _stage_key(platform: Platform) -> str:
+    if platform == Platform.SIMULATION:
         return "sim_stage"
-    if platform == "emu":
+    elif platform == Platform.EMULATION:
         return "emu_stage"
-    return "hw_stage"
+    else:
+        return "hw_stage"
 
 
-def _steps_for_platform(platform: str) -> tuple[str, ...]:
-    if platform == "sim":
+def _steps_for_platform(platform: Platform) -> tuple[str, ...]:
+    if platform == Platform.SIMULATION:
         return SIM_STEPS
-    if platform == "emu":
+    elif platform == Platform.EMULATION:
         return EMU_STEPS
-    return HW_STEPS
+    else:
+        return HW_STEPS
 
 
 def _linker_info_path(project_name: str) -> Path:
     return resolve_linker_results_root(project_name) / ".linker_info.json"
 
 
-def _save_linker_info(args: argparse.Namespace, stage: str, *, out_path: Path | None = None) -> Path:
-    _normalize_path_args(args, base_dir=Path.cwd())
-    steps = _steps_for_platform(args.platform)
+def _save_linker_info(config: LinkerConfiguration, stage: str) -> Path:
+    steps = _steps_for_platform(config.platform)
     if stage not in steps:
         raise ValueError(
             f"Unknown stage '{stage}'. Expected one of: {', '.join(steps)}")
 
-    out_path = out_path.resolve() if out_path is not None else _linker_info_path(args.project)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    args_payload = {k: v for k, v in vars(args).items() if k not in {
+    out_path = config.linker_info_path
+    args_payload = {k: v for k, v in vars(config.input_arguments).items() if k not in {
         "command", "func"}}
 
     payload: dict = {}
@@ -246,9 +224,9 @@ def _save_linker_info(args: argparse.Namespace, stage: str, *, out_path: Path | 
     for k, v in args_payload.items():
         if v is None and k in merged_args:
             continue
-        merged_args[k] = v
+        merged_args[k] = str(v)
     payload["args"] = merged_args
-    payload[_stage_key(args.platform)] = stage
+    payload[_stage_key(config.platform)] = stage
     payload["stage"] = stage  # legacy field
 
     with out_path.open("w", encoding="utf-8") as f:
@@ -358,50 +336,6 @@ def _stage_index(stage: str, platform: str) -> int:
     return steps.index(stage)
 
 
-def _stage_requirements(stage: str) -> list[str]:
-    if stage == "init":
-        return []
-    if stage == "complete_hw_build":
-        return ["create_project", "generate_tcl"]
-    steps = _steps_for_platform("hw")
-    if stage not in steps:
-        return []
-    idx = steps.index(stage)
-    return list(steps[:idx])
-
-
-def _format_stage_requirements(stage: str) -> str:
-    req = _stage_requirements(stage)
-    if not req:
-        return "Requires prior stages: none"
-    return "Requires prior stages: " + " -> ".join(req)
-
-
-def _stage_help_block(stage: str) -> str:
-    lines = [f"Stage: {stage}", _format_stage_requirements(stage)]
-    if stage == "init":
-        lines.append("Writes/updates .linker_info.json with current args.")
-    elif stage == "complete_hw_build":
-        lines.append(
-            "Marks linker build stage complete when HW build was run externally.")
-    else:
-        lines.append(
-            "Uses linker info to resume and validates required stage(s).")
-    return "\n".join(lines)
-
-
-def _all_stage_help_block() -> str:
-    stages = ["init", "generate_tcl", "create_hw_project",
-              "build_hw_project", "create_metadata"]
-    lines = ["Stages:"]
-    for stage in stages:
-        lines.append(f"  {stage}: {_format_stage_requirements(stage)}")
-    lines.append(
-        f"  complete_hw_build: {_format_stage_requirements('complete_hw_build')} (state-only)")
-    lines.append("Use `main.py <stage> --help` for details.")
-    return "\n".join(lines)
-
-
 def _require_stage(payload: dict, required_stage: str, path: Path, platform: str) -> None:
     current = payload.get(_stage_key(platform))
     if current is None:
@@ -412,45 +346,6 @@ def _require_stage(payload: dict, required_stage: str, path: Path, platform: str
             f"Linker info {platform} stage '{current}' is before required stage "
             f"'{required_stage}' in {path}"
         )
-
-
-def _add_common_args(ap: argparse.ArgumentParser) -> None:
-    ap.add_argument("--cfg", required=True,
-                    help="Path to connectivity config file (e.g., config.cfg).")
-    ap.add_argument("--kernels", required=True, nargs="+",
-                    help="List of component.xml files to load as kernel types.")
-    ap.add_argument("--platform", choices=["hw", "sim", "emu"], default="hw",
-                    help="Target platform (hw, sim, or emu).")
-    ap.add_argument("-p", "--project", required=True,
-                    help="Project name to suffix TCLs and BD clones.")
-    ap.add_argument("--ip-repository", required=False, default=None,
-                    help="IP repository path (stored for linker stages).")
-
-
-def _add_linker_info_args(ap: argparse.ArgumentParser) -> None:
-    ap.add_argument("-p", "--project", required=True,
-                    help="Project name to locate linker info.")
-    ap.add_argument("--linker-info", default=None,
-                    help="Optional path to .linker_info.json (overrides default <cwd>/linker_results_<project> lookup).")
-    ap.add_argument("--platform", choices=["hw", "sim", "emu"], default=None,
-                    help="Override platform for this stage (hw, sim, or emu).")
-    ap.add_argument("--sim", dest="platform", action="store_const", const="sim",
-                    help="Shorthand for --platform sim.")
-    ap.add_argument("--emu", dest="platform", action="store_const", const="emu",
-                    help="Shorthand for --platform emu.")
-
-
-def _add_rm_build_args(ap: argparse.ArgumentParser) -> None:
-    ap.add_argument("--install-dir", default=str(_DEFAULT_INSTALL_DIR),
-                    help=f"Installed shell asset directory (default: {_DEFAULT_INSTALL_DIR}).")
-    ap.add_argument("--vivado-bin", default="vivado",
-                    help="Vivado binary to run (default: vivado).")
-    ap.add_argument("--jobs", type=int, default=8,
-                    help="Parallel jobs for Vivado runs (default: 8).")
-    ap.add_argument("--workdir", default=None,
-                    help="Optional working directory for Vivado invocation (defaults to SLASH_HW_BUILD_DIR).")
-    ap.add_argument("--force", action="store_true",
-                    help="Force the RM build even if the cfg would normally skip it (service-layer only).")
 
 
 def _resolve_platform(payload: dict, args: argparse.Namespace) -> str:
@@ -776,194 +671,43 @@ def main():
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s:%(funcName)s: %(message)s",
     )
-    if len(sys.argv) > 1 and sys.argv[1] in {"init", "generate_tcl", "create_hw_project", "build_hw_project", "build_service_layer_rm", "build_slash_rm", "complete_hw_build", "create_metadata", "install", "clean"}:
-        ap = argparse.ArgumentParser(
-            description="Linker stages (use linker info to resume).",
-            epilog=_all_stage_help_block(),
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        sub = ap.add_subparsers(dest="command", required=True)
+    config = LinkerConfiguration()
+    _run_step("create_project", lambda: _save_linker_info(
+        config, stage="create_project"))
 
-        ap_init = sub.add_parser(
-            "init",
-            help="Save linker args and initialize stage state.",
-            description="Initialize linker state for staged execution.",
-            epilog=_stage_help_block("init"),
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        _add_common_args(ap_init)
-        ap_init.set_defaults(func=_stage_init)
-
-        ap_gen = sub.add_parser(
-            "generate_tcl",
-            help="Generate Tcl from saved linker args.",
-            description="Generate Tcl using previously saved linker args.",
-            epilog=_stage_help_block("generate_tcl"),
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        _add_linker_info_args(ap_gen)
-        ap_gen.set_defaults(func=_stage_generate_tcl)
-
-        ap_create = sub.add_parser(
-            "create_hw_project",
-            help="Create hardware project from generated Tcl.",
-            description="Create hardware project using generated Tcl.",
-            epilog=_stage_help_block("create_hw_project"),
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        _add_linker_info_args(ap_create)
-        ap_create.set_defaults(func=_stage_create_hw_project)
-
-        ap_build = sub.add_parser(
-            "build_hw_project",
-            help="Build hardware project from existing design.",
-            description="Build hardware project from an existing design.",
-            epilog=_stage_help_block("build_hw_project"),
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        _add_linker_info_args(ap_build)
-        ap_build.set_defaults(func=_stage_build_hw_project)
-
-        ap_complete = sub.add_parser(
-            "complete_hw_build",
-            help="Mark external HW build complete and advance linker stage state.",
-            description="Mark build_hw_project stage complete when Vivado build ran outside linker.",
-            epilog=_stage_help_block("complete_hw_build"),
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        _add_linker_info_args(ap_complete)
-        ap_complete.set_defaults(func=_stage_complete_hw_build)
-
-        ap_service_rm = sub.add_parser(
-            "build_service_layer_rm",
-            help="Build the service-layer RM using installed shell assets and generated Tcl.",
-            description="Run service_layer_build.tcl for the project using linker info + SLASH_HW_BUILD_DIR.",
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        _add_linker_info_args(ap_service_rm)
-        _add_rm_build_args(ap_service_rm)
-        ap_service_rm.set_defaults(func=_build_service_layer_rm)
-
-        ap_slash_rm = sub.add_parser(
-            "build_slash_rm",
-            help="Build the slash RM using installed shell assets and generated Tcl.",
-            description="Run slash_project_build.tcl for the project using linker info + SLASH_HW_BUILD_DIR.",
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        _add_linker_info_args(ap_slash_rm)
-        _add_rm_build_args(ap_slash_rm)
-        ap_slash_rm.set_defaults(func=_build_slash_rm)
-
-        ap_meta = sub.add_parser(
-            "create_metadata",
-            help="Generate images/utilization/vbin artifacts.",
-            description="Generate images, utilization, and vbin artifacts.",
-            epilog=_stage_help_block("create_metadata"),
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        _add_linker_info_args(ap_meta)
-        ap_meta.set_defaults(func=_stage_create_metadata)
-
-        ap_clean = sub.add_parser(
-            "clean",
-            help="Remove generated linker artifacts and reset stage to init state.",
-            description="Delete everything under <cwd>/linker_results_<project> except .linker_info.json and reset stage state.",
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        ap_clean.add_argument("-p", "--project", required=True,
-                              help="Project name to locate linker info.")
-        ap_clean.add_argument("--linker-info", default=None,
-                              help="Optional path to .linker_info.json (overrides default <cwd>/linker_results_<project> lookup).")
-        ap_clean.set_defaults(func=_stage_clean)
-
-        ap_install = sub.add_parser(
-            "install",
-            help="Build/install base shell artifacts and AVED PDI.",
-            description="Run create_project.tcl, install shell DCPs, then run AVED flow and install the base PDI.",
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        ap_install.add_argument("-p", "--project", default="abs_shell",
-                                help="Project name to pass to create_project.tcl (default: abs_shell).")
-        ap_install.add_argument("--ip-repository", required=False, default=None,
-                                help="Optional IP repository path to pass to create_project.tcl.")
-        ap_install.add_argument("--install-dir", default=str(_DEFAULT_INSTALL_DIR),
-                                help=f"Directory to install shell DCP/PDI artifacts to (default: {_DEFAULT_INSTALL_DIR}).")
-        ap_install.add_argument("--vivado-bin", default="vivado",
-                                help="Vivado binary to run (default: vivado).")
-        ap_install.add_argument("--workdir", default=None,
-                                help="Optional working directory for Vivado invocation.")
-        ap_install.set_defaults(func=_install)
-
-        args = ap.parse_args()
-        if args.command == "init":
-            _run_step("init", lambda: args.func(args))
-        elif args.command == "build_service_layer_rm":
-            _run_step("build_service_layer_rm", lambda: args.func(args))
-        elif args.command == "build_slash_rm":
-            _run_step("build_slash_rm", lambda: args.func(args))
-        elif args.command == "complete_hw_build":
-            _run_step("complete_hw_build", lambda: args.func(args))
-        elif args.command == "clean":
-            _run_step("clean", lambda: args.func(args))
-        elif args.command == "install":
-            _run_step("install", lambda: args.func(args))
+    def _do_generate_tcl() -> None:
+        if config.platform == Platform.SIMULATION:
+            generate_sim_tcl(config)
+        elif config.platform == Platform.EMULATION:
+            generate_emu_tcl(config)
         else:
-            _run_from_last_to_target(args, args.command)
-    else:
-        ap = argparse.ArgumentParser(
-            description="Parse kernels (component.xml), connectivity config, BD port map, and render Tcl.",
-            epilog=_all_stage_help_block(),
-            formatter_class=argparse.RawTextHelpFormatter,
-        )
-        _add_common_args(ap)
-        args = ap.parse_args()
-        _normalize_path_args(args, base_dir=Path.cwd())
-        linker_config = LinkerConfiguration(
-            args.cfg,
-            args.kernels,
-            args.ip_repository,
-            args.project,
-            args.platform,
-            shutil.which("vivado"), # TODO: Change to argument!
-            8, # TODO: Change to argument!
-            None
-        )
-        _run_step("create_project", lambda: _save_linker_info(
-            args, stage="create_project"))
+            generate_tcl(config)
+        _save_linker_info(config, stage="generate_tcl")
+    _run_step("generate_tcl", _do_generate_tcl)
 
-        def _do_generate_tcl() -> None:
-            if args.platform == "sim":
-                generate_sim_tcl(linker_config)
-            elif args.platform == "emu":
-                generate_emu_tcl(linker_config)
-            else:
-                generate_tcl(linker_config)
-            _save_linker_info(args, stage="generate_tcl")
-        _run_step("generate_tcl", _do_generate_tcl)
+    def _do_build_all() -> None:
+        if config.platform == Platform.SIMULATION:
+            create_sim_project(config)
+            build_sim_project(config)
+        elif config.platform == Platform.EMULATION:
+            build_emu_project(config)
+        else:
+            create_build_project(config, action="all")
+            generate_base_pdi_with_aved(config)
+        _save_linker_info(config, stage="build_hw_project")
+    _run_step("build", _do_build_all)
 
-        def _do_build_all() -> None:
-            if args.platform == "sim":
-                create_sim_project(linker_config)
-                build_sim_project(linker_config)
-            elif args.platform == "emu":
-                build_emu_project(linker_config)
-            else:
-                create_build_project(linker_config, action="all")
-                generate_base_pdi_with_aved(linker_config)
-            _save_linker_info(args, stage="build_hw_project")
-        _run_step("build", _do_build_all)
-
-        def _do_create_metadata() -> None:
-            if args.platform == "sim":
-                pass
-            elif args.platform == "emu":
-                package_emu_artifacts(linker_config)
-            else:
-                generate_image(linker_config)
-                generate_util_report(linker_config)
-                build_vbin(linker_config)
-            _save_linker_info(args, stage="create_metadata")
-        _run_step("create_metadata", _do_create_metadata)
+    def _do_create_metadata() -> None:
+        if config.platform == Platform.SIMULATION:
+            pass
+        elif config.platform == Platform.EMULATION:
+            package_emu_artifacts(config)
+        else:
+            generate_image(config)
+            generate_util_report(config)
+            build_vbin(config)
+        _save_linker_info(config, stage="create_metadata")
+    _run_step("create_metadata", _do_create_metadata)
 
 
 if __name__ == "__main__":

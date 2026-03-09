@@ -318,8 +318,7 @@ def generate_tcl(config: LinkerConfiguration) -> None:
     ctx["project_name"] = config.project_name
     ctx["slash_bd_name"] = f"slash_{config.project_name}"
     template_path = config.resources_dir / "slash.tcl"   # resources/slash.tcl
-    out_path = config.platform_results_dir / "slash.tcl" # slash.tcl
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path = config.build_dir / "slash.tcl" # slash.tcl
     render_template(
         template_dir=template_path.parent,
         template_name=template_path.name,
@@ -338,8 +337,7 @@ def generate_tcl(config: LinkerConfiguration) -> None:
         network=getattr(cfg, "network", None),
     )
     system_map_template = config.resources_dir / "system_map.xml"
-    system_map_out = config.platform_results_dir / "system_map.xml"
-    system_map_out.parent.mkdir(parents=True, exist_ok=True)
+    system_map_out = config.build_dir / "system_map.xml"
     render_template(
         template_dir=system_map_template.parent,
         template_name=system_map_template.name,
@@ -359,8 +357,7 @@ def generate_tcl(config: LinkerConfiguration) -> None:
     svc_ctx["service_layer_bd_name"] = f"service_layer_{config.project_name}"
     # --- Render service-layer Tcl ---
     svc_template = config.resources_dir / "service_layer.tcl"
-    svc_out = config.results_dir / "service_layer.tcl"
-    svc_out.parent.mkdir(parents=True, exist_ok=True)
+    svc_out = config.build_dir / "service_layer.tcl"
     render_template(
         template_dir=svc_template.parent,
         template_name=svc_template.name,

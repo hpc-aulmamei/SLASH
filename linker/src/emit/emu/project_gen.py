@@ -278,7 +278,7 @@ def _collect_emu_compile_inputs(config: LinkerConfiguration) -> tuple[list[Path]
 
 
 def build_emu_project(config: LinkerConfiguration) -> None:
-    tb_path = config.platform_results_dir / "tb.cpp"
+    tb_path = config.build_dir / "tb.cpp"
     if not tb_path.exists():
         raise FileNotFoundError(f"tb.cpp not found: {tb_path}")
 
@@ -290,7 +290,7 @@ def build_emu_project(config: LinkerConfiguration) -> None:
             "No C++ sources found to build emulation executable.")
 
     vitis_include = _find_vitis_include()
-    vpp_emu_path = config.platform_results_dir / "vpp_emu"
+    vpp_emu_path = config.build_dir / "vpp_emu"
 
     include_flags = []
     for inc in user_include_dirs:
@@ -315,28 +315,25 @@ def build_emu_project(config: LinkerConfiguration) -> None:
         logger.info("EMU compile adding %d user include dir(s)",
                     len(user_include_dirs))
     logger.info("Building emulation executable: %s", " ".join(cmd))
-    subprocess.run(cmd, cwd=str(config.platform_results_dir), check=True)
-    logger.info("Emulation build outputs in %s", config.platform_results_dir)
+    subprocess.run(cmd, cwd=str(config.build_dir), check=True)
+    logger.info("Emulation build outputs in %s", config.build_dir)
 
 
 def package_emu_artifacts(config: LinkerConfiguration) -> Path:
-    system_map = config.platform_results_dir / "system_map.xml"
-    vpp_emu = config.platform_results_dir / "vpp_emu"
-    emu_manifest = config.platform_results_dir / "emu_manifest.json"
-    out_path = config.platform_results_dir / f"{config.project_name}_emu.vbin"
+    system_map = config.build_dir / "system_map.xml"
+    vpp_emu = config.build_dir / "vpp_emu"
+    emu_manifest = config.build_dir / "emu_manifest.json"
 
     if not system_map.exists():
         raise FileNotFoundError(f"system_map.xml not found: {system_map}")
     if not vpp_emu.exists():
         raise FileNotFoundError(f"vpp_emu not found: {vpp_emu}")
-    if out_path.exists():
-        out_path.unlink()
 
-    with tarfile.open(out_path, mode="w") as tf:
+    with tarfile.open(config.out_path, mode="w") as tf:
         tf.add(system_map, arcname="system_map.xml")
         tf.add(vpp_emu, arcname="vpp_emu")
         if emu_manifest.exists():
             tf.add(emu_manifest, arcname="emu_manifest.json")
 
-    logger.info("Emulation vbin in %s", out_path)
-    return out_path
+    logger.info("Emulation vbin in %s", config.out_path)
+    return config.out_path

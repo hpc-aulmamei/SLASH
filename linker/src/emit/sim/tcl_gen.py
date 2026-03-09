@@ -228,8 +228,6 @@ def _classify_mem_targets(instances: dict[str, KernelInstance]) -> tuple[List[st
 
 
 def generate_sim_tcl(config: LinkerConfiguration) -> None:
-    config.platform_results_dir.mkdir(parents=True, exist_ok=True)
-
     # 1) Parse kernels
     kernel_library = {}
     kernel_sim_meta: dict[str, dict] = {}
@@ -280,7 +278,7 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
         kernels_ctx.append({"name": iname, "vlnv": vlnv})
 
     sim_checkpoint_netlists_ctx = []
-    sim_ckpt_out_dir = config.platform_results_dir / "checkpoint_funcsim"
+    sim_ckpt_out_dir = config.build_dir / "checkpoint_funcsim"
     for iname in sorted(instances.keys()):
         inst = instances[iname]
         sim_meta = kernel_sim_meta.get(inst.kernel.name, {})
@@ -343,10 +341,10 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
 
     # 5) Render sim_prj.tcl template
     sim_template = config.resources_dir / "sim" / "sim_prj.tcl"
-    sim_out = config.platform_results_dir / "run_pre.tcl"
+    sim_out = config.build_dir / "run_pre.tcl"
 
     sim_mem_src = config.resources_dir / "sim" / "sim_mem.v"
-    sim_mem_dst = config.platform_results_dir / "sim_mem.v"
+    sim_mem_dst = config.build_dir / "sim_mem.v"
     if sim_mem_src.exists():
         sim_mem_dst.write_text(sim_mem_src.read_text(
             encoding="utf-8"), encoding="utf-8")
@@ -358,9 +356,9 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
         template_name=sim_template.name,
         out_path=sim_out,
         context={
-            "sim_root": config.platform_results_dir,
-            "sim_prj_dir": str(config.platform_results_dir / "sim_prj"),
-            "ip_repo_path": str(config.platform_results_dir / "iprepo"),
+            "sim_root": config.build_dir,
+            "sim_prj_dir": str(config.build_dir / "sim_prj"),
+            "ip_repo_path": str(config.build_dir / "iprepo"),
             "sim_mem_path": str(sim_mem_dst),
             "bd_name": "top",
             "part": "xcv80-lsva4737-2MHP-e-S",
@@ -389,7 +387,7 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
         network=getattr(cfg, "network", None),
     )
     system_map_template = config.resources_dir / "system_map.xml"
-    system_map_out = config.platform_results_dir / "system_map.xml"
+    system_map_out = config.build_dir / "system_map.xml"
     render_template(
         template_dir=system_map_template.parent,
         template_name=system_map_template.name,

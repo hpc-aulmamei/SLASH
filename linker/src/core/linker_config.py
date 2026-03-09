@@ -19,10 +19,12 @@
 # ##################################################################################################
 from enum import Enum
 from pathlib import Path
+import sys
 from typing import Any, List, Optional, Union
 import re
 import os
 import shutil
+import argparse
 
 
 class Platform(Enum):
@@ -55,49 +57,82 @@ def _find_vitis_include() -> Path:
 
 
 class LinkerConfiguration(object):
-    def __init__(
-        self,
-        configuration_file: Union[str, Path],
-        kernel_component_files: List[Union[str, Path]],
-        ip_repository: Optional[Union[str, Path]],
-        project_name: str,
-        platform: Union[str, Platform],
-        vivado_bin: Union[str, Path],
-        n_jobs: int,
-        clock_hz: Optional[int]
-    ):
-        self._configuration_file: Path = Path(configuration_file).expanduser().resolve()
-        self._kernel_component_files: List[Path] = [
-            Path(path).expanduser().resolve() for path in kernel_component_files]
-        self._ip_repository: Optional[Path] = Path(
-            ip_repository).expanduser().resolve() if ip_repository is not None else None
 
-        # Sanitize the project name
-        s2 = re.sub(r"[^A-Za-z0-9_]+", "_", str(project_name).strip())
+    def __init__(self):
+        ap = argparse.ArgumentParser(
+            description="Link kernel IP cores into a complete design and build a VBIN archive for emulation, simulation, or hardware execution.",
+            formatter_class=argparse.RawTextHelpFormatter,
+        )
+        ap.add_argument("-c", "--config", required=True, type=Path, help="Path to the connectivity configuration file (e.g. config.cfg).")
+        ap.add_argument("-k", "--kernels", required=True, type=Path, nargs="+",  help="List of component.xml files to load as kernel IP cores.")
+        ap.add_argument("-o", "--out", required=True, type=Path, help="Path to the final VBIN archive.")
+        ap.add_argument("-p", "--platform", choices=["emu", "sim", "hw"], default="emu", help="Target platform (hw, sim, or emu).")
+        ap.add_argument("--ip-repository", required=False, type=Optional[Path], default=None, help="IP repository path (stored for linker stages).")
+        ap.add_argument("--vivado", required=False, type=Path, default=None, help="Vivado binary to use for linking. If not given, it will be derived from PATH.")
+        ap.add_argument("--jobs", required=False, type=int, default=8, help="Number of parallel jobs for Vivado runs.")
+        ap.add_argument("--clock-hz", required=False, type=Optional[int], default=None, help="Target clock frequency in MHz.")
+        args = ap.parse_args()
+        self._args = args
+
+        self._configuration_file = args.config.expanduser().resolve()
+        if not self._configuration_file.is_file():
+            raise FileNotFoundError(ap.config)
+
+        self._kernel_component_paths: List[Path] = [
+            path.expanduser().resolve() for path in args.kernels]
+        for kernel in self._kernel_component_paths:
+            if not kernel.is_file():
+                raise FileNotFoundError(kernel)
+            
+        self._out_path: Path = args.out.expanduser().resolve()
+        if self._out_path.is_file():
+            self._out_path.unlink()
+
+        self._build_dir: Path = self._out_path.with_name(f"{self._out_path.name}.prj")
+        if self._build_dir.is_dir():
+            shutil.rmtree(self._build_dir)
+        if self._build_dir.is_file():
+            self._build_dir.unlink()
+        self._build_dir.mkdir(parents=True)
+
+        self._platform = Platform(args.platform)
+        
+        if args.ip_repository is None:
+            self._ip_repository: Optional[Path] = None
+        else:
+            self._ip_repository: Optional[Path] = Path(args.ip_repository).expanduser().resolve()
+            if not self._ip_repository.is_dir():
+                raise FileNotFoundError(self._ip_repository)
+        
+        self._vivado_bin: Path = args.vivado if args.vivado is not None else Path(shutil.which("vivado"))
+        self._vivado_bin = self._vivado_bin.expanduser().resolve()
+        if not self._vivado_bin.is_file():
+            raise FileNotFoundError(self._vivado_bin)
+        
+        self._n_jobs: int = args.jobs
+        self._clock_hz: int = args.clock_hz
+
+        # Sanitize the output file stem as the project name
+        s2 = re.sub(r"[^A-Za-z0-9_]+", "_", str(self._out_path.stem).strip())
         if not s2:
             s2 = "proj"
         if s2[0].isdigit():
             s2 = "_" + s2
-        self._project_name = s2
+        self._project_name: str = s2
 
-        self._platform = Platform(platform)
         self._vitis_include_dir = _find_vitis_include()
-        self._vivado_bin = Path(vivado_bin).expanduser().resolve()
-        self._n_jobs = n_jobs
-        self._clock_hz = int(clock_hz) if clock_hz is not None else None
-
-        # TODO: Turn this into a CLI argument or derive it from other arguments!
-        hw_build_dir = next(os.getenv(key) for key in ("SLASH_HW_BUILD_DIR", "slash_hw_build_dir"))
-        if hw_build_dir is None:
-            raise SystemExit(
-        "ERROR: Missing required HW build directory environment variable. "
-        "Set SLASH_HW_BUILD_DIR (or slash_hw_build_dir) to an absolute writable path.")
-        self._hardware_build_dir = Path(hw_build_dir).expanduser().resolve()
-
+        
+    @property
+    def input_arguments(self) -> argparse.Namespace:
+        return self._args
 
     @property
     def configuration_file(self) -> Path:
         return self._configuration_file
+    
+    @property
+    def out_path(self) -> Path:
+        return self._out_path
 
     @property
     def platform(self) -> Platform:
@@ -109,7 +144,7 @@ class LinkerConfiguration(object):
 
     @property
     def kernel_component_files(self) -> List[Path]:
-        return self._kernel_component_files
+        return self._kernel_component_paths
 
     @property
     def linker_root_dir(self) -> Path:
@@ -117,24 +152,16 @@ class LinkerConfiguration(object):
 
     @property
     def linker_src_dir(self) -> Path:
+        # Assumes that this class is defined in linker/src/core/linker_config.py!
         return Path(__file__).parent.parent.resolve()
 
     @property
-    def results_dir(self) -> Path:
-        # TODO: Change to not work from CWD
-        return Path(os.getcwd()) / f"linker_results_{self.project_name}"
+    def build_dir(self) -> Path:
+        return self._build_dir
 
     @property
     def linker_info_path(self) -> Path:
-        return self.results_dir / ".linker_info.json"
-
-    @property
-    def platform_results_dir(self) -> Path:
-        return self.results_dir / str(self.platform.value)
-    
-    @property
-    def hardware_build_dir(self) -> Path:
-        return self._hardware_build_dir
+        return self.build_dir / ".linker_info.json"
 
     @property
     def resources_dir(self) -> Path:

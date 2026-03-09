@@ -114,7 +114,7 @@ def _generate_top_wrapper_pdi_with_bootgen(impl_dir: Path) -> Path:
 
 
 def generate_base_pdi_with_aved(config: LinkerConfiguration) -> None:
-    results_base_dir = config.linker_root_dir / "results" / "base"
+    results_base_dir = config.install_dir
     aved_root = config.linker_root_dir / "submodules" / "AVED"
     aved_hw_dir = aved_root / "hw" / AVED_DESIGN_NAME
     aved_build_dir = aved_hw_dir / "build"
@@ -122,15 +122,11 @@ def generate_base_pdi_with_aved(config: LinkerConfiguration) -> None:
     aved_fw_profile_hal = aved_root / "fw" / "AMC" / \
         "src" / "profiles" / "v80" / "profile_hal.h"
 
-    static_impl_dir = config.hardware_build_dir / "slash.runs" / "impl_1"
-    aved_build_script = config.linker_root_dir / \
-        "resources" / "aved" / "build_all.sh"
-    aved_profile_hal_src = config.linker_root_dir / \
-        "resources" / "aved" / "profile_hal.h"
-    aved_pdi_combine_src = config.linker_root_dir / \
-        "resources" / "aved" / "pdi_combine.bif"
-    xsa_src = config.linker_root_dir / "resources" / \
-        "aved" / f"{AVED_DESIGN_NAME}.xsa"
+    static_impl_dir = config.build_dir / "slash.runs" / "impl_1"
+    aved_build_script = config.resources_dir / "aved" / "build_all.sh"
+    aved_profile_hal_src = config.resources_dir / "aved" / "profile_hal.h"
+    aved_pdi_combine_src = config.resources_dir / "aved" / "pdi_combine.bif"
+    xsa_src = config.resources_dir / "aved" / f"{AVED_DESIGN_NAME}.xsa"
 
     logger.info("Starting AVED base build for %s", config.project_name)
     aved_build_dir.mkdir(parents=True, exist_ok=True)
@@ -164,8 +160,7 @@ def create_build_project(
     if not tcl.exists():
         raise FileNotFoundError(f"create_project.tcl not found: {tcl}")
 
-    log_path = config.results_dir / "vivado.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path = config.build_dir / "vivado.log"
 
     cmd = [
         config.vivado_bin,
@@ -180,11 +175,11 @@ def create_build_project(
         config.project_name,
     ]
     if config.ip_repository:
-        cmd.append(config.ip_repository)
+        cmd.append(str(config.ip_repository))
     if action:
         cmd.append(action)
 
-    subprocess.run(cmd, cwd=str(config.hardware_build_dir), check=True)
+    subprocess.run(cmd, cwd=str(config.build_dir), check=True)
 
 
 class RM_KIND(Enum):
@@ -196,10 +191,10 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
     if not config.ip_repository:
         raise ValueError("ip_repository is required for RM builds")
 
-    logs_dir = config.hardware_build_dir / "logs"
-    artifact_out_dir = config.hardware_build_dir / \
+    logs_dir = config.build_dir / "logs"
+    artifact_out_dir = config.build_dir / \
         "slash.runs" / f"{config.project_name}_impl_1"
-    rm_work_dir = config.hardware_build_dir / \
+    rm_work_dir = config.build_dir / \
         "rm" / f"{rm_kind}_{config.project_name}"
 
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -233,7 +228,7 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
         "--install-dir",
         str(config.install_dir),
         "--linker-results-dir",
-        str(config.platform_results_dir),
+        str(config.build_dir),
         "--rm-work-dir",
         str(rm_work_dir),
         "--artifact-out-dir",
@@ -241,12 +236,12 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
         "--jobs",
         str(config.n_jobs),
     ]
-    util_report_path = config.hardware_build_dir / "reports" / \
+    util_report_path = config.build_dir / "reports" / \
         f"report_utilization_{config.project_name}.txt"
     util_report_path.parent.mkdir(parents=True, exist_ok=True)
     cmd.extend(["--util-report-file", str(util_report_path)])
 
-    subprocess.run(cmd, cwd=str(config.hardware_build_dir), check=True)
+    subprocess.run(cmd, cwd=str(config.build_dir), check=True)
 
 
 def build_service_layer_rm(config: LinkerConfiguration) -> None:
@@ -258,23 +253,19 @@ def build_slash_rm(config: LinkerConfiguration) -> None:
 
 
 def install_abstract_shell(config: LinkerConfiguration) -> None:
-    # `build_project.tcl` writes abstract-shell DCPs into <linker>/results/base.
-    # Ensure it exists before Vivado runs to avoid write_abstract_shell failures.
-    # TODO: Move into actual results dir!
-    (config.linker_root_dir / "results" / "base").mkdir(parents=True, exist_ok=True)
+    config.install_dir.mkdir(parents=True, exist_ok=True)
 
     create_build_project(config)
 
-    impl_dir = config.hardware_build_dir / "slash.runs" / "impl_1"
+    impl_dir = config.build_dir / "slash.runs" / "impl_1"
     bd_source_dirs = (
-        config.hardware_build_dir / "slash.srcs" / "sources_1" / "bd" / "slash_base",
-        config.hardware_build_dir / "slash.srcs" / "sources_1" / "bd" / "service_layer",
+        config.build_dir / "slash.srcs" / "sources_1" / "bd" / "slash_base",
+        config.build_dir / "slash.srcs" / "sources_1" / "bd" / "service_layer",
     )
-    results_base_dir = config.linker_root_dir / "results" / "base"
     dcp_sources = (
         impl_dir / "top_wrapper_routed_bb.dcp",
-        results_base_dir / "abs_shell_slash.dcp",
-        results_base_dir / "abs_shell_service_layer.dcp",
+        config.install_dir / "abs_shell_slash.dcp",
+        config.install_dir / "abs_shell_service_layer.dcp",
     )
     config.install_dir.mkdir(parents=True, exist_ok=True)
 
@@ -291,7 +282,7 @@ def install_abstract_shell(config: LinkerConfiguration) -> None:
         _copy_tree(src_dir, config.install_dir)
 
     generate_base_pdi_with_aved(config)
-    aved_pdi = results_base_dir / f"{AVED_DESIGN_NAME}.pdi"
+    aved_pdi = config.install_dir / f"{AVED_DESIGN_NAME}.pdi"
     if not aved_pdi.exists():
         raise FileNotFoundError(
             f"Expected AVED PDI not found in results/base: {aved_pdi}")
@@ -299,9 +290,9 @@ def install_abstract_shell(config: LinkerConfiguration) -> None:
 
 
 def generate_image(config: LinkerConfiguration, include_service_layer: bool = True) -> None:
-    impl_dir = config.hardware_build_dir / \
+    impl_dir = config.build_dir / \
         "slash.runs" / f"{config.project_name}_impl_1"
-    dest_dir = config.platform_results_dir / "images"
+    dest_dir = config.build_dir / "images"
     logger.info("Generating PDI images for project %s", config.project_name)
     logger.info("PDI source dir: %s", impl_dir)
     logger.info("PDI destination dir: %s", dest_dir)
@@ -332,9 +323,9 @@ def generate_image(config: LinkerConfiguration, include_service_layer: bool = Tr
 
 
 def generate_util_report(config: LinkerConfiguration) -> None:
-    report_path = config.platform_results_dir / \
+    report_path = config.build_dir / \
         f"report_utilization_{config.project_name}.txt"
-    xml_path = config.platform_results_dir / \
+    xml_path = config.build_dir / \
         f"report_utilization_{config.project_name}.xml"
     logger.info("Generating utilization report XML for project %s",
                 config.project_name)

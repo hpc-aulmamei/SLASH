@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 def generate_emu_tcl(config: LinkerConfiguration) -> None:
     # Ensure the output directory exists
-    config.platform_results_dir.mkdir(parents=True, exist_ok=True)
+    config.build_dir.mkdir(parents=True, exist_ok=True)
 
     # 1) Parse kernels
     kernel_library = {}
@@ -71,7 +71,7 @@ def generate_emu_tcl(config: LinkerConfiguration) -> None:
 
     # 4.1) Render tb.cpp
     tb_template_path = config.resources_dir / "sw_emu" / "tb.cpp"
-    tb_path = config.platform_results_dir / "tb.cpp"
+    tb_path = config.build_dir / "tb.cpp"
     tb_path.parent.mkdir(parents=True, exist_ok=True)
     render_template(
         template_dir=tb_template_path.parent,
@@ -82,7 +82,7 @@ def generate_emu_tcl(config: LinkerConfiguration) -> None:
     logger.info("Rendered sw_emu tb.cpp to %s", tb_path)
 
     # 4.2) Render emu_manifest.json
-    emu_manifest_path = config.platform_results_dir / "emu_manifest.json"
+    emu_manifest_path = config.build_dir / "emu_manifest.json"
     with emu_manifest_path.open("w", encoding="utf-8") as f:
         json.dump(tb_ctx.get("emu_manifest", {}), f, indent=2, sort_keys=True)
     logger.info("Rendered emu manifest to %s", emu_manifest_path)
@@ -105,7 +105,7 @@ def generate_emu_tcl(config: LinkerConfiguration) -> None:
     )
 
     system_map_template_path = config.resources_dir / "system_map.xml"
-    system_map_path = config.platform_results_dir / "system_map.xml"
+    system_map_path = config.build_dir / "system_map.xml"
     render_template(
         template_dir=system_map_template_path.parent,
         template_name=system_map_template_path.name,

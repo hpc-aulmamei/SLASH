@@ -53,28 +53,28 @@ def _copy_kernels_to_iprepo(component_xmls: Iterable[str | Path], iprepo_dir: Pa
 
 
 def create_sim_project(config: LinkerConfiguration) -> None:
-    config.platform_results_dir.mkdir(parents=True, exist_ok=True)
+    config.build_dir.mkdir(parents=True, exist_ok=True)
 
     # Clean generated subfolders but keep run_pre.tcl if already generated.
     for sub in ["sim_prj", "iprepo", "build", "xsim.dir"]:
-        p = config.platform_results_dir / sub
+        p = config.build_dir / sub
         if p.exists():
             shutil.rmtree(p, ignore_errors=True)
-    for p in config.platform_results_dir.glob("vpp_sim*"):
+    for p in config.build_dir.glob("vpp_sim*"):
         if p.is_file():
             try:
                 p.unlink()
             except OSError:
                 pass
 
-    iprepo_dir = config.platform_results_dir / "iprepo"
+    iprepo_dir = config.build_dir / "iprepo"
     _copy_kernels_to_iprepo(config.kernel_component_files, iprepo_dir)
 
-    tcl = config.platform_results_dir / "run_pre.tcl"
+    tcl = config.build_dir / "run_pre.tcl"
     if not tcl.exists():
         raise FileNotFoundError(f"Simulation TCL not found: {tcl}")
 
-    log_path = config.platform_results_dir / "vivado.log"
+    log_path = config.build_dir / "vivado.log"
 
     cmd = [
         config.vivado_bin,
@@ -86,11 +86,11 @@ def create_sim_project(config: LinkerConfiguration) -> None:
         "-source",
         str(tcl),
     ]
-    subprocess.run(cmd, cwd=str(config.platform_results_dir), check=True)
+    subprocess.run(cmd, cwd=str(config.build_dir), check=True)
 
 
 def build_sim_project(config: LinkerConfiguration) -> None:
-    xsim_dir = config.platform_results_dir / "sim_prj" / \
+    xsim_dir = config.build_dir / "sim_prj" / \
         "sim_prj.sim" / "sim_1" / "behav" / "xsim"
     if not xsim_dir.exists():
         raise FileNotFoundError(f"XSIM dir not found: {xsim_dir}")
@@ -98,8 +98,7 @@ def build_sim_project(config: LinkerConfiguration) -> None:
     subprocess.run(["./compile.sh"], cwd=str(xsim_dir), check=True)
     subprocess.run(["./elaborate.sh"], cwd=str(xsim_dir), check=True)
 
-    build_dir = config.platform_results_dir / "build"
-    build_dir.mkdir(parents=True, exist_ok=True)
+    build_dir = config.build_dir / "build"
 
     # Copy xsim.dir into build dir for sim executable
     xsim_build_dir = build_dir / "xsim.dir"
@@ -117,26 +116,21 @@ def build_sim_project(config: LinkerConfiguration) -> None:
     vpp_sim_path = build_dir / "vpp_sim"
     if not vpp_sim_path.exists():
         raise FileNotFoundError(f"vpp_sim not found: {vpp_sim_path}")
-    shutil.copy2(vpp_sim_path, config.platform_results_dir / "vpp_sim")
+    shutil.copy2(vpp_sim_path, config.build_dir / "vpp_sim")
 
     # Copy xsim.dir next to vpp_sim for runtime
-    xsim_result_dir = config.platform_results_dir / "xsim.dir"
+    xsim_result_dir = config.build_dir / "xsim.dir"
     if xsim_result_dir.exists():
         shutil.rmtree(xsim_result_dir, ignore_errors=True)
     shutil.copytree(xsim_build_dir, xsim_result_dir)
 
-    system_map_path = config.platform_results_dir / "system_map.xml"
+    system_map_path = config.build_dir / "system_map.xml"
     if not system_map_path.exists():
         raise FileNotFoundError(f"system_map.xml not found: {system_map_path}")
 
-    # Package simulation artifacts into <project>_sim.vbin
-    sim_vbin_path = config.platform_results_dir / \
-        f"{config.project_name}_sim.vbin"
-    if sim_vbin_path.exists():
-        sim_vbin_path.unlink()
-    with tarfile.open(sim_vbin_path, mode="w") as tf:
+    with tarfile.open(config.out_path, mode="w") as tf:
         tf.add(system_map_path, arcname="system_map.xml")
         tf.add(vpp_sim_path, arcname="vpp_sim")
         tf.add(xsim_build_dir, arcname="xsim.dir")
 
-    logger.info("Simulation build outputs in %s", config.platform_results_dir)
+    logger.info("Simulation build outputs in %s", config.build_dir)
