@@ -20,12 +20,23 @@
 
 
 # TODOs:
-# * Turn this into a proper FindSlash.cmake
 # * Allow arguments of add_vbin to be relative to source directory
-# * Find the executable script for v80++
+# * Find the installed v80++ executable
+# * Add wrappers for building HLS cores
+
+find_package(Vivado REQUIRED)
 
 get_filename_component(SLASH_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." REALPATH)
 set(SLASH_LINKER_DIR "${SLASH_REPO_ROOT}/linker/")
+set(SLASH_MAIN_PY "${SLASH_LINKER_DIR}/src/main.py")
+
+if(EXISTS ${SLASH_MAIN_PY})
+    message(STATUS "Found Slash at ${SLASH_REPO_ROOT}.")
+    set(SLASH_FOUND TRUE)
+else()
+    message(STATUS "Slash not found.")
+    set(SLASH_FOUND FALSE)
+endif()
 
 function(add_vbin)
     set(oneValueArgs TARGET CFG PLATFORM IP_REPO)
@@ -39,13 +50,6 @@ function(add_vbin)
     endforeach()
 
     set(SLASH_VBIN_FILE "${CMAKE_CURRENT_BINARY_DIR}/${SLASH_VBIN_TARGET}.vbin")
-
-    set(SLASH_VBIN_MAIN_PY "${SLASH_LINKER_DIR}/src/main.py")
-    if(NOT EXISTS "${SLASH_VBIN_MAIN_PY}")
-        message(FATAL_ERROR
-            "add_vbin: No main.py file found under LINKER_DIR; Is this really the linker directory?\n"
-        )
-    endif()
     
     if(DEFINED Python3_EXECUTABLE AND NOT "${Python3_EXECUTABLE}" STREQUAL "")
         set(_py "${Python3_EXECUTABLE}")
@@ -55,12 +59,13 @@ function(add_vbin)
 
     add_custom_command(
         OUTPUT "${SLASH_VBIN_FILE}"
-        COMMAND "${_py}" "${SLASH_VBIN_MAIN_PY}" "link" 
+        COMMAND "${_py}" "${SLASH_MAIN_PY}" "link" 
             "-c" "${SLASH_VBIN_CFG}"
             "-p" "${SLASH_VBIN_PLATFORM}"
             "-o" "${SLASH_VBIN_FILE}"
             "-k" ${SLASH_VBIN_KERNELS}
             "--ip-repository" "${SLASH_VBIN_IP_REPO}"
+            "--vivado" "${VIVADO_BINARY}"
         BYPRODUCTS "${SLASH_VBIN_FILE}.prj"
         DEPENDS "${SLASH_VBIN_CFG}" "${SLASH_VBIN_KERNELS}"
         WORKING_DIRECTORY "${SLASH_LINKER_DIR}/src"

@@ -26,7 +26,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "-O3")
 
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
-include("${REPO_ROOT}/cmake/Slash.cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${REPO_ROOT}/cmake")
+find_package(Slash REQUIRED)
 
 set(CFG_FILE "${CMAKE_CURRENT_LIST_DIR}/config.cfg")
 
