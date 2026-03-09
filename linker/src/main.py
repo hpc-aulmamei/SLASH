@@ -205,7 +205,7 @@ def _linker_info_path(project_name: str) -> Path:
     return resolve_linker_results_root(project_name) / ".linker_info.json"
 
 
-def _save_linker_info(config: LinkerConfiguration, stage: str) -> Path:
+def save_linker_info(config: LinkerConfiguration, stage: str) -> Path:
     steps = _steps_for_platform(config.platform)
     if stage not in steps:
         raise ValueError(
@@ -264,8 +264,10 @@ def _format_duration(seconds: float) -> str:
     secs = total % 60
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
+def profiled(func) -> None:
+    return lambda: run_with_profiling(func.__name__, func)
 
-def _run_step(label: str, func) -> None:
+def run_with_profiling(label: str, func) -> None:
     start_wall = time.perf_counter()
     start_cpu = time.process_time()
     start_rusage = None
@@ -369,7 +371,7 @@ def _hw_has_enabled_eth(cfg_path: str | None) -> bool:
 
 
 def _stage_init(args: argparse.Namespace) -> None:
-    _save_linker_info(args, stage="create_project")
+    save_linker_info(args, stage="create_project")
 
 
 def _stage_generate_tcl(args: argparse.Namespace) -> None:
@@ -399,7 +401,7 @@ def _stage_generate_tcl(args: argparse.Namespace) -> None:
         generate_emu_tcl(linker_config)
     else:
         generate_tcl(linker_config)
-    _save_linker_info(info_args, stage="generate_tcl", out_path=info_path)
+    save_linker_info(info_args, stage="generate_tcl", out_path=info_path)
 
 
 def _stage_create_hw_project(args: argparse.Namespace) -> None:
@@ -429,7 +431,7 @@ def _stage_create_hw_project(args: argparse.Namespace) -> None:
         pass
     else:
         create_build_project(linker_config)
-    _save_linker_info(info_args, stage="create_hw_project", out_path=info_path)
+    save_linker_info(info_args, stage="create_hw_project", out_path=info_path)
 
 
 def _stage_build_hw_project(args: argparse.Namespace) -> None:
@@ -460,7 +462,7 @@ def _stage_build_hw_project(args: argparse.Namespace) -> None:
     else:
         create_build_project(linker_config, action="build")
         generate_base_pdi_with_aved(linker_config)
-    _save_linker_info(info_args, stage="build_hw_project", out_path=info_path)
+    save_linker_info(info_args, stage="build_hw_project", out_path=info_path)
 
 
 def _stage_complete_hw_build(args: argparse.Namespace) -> None:
@@ -474,7 +476,7 @@ def _stage_complete_hw_build(args: argparse.Namespace) -> None:
     info_args = argparse.Namespace(**payload["args"])
     info_args.platform = platform
     _normalize_path_args(info_args, base_dir=_LINKER_SRC_DIR)
-    _save_linker_info(info_args, stage="build_hw_project", out_path=info_path)
+    save_linker_info(info_args, stage="build_hw_project", out_path=info_path)
 
 
 def _build_service_layer_rm(args: argparse.Namespace) -> None:
@@ -589,7 +591,7 @@ def _stage_create_metadata(args: argparse.Namespace) -> None:
             base_freq_hz=400_000_000,
         )
         build_vbin(project_name=info_args.project, results_dir=hw_results_dir)
-    _save_linker_info(info_args, stage="create_metadata", out_path=info_path)
+    save_linker_info(info_args, stage="create_metadata", out_path=info_path)
 
 
 def _stage_clean(args: argparse.Namespace) -> None:
@@ -668,23 +670,25 @@ def _run_from_last_to_target(args: argparse.Namespace, target_stage: str) -> Non
         func = _STAGE_FUNCS.get(stage)
         if func is None:
             raise ValueError(f"Stage '{stage}' has no runnable command.")
-        _run_step(stage, lambda f=func: f(args))
+        run_with_profiling(stage, lambda f=func: f(args))
 
 def link(config: LinkerConfiguration) -> None:
-    _run_step("create_project", lambda: _save_linker_info(
+    run_with_profiling("create_project", lambda: save_linker_info(
         config, stage="create_project"))
 
-    def _do_generate_tcl() -> None:
+    @profiled
+    def generate_tcl() -> None:
         if config.platform == Platform.SIMULATION:
             generate_sim_tcl(config)
         elif config.platform == Platform.EMULATION:
             generate_emu_tcl(config)
         else:
             generate_tcl(config)
-        _save_linker_info(config, stage="generate_tcl")
-    _run_step("generate_tcl", _do_generate_tcl)
+        save_linker_info(config, stage="generate_tcl")
+    generate_tcl()
 
-    def _do_build_all() -> None:
+    @profiled
+    def build_all() -> None:
         if config.platform == Platform.SIMULATION:
             create_sim_project(config)
             build_sim_project(config)
@@ -693,10 +697,11 @@ def link(config: LinkerConfiguration) -> None:
         else:
             create_build_project(config, action="all")
             generate_base_pdi_with_aved(config)
-        _save_linker_info(config, stage="build_hw_project")
-    _run_step("build", _do_build_all)
+        save_linker_info(config, stage="build_hw_project")
+    build_all()
 
-    def _do_create_metadata() -> None:
+    @profiled
+    def create_metadata() -> None:
         if config.platform == Platform.SIMULATION:
             pass
         elif config.platform == Platform.EMULATION:
@@ -705,8 +710,8 @@ def link(config: LinkerConfiguration) -> None:
             generate_image(config)
             generate_util_report(config)
             build_vbin(config)
-        _save_linker_info(config, stage="create_metadata")
-    _run_step("create_metadata", _do_create_metadata)
+        save_linker_info(config, stage="create_metadata")
+    create_metadata()
 
 def main():
     logging.basicConfig(
