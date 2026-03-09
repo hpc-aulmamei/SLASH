@@ -230,7 +230,7 @@ class InstallerConfiguration(CommandConfiguration):
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         super().populate_argument_parser(ap)
         ap.description = "Build and install base images for hardware builds."
-        ap.add_argument("--build-dir", required=False, type=Optional[Path], default=Path("./install_build"), help="The build directory for the installer. Default: ./install_build")
+        ap.add_argument("--build-dir", required=False, type=Optional[Path], default=Path("./install.prj"), help="The build directory for the installer. Default: ./install_build")
     
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)

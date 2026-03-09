@@ -32,7 +32,7 @@ from emit.hw.service_region.stream_ctx import build_stream_connect_context
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from emit.hls_meta import infer_hls_json_from_component_xml
 from core.results_dir import resolve_linker_platform_dir
-from core.linker_config import LinkerConfiguration
+from core.command_config import LinkerConfiguration
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances

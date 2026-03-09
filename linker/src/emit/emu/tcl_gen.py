@@ -31,7 +31,7 @@ from emit.hw.user_region.addr_ctx import build_axilite_address_context
 from emit.emu.tb_ctx import build_tb_context
 from emit.hls_meta import infer_hls_json_from_component_xml
 from core.results_dir import resolve_linker_platform_dir
-from core.linker_config import LinkerConfiguration
+from core.command_config import LinkerConfiguration
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances

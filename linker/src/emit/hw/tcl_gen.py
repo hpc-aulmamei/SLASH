@@ -49,7 +49,7 @@ from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
 from core.bd_ports import load_bd_ports_from_file
 
-from core.linker_config import LinkerConfiguration
+from core.command_config import LinkerConfiguration
 
 logger = logging.getLogger(__name__)
 

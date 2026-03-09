@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Set, Dict, Any
-from core.linker_config import CommandConfiguration
+from core.command_config import CommandConfiguration
 
 @dataclass(frozen=True)
 class NetworkSpecView:

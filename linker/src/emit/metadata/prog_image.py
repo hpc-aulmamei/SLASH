@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from core.results_dir import resolve_linker_platform_dir
-from core.linker_config import LinkerConfiguration
+from core.command_config import LinkerConfiguration
 
 logger = logging.getLogger(__name__)
 

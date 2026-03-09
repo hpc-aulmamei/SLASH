@@ -45,7 +45,7 @@ from emit.sim.project_gen import create_sim_project, build_sim_project
 from emit.emu.project_gen import build_emu_project, package_emu_artifacts
 
 from emit.metadata.prog_image import build_vbin
-from core.linker_config import LinkerConfiguration, Platform, InstallerConfiguration, CommandConfiguration
+from core.command_config import LinkerConfiguration, Platform, InstallerConfiguration, CommandConfiguration
 from emit.metadata.timing_freq import apply_timing_frequency_cap
 from parser.config_parser import parse_connectivity_file
 from core.results_dir import (

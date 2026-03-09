@@ -32,7 +32,7 @@ import tarfile
 from typing import Iterable
 
 from emit.hls_meta import infer_hls_json_from_component_xml
-from core.linker_config import LinkerConfiguration
+from core.command_config import LinkerConfiguration
 
 logger = logging.getLogger(__name__)
 

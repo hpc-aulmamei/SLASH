@@ -29,7 +29,7 @@ import tarfile
 import tempfile
 from typing import Iterable
 
-from core.linker_config import LinkerConfiguration
+from core.command_config import LinkerConfiguration
 
 logger = logging.getLogger(__name__)
 

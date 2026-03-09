@@ -29,7 +29,7 @@ import subprocess
 from typing import Optional
 from emit.metadata.report_util import convert_report_utilization_to_xml
 from core.results_dir import resolve_linker_platform_dir
-from core.linker_config import LinkerConfiguration, InstallerConfiguration, CommandConfiguration
+from core.command_config import LinkerConfiguration, InstallerConfiguration, CommandConfiguration
 
 logger = logging.getLogger(__name__)
 
