@@ -677,7 +677,7 @@ def link(config: LinkerConfiguration) -> None:
         config, stage="create_project"))
 
     @profiled
-    def generate_tcl() -> None:
+    def step_generate_tcl() -> None:
         if config.platform == Platform.SIMULATION:
             generate_sim_tcl(config)
         elif config.platform == Platform.EMULATION:
@@ -685,10 +685,10 @@ def link(config: LinkerConfiguration) -> None:
         else:
             generate_tcl(config)
         save_linker_info(config, stage="generate_tcl")
-    generate_tcl()
+    step_generate_tcl()
 
     @profiled
-    def build_all() -> None:
+    def step_build_all() -> None:
         if config.platform == Platform.SIMULATION:
             create_sim_project(config)
             build_sim_project(config)
@@ -698,10 +698,10 @@ def link(config: LinkerConfiguration) -> None:
             create_build_project(config, action="all")
             generate_base_pdi_with_aved(config)
         save_linker_info(config, stage="build_hw_project")
-    build_all()
+    step_build_all()
 
     @profiled
-    def create_metadata() -> None:
+    def step_create_metadata() -> None:
         if config.platform == Platform.SIMULATION:
             pass
         elif config.platform == Platform.EMULATION:
@@ -711,7 +711,7 @@ def link(config: LinkerConfiguration) -> None:
             generate_util_report(config)
             build_vbin(config)
         save_linker_info(config, stage="create_metadata")
-    create_metadata()
+    step_create_metadata()
 
 def main():
     logging.basicConfig(

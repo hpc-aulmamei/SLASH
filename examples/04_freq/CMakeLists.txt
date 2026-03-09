@@ -26,46 +26,44 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS "-O3")
 
 get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
-include("${REPO_ROOT}/cmake/ProjectInit.cmake")
+include("${REPO_ROOT}/cmake/Slash.cmake")
 
-set(SLASH_PROJECT "freq")
 set(CFG_FILE "${CMAKE_CURRENT_LIST_DIR}/config.cfg")
 
-set(HLS_BUILD_DIR "${CMAKE_CURRENT_LIST_DIR}/hls")
 set(DEVICE "xcv80-lsva4737-2MHP-e-S")
-set(IP_REPO  "${HLS_BUILD_DIR}")
+set(IP_REPO  "${CMAKE_CURRENT_LIST_DIR}/hls")
 set(KERNELS
-  "${HLS_BUILD_DIR}/build_vadd.${DEVICE}/hls/impl/ip/component.xml"
+  "${IP_REPO}/build_vadd.${DEVICE}/hls/impl/ip/component.xml"
 )
 
-build_hw(
-  TARGET     hw
-  LINKER_DIR "${SLASH_LINKER_DIR}"
-  PROJECT    "${SLASH_PROJECT}"
-  CFG        "${CFG_FILE}"
-  KERNELS    ${KERNELS}
-  IP_REPO    "${IP_REPO}"
+add_vbin(
+  TARGET    "freq_hw"
+  PLATFORM  "hw"
+  CFG       "${CFG_FILE}"
+  KERNELS   ${KERNELS}
+  IP_REPO   "${IP_REPO}"
 )
 
-build_sim(
-  TARGET     sim
-  LINKER_DIR "${SLASH_LINKER_DIR}"
-  PROJECT    "${SLASH_PROJECT}"
-  CFG        "${CFG_FILE}"
-  KERNELS    ${KERNELS}
+add_vbin(
+  TARGET      "freq_sim"
+  PLATFORM    "sim"
+  CFG         "${CFG_FILE}"
+  KERNELS     ${KERNELS}
+  IP_REPO     "${IP_REPO}"
 )
 
-build_emu(
-  TARGET     emu
-  LINKER_DIR "${SLASH_LINKER_DIR}"
-  PROJECT    "${SLASH_PROJECT}"
-  CFG        "${CFG_FILE}"
-  KERNELS    ${KERNELS}
+add_vbin(
+  TARGET      "freq_emu"
+  PLATFORM    "emu"
+  CFG         "${CFG_FILE}"
+  KERNELS     ${KERNELS}
+  IP_REPO     "${IP_REPO}"
 )
 
 # Include directories
 # Keep headers in lockstep with the installed shared libraries (linked below).
-include_directories(/usr/local/vrt/include
+include_directories(${REPO_ROOT}/vrt/include
+                    /usr/local/vrt/include
                     /usr/local/include
                     /usr/include/libxml2
                     /usr/include/jsoncpp)

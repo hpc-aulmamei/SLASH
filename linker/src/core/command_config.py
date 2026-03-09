@@ -59,7 +59,7 @@ class CommandConfiguration(object):
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         ap.formatter_class = argparse.RawTextHelpFormatter
-        ap.add_argument("--ip-repository", required=False, type=Optional[Path], default=None, help="IP repository path (stored for linker stages).")
+        ap.add_argument("--ip-repository", required=False, type=Path, default=None, help="IP repository path (stored for linker stages).")
         ap.add_argument("--vivado", required=False, type=Path, default=None, help="Vivado binary to use for linking. If not given, it will be derived from PATH.")
         ap.add_argument("--jobs", required=False, type=int, default=8, help="Number of parallel jobs for Vivado runs.")
 
