@@ -262,24 +262,19 @@ def install_abstract_shell(config: InstallerConfiguration) -> None:
     create_build_project(config)
 
     impl_dir = config.build_dir / "slash.runs" / "impl_1"
-    bd_source_dirs = (
-        config.build_dir / "slash.srcs" / "sources_1" / "bd" / "slash_base",
-        config.build_dir / "slash.srcs" / "sources_1" / "bd" / "service_layer",
-    )
     dcp_sources = (
         impl_dir / "top_wrapper_routed_bb.dcp",
-        config.install_dir / "abs_shell_slash.dcp",
-        config.install_dir / "abs_shell_service_layer.dcp",
+        impl_dir / "abs_shell_slash.dcp",
+        impl_dir / "abs_shell_service_layer.dcp",
     )
-    config.install_dir.mkdir(parents=True, exist_ok=True)
-
     for src in dcp_sources:
         if not src.exists():
             raise FileNotFoundError(
                 f"Expected install artifact not found: {src}")
     _copy_files(list(dcp_sources), config.install_dir)
 
-    for src_dir in bd_source_dirs:
+    src_dirs = config.build_dir / "slash.srcs" / "sources_1" / "bd"
+    for src_dir in (src_dirs / "slash_base", src_dirs / "service_layer"):
         if not src_dir.is_dir():
             raise FileNotFoundError(
                 f"Expected install BD directory not found: {src_dir}")
