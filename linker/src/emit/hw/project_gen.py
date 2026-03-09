@@ -29,7 +29,7 @@ import subprocess
 from typing import Optional
 from emit.metadata.report_util import convert_report_utilization_to_xml
 from core.results_dir import resolve_linker_platform_dir
-from core.linker_config import LinkerConfiguration
+from core.linker_config import LinkerConfiguration, InstallerConfiguration, CommandConfiguration
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ def _generate_top_wrapper_pdi_with_bootgen(impl_dir: Path) -> Path:
     return output_pdi
 
 
-def generate_base_pdi_with_aved(config: LinkerConfiguration) -> None:
+def generate_base_pdi_with_aved(config: CommandConfiguration) -> None:
     results_base_dir = config.install_dir
     aved_root = config.linker_root_dir / "submodules" / "AVED"
     aved_hw_dir = aved_root / "hw" / AVED_DESIGN_NAME
@@ -153,7 +153,7 @@ def generate_base_pdi_with_aved(config: LinkerConfiguration) -> None:
 
 
 def create_build_project(
-    config: LinkerConfiguration,
+    config: CommandConfiguration,
     action: Optional[str] = None
 ) -> None:
     tcl = config.resources_dir / "base" / "scripts" / "create_project.tcl"
@@ -256,7 +256,7 @@ def build_slash_rm(config: LinkerConfiguration) -> None:
     _run_rm_build(config, RM_KIND.SLASH_PROJECT)
 
 
-def install_abstract_shell(config: LinkerConfiguration) -> None:
+def install_abstract_shell(config: InstallerConfiguration) -> None:
     config.install_dir.mkdir(parents=True, exist_ok=True)
 
     create_build_project(config)
@@ -293,7 +293,7 @@ def install_abstract_shell(config: LinkerConfiguration) -> None:
     _copy_files([aved_pdi], config.install_dir)
 
 
-def generate_image(config: LinkerConfiguration, include_service_layer: bool = True) -> None:
+def generate_image(config: CommandConfiguration, include_service_layer: bool = True) -> None:
     impl_dir = config.build_dir / \
         "slash.runs" / f"{config.project_name}_impl_1"
     dest_dir = config.build_dir / "images"
@@ -326,7 +326,7 @@ def generate_image(config: LinkerConfiguration, include_service_layer: bool = Tr
     logger.info("PDI image generation complete for %s", config.project_name)
 
 
-def generate_util_report(config: LinkerConfiguration) -> None:
+def generate_util_report(config: CommandConfiguration) -> None:
     report_path = config.build_dir / \
         f"report_utilization_{config.project_name}.txt"
     xml_path = config.build_dir / \

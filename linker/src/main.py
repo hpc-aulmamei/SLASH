@@ -45,7 +45,7 @@ from emit.sim.project_gen import create_sim_project, build_sim_project
 from emit.emu.project_gen import build_emu_project, package_emu_artifacts
 
 from emit.metadata.prog_image import build_vbin
-from core.linker_config import LinkerConfiguration, Platform
+from core.linker_config import LinkerConfiguration, Platform, InstallerConfiguration, CommandConfiguration
 from emit.metadata.timing_freq import apply_timing_frequency_cap
 from parser.config_parser import parse_connectivity_file
 from core.results_dir import (
@@ -670,24 +670,7 @@ def _run_from_last_to_target(args: argparse.Namespace, target_stage: str) -> Non
             raise ValueError(f"Stage '{stage}' has no runnable command.")
         _run_step(stage, lambda f=func: f(args))
 
-
-def _install(args: argparse.Namespace) -> None:
-    print("DISCLAIMER: Run this install flow only once. It will take a long time.", flush=True)
-    install_abstract_shell(
-        project_name=args.project,
-        ip_repository=args.ip_repository,
-        install_dir=Path(args.install_dir),
-        vivado_bin=args.vivado_bin,
-        workdir=Path(args.workdir) if args.workdir else None,
-    )
-
-
-def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s:%(funcName)s: %(message)s",
-    )
-    config = LinkerConfiguration()
+def link(config: LinkerConfiguration) -> None:
     _run_step("create_project", lambda: _save_linker_info(
         config, stage="create_project"))
 
@@ -724,6 +707,28 @@ def main():
             build_vbin(config)
         _save_linker_info(config, stage="create_metadata")
     _run_step("create_metadata", _do_create_metadata)
+
+def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s:%(funcName)s: %(message)s",
+    )
+
+    ap = argparse.ArgumentParser(description="Todo", conflict_handler="resolve")
+    sub_parsers = ap.add_subparsers(required=True)
+
+    link_parser = sub_parsers.add_parser("link")
+    LinkerConfiguration.populate_argument_parser(link_parser)
+    link_parser.set_defaults(config_class=LinkerConfiguration, operation=link)
+    
+    install_parser = sub_parsers.add_parser("install")
+    InstallerConfiguration.populate_argument_parser(install_parser)
+    install_parser.set_defaults(config_class=InstallerConfiguration, operation=install_abstract_shell)
+   
+    args = ap.parse_args()
+
+    config = args.config_class(args)
+    args.operation(config)
 
 
 if __name__ == "__main__":

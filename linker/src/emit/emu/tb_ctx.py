@@ -29,7 +29,6 @@ from emit.hls_meta import (
     load_hls_metadata,
     parse_hls_args,
 )
-from core.linker_config import LinkerConfiguration
 from core.kernel import KernelInstance
 from core.connectivity import StreamConnect
 

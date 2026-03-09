@@ -40,9 +40,6 @@ logger = logging.getLogger(__name__)
 
 
 def generate_emu_tcl(config: LinkerConfiguration) -> None:
-    # Ensure the output directory exists
-    config.build_dir.mkdir(parents=True, exist_ok=True)
-
     # 1) Parse kernels
     kernel_library = {}
     kernel_compxml_by_type = {}

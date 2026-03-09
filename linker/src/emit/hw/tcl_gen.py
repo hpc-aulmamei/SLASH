@@ -299,7 +299,6 @@ def generate_tcl(config: LinkerConfiguration) -> None:
     ]
 
     ctx.update(build_stream_connect_context(instances, net_ctx["streams_leftover"]))
-    ctx.update(build_system_ila_debug_context(instances, getattr(cfg, "debug", None)))
 
     used_targets = _collect_used_targets(ctx)
 

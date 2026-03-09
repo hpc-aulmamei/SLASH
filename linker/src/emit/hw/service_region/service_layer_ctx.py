@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Set, Dict, Any
-from core.linker_config import LinkerConfiguration
+from core.linker_config import CommandConfiguration
 
 @dataclass(frozen=True)
 class NetworkSpecView:
@@ -46,7 +46,7 @@ def build_service_layer_context(net) -> dict:
         "dual_qsfp_1": 0,
     }
 
-def compute_paths(config: LinkerConfiguration) -> Dict[str, Any]:
+def compute_paths(config: CommandConfiguration) -> Dict[str, Any]:
     """
     Resolve absolute paths for service-layer assets regardless of CWD.
     """
