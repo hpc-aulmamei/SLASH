@@ -134,8 +134,8 @@ class LinkerConfiguration(CommandConfiguration):
         ap.add_argument("-c", "--config", required=True, type=Path, help="Path to the connectivity configuration file (e.g. config.cfg).")
         ap.add_argument("-k", "--kernels", required=True, type=Path, nargs="+",  help="List of component.xml files to load as kernel IP cores.")
         ap.add_argument("-o", "--out", required=True, type=Path, help="Path to the final VBIN archive.")
-        ap.add_argument("-p", "--platform", choices=["emu", "sim", "hw"], default="emu", help="Target platform (hw, sim, or emu).")
-        ap.add_argument("--pre-synth-tcls", type=Path, nargs="*", default=[], help="Paths to TCL script to run before synthesis (applies to hardware builds only).")
+        ap.add_argument("-p", "--platform", choices=["emu", "sim", "hw"], default="emu", help="Target platform (hw, sim, or emu). Default: emu")
+        ap.add_argument("--pre-synth-tcls", type=Path, nargs="*", default=[], help="Paths to TCL scripts to run before synthesis (applies to hardware builds only).")
         ap.add_argument("--clock-hz", required=False, type=Optional[int], default=None, help="Target clock frequency in MHz.")
         
 
@@ -229,7 +229,8 @@ class InstallerConfiguration(CommandConfiguration):
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         super().populate_argument_parser(ap)
-        ap.add_argument("--build-dir", required=False, type=Optional[Path], default=Path("./install_build"), help="The build directory for the installer.")
+        ap.description = "Build and install base images for hardware builds."
+        ap.add_argument("--build-dir", required=False, type=Optional[Path], default=Path("./install_build"), help="The build directory for the installer. Default: ./install_build")
     
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)
