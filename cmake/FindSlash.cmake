@@ -25,6 +25,7 @@
 # * Add wrappers for building HLS cores
 
 find_package(Vivado REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 get_filename_component(SLASH_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." REALPATH)
 set(SLASH_LINKER_DIR "${SLASH_REPO_ROOT}/linker/")
