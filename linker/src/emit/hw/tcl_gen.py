@@ -254,7 +254,7 @@ def generate_tcl(config: LinkerConfiguration) -> None:
         instances, num_mem_ports=8, max_si=16))
     ctx.update(build_host_smartconnect_context(instances, bd, max_si=16))
     ctx.update(build_virt_smartconnect_context(instances, bd, max_si=16))
-    net_ctx = build_network_axis_context(instances, streams, cfg.network)
+    net_ctx = build_network_axis_context(instances, streams, cfg.net)
     ctx.update({
         # inst.AXIS -> /dcmac_axis_noc_k/S00_AXIS
         "axis_to_fabric":   net_ctx["axis_to_fabric"],
@@ -339,10 +339,10 @@ def generate_tcl(config: LinkerConfiguration) -> None:
 
     paths_ctx = compute_paths(config)
     svc_ctx = {}
-    svc_ctx.update(build_service_layer_context(cfg.network))
-    svc_ctx.update(build_service_axilite_ctx(cfg.network)
+    svc_ctx.update(build_service_layer_context(cfg.net))
+    svc_ctx.update(build_service_axilite_ctx(cfg.net)
                    )    # SmartConnect + MI targets
-    svc_ctx.update(build_service_noc_axis_ctx(cfg.network))
+    svc_ctx.update(build_service_noc_axis_ctx(cfg.net))
     # absolute paths for dcmac sources
     svc_ctx.update(paths_ctx)
 

@@ -272,10 +272,6 @@ class LinkerConfiguration(CommandConfiguration):
         return self._build_dir
 
     @property
-    def linker_info_path(self) -> Path:
-        return self.build_dir / ".linker_info.json"
-
-    @property
     def vitis_include_dir(self) -> Path:
         return self._vitis_include_dir
 
