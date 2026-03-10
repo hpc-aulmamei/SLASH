@@ -42,11 +42,10 @@ proc build_project {{proj_name "user"}} {
   launch_runs impl_1 -to_step write_bitstream -jobs 14
   wait_on_run impl_1
   open_run impl_1
-  set script_dir [file dirname [file normalize [info script]]]
-  set base_results_dir [file normalize [file join $script_dir ".." ".." ".." "results" "base"]]
-  file mkdir $base_results_dir
-  write_abstract_shell -cell top_i/slash -force [file join $base_results_dir "abs_shell_slash.dcp"]
-  write_abstract_shell -cell top_i/service_layer -force [file join $base_results_dir "abs_shell_service_layer.dcp"]
+  
+  set impl_output_dir [get_property DIRECTORY [current_run]]
+  write_abstract_shell -cell top_i/slash -force [file join $impl_output_dir "abs_shell_slash.dcp"]
+  write_abstract_shell -cell top_i/service_layer -force [file join $impl_output_dir "abs_shell_service_layer.dcp"]
 
   puts "INFO: Implementation complete for run 'impl_1'."
 }

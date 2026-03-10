@@ -87,7 +87,7 @@ def _ensure_boot_device_pcie_in_bif(bif_path: Path) -> None:
 
 def _generate_top_wrapper_pdi_with_bootgen(impl_dir: Path) -> Path:
     bif_path = impl_dir / "top_wrapper.bif"
-    output_pdi = impl_dir / "top_wrapperr.pdi"
+    output_pdi = impl_dir / "top_wrapper.pdi"
 
     _ensure_boot_device_pcie_in_bif(bif_path)
     logger.info("Running bootgen in %s to generate %s",
@@ -113,13 +113,20 @@ def _generate_top_wrapper_pdi_with_bootgen(impl_dir: Path) -> Path:
     return output_pdi
 
 
-def generate_base_pdi_with_aved(config: CommandConfiguration) -> None:
-    results_base_dir = config.install_dir
-    aved_root = config.linker_root_dir / "submodules" / "AVED"
-    aved_hw_dir = aved_root / "hw" / AVED_DESIGN_NAME
+def generate_base_pdi_with_aved(config: CommandConfiguration) -> Path:
+    aved_reference_dir = config.resources_dir / "submodules" / "AVED"
+    if not aved_reference_dir.is_dir():
+        raise FileNotFoundError(aved_reference_dir)
+    
+    aved_dir = config.build_dir / "AVED"
+    if aved_dir.is_dir():
+        shutil.rmtree(aved_dir)
+    shutil.copytree(aved_reference_dir, aved_dir)
+    
+    aved_hw_dir = aved_dir / "hw" / AVED_DESIGN_NAME
     aved_build_dir = aved_hw_dir / "build"
     aved_fpt_dir = aved_hw_dir / "fpt"
-    aved_fw_profile_hal = aved_root / "fw" / "AMC" / \
+    aved_fw_profile_hal = aved_dir / "fw" / "AMC" / \
         "src" / "profiles" / "v80" / "profile_hal.h"
 
     static_impl_dir = config.build_dir / "slash.runs" / "impl_1"
@@ -146,10 +153,8 @@ def generate_base_pdi_with_aved(config: CommandConfiguration) -> None:
     aved_pdi = aved_hw_dir / f"{AVED_DESIGN_NAME}.pdi"
     if not aved_pdi.exists():
         raise FileNotFoundError(f"Expected AVED output not found: {aved_pdi}")
-    results_base_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(aved_pdi, results_base_dir / f"{AVED_DESIGN_NAME}.pdi")
-    logger.info("AVED fallback complete. Generated %s",
-                results_base_dir / f"{AVED_DESIGN_NAME}.pdi")
+    logger.info("AVED fallback complete. Generated %s", aved_pdi)
+    return aved_pdi
 
 
 def create_build_project(
@@ -280,12 +285,11 @@ def install_abstract_shell(config: InstallerConfiguration) -> None:
                 f"Expected install BD directory not found: {src_dir}")
         _copy_tree(src_dir, config.install_dir)
 
-    generate_base_pdi_with_aved(config)
-    aved_pdi = config.install_dir / f"{AVED_DESIGN_NAME}.pdi"
-    if not aved_pdi.exists():
+    aved_pdi_path = generate_base_pdi_with_aved(config)
+    if not aved_pdi_path.exists():
         raise FileNotFoundError(
-            f"Expected AVED PDI not found in results/base: {aved_pdi}")
-    _copy_files([aved_pdi], config.install_dir)
+            f"Expected AVED PDI not found in results/base: {aved_pdi_path}")
+    _copy_files([aved_pdi_path], config.install_dir)
 
 
 def generate_image(config: CommandConfiguration, include_service_layer: bool = True) -> None:
