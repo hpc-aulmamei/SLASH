@@ -192,15 +192,19 @@ class RM_KIND(Enum):
     SERVICE_LAYER = "service_layer"
 
 
-def run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
+def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
     if not config.ip_repository:
         raise ValueError("ip_repository is required for RM builds")
 
     logs_dir = config.build_dir / "logs"
     artifact_out_dir = config.build_dir / \
         "slash.runs" / f"{config.project_name}_impl_1"
+    rm_work_dir = config.build_dir / \
+        "rm" / f"{rm_kind}_{config.project_name}"
 
     logs_dir.mkdir(parents=True, exist_ok=True)
+    artifact_out_dir.mkdir(parents=True, exist_ok=True)
+    rm_work_dir.mkdir(parents=True, exist_ok=True)
 
     if rm_kind == RM_KIND.SERVICE_LAYER:
         tcl_path = config.resources_dir / "base" / "scripts" / "service_layer_build.tcl"
@@ -228,8 +232,10 @@ def run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
         str(config.ip_repository),
         "--install-dir",
         str(config.abstract_shell_dir),
-        "--build-dir",
+        "--linker-results-dir",
         str(config.build_dir),
+        "--rm-work-dir",
+        str(rm_work_dir),
         "--artifact-out-dir",
         str(artifact_out_dir),
         "--jobs",
@@ -245,6 +251,14 @@ def run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
             cmd.extend(["--pre-synth-tcl", str(path)])
 
     subprocess.run(cmd, cwd=str(config.build_dir), check=True)
+
+
+def build_service_layer_rm(config: LinkerConfiguration) -> None:
+    _run_rm_build(config, RM_KIND.SERVICE_LAYER)
+
+
+def build_slash_rm(config: LinkerConfiguration) -> None:
+    _run_rm_build(config, RM_KIND.SLASH_PROJECT)
 
 
 def install_abstract_shell(config: InstallerConfiguration) -> None:

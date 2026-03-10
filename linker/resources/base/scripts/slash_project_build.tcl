@@ -1,5 +1,5 @@
 proc _slash_usage {} {
-    return "Expected -tclargs: --project-name <name> --ip-repo <path> --build-dir <path> --artifact-out-dir <path> --util-report-file <path> [--install-dir <path>] [--jobs <n>] [--pre-synth-tcl <path> ...]"
+    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> --util-report-file <path> [--install-dir <path>] [--jobs <n>] [--pre-synth-tcl <path> ...]"
 }
 
 proc _require_file {path label} {
@@ -17,8 +17,9 @@ proc _require_dir {path label} {
 array set opts {
     --project-name ""
     --ip-repo ""
-    --install-dir ""
-    --build-dir ""
+    --install-dir "/opt/amd/slash"
+    --linker-results-dir ""
+    --rm-work-dir ""
     --artifact-out-dir ""
     --util-report-file ""
     --jobs 8
@@ -53,7 +54,7 @@ while {$idx < [llength $argv]} {
     incr idx
 }
 
-foreach req {--project-name --ip-repo --build-dir --artifact-out-dir --util-report-file} {
+foreach req {--project-name --ip-repo --linker-results-dir --rm-work-dir --artifact-out-dir --util-report-file} {
     if {$opts($req) eq ""} {
         error "Missing required argument '$req'. [_slash_usage]"
     }
@@ -62,22 +63,24 @@ foreach req {--project-name --ip-repo --build-dir --artifact-out-dir --util-repo
 set proj_name $opts(--project-name)
 set ip_repo [file normalize $opts(--ip-repo)]
 set install_dir [file normalize $opts(--install-dir)]
-set build_dir [file normalize $opts(--build-dir)]
+set linker_results_dir [file normalize $opts(--linker-results-dir)]
+set rm_work_dir $opts(--rm-work-dir)
 set artifact_out_dir $opts(--artifact-out-dir)
 set util_report_file $opts(--util-report-file)
 set jobs $opts(--jobs)
 
+file mkdir $rm_work_dir
 file mkdir $artifact_out_dir
 file mkdir [file dirname $util_report_file]
-set build_dir [file normalize $build_dir]
+set rm_work_dir [file normalize $rm_work_dir]
 set artifact_out_dir [file normalize $artifact_out_dir]
 set util_report_file [file normalize $util_report_file]
-set timing_report_file [file join $build_dir "report_timing_${proj_name}.txt"]
+set timing_report_file [file join $rm_work_dir "report_timing_${proj_name}.txt"]
 set ltx_file [file join $artifact_out_dir "top_i_slash_slash_${proj_name}_inst_0_hw_probes.ltx"]
 
 set abs_shell_dcp [file join $install_dir "abs_shell_slash.dcp"]
 set base_bd [file join $install_dir "slash_base" "slash_base.bd"]
-set generated_bd_tcl [file join $build_dir "slash.tcl"]
+set generated_bd_tcl [file join $linker_results_dir "bd" "slash_${proj_name}.tcl"]
 set script_dir [file dirname [file normalize [info script]]]
 set linker_root [file normalize [file join $script_dir ".." ".." ".."]]
 set base_ip_repo [file join $linker_root "resources" "base" "iprepo"]
@@ -95,8 +98,9 @@ foreach pre_synth_tcl $pre_synth_tcls {
 puts "PROJECT NAME:      $proj_name"
 puts "IP REPO:           $ip_repo"
 puts "INSTALL DIR:       $install_dir"
-puts "BUILD DIR:         $build_dir"
+puts "LINKER RESULTS:    $linker_results_dir"
 puts "BASE IP REPO:      $base_ip_repo"
+puts "RM WORK DIR:       $rm_work_dir"
 puts "ARTIFACT OUT DIR:  $artifact_out_dir"
 puts "UTIL REPORT FILE:  $util_report_file"
 puts "TIMING REPORT:     $timing_report_file"
@@ -107,7 +111,7 @@ puts "PRE-SYNTH TCLS:    $pre_synth_tcls"
 set slash_proj_name "slash_${proj_name}"
 set slash_rm_name "${slash_proj_name}_rm"
 
-create_project $slash_proj_name $build_dir -part xcv80-lsva4737-2MHP-e-S -force
+create_project $slash_proj_name $rm_work_dir -part xcv80-lsva4737-2MHP-e-S -force
 
 set_property ip_repo_paths [list $base_ip_repo $ip_repo] [current_project]
 update_ip_catalog
@@ -124,7 +128,7 @@ create_pr_configuration -name config_1 -partitions [list top_i/slash:$slash_rm_n
 set_property USE_BLACKBOX 0 [get_pr_configuration config_1]
 set_property PR_CONFIGURATION config_1 [get_runs impl_1]
 
-set imported_bd [file join $build_dir "${slash_proj_name}.srcs" "sources_1" "bd" "slash_base" "slash_base.bd"]
+set imported_bd [file join $rm_work_dir "${slash_proj_name}.srcs" "sources_1" "bd" "slash_base" "slash_base.bd"]
 open_bd_design $imported_bd
 foreach p [get_bd_intf_ports] {
     set_property HDL_ATTRIBUTE.LOCKED {TRUE} $p
@@ -138,7 +142,7 @@ foreach pre_synth_tcl $pre_synth_tcls {
 launch_runs "${slash_rm_name}_synth_1" -jobs $jobs
 wait_on_run "${slash_rm_name}_synth_1"
 
-set rm_synth_dcp [file join $build_dir "${slash_proj_name}.runs" "${slash_rm_name}_synth_1" "slash_base.dcp"]
+set rm_synth_dcp [file join $rm_work_dir "${slash_proj_name}.runs" "${slash_rm_name}_synth_1" "slash_base.dcp"]
 add_files $rm_synth_dcp
 set_property SCOPED_TO_CELLS {top_i/slash} [get_files $rm_synth_dcp]
 set_property strategy Congestion_SSI_SpreadLogic_high [get_runs impl_1]
