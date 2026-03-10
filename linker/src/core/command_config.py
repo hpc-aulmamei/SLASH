@@ -223,10 +223,8 @@ class LinkerConfiguration(CommandConfiguration):
 
         self._configuration: ConnectivityConfig = parse_connectivity_file(
             self.configuration_file)
-        instances, streams = apply_config_to_instances(
+        self._kernel_instances: List[KernelInstance] = apply_config_to_instances(
             self.configuration, self.kernels)
-        self._kernel_instances: List[KernelInstance] = instances
-        self._streams: List[StreamConnect] = streams
 
     @property
     def block_design_ports(self) -> BlockDesignPorts:
@@ -239,6 +237,11 @@ class LinkerConfiguration(CommandConfiguration):
     @property
     def configuration(self) -> ConnectivityConfig:
         return self._configuration
+
+    @property
+    def networking_enabled(self) -> bool:
+        # TODO: Change to some sort of description for different service layers once available.
+        return len(self.configuration.net.enabled_eth) > 0
 
     @property
     def out_path(self) -> Path:
@@ -263,10 +266,6 @@ class LinkerConfiguration(CommandConfiguration):
     @property
     def kernel_instances(self) -> Dict[str, KernelInstance]:
         return self._kernel_instances
-
-    @property
-    def stream_connects(self) -> List[StreamConnect]:
-        return self._streams
 
     @property
     def build_dir(self) -> Path:

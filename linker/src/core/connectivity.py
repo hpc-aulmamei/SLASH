@@ -27,6 +27,27 @@ from typing import List
 # -----------------------------
 
 
+@dataclass
+class NetworkSpec:
+    enabled_eth: set[int]
+
+
+@dataclass
+class UserRegionSpec:
+    pre_synth_tcls: list[str]
+
+
+@dataclass(frozen=True)
+class DebugNetSpec:
+    inst: str
+    port: str
+
+
+@dataclass
+class DebugSpec:
+    nets: list[DebugNetSpec]
+
+
 @dataclass(frozen=True)
 class NKSpec:
     kernel_type: str
@@ -67,3 +88,8 @@ class ConnectivityConfig:
     streams: List[StreamConnect] = field(default_factory=list)
     sps: List[SpMapping] = field(default_factory=list)
     clocks: List[ClockSpec] = field(default_factory=list)
+    net: NetworkSpec = field(
+        default_factory=lambda: NetworkSpec(enabled_eth={}))
+    user_region: UserRegionSpec = field(
+        default_factory=lambda: UserRegionSpec(pre_synth_tcls=[]))
+    debug: DebugSpec = field(default_factory=lambda: DebugSpec(nets=[]))

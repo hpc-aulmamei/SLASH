@@ -28,31 +28,6 @@ from core.kernel import Kernel, KernelInstance
 from core.connectivity import *
 from core.port import BusType
 
-# -----------------------------
-# Network model (local)
-# -----------------------------
-
-
-@dataclass
-class NetworkSpec:
-    enabled_eth: set[int]
-
-
-@dataclass
-class UserRegionSpec:
-    pre_synth_tcls: list[str]
-
-
-@dataclass(frozen=True)
-class DebugNetSpec:
-    inst: str
-    port: str
-
-
-@dataclass
-class DebugSpec:
-    nets: list[DebugNetSpec]
-
 
 # -----------------------------
 # Parsing helpers
@@ -278,24 +253,10 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
     # End of file: commit any trailing clock block
     _commit_clock()
 
-    # Attach network spec (works even if ConnectivityConfig has no typed field)
-    net = NetworkSpec(enabled_eth=enabled_eth)
-    try:
-        cfg.network = net  # type: ignore[attr-defined]
-    except Exception:
-        setattr(cfg, "network", net)
-
-    user_region = UserRegionSpec(pre_synth_tcls=pre_synth_tcls)
-    try:
-        cfg.user_region = user_region  # type: ignore[attr-defined]
-    except Exception:
-        setattr(cfg, "user_region", user_region)
-
-    debug = DebugSpec(nets=debug_nets)
-    try:
-        cfg.debug = debug  # type: ignore[attr-defined]
-    except Exception:
-        setattr(cfg, "debug", debug)
+    # Attach network spec
+    cfg.net = NetworkSpec(enabled_eth=enabled_eth)
+    cfg.user_region = UserRegionSpec(pre_synth_tcls=pre_synth_tcls)
+    cfg.debug = DebugSpec(nets=debug_nets)
 
     return cfg
 
@@ -319,7 +280,7 @@ def apply_config_to_instances(
     kernel_library: List[Kernel],
     *,
     default_ddr_index: int = 0  # DDR0 fallback for missing AXI4FULL ports
-) -> Tuple[List[KernelInstance], List[StreamConnect]]:
+) -> List[KernelInstance]:
     instances: Dict[str, KernelInstance] = {}
     kernel_library = {kernel.name: kernel for kernel in kernel_library}
 
@@ -364,5 +325,4 @@ def apply_config_to_instances(
             if pname not in mem_map:
                 mem_map[pname] = {"domain": "MEM", "index": ""}
 
-    # return streams as-is; networking layer will split eth_* endpoints later
-    return list(instances.values()), cfg.streams
+    return list(instances.values())

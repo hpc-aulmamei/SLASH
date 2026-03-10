@@ -229,7 +229,7 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
     # 1) Parse kernels
     cfg = config.configuration
     instances = {kernel.name: kernel for kernel in config.kernel_instances}
-    streams = config.stream_connects
+    streams = cfg.streams
     kernel_hls_by_type = {
         kernel.name: kernel.hls_data_path for kernel in config.kernels}
 

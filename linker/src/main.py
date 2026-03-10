@@ -136,8 +136,10 @@ def link(config: LinkerConfiguration) -> None:
             build_emu_project(config)
         else:
             build_slash_rm(config)
-            build_service_layer_rm(config)
-            pass
+            # Only build a service layer if ethernet is enabled
+            # Will be changed once more service layers become available
+            if config.networking_enabled:
+                build_service_layer_rm(config)
     step_build_all()
 
     @profiled
