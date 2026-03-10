@@ -231,7 +231,7 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
         "--ip-repo",
         str(config.ip_repository),
         "--install-dir",
-        str(config.install_dir),
+        str(config.abstract_shell_dir),
         "--linker-results-dir",
         str(config.build_dir),
         "--rm-work-dir",
@@ -262,7 +262,7 @@ def build_slash_rm(config: LinkerConfiguration) -> None:
 
 
 def install_abstract_shell(config: InstallerConfiguration) -> None:
-    config.install_dir.mkdir(parents=True, exist_ok=True)
+    config.abstract_shell_dir.mkdir(parents=True, exist_ok=True)
 
     create_build_project(config)
 
@@ -276,20 +276,20 @@ def install_abstract_shell(config: InstallerConfiguration) -> None:
         if not src.exists():
             raise FileNotFoundError(
                 f"Expected install artifact not found: {src}")
-    _copy_files(list(dcp_sources), config.install_dir)
+    _copy_files(list(dcp_sources), config.abstract_shell_dir)
 
     src_dirs = config.build_dir / "slash.srcs" / "sources_1" / "bd"
     for src_dir in (src_dirs / "slash_base", src_dirs / "service_layer"):
         if not src_dir.is_dir():
             raise FileNotFoundError(
                 f"Expected install BD directory not found: {src_dir}")
-        _copy_tree(src_dir, config.install_dir)
+        _copy_tree(src_dir, config.abstract_shell_dir)
 
     aved_pdi_path = generate_base_pdi_with_aved(config)
     if not aved_pdi_path.exists():
         raise FileNotFoundError(
             f"Expected AVED PDI not found in results/base: {aved_pdi_path}")
-    _copy_files([aved_pdi_path], config.install_dir)
+    _copy_files([aved_pdi_path], config.abstract_shell_dir)
 
 
 def generate_image(config: CommandConfiguration, include_service_layer: bool = True) -> None:

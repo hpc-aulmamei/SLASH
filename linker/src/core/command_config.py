@@ -109,8 +109,8 @@ class CommandConfiguration(object):
         return self.linker_root_dir / "resources"
 
     @property
-    def install_dir(self) -> Path:
-        return self.linker_root_dir / "results" / "base"
+    def abstract_shell_dir(self) -> Path:
+        return self.resources_dir / "abstract_shell"
 
     @property
     def ip_repository(self) -> Optional[Path]:
