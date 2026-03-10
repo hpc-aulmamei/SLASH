@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -23,6 +23,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, Any
 from core.kernel import KernelInstance
 from core.port import BusType
+
 
 def _coerce_optional_int(v: Any) -> Optional[int]:
     """Return int(v) if v is not None and looks like an int (decimal or 0x..), else None."""
@@ -37,6 +38,7 @@ def _coerce_optional_int(v: Any) -> Optional[int]:
         except ValueError:
             return None
     return None
+
 
 def build_mem_smartconnect_context(
     instances: Dict[str, KernelInstance],
@@ -61,7 +63,8 @@ def build_mem_smartconnect_context(
     """
     # 1) Collect all AXI4FULL kernel pins that target MEM
     #    Also capture an optional explicit index (if provided by config).
-    mem_sources: List[Tuple[str, Optional[int]]] = []  # (src_pin, explicit_index or None)
+    # (src_pin, explicit_index or None)
+    mem_sources: List[Tuple[str, Optional[int]]] = []
 
     for inst in instances.values():
         mem_sp = inst.params.get("mem_sp", {})
@@ -73,7 +76,8 @@ def build_mem_smartconnect_context(
                     # Some configs may carry an explicit MEM index; usually None.
                     idx = _coerce_optional_int(tgt.get("index"))
                     if idx is not None and not (0 <= idx < num_mem_ports):
-                        raise ValueError(f"MEM index {idx} out of range (0..{num_mem_ports-1}) for {src_pin}")
+                        raise ValueError(
+                            f"MEM index {idx} out of range (0..{num_mem_ports-1}) for {src_pin}")
                     mem_sources.append((src_pin, idx))
 
     if not mem_sources:
@@ -109,7 +113,8 @@ def build_mem_smartconnect_context(
         root_sc_name = None
 
         while len(current) > 1:
-            groups = [current[i:i + max_si] for i in range(0, len(current), max_si)]
+            groups = [current[i:i + max_si]
+                      for i in range(0, len(current), max_si)]
             next_level: List[dict] = []
 
             for g_idx, group in enumerate(groups):
@@ -128,7 +133,8 @@ def build_mem_smartconnect_context(
             level += 1
 
         if root_sc_name:
-            mem_smart_roots.append({"sc_name": root_sc_name, "dst_pin": dst_pin})
+            mem_smart_roots.append(
+                {"sc_name": root_sc_name, "dst_pin": dst_pin})
 
     return {
         "mem_direct": mem_direct,

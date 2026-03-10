@@ -28,7 +28,6 @@ import shutil
 import subprocess
 from typing import Optional
 from emit.metadata.report_util import convert_report_utilization_to_xml
-from core.results_dir import resolve_linker_platform_dir
 from core.command_config import LinkerConfiguration, InstallerConfiguration, CommandConfiguration
 
 logger = logging.getLogger(__name__)
@@ -117,12 +116,12 @@ def generate_base_pdi_with_aved(config: CommandConfiguration) -> Path:
     aved_reference_dir = config.resources_dir / "submodules" / "AVED"
     if not aved_reference_dir.is_dir():
         raise FileNotFoundError(aved_reference_dir)
-    
+
     aved_dir = config.build_dir / "AVED"
     if aved_dir.is_dir():
         shutil.rmtree(aved_dir)
     shutil.copytree(aved_reference_dir, aved_dir)
-    
+
     aved_hw_dir = aved_dir / "hw" / AVED_DESIGN_NAME
     aved_build_dir = aved_hw_dir / "build"
     aved_fpt_dir = aved_hw_dir / "fpt"
@@ -198,7 +197,7 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
 
     logs_dir = config.build_dir / "logs"
     image_out_dir = config.build_dir / "images"
-    rm_work_dir = config.build_dir /  f"{rm_kind.value}_rm"
+    rm_work_dir = config.build_dir / f"{rm_kind.value}_rm"
 
     logs_dir.mkdir(parents=True, exist_ok=True)
     image_out_dir.mkdir(parents=True, exist_ok=True)
@@ -244,19 +243,22 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
             f"report_utilization_{config.project_name}.txt"
         util_report_path.parent.mkdir(parents=True, exist_ok=True)
         cmd.extend(["--util-report-file", str(util_report_path)])
-        
+
         for path in config.pre_synth_tcls:
             cmd.extend(["--pre-synth-tcl", str(path)])
 
     subprocess.run(cmd, cwd=str(config.build_dir), check=True)
 
     if rm_kind == RM_KIND.SLASH_PROJECT:
-        pdi_out_path = image_out_dir / f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
+        pdi_out_path = image_out_dir / \
+            f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
     else:
-        pdi_out_path = image_out_dir / f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
-    
+        pdi_out_path = image_out_dir / \
+            f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
+
     if not pdi_out_path.is_file():
-        raise FileNotFoundError(f"{str(pdi_out_path)} is missing! Check {str(log_path)} for errors!")
+        raise FileNotFoundError(
+            f"{str(pdi_out_path)} is missing! Check {str(log_path)} for errors!")
 
 
 def build_service_layer_rm(config: LinkerConfiguration) -> None:

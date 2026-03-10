@@ -152,12 +152,14 @@ def apply_timing_frequency_cap(
 ) -> Optional[int]:
     user_clock_hz = read_system_map_clock_hz(system_map_path)
     if user_clock_hz is None:
-        logger.warning("ClockFrequency missing or invalid in system_map.xml: %s", system_map_path)
+        logger.warning(
+            "ClockFrequency missing or invalid in system_map.xml: %s", system_map_path)
         return None
 
     resolved_hw_build_dir = _resolve_hw_build_dir(hw_build_dir)
     if resolved_hw_build_dir is None:
-        logger.warning("HW build directory env var is unset; keeping user clock_hz=%d", user_clock_hz)
+        logger.warning(
+            "HW build directory env var is unset; keeping user clock_hz=%d", user_clock_hz)
         return user_clock_hz
 
     timing_report = _find_timing_report(project_name, resolved_hw_build_dir)
@@ -174,10 +176,12 @@ def apply_timing_frequency_cap(
     report_text = timing_report.read_text(encoding="utf-8", errors="replace")
     wns_ns = extract_design_wns_ns(report_text)
     if wns_ns is None:
-        logger.warning("Could not parse WNS(ns) from timing report %s; keeping user clock_hz=%d", timing_report, user_clock_hz)
+        logger.warning(
+            "Could not parse WNS(ns) from timing report %s; keeping user clock_hz=%d", timing_report, user_clock_hz)
         return user_clock_hz
 
-    computed_max_hz = compute_max_freq_hz_from_wns(wns_ns, base_freq_hz=base_freq_hz)
+    computed_max_hz = compute_max_freq_hz_from_wns(
+        wns_ns, base_freq_hz=base_freq_hz)
     if computed_max_hz is None:
         logger.warning(
             "Computed max frequency is invalid (WNS=%s ns, base=%d Hz); keeping user clock_hz=%d",
@@ -199,8 +203,10 @@ def apply_timing_frequency_cap(
 
     if final_clock_hz != user_clock_hz:
         write_system_map_clock_hz(system_map_path, final_clock_hz)
-        logger.info("Updated system_map ClockFrequency to %d: %s", final_clock_hz, system_map_path)
+        logger.info("Updated system_map ClockFrequency to %d: %s",
+                    final_clock_hz, system_map_path)
     else:
-        logger.info("Keeping user ClockFrequency=%d in system_map: %s", user_clock_hz, system_map_path)
+        logger.info("Keeping user ClockFrequency=%d in system_map: %s",
+                    user_clock_hz, system_map_path)
 
     return final_clock_hz

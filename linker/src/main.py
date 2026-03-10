@@ -41,6 +41,7 @@ from emit.emu.project_gen import build_emu_project, package_emu_artifacts
 from emit.metadata.prog_image import build_vbin
 from core.command_config import LinkerConfiguration, Platform, InstallerConfiguration, CommandConfiguration
 
+
 def _format_duration(seconds: float) -> str:
     total = int(round(seconds))
     hours = total // 3600
@@ -48,8 +49,10 @@ def _format_duration(seconds: float) -> str:
     secs = total % 60
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
+
 def profiled(func) -> None:
     return lambda: run_with_profiling(func.__name__, func)
+
 
 def run_with_profiling(label: str, func) -> None:
     start_wall = time.perf_counter()
@@ -114,6 +117,7 @@ def run_with_profiling(label: str, func) -> None:
             f" ; cpu_avg_pct = {avg_cpu_pct:.1f}{peak_part} ; cores = {cores}{rss_part}"
         )
 
+
 def link(config: LinkerConfiguration) -> None:
     @profiled
     def step_generate_tcl() -> None:
@@ -149,23 +153,26 @@ def link(config: LinkerConfiguration) -> None:
             build_vbin(config)
     step_create_metadata()
 
+
 def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s:%(funcName)s: %(message)s",
     )
 
-    ap = argparse.ArgumentParser(description="Todo", conflict_handler="resolve")
+    ap = argparse.ArgumentParser(
+        description="Todo", conflict_handler="resolve")
     sub_parsers = ap.add_subparsers(required=True)
 
     link_parser = sub_parsers.add_parser("link")
     LinkerConfiguration.populate_argument_parser(link_parser)
     link_parser.set_defaults(config_class=LinkerConfiguration, operation=link)
-    
+
     install_parser = sub_parsers.add_parser("install")
     InstallerConfiguration.populate_argument_parser(install_parser)
-    install_parser.set_defaults(config_class=InstallerConfiguration, operation=install_abstract_shell)
-   
+    install_parser.set_defaults(
+        config_class=InstallerConfiguration, operation=install_abstract_shell)
+
     args = ap.parse_args()
 
     config = args.config_class(args)

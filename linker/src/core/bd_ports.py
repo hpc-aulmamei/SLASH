@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -83,7 +83,8 @@ class BlockDesignPorts:
         if not lst:
             raise KeyError(f"BD port '{name}' not found.")
         if len(lst) > 1:
-            raise ValueError(f"Multiple BD ports registered for '{name}'. Use get_all('{name}').")
+            raise ValueError(
+                f"Multiple BD ports registered for '{name}'. Use get_all('{name}').")
         return lst[0]
 
     def get_all(self, name: str) -> List[BdPort]:
@@ -121,7 +122,8 @@ class BlockDesignPorts:
             if index is None:
                 return mems
             if not (0 <= index < len(mems)):
-                raise IndexError(f"MEM index {index} out of range (0..{len(mems)-1}).")
+                raise IndexError(
+                    f"MEM index {index} out of range (0..{len(mems)-1}).")
             return [mems[index]]
         if d == "HOST":
             # single logical endpoint named 'HOST' in bd_ports.txt
@@ -152,17 +154,20 @@ _TYPE_MAP = {
     "AXIS":     BusType.AXIS,
     "CLOCK":    BusType.CLOCK,
     "RESET":    BusType.RESET,
-    "INTERRUPT":BusType.INTERRUPT,
+    "INTERRUPT": BusType.INTERRUPT,
 }
 
 # HBM / DDR / VIRT with trailing index, e.g. HBM12, DDR3, VIRT2
 _RE_LOGICAL_MEM = re.compile(r"^(HBM|DDR|VIRT)(\d+)$", re.IGNORECASE)
 
+
 def _parse_ptype(s: str) -> BusType:
     try:
         return _TYPE_MAP[s.strip().upper()]
     except KeyError:
-        raise ValueError(f"Unknown port type '{s}'. Expected one of {list(_TYPE_MAP)}.")
+        raise ValueError(
+            f"Unknown port type '{s}'. Expected one of {list(_TYPE_MAP)}.")
+
 
 def _infer_domain_index(logical_name: str) -> Tuple[Optional[str], Optional[int]]:
     """
@@ -183,6 +188,7 @@ def _infer_domain_index(logical_name: str) -> Tuple[Optional[str], Optional[int]
         return m.group(1).upper(), int(m.group(2))
     return None, None
 
+
 def _parse_width(s: Optional[str]) -> Optional[int]:
     if not s:
         return None
@@ -190,6 +196,7 @@ def _parse_width(s: Optional[str]) -> Optional[int]:
         return int(s, 0)  # supports "32", "0x20"
     except ValueError:
         return None
+
 
 def load_bd_ports_from_file(path: str) -> BlockDesignPorts:
     """
@@ -222,15 +229,18 @@ def load_bd_ports_from_file(path: str) -> BlockDesignPorts:
             try:
                 lhs, rhs = line.split(None, 1)
             except ValueError:
-                raise ValueError(f"{path}:{ln}: Expected '<logical>:<rtl> <type> [width]'. Got: {line!r}")
+                raise ValueError(
+                    f"{path}:{ln}: Expected '<logical>:<rtl> <type> [width]'. Got: {line!r}")
 
             if ":" not in lhs:
-                raise ValueError(f"{path}:{ln}: Missing ':' in '{lhs}'. Expected '<logical>:<rtl>'.")
+                raise ValueError(
+                    f"{path}:{ln}: Missing ':' in '{lhs}'. Expected '<logical>:<rtl>'.")
 
             logical, rtl = [t.strip() for t in lhs.split(":", 1)]
             parts = rhs.split()
             if len(parts) not in (1, 2):
-                raise ValueError(f"{path}:{ln}: Invalid RHS. Expected '<type> [width]'. Got: {rhs!r}")
+                raise ValueError(
+                    f"{path}:{ln}: Invalid RHS. Expected '<type> [width]'. Got: {rhs!r}")
 
             ptype = _parse_ptype(parts[0])
             width = _parse_width(parts[1]) if len(parts) == 2 else None
@@ -278,7 +288,7 @@ def generate_bd_port_lines(
     # VIRT
     for i in range(num_virt):
         lines.append(f"VIRT{i}:VIRT_AXI_{i:02d} AXI4FULL")
-    # Control + clocks/resets 
+    # Control + clocks/resets
     lines += [
         "S_AXI_CTRL:S_AXI_CTRL AXILITE 32",
         "clock:ap_clk CLOCK",

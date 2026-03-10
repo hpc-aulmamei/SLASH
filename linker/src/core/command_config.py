@@ -55,34 +55,40 @@ def _find_vitis_include() -> Path:
         "or ensure 'vitis' is on PATH."
     )
 
+
 class CommandConfiguration(object):
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         ap.formatter_class = argparse.RawTextHelpFormatter
-        ap.add_argument("--ip-repository", required=False, type=Path, default=None, help="IP repository path (stored for linker stages).")
-        ap.add_argument("--vivado", required=False, type=Path, default=None, help="Vivado binary to use for linking. If not given, it will be derived from PATH.")
-        ap.add_argument("--jobs", required=False, type=int, default=8, help="Number of parallel jobs for Vivado runs.")
+        ap.add_argument("--ip-repository", required=False, type=Path,
+                        default=None, help="IP repository path (stored for linker stages).")
+        ap.add_argument("--vivado", required=False, type=Path, default=None,
+                        help="Vivado binary to use for linking. If not given, it will be derived from PATH.")
+        ap.add_argument("--jobs", required=False, type=int, default=8,
+                        help="Number of parallel jobs for Vivado runs.")
 
     def __init__(self, args: argparse.Namespace):
         self._args = args
-        
+
         # Resolve and verify the IP repository
         if args.ip_repository is None:
             self._ip_repository: Optional[Path] = None
         else:
-            self._ip_repository: Optional[Path] = Path(args.ip_repository).expanduser().resolve()
+            self._ip_repository: Optional[Path] = Path(
+                args.ip_repository).expanduser().resolve()
             if not self._ip_repository.is_dir():
                 raise FileNotFoundError(self._ip_repository)
-        
+
         # Resolve, if necessary find, and verify the Vivado binary
-        self._vivado_bin: Path = args.vivado if args.vivado is not None else Path(shutil.which("vivado"))
+        self._vivado_bin: Path = args.vivado if args.vivado is not None else Path(
+            shutil.which("vivado"))
         self._vivado_bin = self._vivado_bin.expanduser().resolve()
         if not self._vivado_bin.is_file():
             raise FileNotFoundError(self._vivado_bin)
-        
+
         # Misc. arguments
         self._n_jobs: int = args.jobs
-        
+
     @property
     def input_arguments(self) -> argparse.Namespace:
         return self._args
@@ -119,25 +125,30 @@ class CommandConfiguration(object):
     @property
     def vivado_bin(self) -> Path:
         return self._vivado_bin
-    
+
     @property
     def n_jobs(self) -> int:
         return self._n_jobs
 
 
 class LinkerConfiguration(CommandConfiguration):
-    
+
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         super().populate_argument_parser(ap)
-        ap.description = "Link kernel IP cores into a complete design and build a VBIN archive for emulation, simulation, or hardware execution." 
-        ap.add_argument("-c", "--config", required=True, type=Path, help="Path to the connectivity configuration file (e.g. config.cfg).")
-        ap.add_argument("-k", "--kernels", required=True, type=Path, nargs="+",  help="List of component.xml files to load as kernel IP cores.")
-        ap.add_argument("-o", "--out", required=True, type=Path, help="Path to the final VBIN archive.")
-        ap.add_argument("-p", "--platform", choices=["emu", "sim", "hw"], default="emu", help="Target platform (hw, sim, or emu). Default: emu")
-        ap.add_argument("--pre-synth-tcls", type=Path, nargs="*", default=[], help="Paths to TCL scripts to run before synthesis (applies to hardware builds only).")
-        ap.add_argument("--clock-hz", required=False, type=Optional[int], default=None, help="Target clock frequency in MHz.")
-        
+        ap.description = "Link kernel IP cores into a complete design and build a VBIN archive for emulation, simulation, or hardware execution."
+        ap.add_argument("-c", "--config", required=True, type=Path,
+                        help="Path to the connectivity configuration file (e.g. config.cfg).")
+        ap.add_argument("-k", "--kernels", required=True, type=Path, nargs="+",
+                        help="List of component.xml files to load as kernel IP cores.")
+        ap.add_argument("-o", "--out", required=True, type=Path,
+                        help="Path to the final VBIN archive.")
+        ap.add_argument("-p", "--platform", choices=["emu", "sim", "hw"],
+                        default="emu", help="Target platform (hw, sim, or emu). Default: emu")
+        ap.add_argument("--pre-synth-tcls", type=Path, nargs="*", default=[],
+                        help="Paths to TCL scripts to run before synthesis (applies to hardware builds only).")
+        ap.add_argument("--clock-hz", required=False,
+                        type=Optional[int], default=None, help="Target clock frequency in MHz.")
 
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)
@@ -151,12 +162,13 @@ class LinkerConfiguration(CommandConfiguration):
         for kernel in self._kernel_component_paths:
             if not kernel.is_file():
                 raise FileNotFoundError(kernel)
-            
+
         self._out_path: Path = args.out.expanduser().resolve()
         if self._out_path.is_file():
             self._out_path.unlink()
 
-        self._build_dir: Path = self._out_path.with_name(f"{self._out_path.name}.prj")
+        self._build_dir: Path = self._out_path.with_name(
+            f"{self._out_path.name}.prj")
         if self._build_dir.is_dir():
             shutil.rmtree(self._build_dir)
         if self._build_dir.is_file():
@@ -170,7 +182,7 @@ class LinkerConfiguration(CommandConfiguration):
             if not path.is_file():
                 raise FileNotFoundError(path)
             self._pre_synth_tcls.append(path)
-        
+
         # Misc. arguments
         self._platform = Platform(args.platform)
         self._clock_hz: int = args.clock_hz
@@ -188,7 +200,7 @@ class LinkerConfiguration(CommandConfiguration):
     @property
     def configuration_file(self) -> Path:
         return self._configuration_file
-    
+
     @property
     def out_path(self) -> Path:
         return self._out_path
@@ -216,7 +228,7 @@ class LinkerConfiguration(CommandConfiguration):
     @property
     def vitis_include_dir(self) -> Path:
         return self._vitis_include_dir
-    
+
     @property
     def pre_synth_tcls(self) -> List[Path]:
         return self._pre_synth_tcls
@@ -225,13 +237,15 @@ class LinkerConfiguration(CommandConfiguration):
     def clock_hz(self) -> Optional[int]:
         return self._clock_hz
 
+
 class InstallerConfiguration(CommandConfiguration):
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         super().populate_argument_parser(ap)
         ap.description = "Build and install base images for hardware builds."
-        ap.add_argument("--build-dir", required=False, type=Optional[Path], default=Path("./install.prj"), help="The build directory for the installer. Default: ./install_build")
-    
+        ap.add_argument("--build-dir", required=False, type=Optional[Path], default=Path(
+            "./install.prj"), help="The build directory for the installer. Default: ./install_build")
+
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)
 
@@ -243,8 +257,7 @@ class InstallerConfiguration(CommandConfiguration):
     @property
     def project_name(self):
         return "slash_install"
-    
+
     @property
     def build_dir(self):
         return self._build_dir
-

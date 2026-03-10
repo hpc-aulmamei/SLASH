@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -22,9 +22,7 @@ from __future__ import annotations
 import logging
 import tarfile
 from pathlib import Path
-from typing import Iterable, Optional
 
-from core.results_dir import resolve_linker_platform_dir
 from core.command_config import LinkerConfiguration
 
 logger = logging.getLogger(__name__)
@@ -38,9 +36,12 @@ def build_vbin(config: LinkerConfiguration) -> Path:
     @return Path to the generated .vbin file.
     """
     images_dir = config.build_dir / "images"
-    service_layer_pdi_path = images_dir / f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
-    slash_pdi_path = images_dir / f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
-    util_xml = config.build_dir / f"report_utilization_{config.project_name}.xml"
+    service_layer_pdi_path = images_dir / \
+        f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
+    slash_pdi_path = images_dir / \
+        f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
+    util_xml = config.build_dir / \
+        f"report_utilization_{config.project_name}.xml"
     system_map = config.build_dir / "system_map.xml"
 
     files = [service_layer_pdi_path, slash_pdi_path, system_map]

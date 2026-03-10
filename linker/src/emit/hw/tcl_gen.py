@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -42,7 +42,6 @@ from emit.hw.user_region.param_ctx import build_data_width_param_context
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from emit.hw.service_region.service_layer_ctx import *
 from emit.hls_meta import infer_hls_json_from_component_xml
-from core.results_dir import resolve_linker_platform_dir
 
 from parser.component_parser import parse_component_xml
 from parser.config_parser import parse_connectivity_file, apply_config_to_instances
@@ -108,13 +107,16 @@ def print_memory_maps(k):
         for ab in mm.address_blocks:
             ba = f"0x{ab.base_address:X}"
             rg = f"0x{ab.range:X}"
-            print(f"        block {ab.name}: base={ba} range={rg} width={ab.width} usage={ab.usage or '-'} access={ab.access or '-'}")
+            print(
+                f"        block {ab.name}: base={ba} range={rg} width={ab.width} usage={ab.usage or '-'} access={ab.access or '-'}")
             if ab.offset_base_param or ab.offset_high_param:
-                print(f"          params: base_param={ab.offset_base_param or '-'} high_param={ab.offset_high_param or '-'}")
+                print(
+                    f"          params: base_param={ab.offset_base_param or '-'} high_param={ab.offset_high_param or '-'}")
             if ab.registers:
                 for r in ab.registers:
                     off = f"0x{r.address_offset:X}"
-                    print(f"          reg {r.name}: off={off} size={r.size} access={r.access or '-'} reset={('0x%X' % r.reset_value) if r.reset_value is not None else '-'}")
+                    print(
+                        f"          reg {r.name}: off={off} size={r.size} access={r.access or '-'} reset={('0x%X' % r.reset_value) if r.reset_value is not None else '-'}")
                     if r.fields:
                         for f in r.fields:
                             rng = f"[{f.bit_offset + f.bit_width - 1}:{f.bit_offset}]"
@@ -141,7 +143,8 @@ def print_cfg(cfg):
     print("\n[connectivity] nk entries:")
     if cfg.nk:
         for nk in cfg.nk:
-            print(f"  - {nk.kernel_type}: count={nk.count}, names={nk.instance_names}")
+            print(
+                f"  - {nk.kernel_type}: count={nk.count}, names={nk.instance_names}")
     else:
         print("  (none)")
 
@@ -155,7 +158,8 @@ def print_cfg(cfg):
     print("\n[connectivity] sp mappings:")
     if cfg.sps:
         for sp in cfg.sps:
-            print(f"  - {sp.inst}.{sp.port} -> {sp.target.domain}{sp.target.index}")
+            print(
+                f"  - {sp.inst}.{sp.port} -> {sp.target.domain}{sp.target.index}")
     else:
         print("  (none)")
 
@@ -197,7 +201,8 @@ def print_instances(instances, stream_edges):
                 for port, tgt in mem_sp.items():
                     idx = "" if tgt.get("index") is None else str(tgt["index"])
                     print(f"      sp: {port} -> {tgt['domain']}{idx}")
-            others = {k: v for k, v in inst.params.items() if k not in {"clock_hz", "mem_sp"}}
+            others = {k: v for k, v in inst.params.items() if k not in {
+                "clock_hz", "mem_sp"}}
             for k, v in others.items():
                 print(f"      {k}: {v}")
 
@@ -224,7 +229,8 @@ def print_bd_ports(bd):
             idx = "" if p.index is None else str(p.index)
             wid = "" if p.width is None else str(p.width)
             rtl = "" if p.rtl_name is None else p.rtl_name
-            print(f"  - {logical:12s} -> rtl={rtl:20s} {p.ptype.name:9s} width={wid:>4s} domain={dom:>4s} index={idx:>2s}")
+            print(
+                f"  - {logical:12s} -> rtl={rtl:20s} {p.ptype.name:9s} width={wid:>4s} domain={dom:>4s} index={idx:>2s}")
 
 
 def generate_tcl(config: LinkerConfiguration) -> None:
@@ -261,7 +267,8 @@ def generate_tcl(config: LinkerConfiguration) -> None:
     kernel_hls_by_type: dict[str, Path] = {}
     for ktype, comp_xml in kernel_compxml_by_type.items():
         try:
-            kernel_hls_by_type[ktype] = infer_hls_json_from_component_xml(comp_xml)
+            kernel_hls_by_type[ktype] = infer_hls_json_from_component_xml(
+                comp_xml)
         except FileNotFoundError:
             logger.warning(
                 "No HLS metadata found for kernel type '%s' from component %s; "
@@ -276,13 +283,16 @@ def generate_tcl(config: LinkerConfiguration) -> None:
     ctx.update(build_axilite_smartconnect_context(instances))
     ctx.update(build_hbm_smartconnect_context(instances, bd, max_si=16))
     ctx.update(build_ddr_smartconnect_context(instances, max_si=16))
-    ctx.update(build_mem_smartconnect_context(instances, num_mem_ports=8, max_si=16))
+    ctx.update(build_mem_smartconnect_context(
+        instances, num_mem_ports=8, max_si=16))
     ctx.update(build_host_smartconnect_context(instances, bd, max_si=16))
     ctx.update(build_virt_smartconnect_context(instances, bd, max_si=16))
     net_ctx = build_network_axis_context(instances, streams, cfg.network)
     ctx.update({
-        "axis_to_fabric":   net_ctx["axis_to_fabric"],   # inst.AXIS -> /dcmac_axis_noc_k/S00_AXIS
-        "axis_from_fabric": net_ctx["axis_from_fabric"], # /dcmac_axis_noc_s_k/M00_AXIS -> inst.AXIS
+        # inst.AXIS -> /dcmac_axis_noc_k/S00_AXIS
+        "axis_to_fabric":   net_ctx["axis_to_fabric"],
+        # /dcmac_axis_noc_s_k/M00_AXIS -> inst.AXIS
+        "axis_from_fabric": net_ctx["axis_from_fabric"],
     })
     used_rx_slots: set[int] = set()
     for e in net_ctx.get("axis_from_fabric", []):
@@ -297,17 +307,22 @@ def generate_tcl(config: LinkerConfiguration) -> None:
         f"dcmac_axis_noc_s_{i}/M00_AXIS_tready" for i in dcmac_rx_tready_tie_slots
     ]
 
-    ctx.update(build_stream_connect_context(instances, net_ctx["streams_leftover"]))
+    ctx.update(build_stream_connect_context(
+        instances, net_ctx["streams_leftover"]))
 
     used_targets = _collect_used_targets(ctx)
 
     for s in ctx.get("hbm_sc_sinks", []):
         used_targets.add(s["dst"])
 
-    terms_generic = build_axi_terminators_context(bd, used_targets)  # HBM/VIRT BD ports only
-    terms_ddr_noc = build_ddr_noc_terminators(used_targets, num_ddr=4, noc_pin_fmt="/ddr_noc_{index}/S00_AXI")
-    terms_mem_noc = build_mem_noc_terminators(used_targets, num_mem=8, noc_pin_fmt="/hbm_vnoc_0{index}/S00_AXI")
-    terms_virt_noc = build_virt_noc_terminators(used_targets, num_virt=4, noc_pin_fmt="/noc_virt_0{index}/S00_AXI")
+    terms_generic = build_axi_terminators_context(
+        bd, used_targets)  # HBM/VIRT BD ports only
+    terms_ddr_noc = build_ddr_noc_terminators(
+        used_targets, num_ddr=4, noc_pin_fmt="/ddr_noc_{index}/S00_AXI")
+    terms_mem_noc = build_mem_noc_terminators(
+        used_targets, num_mem=8, noc_pin_fmt="/hbm_vnoc_0{index}/S00_AXI")
+    terms_virt_noc = build_virt_noc_terminators(
+        used_targets, num_virt=4, noc_pin_fmt="/noc_virt_0{index}/S00_AXI")
     terms_host_noc = build_host_noc_terminator(used_targets)
 
     ctx["axi_terminators"] = (
@@ -327,7 +342,7 @@ def generate_tcl(config: LinkerConfiguration) -> None:
     ctx["project_name"] = config.project_name
     ctx["slash_bd_name"] = f"slash_{config.project_name}"
     template_path = config.resources_dir / "slash.tcl"   # resources/slash.tcl
-    out_path = config.build_dir / "slash.tcl" # slash.tcl
+    out_path = config.build_dir / "slash.tcl"  # slash.tcl
     render_template(
         template_dir=template_path.parent,
         template_name=template_path.name,
@@ -358,9 +373,11 @@ def generate_tcl(config: LinkerConfiguration) -> None:
     paths_ctx = compute_paths(config)
     svc_ctx = {}
     svc_ctx.update(build_service_layer_context(cfg.network))
-    svc_ctx.update(build_service_axilite_ctx(cfg.network))    # SmartConnect + MI targets
+    svc_ctx.update(build_service_axilite_ctx(cfg.network)
+                   )    # SmartConnect + MI targets
     svc_ctx.update(build_service_noc_axis_ctx(cfg.network))
-    svc_ctx.update(paths_ctx)                                 # absolute paths for dcmac sources
+    # absolute paths for dcmac sources
+    svc_ctx.update(paths_ctx)
 
     svc_ctx["project_name"] = config.project_name
     svc_ctx["service_layer_bd_name"] = f"service_layer_{config.project_name}"
