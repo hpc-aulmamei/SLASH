@@ -117,41 +117,33 @@ def run_with_profiling(label: str, func) -> None:
 
 
 def link(config: LinkerConfiguration) -> None:
-    @profiled
-    def step_generate_tcl() -> None:
-        if config.platform == Platform.SIMULATION:
-            generate_sim_tcl(config)
-        elif config.platform == Platform.EMULATION:
-            generate_emu_tcl(config)
-        else:
-            generate_tcl(config)
-    step_generate_tcl()
+    if config.platform == Platform.SIMULATION:
+        generate_sim_tcl(config)
+    elif config.platform == Platform.EMULATION:
+        generate_emu_tcl(config)
+    else:
+        generate_tcl(config)
 
-    @profiled
-    def step_build_all() -> None:
-        if config.platform == Platform.SIMULATION:
-            create_sim_project(config)
-            build_sim_project(config)
-        elif config.platform == Platform.EMULATION:
-            build_emu_project(config)
-        else:
-            build_slash_rm(config)
-            # Only build a service layer if ethernet is enabled
-            # Will be changed once more service layers become available
-            if config.networking_enabled:
-                build_service_layer_rm(config)
-    step_build_all()
+    if config.platform == Platform.SIMULATION:
+        create_sim_project(config)
+        build_sim_project(config)
+    elif config.platform == Platform.EMULATION:
+        build_emu_project(config)
+    else:
+        run_with_profiling("build_slash", lambda: build_slash_rm(config))
+        # Only build a service layer if ethernet is enabled
+        # Will be changed once more service layers become available
+        if config.networking_enabled:
+            run_with_profiling("build_service_layer",
+                               lambda: build_service_layer_rm(config))
 
-    @profiled
-    def step_create_metadata() -> None:
-        if config.platform == Platform.SIMULATION:
-            pass
-        elif config.platform == Platform.EMULATION:
-            package_emu_artifacts(config)
-        else:
-            generate_util_report(config)
-            build_vbin(config)
-    step_create_metadata()
+    if config.platform == Platform.SIMULATION:
+        pass
+    elif config.platform == Platform.EMULATION:
+        package_emu_artifacts(config)
+    else:
+        generate_util_report(config)
+        build_vbin(config)
 
 
 def main():
