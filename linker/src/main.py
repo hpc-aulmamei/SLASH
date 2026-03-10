@@ -28,11 +28,11 @@ from pathlib import Path
 
 from emit.hw.tcl_gen import generate_tcl
 from emit.hw.project_gen import (
-    create_build_project,
-    generate_base_pdi_with_aved,
     generate_image,
     generate_util_report,
     install_abstract_shell,
+    run_rm_build,
+    RM_KIND
 )
 from emit.sim.tcl_gen import generate_sim_tcl
 from emit.emu.tcl_gen import generate_emu_tcl
@@ -134,8 +134,7 @@ def link(config: LinkerConfiguration) -> None:
         elif config.platform == Platform.EMULATION:
             build_emu_project(config)
         else:
-            create_build_project(config, action="all")
-            generate_base_pdi_with_aved(config)
+            run_rm_build(config, RM_KIND.SLASH_PROJECT)
     step_build_all()
 
     @profiled
