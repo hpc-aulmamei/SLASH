@@ -197,13 +197,11 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
         raise ValueError("ip_repository is required for RM builds")
 
     logs_dir = config.build_dir / "logs"
-    artifact_out_dir = config.build_dir / \
-        "slash.runs" / f"{config.project_name}_impl_1"
-    rm_work_dir = config.build_dir / \
-        "rm" / f"{rm_kind}_{config.project_name}"
+    image_out_dir = config.build_dir / "images"
+    rm_work_dir = config.build_dir /  f"{rm_kind.value}_rm"
 
     logs_dir.mkdir(parents=True, exist_ok=True)
-    artifact_out_dir.mkdir(parents=True, exist_ok=True)
+    image_out_dir.mkdir(parents=True, exist_ok=True)
     rm_work_dir.mkdir(parents=True, exist_ok=True)
 
     if rm_kind == RM_KIND.SERVICE_LAYER:
@@ -237,20 +235,28 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
         "--rm-work-dir",
         str(rm_work_dir),
         "--artifact-out-dir",
-        str(artifact_out_dir),
+        str(image_out_dir),
         "--jobs",
         str(config.n_jobs),
     ]
-    util_report_path = config.build_dir / "reports" / \
-        f"report_utilization_{config.project_name}.txt"
-    util_report_path.parent.mkdir(parents=True, exist_ok=True)
-    cmd.extend(["--util-report-file", str(util_report_path)])
-
     if rm_kind == RM_KIND.SLASH_PROJECT:
+        util_report_path = config.build_dir / \
+            f"report_utilization_{config.project_name}.txt"
+        util_report_path.parent.mkdir(parents=True, exist_ok=True)
+        cmd.extend(["--util-report-file", str(util_report_path)])
+        
         for path in config.pre_synth_tcls:
             cmd.extend(["--pre-synth-tcl", str(path)])
 
     subprocess.run(cmd, cwd=str(config.build_dir), check=True)
+
+    if rm_kind == RM_KIND.SLASH_PROJECT:
+        pdi_out_path = image_out_dir / f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
+    else:
+        pdi_out_path = image_out_dir / f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
+    
+    if not pdi_out_path.is_file():
+        raise FileNotFoundError(f"{str(pdi_out_path)} is missing! Check {str(log_path)} for errors!")
 
 
 def build_service_layer_rm(config: LinkerConfiguration) -> None:
@@ -292,39 +298,6 @@ def install_abstract_shell(config: InstallerConfiguration) -> None:
     _copy_files([aved_pdi_path], config.abstract_shell_dir)
 
 
-def generate_image(config: CommandConfiguration, include_service_layer: bool = True) -> None:
-    impl_dir = config.build_dir / \
-        "slash.runs" / f"{config.project_name}_impl_1"
-    dest_dir = config.build_dir / "images"
-    logger.info("Generating PDI images for project %s", config.project_name)
-    logger.info("PDI source dir: %s", impl_dir)
-    logger.info("PDI destination dir: %s", dest_dir)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-
-    service_layer_filename = f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
-    if not include_service_layer:
-        stale_service_pdi = dest_dir / service_layer_filename
-        if stale_service_pdi.exists():
-            logger.info("Removing stale service-layer PDI: %s",
-                        stale_service_pdi)
-            stale_service_pdi.unlink()
-
-    pdi_files = []
-    if include_service_layer:
-        pdi_files.append(service_layer_filename)
-    pdi_files.append(
-        f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi")
-
-    for filename in pdi_files:
-        src = impl_dir / filename
-        if not src.exists():
-            raise FileNotFoundError(f"Expected image file not found: {src}")
-        dest = dest_dir / filename
-        logger.info("Copying PDI image: %s -> %s", src, dest)
-        shutil.copy2(src, dest)
-    logger.info("PDI image generation complete for %s", config.project_name)
-
-
 def generate_util_report(config: CommandConfiguration) -> None:
     report_path = config.build_dir / \
         f"report_utilization_{config.project_name}.txt"
@@ -335,12 +308,7 @@ def generate_util_report(config: CommandConfiguration) -> None:
     logger.info("Utilization report input: %s", report_path)
     logger.info("Utilization report output: %s", xml_path)
     if not report_path.exists():
-        logger.warning(
-            "Utilization report input missing for %s (%s). Skipping XML generation.",
-            config.project_name,
-            report_path,
-        )
-        return
+        raise FileNotFoundError(report_path)
     convert_report_utilization_to_xml(report_path, xml_path)
     logger.info("Utilization report XML generation complete for %s",
                 config.project_name)

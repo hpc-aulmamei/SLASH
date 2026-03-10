@@ -28,9 +28,8 @@ from pathlib import Path
 
 from emit.hw.tcl_gen import generate_tcl
 from emit.hw.project_gen import (
-    create_build_project,
-    generate_base_pdi_with_aved,
-    generate_image,
+    build_service_layer_rm,
+    build_slash_rm,
     generate_util_report,
     install_abstract_shell,
 )
@@ -134,8 +133,9 @@ def link(config: LinkerConfiguration) -> None:
         elif config.platform == Platform.EMULATION:
             build_emu_project(config)
         else:
-            create_build_project(config, action="all")
-            generate_base_pdi_with_aved(config)
+            build_slash_rm(config)
+            build_service_layer_rm(config)
+            pass
     step_build_all()
 
     @profiled
@@ -145,7 +145,6 @@ def link(config: LinkerConfiguration) -> None:
         elif config.platform == Platform.EMULATION:
             package_emu_artifacts(config)
         else:
-            generate_image(config)
             generate_util_report(config)
             build_vbin(config)
     step_create_metadata()

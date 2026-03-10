@@ -1,5 +1,5 @@
 proc _service_usage {} {
-    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> [--install-dir <path>] [--jobs <n>]"
+    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> --install-dir <path> --jobs <n>"
 }
 
 proc _require_file {path label} {
@@ -17,7 +17,7 @@ proc _require_dir {path label} {
 array set opts {
     --project-name ""
     --ip-repo ""
-    --install-dir "/opt/amd/slash"
+    --install-dir ""
     --linker-results-dir ""
     --rm-work-dir ""
     --artifact-out-dir ""
@@ -38,7 +38,7 @@ while {$idx < [llength $argv]} {
     incr idx
 }
 
-foreach req {--project-name --ip-repo --linker-results-dir --rm-work-dir --artifact-out-dir} {
+foreach req {--project-name --ip-repo --install-dir --linker-results-dir --rm-work-dir --artifact-out-dir} {
     if {$opts($req) eq ""} {
         error "Missing required argument '$req'. [_service_usage]"
     }
@@ -59,7 +59,7 @@ set artifact_out_dir [file normalize $artifact_out_dir]
 
 set abs_shell_dcp [file join $install_dir "abs_shell_service_layer.dcp"]
 set base_bd [file join $install_dir "service_layer" "service_layer.bd"]
-set generated_bd_tcl [file join $linker_results_dir "bd" "service_layer_${proj_name}.tcl"]
+set generated_bd_tcl [file join $linker_results_dir "service_layer.tcl"]
 set script_dir [file dirname [file normalize [info script]]]
 set linker_root [file normalize [file join $script_dir ".." ".." ".."]]
 set base_ip_repo [file join $linker_root "resources" "base" "iprepo"]

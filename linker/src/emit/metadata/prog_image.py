@@ -30,16 +30,6 @@ from core.command_config import LinkerConfiguration
 logger = logging.getLogger(__name__)
 
 
-def _default_results_root(project_name: str) -> Path:
-    return resolve_linker_platform_dir(project_name, "hw")
-
-
-def _iter_files(paths: Iterable[Path]) -> Iterable[Path]:
-    for p in paths:
-        if p.is_file():
-            yield p
-
-
 def build_vbin(config: LinkerConfiguration) -> Path:
     """! @brief Build a compressed .vbin tarball for a project.
 
@@ -47,31 +37,23 @@ def build_vbin(config: LinkerConfiguration) -> Path:
     @param results_dir Optional override of the project results directory.
     @return Path to the generated .vbin file.
     """
-    project_dir = config.build_dir
-    images_dir = project_dir / "images"
-    util_xml = project_dir / f"report_utilization_{config.project_name}.xml"
-    system_map = project_dir / "system_map.xml"
-    out_path = config.out_path
+    images_dir = config.build_dir / "images"
+    service_layer_pdi_path = images_dir / f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
+    slash_pdi_path = images_dir / f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
+    util_xml = config.build_dir / f"report_utilization_{config.project_name}.xml"
+    system_map = config.build_dir / "system_map.xml"
 
-    if not project_dir.exists():
-        raise FileNotFoundError(f"Project results directory not found: {project_dir}")
-    if not images_dir.exists():
-        raise FileNotFoundError(f"Images directory not found: {images_dir}")
-    if not util_xml.exists():
-        raise FileNotFoundError(f"Utilization XML not found: {util_xml}")
-    if not system_map.exists():
-        raise FileNotFoundError(f"System map not found: {system_map}")
+    files = [service_layer_pdi_path, slash_pdi_path, system_map]
+
+    for file in files:
+        if not file.exists():
+            raise FileNotFoundError(file)
 
     logger.info("Creating vbin archive: %s", config.out_path)
 
-    files_to_add = []
-    files_to_add.extend(sorted(_iter_files(images_dir.rglob("*"))))
-    files_to_add.append(util_xml)
-    files_to_add.append(system_map)
-
     with tarfile.open(config.out_path, "w:gz") as tf:
-        for path in files_to_add:
-            arcname = path.relative_to(project_dir)
+        for path in files:
+            arcname = path.relative_to(config.build_dir)
             logger.info("Adding to vbin: %s", arcname)
             tf.add(path, arcname=str(arcname))
 
