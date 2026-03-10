@@ -19,9 +19,8 @@
 # ##################################################################################################
 
 from __future__ import annotations
-from typing import Dict, List, Set
+from typing import List, Set
 import re
-from xml import dom
 from core.port import BusType
 from core.bd_ports import BlockDesignPorts, BdPort
 

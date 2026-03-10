@@ -26,7 +26,7 @@ import re
 
 from core.kernel import Kernel, KernelInstance
 from core.connectivity import *
-from core.port import BusType, Port
+from core.port import BusType
 
 # -----------------------------
 # Network model (local)

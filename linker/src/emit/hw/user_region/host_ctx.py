@@ -19,7 +19,6 @@
 # ##################################################################################################
 
 from __future__ import annotations
-from collections import defaultdict
 from typing import Dict, List
 from core.kernel import KernelInstance
 from core.port import BusType

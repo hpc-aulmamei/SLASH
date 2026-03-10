@@ -23,7 +23,6 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import logging
-import re
 
 from emit.render import render_template
 from emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock

@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import logging
-import re
 import xml.etree.ElementTree as ET
 from typing import List, Tuple
 

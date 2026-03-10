@@ -19,12 +19,10 @@
 # ##################################################################################################
 
 import argparse
-import json
 import logging
 import os
 import threading
 import time
-from pathlib import Path
 
 from emit.hw.tcl_gen import generate_tcl
 from emit.hw.project_gen import (
