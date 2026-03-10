@@ -19,11 +19,18 @@
 # ##################################################################################################
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 import re
 import os
 import shutil
 import argparse
+
+from core.bd_ports import load_bd_ports_from_file, BlockDesignPorts
+from core.kernel import Kernel, KernelInstance
+from core.connectivity import StreamConnect, ConnectivityConfig
+from parser.config_parser import parse_connectivity_file, apply_config_to_instances
+from parser.component_parser import parse_component_xml
+from emit.hls_meta import infer_hls_json_from_component_xml
 
 
 class Platform(Enum):
@@ -152,20 +159,28 @@ class LinkerConfiguration(CommandConfiguration):
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)
 
+        # ============
+        # Set up paths
+        # ============
+
+        # Resolve and verify the configuration file
         self._configuration_file = args.config.expanduser().resolve()
         if not self._configuration_file.is_file():
             raise FileNotFoundError(self._configuration_file)
 
+        # Resolve and verify the kernel component files
         self._kernel_component_paths: List[Path] = [
             path.expanduser().resolve() for path in args.kernels]
         for kernel in self._kernel_component_paths:
             if not kernel.is_file():
                 raise FileNotFoundError(kernel)
 
+        # Resolve the out path and remove the old output if necessary
         self._out_path: Path = args.out.expanduser().resolve()
         if self._out_path.is_file():
             self._out_path.unlink()
 
+        # Resolve the build directory, clean up if necessary, and prepare it
         self._build_dir: Path = self._out_path.with_name(
             f"{self._out_path.name}.prj")
         if self._build_dir.is_dir():
@@ -194,11 +209,36 @@ class LinkerConfiguration(CommandConfiguration):
             s2 = "_" + s2
         self._project_name: str = s2
 
+        # Resolve the Vitis include directory
         self._vitis_include_dir = _find_vitis_include()
+
+        # =======================
+        # Argument interpretation
+        # =======================
+        self._bd_ports: BlockDesignPorts = load_bd_ports_from_file(
+            self.resources_dir / "bd_ports.txt")
+
+        self._kernels: List[Kernel] = [parse_component_xml(
+            kfile) for kfile in self.kernel_component_paths]
+
+        self._configuration: ConnectivityConfig = parse_connectivity_file(
+            self.configuration_file)
+        instances, streams = apply_config_to_instances(
+            self.configuration, self.kernels)
+        self._kernel_instances: List[KernelInstance] = instances
+        self._streams: List[StreamConnect] = streams
+
+    @property
+    def block_design_ports(self) -> BlockDesignPorts:
+        return self._bd_ports
 
     @property
     def configuration_file(self) -> Path:
         return self._configuration_file
+
+    @property
+    def configuration(self) -> ConnectivityConfig:
+        return self._configuration
 
     @property
     def out_path(self) -> Path:
@@ -213,8 +253,20 @@ class LinkerConfiguration(CommandConfiguration):
         return self._project_name
 
     @property
-    def kernel_component_files(self) -> List[Path]:
+    def kernel_component_paths(self) -> List[Path]:
         return self._kernel_component_paths
+
+    @property
+    def kernels(self) -> List[Kernel]:
+        return self._kernels
+
+    @property
+    def kernel_instances(self) -> Dict[str, KernelInstance]:
+        return self._kernel_instances
+
+    @property
+    def stream_connects(self) -> List[StreamConnect]:
+        return self._streams
 
     @property
     def build_dir(self) -> Path:

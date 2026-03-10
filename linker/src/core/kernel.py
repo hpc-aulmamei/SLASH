@@ -21,6 +21,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, Optional, List
+from pathlib import Path
 
 from core.port import Port, BusType
 from core.bus import Bus
@@ -34,10 +35,12 @@ class Kernel:
     Contains bus and port definitions — not instance-specific data.
     """
     name: str
+    component_xml_path: Path
     ports: Dict[str, Port] = field(default_factory=dict)
     buses: Dict[str, Bus] = field(default_factory=dict)
     vlnv: Optional[str] = None
     memory_maps: List[MemoryMap] = field(default_factory=list)   # NEW
+    hls_data_path: Optional[Path] = None
 
     def port(self, name: str) -> Port:
         """Retrieve a port by name."""

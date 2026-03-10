@@ -68,7 +68,7 @@ def create_sim_project(config: LinkerConfiguration) -> None:
                 pass
 
     iprepo_dir = config.build_dir / "iprepo"
-    _copy_kernels_to_iprepo(config.kernel_component_files, iprepo_dir)
+    _copy_kernels_to_iprepo(config.kernel_component_paths, iprepo_dir)
 
     tcl = config.build_dir / "run_pre.tcl"
     if not tcl.exists():

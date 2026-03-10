@@ -316,11 +316,12 @@ def _resolve_port_name_for_kernel(kernel: Kernel, requested: str) -> str:
 
 def apply_config_to_instances(
     cfg: ConnectivityConfig,
-    kernel_library: Dict[str, Kernel],
+    kernel_library: List[Kernel],
     *,
     default_ddr_index: int = 0  # DDR0 fallback for missing AXI4FULL ports
-) -> Tuple[Dict[str, KernelInstance], List[StreamConnect]]:
+) -> Tuple[List[KernelInstance], List[StreamConnect]]:
     instances: Dict[str, KernelInstance] = {}
+    kernel_library = {kernel.name: kernel for kernel in kernel_library}
 
     # 1) Instantiate from nk
     for nk in cfg.nk:
@@ -364,4 +365,4 @@ def apply_config_to_instances(
                 mem_map[pname] = {"domain": "MEM", "index": ""}
 
     # return streams as-is; networking layer will split eth_* endpoints later
-    return instances, cfg.streams
+    return list(instances.values()), cfg.streams

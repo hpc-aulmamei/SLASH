@@ -22,11 +22,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Optional, List
 import xml.etree.ElementTree as ET
+import logging
 
 from core.port import Port, BusType
 from core.bus import Bus
 from core.kernel import Kernel
 from core.regs import MemoryMap, AddressBlock, Register, RegField  # NEW
+from emit.hls_meta import infer_hls_json_from_component_xml
+
+logger = logging.getLogger(__name__)
 
 # Namespaces used in Xilinx IP-XACT component.xml
 NS = {
@@ -256,4 +260,23 @@ def parse_component_xml(path: str | Path) -> Kernel:
 
     memory_maps = _parse_memory_maps(root)
 
-    return Kernel(name=kernel_name, ports=ports, buses=buses, vlnv=vlnv, memory_maps=memory_maps)
+    try:
+        hls_data_path = infer_hls_json_from_component_xml(path)
+    except FileNotFoundError:
+        logger.warning(
+            "No HLS metadata found for kernel type '%s' from component %s; "
+            "system_map functional_args will use heuristic fallback.",
+            kernel_name,
+            path,
+        )
+        hls_data_path = None
+
+    return Kernel(
+        name=kernel_name,
+        component_xml_path=path,
+        ports=ports,
+        buses=buses,
+        vlnv=vlnv,
+        memory_maps=memory_maps,
+        hls_data_path=hls_data_path
+    )

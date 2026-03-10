@@ -38,28 +38,14 @@ logger = logging.getLogger(__name__)
 
 
 def generate_emu_tcl(config: LinkerConfiguration) -> None:
-    # 1) Parse kernels
-    kernel_library = {}
-    kernel_compxml_by_type = {}
-    for kpath in config.kernel_component_files:
-        kfile = Path(kpath)
-        if not kfile.exists():
-            raise FileNotFoundError(f"Kernel file not found: {kfile}")
-        k = parse_component_xml(kfile)
-        kernel_library[k.name] = k
-        kernel_compxml_by_type[k.name] = kfile.resolve()
-
-    # 2) Parse connectivity config
-    cfg = parse_connectivity_file(config.configuration_file)
-
-    # 3) Make instances & stream edges
-    instances, streams = apply_config_to_instances(cfg, kernel_library)
-
-    # 4) Build tb.cpp context from HLS metadata
+    # Retrieve inputs
+    cfg = config.configuration
+    instances = {kernel.name: kernel for kernel in config.kernel_instances}
+    streams = config.stream_connects
     kernel_hls_by_type = {
-        ktype: infer_hls_json_from_component_xml(Path(comp_xml))
-        for ktype, comp_xml in kernel_compxml_by_type.items()
-    }
+        kernel.name: kernel.hls_data_path for kernel in config.kernels}
+
+    # Build test bench context
     tb_ctx = build_tb_context(instances, streams, kernel_hls_by_type)
     if isinstance(tb_ctx.get("emu_manifest"), dict):
         tb_ctx["emu_manifest"]["project"] = config._project_name

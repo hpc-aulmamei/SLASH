@@ -64,7 +64,7 @@ def _collect_kernel_cpp(config: LinkerConfiguration) -> list[Path]:
     cpp_files: list[Path] = []
     seen: set[Path] = set()
 
-    for kpath in config.kernel_component_files:
+    for kpath in config.kernel_component_paths:
         if not kpath.exists():
             raise FileNotFoundError(f"Kernel component.xml not found: {kpath}")
         # component.xml -> ip -> impl -> <solution>
@@ -249,7 +249,7 @@ def _collect_emu_compile_inputs(config: LinkerConfiguration) -> tuple[list[Path]
     include_dirs: list[Path] = []
     force_headers: list[Path] = []
 
-    for kxml in config.kernel_component_files:
+    for kxml in config.kernel_component_paths:
         kpath = Path(kxml).resolve()
         if not kpath.exists():
             raise FileNotFoundError(f"Kernel component.xml not found: {kpath}")
@@ -271,7 +271,7 @@ def _collect_emu_compile_inputs(config: LinkerConfiguration) -> tuple[list[Path]
 
     return (
         _dedupe_paths(cpp_files) or _collect_kernel_cpp(
-            config.kernel_component_files),
+            config.kernel_component_paths),
         _dedupe_paths(include_dirs),
         _dedupe_paths(force_headers),
     )

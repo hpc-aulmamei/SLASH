@@ -227,24 +227,16 @@ def _classify_mem_targets(instances: dict[str, KernelInstance]) -> tuple[List[st
 
 def generate_sim_tcl(config: LinkerConfiguration) -> None:
     # 1) Parse kernels
-    kernel_library = {}
+    cfg = config.configuration
+    instances = {kernel.name: kernel for kernel in config.kernel_instances}
+    streams = config.stream_connects
+    kernel_hls_by_type = {
+        kernel.name: kernel.hls_data_path for kernel in config.kernels}
+
     kernel_sim_meta: dict[str, dict] = {}
     kernel_hls_by_type: dict[str, Path] = {}
-    for kpath in config.kernel_component_files:
-        if not kpath.exists():
-            raise FileNotFoundError(f"Kernel file not found: {kpath}")
-        k = parse_component_xml(kpath)
-        kernel_library[k.name] = k
-        try:
-            kernel_hls_by_type[k.name] = infer_hls_json_from_component_xml(
-                kpath)
-        except FileNotFoundError:
-            logger.warning(
-                "No HLS metadata found for kernel type '%s' from component %s; "
-                "system_map functional_args will use heuristic fallback.",
-                k.name,
-                kpath,
-            )
+    for kernel in config.kernels:
+        kpath = kernel.component_xml_path
 
         sim_checkpoint_rel = _find_sim_checkpoint_dcp(kpath)
         sim_checkpoint_abs = None
@@ -254,16 +246,10 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
                 raise FileNotFoundError(
                     f"Simulation checkpoint DCP from component.xml not found: {sim_checkpoint_abs}"
                 )
-        kernel_sim_meta[k.name] = {
+        kernel_sim_meta[kernel.name] = {
             "component_xml": str(kpath),
             "sim_checkpoint_dcp": str(sim_checkpoint_abs) if sim_checkpoint_abs else None,
         }
-
-    # 2) Parse connectivity config
-    cfg = parse_connectivity_file(config.configuration_file)
-
-    # 3) Make instances & stream edges
-    instances, streams = apply_config_to_instances(cfg, kernel_library)
 
     # 4) Build template context
     axilite_ports, axifull_ports, clock_ports, reset_ports = _collect_ports(

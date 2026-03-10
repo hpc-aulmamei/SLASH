@@ -238,46 +238,13 @@ def generate_tcl(config: LinkerConfiguration) -> None:
 
     @param args Parsed CLI arguments.
     """
-    # 0) Load BD ports and print
-    bd = load_bd_ports_from_file(config.resources_dir / "bd_ports.txt")
-    print_bd_ports(bd)
+    bd = config.block_design_ports
+    cfg = config.configuration
+    instances = {kernel.name: kernel for kernel in config.kernel_instances}
+    streams = config.stream_connects
+    kernel_hls_by_type = {
+        kernel.name: kernel.hls_data_path for kernel in config.kernels}
 
-    # 1) Parse kernels
-    kernel_library = {}
-    kernel_compxml_by_type: dict[str, Path] = {}
-
-    logger.info("Loading kernels")
-    for kfile in config.kernel_component_files:
-        if not kfile.exists():
-            raise FileNotFoundError(f"Kernel file not found: {kfile}")
-
-        k = parse_component_xml(kfile)
-        kernel_library[k.name] = k
-        kernel_compxml_by_type[k.name] = kfile.resolve()
-
-        print_kernel(k)
-
-    # 2) Parse connectivity config
-    cfg = parse_connectivity_file(config.configuration_file)
-    print_cfg(cfg)
-
-    # 3) Make instances & stream edges
-    instances, streams = apply_config_to_instances(cfg, kernel_library)
-    print_instances(instances, streams)
-    kernel_hls_by_type: dict[str, Path] = {}
-    for ktype, comp_xml in kernel_compxml_by_type.items():
-        try:
-            kernel_hls_by_type[ktype] = infer_hls_json_from_component_xml(
-                comp_xml)
-        except FileNotFoundError:
-            logger.warning(
-                "No HLS metadata found for kernel type '%s' from component %s; "
-                "system_map functional_args will use heuristic fallback.",
-                ktype,
-                comp_xml,
-            )
-
-    # 4) Build context for kernel adds (+clocks/resets) and render
     ctx = build_kernel_add_context(instances)
     ctx.update(build_data_width_param_context(instances))
     ctx.update(build_axilite_smartconnect_context(instances))
