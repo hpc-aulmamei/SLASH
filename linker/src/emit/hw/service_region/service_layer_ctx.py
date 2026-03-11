@@ -66,7 +66,6 @@ def compute_paths(config: CommandConfiguration) -> Dict[str, Any]:
     ]
 
     return {
-        "proj_root": str(config.linker_root_dir),
         "dcmac_tcl": str(dcmac_tcl),
         "dcmac_hdl_dir": str(dcmac_hdl),
         "dcmac_hdl_files": [str(dcmac_hdl / f) for f in hdl_files],

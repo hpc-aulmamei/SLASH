@@ -104,21 +104,14 @@ class CommandConfiguration(object):
         raise NotImplementedError()
 
     @property
-    def linker_root_dir(self) -> Path:
-        return self.linker_src_dir.parent.resolve()
-
-    @property
-    def linker_src_dir(self) -> Path:
-        # Assumes that this class is defined in linker/src/core/linker_config.py!
-        return Path(__file__).parent.parent.resolve()
-
-    @property
     def build_dir(self) -> Path:
         raise NotImplementedError()
 
     @property
     def resources_dir(self) -> Path:
-        return self.linker_root_dir / "resources"
+        # Assumes that this class is defined in linker/src/core/linker_config.py!
+        root_dir =  Path(__file__).parent.parent.parent
+        return (root_dir / "resources").resolve()
 
     @property
     def abstract_shell_dir(self) -> Path:
@@ -164,8 +157,8 @@ class LinkerConfiguration(CommandConfiguration):
         # ============
 
         # Resolve and verify the configuration file
-        self._configuration_file = args.config.expanduser().resolve()
-        if not self._configuration_file.is_file():
+        configuration_file = args.config.expanduser().resolve()
+        if not configuration_file.is_file():
             raise FileNotFoundError(self._configuration_file)
 
         # Resolve and verify the kernel component files
@@ -222,17 +215,13 @@ class LinkerConfiguration(CommandConfiguration):
             kfile) for kfile in self.kernel_component_paths]
 
         self._configuration: ConnectivityConfig = parse_connectivity_file(
-            self.configuration_file)
+            configuration_file)
         self._kernel_instances: List[KernelInstance] = apply_config_to_instances(
             self.configuration, self.kernels)
 
     @property
     def block_design_ports(self) -> BlockDesignPorts:
         return self._bd_ports
-
-    @property
-    def configuration_file(self) -> Path:
-        return self._configuration_file
 
     @property
     def configuration(self) -> ConnectivityConfig:
