@@ -115,7 +115,6 @@ def run_with_profiling(label: str, func) -> None:
             f" ; cpu_avg_pct = {avg_cpu_pct:.1f}{peak_part} ; cores = {cores}{rss_part}"
         )
 
-
 def link(config: LinkerConfiguration) -> None:
     if config.platform == Platform.SIMULATION:
         generate_sim_tcl(config)
@@ -145,6 +144,26 @@ def link(config: LinkerConfiguration) -> None:
         generate_util_report(config)
         build_vbin(config)
 
+MAIN_HELP_EPILOG = """
+Typical Workflow:
+  Most users will use the 'link' subcommand to link kernel IP cores into
+  an emulation, simulation, or hardware build image.
+
+  The 'install' subcommand is only used during the installation of the linker.
+  It prepares an abstract shell definition, which is later used by the 'link'
+  subcommand to create hardware images.
+
+Resource Directory:
+  Both the 'link' and 'install' subcommands use resources from a resource
+  directory. The resource directory is identified according to the following
+  precedence (see find_resource_directory in core/command_config.py):
+
+    1. V80PP_RESOURCE_DIR environment variable (if set)
+    2. <repo_root>/resources (relative to linker installation)
+    3. ~/.local/share/v80++/
+    4. /usr/local/share/v80++/
+    5. /usr/share/v80++/
+"""
 
 def main():
     logging.basicConfig(
@@ -153,7 +172,8 @@ def main():
     )
 
     ap = argparse.ArgumentParser(
-        description="Todo", conflict_handler="resolve")
+        description="Todo", conflict_handler="resolve", epilog=MAIN_HELP_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     sub_parsers = ap.add_subparsers(required=True)
 
     link_parser = sub_parsers.add_parser("link")

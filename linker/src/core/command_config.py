@@ -24,6 +24,7 @@ import re
 import os
 import shutil
 import argparse
+import sys
 
 from core.bd_ports import load_bd_ports_from_file, BlockDesignPorts
 from core.kernel import Kernel, KernelInstance
@@ -162,12 +163,83 @@ class CommandConfiguration(object):
         return self._n_jobs
 
 
+LINK_HELP_EPILOG = f"""
+Typical Workflow:
+  1. Create a connectivity configuration file (--config) defining kernel
+     instances and their connections
+  2. Specify one or more kernel IP cores via IP-XACT component.xml files (--kernels)
+  3. Run the linker to produce a VBIN archive (--out)
+  4. The VBIN archive contains all metadata and artifacts needed to execute
+     the design on the target platform
+
+Connectivity Configuration Format:
+  The configuration file uses an INI-like format with the following sections:
+
+  [connectivity]  - Define kernel instances and connections
+    nk=<kernel>:<count>[:<names>]
+      Example: nk=vadd:2:vadd_0.vadd_1
+      Creates <count> instances of <kernel>. Names are auto-generated if omitted.
+
+    stream_connect=<src_inst>.<src_port>:<dst_inst>.<dst_port>
+      Examples:
+        stream_connect=dma_in_0.axis_out:passthrough_0.axis_in
+        stream_connect=traffic_producer_0.axis_out:eth_0.tx0
+      Connects AXI-Stream ports between kernel instances and/or ethernet ports.
+
+    sp=<inst>.<port>:<memory_target>
+      Example: sp=vadd_0.m_axi_gmem0:HBM0
+      Maps AXI4-Full memory ports to memory banks (HBM0-31, DDR0-3, MEM, HOST).
+
+  [clock]  - Specify per-kernel clock frequencies (can be repeated)
+    krnl=<instance_name>
+    freqhz=<frequency_in_hz>
+      Example: krnl=vadd_0
+               freqhz=400000000
+
+  [network]  - Enable Ethernet interfaces
+    eth_<idx>=<0|1>
+      Example: eth_0=1
+
+  [user_region]  - Custom TCL scripts
+    pre_synth=<path_to_tcl>
+      Example: pre_synth=custom_constraints.tcl
+
+  [debug]  - Debug net visibility
+    net=<instance>.<port>
+      Example: net=vadd_0.axis_out
+
+  Lines starting with '#' or ';' are treated as comments.
+
+Platform Selection:
+  emu (emulation)  - Fast software-based execution for functional testing
+  sim (simulation) - RTL simulation for detailed verification
+  hw (hardware)    - Full FPGA bitstream generation for deployment
+
+  WARNING: Hardware builds (-p hw) take significant time, ranging from
+  minutes to hours depending on design complexity and machine resources.
+  Use emulation for rapid development and testing.
+
+Example:
+  {sys.argv[0]} link -c config.cfg -k kernels/ip/accumulate/component.xml \\
+    kernels/ip/increment/component.xml -o accelerator.vbin -p hw
+
+Resource Directory:
+  The linker uses resources from a resource directory. See top-level help
+  ({sys.argv[0]} --help) for resource directory resolution.
+
+Build Artifacts:
+  A project directory (<output>.prj) will be created alongside the output
+  VBIN archive, containing TCL scripts, Vivado projects, and build logs.
+"""
+
+
 class LinkerConfiguration(CommandConfiguration):
 
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         super().populate_argument_parser(ap)
         ap.description = "Link kernel IP cores into a complete design and build a VBIN archive for emulation, simulation, or hardware execution."
+        ap.epilog = LINK_HELP_EPILOG
         ap.add_argument("-c", "--config", required=True, type=Path,
                         help="Path to the connectivity configuration file (e.g. config.cfg).")
         ap.add_argument("-k", "--kernels", required=True, type=Path, nargs="+",
@@ -305,11 +377,46 @@ class LinkerConfiguration(CommandConfiguration):
         return self._clock_hz
 
 
+INSTALL_HELP_EPILOG = f"""
+Purpose:
+  The 'install' subcommand prepares an abstract shell definition required for
+  hardware builds. This is a one-time setup operation that creates base images
+  used by the 'link' subcommand when targeting hardware (-p hw).
+
+When to Use:
+  - During initial installation of the V80++ linker
+  - When the abstract shell definition needs to be regenerated
+
+  Most users will NOT need to run this command regularly. It is only required
+  during linker installation/setup.
+
+What It Does:
+  1. Builds the abstract shell base images from the resource directory
+  2. Generates necessary Vivado synthesis artifacts
+  3. Creates reusable partial designs for hardware linking
+
+  WARNING: This operation involves full Vivado synthesis and implementation,
+  which takes significant time (multiple hours depending on the system).
+
+Resource Directory:
+  The 'install' subcommand uses resources from a resource directory. See
+  top-level help ({sys.argv[0]} --help) for resource directory resolution.
+
+Build Artifacts:
+  The build directory (--build-dir) will contain Vivado projects, checkpoints,
+  and logs. This directory can be removed after successful installation.
+
+Example:
+  {sys.argv[0]} install --build-dir ./install.prj --jobs 16
+"""
+
+
 class InstallerConfiguration(CommandConfiguration):
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         super().populate_argument_parser(ap)
         ap.description = "Build and install base images for hardware builds."
+        ap.epilog = INSTALL_HELP_EPILOG
         ap.add_argument("--build-dir", required=False, type=Optional[Path], default=Path(
             "./install.prj"), help="The build directory for the installer. Default: ./install_build")
 
