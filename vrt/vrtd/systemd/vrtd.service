@@ -1,5 +1,7 @@
 [Unit]
-Description=vrtd daemon
+Description=vrtd daemon for SLASH
+Requires=vrtd.socket
+After=vrtd.socket
 
 [Service]
 Type=notify
