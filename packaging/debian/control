@@ -87,6 +87,11 @@ Architecture: any
 Depends: libvrt (= ${binary:Version}), libvrtd-dev (= ${binary:Version}), libjsoncpp-dev, libxml2-dev, libzmq3-dev, zlib1g-dev, ${misc:Depends}
 Description: VRT Runtime (development files)
 
+Package: v80-smi
+Architecture: any
+Depends: libvrt (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Description: V80 System Management Interface
+
 Package: v80++
 Architecture: all
 Depends: python3 (>= 3.10), python3-jinja2, ${misc:Depends}

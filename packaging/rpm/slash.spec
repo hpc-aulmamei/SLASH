@@ -148,6 +148,13 @@ Requires:       zlib-devel
 %description -n libvrt-devel
 VRT Runtime (development files)
 
+%package -n     v80-smi
+Summary:        V80 System Management Interface
+Requires:       libvrt = %{version}-%{release}
+
+%description -n v80-smi
+V80 System Management Interface
+
 %package -n     v80++
 Summary:        SLASH Linker
 Requires:       python3 >= 3.10
@@ -258,6 +265,9 @@ EOF
 %files -n libvrt-devel
 %{_includedir}/vrt/
 %{_libdir}/cmake/vrt/
+
+%files -n v80-smi
+%{_bindir}/v80-smi
 
 %files -n v80++
 %{_bindir}/v80++
