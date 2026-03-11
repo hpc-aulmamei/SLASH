@@ -33,18 +33,20 @@ Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  bash
 BuildRequires:  cmake
+BuildRequires:  make
 BuildRequires:  gcc
 BuildRequires:  gcc-c++
-BuildRequires:  inih-devel
-BuildRequires:  jsoncpp-devel
-BuildRequires:  systemd-devel
-BuildRequires:  libxml2-devel
-BuildRequires:  zeromq-devel
-BuildRequires:  cppzmq-devel
 BuildRequires:  ninja-build
 BuildRequires:  pkg-config
-BuildRequires:  rsync
+BuildRequires:  cli11-devel
+BuildRequires:  cppzmq-devel
+BuildRequires:  inih-devel
+BuildRequires:  jsoncpp-devel
+BuildRequires:  libxml2-devel
+BuildRequires:  systemd-devel
+BuildRequires:  zeromq-devel
 BuildRequires:  zlib-devel
+BuildRequires:  rsync
 BuildRequires:  systemd-rpm-macros
 
 # ---- Metapackages ----
@@ -148,7 +150,7 @@ VRT Runtime (development files)
 
 %package -n     v80++
 Summary:        SLASH Linker
-Requires:       python3
+Requires:       python3 >= 3.10
 Requires:       python3-jinja2
 BuildArch:      noarch
 
