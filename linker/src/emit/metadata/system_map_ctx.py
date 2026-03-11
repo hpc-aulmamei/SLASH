@@ -21,6 +21,7 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import logging
 import re
 
 from core.kernel import KernelInstance
@@ -31,6 +32,8 @@ from emit.hls_meta import load_hls_metadata, parse_hls_args
 DEFAULT_CLOCK_HZ = 200_000_000
 _REG_SPLIT_RE = re.compile(r"^(.*)_\d+$")
 _CONTROL_REGS = {"ctrl", "gier", "ip_ier", "ip_isr"}
+_PORT_NORM_RE = re.compile(r"[^a-z0-9]")
+logger = logging.getLogger(__name__)
 
 
 def resolve_system_map_clock(
@@ -119,10 +122,39 @@ def _access_flags(access: Optional[str]) -> tuple[int, int]:
     return (1 if "R" in norm else 0, 1 if "W" in norm else 0)
 
 
+def _port_norm(name: str) -> str:
+    return _PORT_NORM_RE.sub("", (name or "").lower())
+
+
+def _resolve_axi4full_port_name(kernel, requested: str) -> Optional[str]:
+    if not requested:
+        return None
+
+    axi4_ports = [p.name for p in kernel.ports_of_type(BusType.AXI4FULL)]
+    if requested in axi4_ports:
+        return requested
+
+    by_lower = {p.lower(): p for p in axi4_ports}
+    req_low = requested.lower()
+    if req_low in by_lower:
+        return by_lower[req_low]
+
+    by_norm = {_port_norm(p): p for p in axi4_ports}
+    req_norm = _port_norm(requested)
+    if req_norm in by_norm:
+        return by_norm[req_norm]
+
+    return None
+
+
 def _build_functional_args_from_hls(
     hls_data: dict,
     busif: str,
     reg_block: Optional[AddressBlock],
+    *,
+    kernel=None,
+    connected_axi_ports: Optional[set[str]] = None,
+    instance_name: Optional[str] = None,
 ) -> List[dict]:
     if reg_block is None or not reg_block.registers:
         return []
@@ -135,8 +167,16 @@ def _build_functional_args_from_hls(
         idx = arg["index"] if arg["index"] is not None else order_idx
         refs = []
         seen_names = set()
+        interface_refs: List[str] = []
+        seen_ifaces = set()
         for ref in arg.get("hw_refs", []):
             ref_type = str(ref.get("type", "")).lower()
+            if ref_type == "interface":
+                iface_name = str(ref.get("interface", "") or "")
+                if iface_name and iface_name not in seen_ifaces:
+                    seen_ifaces.add(iface_name)
+                    interface_refs.append(iface_name)
+                continue
             if ref_type != "register":
                 continue
             usage = str(ref.get("usage", "")).lower()
@@ -196,19 +236,44 @@ def _build_functional_args_from_hls(
             else:
                 range_bits = 32
 
+        arg_item = {
+            "idx": int(idx),
+            "name": logical_name,
+            "type": arg_type,
+            "offset": _format_hex_prefixed(base_offset),
+            "range": str(int(range_bits)),
+            "r": int(r_flag),
+            "w": int(w_flag),
+        }
+
+        if arg_type == "buffer" and kernel is not None and connected_axi_ports is not None:
+            resolved_port = None
+            for iface_name in interface_refs:
+                canonical_port = _resolve_axi4full_port_name(kernel, iface_name)
+                if canonical_port is None:
+                    continue
+                if canonical_port not in connected_axi_ports:
+                    continue
+                resolved_port = canonical_port
+                break
+            if resolved_port is None:
+                logger.warning(
+                    "Could not correlate buffer arg '%s' on instance '%s' (kernel '%s') "
+                    "to a connected AXI4FULL port from hwRefs interfaces %s; "
+                    "omitting functional_args port metadata.",
+                    arg["name"],
+                    instance_name or "",
+                    getattr(kernel, "name", ""),
+                    interface_refs,
+                )
+            else:
+                arg_item["port"] = resolved_port
+
         out.append(
             (
                 int(idx),
                 base_offset,
-                {
-                    "idx": int(idx),
-                    "name": logical_name,
-                    "type": arg_type,
-                    "offset": _format_hex_prefixed(base_offset),
-                    "range": str(int(range_bits)),
-                    "r": int(r_flag),
-                    "w": int(w_flag),
-                },
+                arg_item,
             )
         )
 
@@ -408,22 +473,14 @@ def build_system_map_context(
                         "range": str(reg.size),
                     }
                 )
-        hls_data = _kernel_hls_data(inst.kernel.name)
-        if hls_data is not None:
-            functional_args = _build_functional_args_from_hls(
-                hls_data,
-                selected["busif"],
-                reg_block,
-            )
-        else:
-            functional_args = _build_functional_args_fallback(reg_block)
-
         connections: List[dict] = []
+        connected_axi_ports: set[str] = set()
         mem_sp = inst.params.get("mem_sp", {}) or {}
         for port in inst.kernel.ports_of_type(BusType.AXI4FULL):
             tgt = mem_sp.get(port.name)
             if not tgt:
                 continue
+            connected_axi_ports.add(port.name)
             domain = str(tgt.get("domain", "")).upper()
             idx = _coerce_optional_int(tgt.get("index"))
             if domain == "MEM" and idx is None:
@@ -434,6 +491,18 @@ def build_system_map_context(
                     "target": _format_target(domain, idx),
                 }
             )
+        hls_data = _kernel_hls_data(inst.kernel.name)
+        if hls_data is not None:
+            functional_args = _build_functional_args_from_hls(
+                hls_data,
+                selected["busif"],
+                reg_block,
+                kernel=inst.kernel,
+                connected_axi_ports=connected_axi_ports,
+                instance_name=inst_name,
+            )
+        else:
+            functional_args = _build_functional_args_fallback(reg_block)
 
         kernels.append(
             {
