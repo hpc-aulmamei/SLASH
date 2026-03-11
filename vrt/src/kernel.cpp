@@ -123,6 +123,10 @@ void Kernel::setFunctionalArgs(const std::vector<FunctionalArg>& args) {
 
 bool Kernel::hasFunctionalArgs() const { return !functionalArgs.empty(); }
 
+const std::vector<FunctionalArg>& Kernel::getFunctionalArgs() const {
+    return functionalArgs;
+}
+
 std::string Kernel::buildArgApiUsageMessage(std::string_view reason, std::string_view opName) const {
     std::ostringstream oss;
     oss << "Kernel argument API misuse for kernel '" << name << "': " << reason << "\n";
@@ -306,6 +310,62 @@ void Kernel::setEmuCallArgKinds(const std::vector<std::string>& kinds) { emuCall
 
 void Kernel::setEmuFetchScalarArgByOffset(const std::map<uint32_t, std::string>& routes) {
     emuFetchScalarArgByOffset = routes;
+}
+
+void Kernel::setConnections(const std::map<std::string, std::string>& conns) {
+    connections = conns;
+}
+
+void Kernel::validateBufferMemoryType(const FunctionalArg& argMeta, MemoryRangeType memType,
+                                      uint8_t hbmPort) const {
+    if (argMeta.port.empty()) {
+        return;
+    }
+    auto it = connections.find(argMeta.port);
+    if (it == connections.end()) {
+        return;
+    }
+    const std::string& target = it->second;
+
+    if (target.rfind("DDR", 0) == 0) {
+        if (memType != MemoryRangeType::DDR) {
+            throw std::runtime_error(
+                "Memory type mismatch for kernel '" + name + "' argument '" + argMeta.name +
+                "' (port " + argMeta.port + "): target is " + target +
+                " but buffer is not DDR");
+        }
+    } else if (target.rfind("HBM", 0) == 0) {
+        if (memType == MemoryRangeType::DDR) {
+            throw std::runtime_error(
+                "Memory type mismatch for kernel '" + name + "' argument '" + argMeta.name +
+                "' (port " + argMeta.port + "): target is " + target +
+                " but buffer is DDR");
+        }
+        if (memType == MemoryRangeType::HBM_VNOC) {
+            throw std::runtime_error(
+                "Memory type mismatch for kernel '" + name + "' argument '" + argMeta.name +
+                "' (port " + argMeta.port + "): target is " + target +
+                " but buffer is HBM_VNOC (use a specific HBM region buffer)");
+        }
+        // HBM with specific bank — extract bank number and verify exact match
+        std::string bankStr = target.substr(3);
+        if (!bankStr.empty()) {
+            unsigned long expectedBank = std::stoul(bankStr);
+            if (static_cast<unsigned long>(hbmPort) != expectedBank) {
+                throw std::runtime_error(
+                    "Memory type mismatch for kernel '" + name + "' argument '" + argMeta.name +
+                    "' (port " + argMeta.port + "): target is " + target +
+                    " but buffer is HBM" + std::to_string(hbmPort));
+            }
+        }
+    } else if (target == "MEM") {
+        if (memType != MemoryRangeType::HBM_VNOC && memType != MemoryRangeType::HBM) {
+            throw std::runtime_error(
+                "Memory type mismatch for kernel '" + name + "' argument '" + argMeta.name +
+                "' (port " + argMeta.port + "): target is MEM but buffer is DDR"
+                " (use an HBM_VNOC or HBM buffer)");
+        }
+    }
 }
 
 void Kernel::wait() {

@@ -536,4 +536,8 @@ std::string Vrtbin::sanitizeForPath(const std::string& input) {
     return out.empty() ? std::string("default") : out;
 }
 
+std::string Vrtbin::getSystemMapPathFromBdf(const std::string& bdf) {
+    return (FilesystemCache::getCachePath() / ("metadata_" + sanitizeForPath(bdf)) / "system_map.xml").string();
+}
+
 }  // namespace vrt

@@ -110,6 +110,18 @@ class Buffer {
     const T& operator[](size_t index) const;
 
     /**
+     * @brief Gets the memory range type of the buffer.
+     * @return The memory range type.
+     */
+    MemoryRangeType getMemoryRangeType() const;
+
+    /**
+     * @brief Gets the HBM port number of the buffer.
+     * @return The HBM port number, or 0 if no specific port was set.
+     */
+    uint8_t getHBMPort() const;
+
+    /**
      * @brief Gets the physical address of the buffer.
      * @return The physical address of the buffer.
      */
@@ -148,6 +160,8 @@ class Buffer {
     T* localBuffer;                  ///< Pointer to the local buffer
     size_t size;                     ///< The size of the buffer
     MemoryRangeType type;            ///< The type of memory range
+    uint8_t hbmPort = 0;            ///< HBM port number
+    bool hasPort = false;            ///< Whether an explicit HBM port was specified
     Device device;                   ///< The device associated with the buffer
     std::unique_ptr<Block> block;    ///< Allocator block (hardware only)
     UntypedBuffer* view;             ///< Cached view into the allocator block
@@ -208,6 +222,8 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type, uint8_t port
       localBuffer(nullptr),
       size(size),
       type(type),
+      hbmPort(port),
+      hasPort(true),
       device(device),
       block(nullptr),
       view(nullptr),
@@ -289,6 +305,16 @@ uint32_t Buffer<T>::getPhysAddrLow() const {
 template <typename T>
 uint32_t Buffer<T>::getPhysAddrHigh() const {
     return (startAddress >> 32) & 0xFFFFFFFF;
+}
+
+template <typename T>
+MemoryRangeType Buffer<T>::getMemoryRangeType() const {
+    return type;
+}
+
+template <typename T>
+uint8_t Buffer<T>::getHBMPort() const {
+    return hbmPort;
 }
 
 template <typename T>
@@ -380,6 +406,8 @@ Buffer<T>::Buffer(Buffer&& other) noexcept
       localBuffer(other.localBuffer),
       size(other.size),
       type(other.type),
+      hbmPort(other.hbmPort),
+      hasPort(other.hasPort),
       device(other.device),
       block(std::move(other.block)),
       view(other.view),
@@ -411,6 +439,8 @@ Buffer<T>& Buffer<T>::operator=(Buffer&& other) noexcept {
         device = other.device;
         size = other.size;
         type = other.type;
+        hbmPort = other.hbmPort;
+        hasPort = other.hasPort;
         index = other.index;
         startAddress = other.startAddress;
         localBuffer = other.localBuffer;

@@ -1,6 +1,6 @@
 /**
  * The MIT License (MIT)
- * Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -18,45 +18,26 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef VRTD_DEVICE_H
-#define VRTD_DEVICE_H
+/// @file version.hpp.in
+/// @brief Compile-time version constants for the smi CLI tool.
+///
+/// This is a CMake configure_file() template. At build time, the
+/// @-delimited placeholders are replaced with values from the CMake
+/// project definition to produce version.hpp.
 
-#include <stddef.h>
+#ifndef SMI_VERSION_HPP
+#define SMI_VERSION_HPP
 
-#include <slash/ctldev.h>
-#include <slash/qdma.h>
+/// Full semantic-version string (e.g., "1.2.3").
+constexpr char VERSION[] = "@SMI_VERSION@";
 
-#include "array.h"
-#include "buffer.h"
+/// Major version component.
+constexpr unsigned int VERSION_MAJOR = @SMI_VERSION_MAJOR@;
 
-struct design_writer;
-struct clock_driver;
-struct device_memory_map;
+/// Minor version component.
+constexpr unsigned int VERSION_MINOR = @SMI_VERSION_MINOR@;
 
-struct device {
-    char *path; /* owning */
-    struct slash_ctldev *ctl;
-    struct slash_qdma *qdma;
-    struct slash_ioctl_bar_info *bar_info[6];
-    struct slash_bar_file *bar_files[6];
-    struct design_writer *design_writer;
-    struct clock_driver *clock_driver;
-    struct device_memory_map *memory_map;
-    struct buffer_ptr_array buffers;
-    struct vrtd_pci_info pci_info;
-};
+/// Patch version component.
+constexpr unsigned int VERSION_PATCH = @SMI_VERSION_PATCH@;
 
-void cleanup_device(struct device *d);
-static inline
-void cleanup_devicep(struct device **d)
-{
-    cleanup_device(*d);
-
-    *d = NULL;
-}
-
-DECLARE_OWNING_PTR_ARRAY(device_ptr_array, struct device *, cleanup_device);
-
-int devices_discover_and_open(struct device_ptr_array *devices);
-
-#endif // VRTD_DEVICE_H
+#endif // SMI_VERSION_HPP

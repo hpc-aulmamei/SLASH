@@ -29,8 +29,8 @@ if [[ $# -ne 2 ]]; then
     exit 1
 fi
 
-# Install vrt, vrtd, libvrt*, libslash
-DESTDIR="$1" cmake --build pbuild/vrt --target install
+# Install smi, vrt, vrtd, libvrt*, libslash
+DESTDIR="$1" cmake --build pbuild/smi --target install
 
 # Install the linker
 mkdir -p "$1$2/slash/linker"

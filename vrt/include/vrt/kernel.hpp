@@ -36,6 +36,7 @@
 #include <utility>
 #include <vector>
 
+#include <vrt/allocator/allocator.hpp>
 #include <vrt/register/register.hpp>
 #include <vrt/utils/logger.hpp>
 #include <vrt/utils/platform.hpp>
@@ -55,6 +56,7 @@ struct FunctionalArg {
     uint32_t range = 32;
     bool readable = false;
     bool writable = false;
+    std::string port;
 };
 
 /**
@@ -76,6 +78,7 @@ class Kernel {
     std::optional<vrtd::Bar> vrtdBar;          ///< vrtd BAR handle for hardware access
     std::vector<std::string> emuCallArgKinds;  ///< Optional EMU arg kind metadata from emu_manifest.json
     std::map<uint32_t, std::string> emuFetchScalarArgByOffset;  ///< Optional EMU fetch routing by register offset
+    std::map<std::string, std::string> connections;  ///< Port-to-target memory mappings from system_map.xml
 
     template <typename T, typename = void>
     struct HasPhysAddr : std::false_type {};
@@ -83,6 +86,26 @@ class Kernel {
     template <typename T>
     struct HasPhysAddr<T, std::void_t<decltype(std::declval<const T&>().getPhysAddr())>>
         : std::true_type {};
+
+    template <typename T, typename = void>
+    struct HasMemoryInfo : std::false_type {};
+
+    template <typename T>
+    struct HasMemoryInfo<T, std::void_t<decltype(std::declval<const T&>().getMemoryRangeType()),
+                                       decltype(std::declval<const T&>().getHBMPort())>>
+        : std::true_type {};
+
+    void validateBufferMemoryType(const FunctionalArg& argMeta, MemoryRangeType memType,
+                                  uint8_t hbmPort) const;
+
+    template <typename T>
+    void validateBufferArg(const FunctionalArg& argMeta, const T& arg, std::true_type) const {
+        validateBufferMemoryType(argMeta, arg.getMemoryRangeType(), arg.getHBMPort());
+    }
+
+    template <typename T>
+    void validateBufferArg(const FunctionalArg& /*argMeta*/, const T& /*arg*/,
+                           std::false_type) const {}
 
     template <typename T>
     static uint64_t resolveKernelArgImpl(T&& arg, std::true_type) {
@@ -233,16 +256,25 @@ class Kernel {
     bool hasFunctionalArgs() const;
 
     /**
+     * @brief Get information about the functional arguments.
+     */
+    const std::vector<FunctionalArg>& getFunctionalArgs() const;
+
+    /**
      * @brief Sets EMU call argument kinds loaded from emu_manifest.json.
      *        Index corresponds to argN in EMU call JSON.
      */
     void setEmuCallArgKinds(const std::vector<std::string>& kinds);
-
     /**
      * @brief Sets EMU scalar fetch routing keyed by register offset.
      *        Used by Kernel::read() in EMULATION mode.
      */
     void setEmuFetchScalarArgByOffset(const std::map<uint32_t, std::string>& routes);
+
+    /**
+     * @brief Sets port-to-target memory connection mappings from system_map.xml.
+     */
+    void setConnections(const std::map<std::string, std::string>& conns);
 
     /**
      * @brief Set argument value by argument index from functional_args metadata.
@@ -253,6 +285,11 @@ class Kernel {
             throwArgApiMisuse("setArg(index, value) received a negative argument index.",
                               "setArg");
         }
+        using RawT = std::remove_cv_t<std::remove_reference_t<T>>;
+        if constexpr (HasMemoryInfo<RawT>::value) {
+            const FunctionalArg& argMeta = functionalArgByIdx(static_cast<uint32_t>(idx));
+            validateBufferArg(argMeta, value, HasMemoryInfo<RawT>{});
+        }
         decltype(auto) resolvedValue = resolveKernelArg(std::forward<T>(value));
         setArgResolved(static_cast<uint32_t>(idx), static_cast<uint64_t>(resolvedValue));
     }
@@ -262,6 +299,12 @@ class Kernel {
      */
     template <typename T>
     void setArg(std::string_view argName, T&& value) {
+        using RawT = std::remove_cv_t<std::remove_reference_t<T>>;
+        if constexpr (HasMemoryInfo<RawT>::value) {
+            uint32_t idx = functionalArgIdxByName(argName);
+            const FunctionalArg& argMeta = functionalArgByIdx(idx);
+            validateBufferArg(argMeta, value, HasMemoryInfo<RawT>{});
+        }
         decltype(auto) resolvedValue = resolveKernelArg(std::forward<T>(value));
         setArgResolved(functionalArgIdxByName(argName), static_cast<uint64_t>(resolvedValue));
     }
@@ -409,9 +452,11 @@ class Kernel {
                 "start/call");
         }
 
+        const FunctionalArg& argMeta = functionalArgs.at(currentArgIndex);
+        using RawT = std::remove_cv_t<std::remove_reference_t<T>>;
+        validateBufferArg(argMeta, arg, HasMemoryInfo<RawT>{});
         decltype(auto) resolvedArg = resolveKernelArg(std::forward<T>(arg));
         const uint64_t value = static_cast<uint64_t>(resolvedArg);
-        const FunctionalArg& argMeta = functionalArgs.at(currentArgIndex);
         writeArgToRegisterMap(argMeta, value);
         currentArgIndex++;
     }
@@ -430,9 +475,11 @@ class Kernel {
                 "start/call");
         }
 
+        const FunctionalArg& argMeta = functionalArgs.at(currentArgIndex);
+        using RawT = std::remove_cv_t<std::remove_reference_t<T>>;
+        validateBufferArg(argMeta, arg, HasMemoryInfo<RawT>{});
         decltype(auto) resolvedArg = resolveKernelArg(std::forward<T>(arg));
         const uint64_t value = static_cast<uint64_t>(resolvedArg);
-        const FunctionalArg& argMeta = functionalArgs.at(currentArgIndex);
         writeArgToSimulation(argMeta, value);
         currentArgIndex++;
     }
@@ -452,8 +499,10 @@ class Kernel {
                 "start/call");
         }
 
-        decltype(auto) resolvedArg = resolveKernelArg(std::forward<T>(arg));
         const FunctionalArg& argMeta = functionalArgs.at(currentArgIndex);
+        using RawT = std::remove_cv_t<std::remove_reference_t<T>>;
+        validateBufferArg(argMeta, arg, HasMemoryInfo<RawT>{});
+        decltype(auto) resolvedArg = resolveKernelArg(std::forward<T>(arg));
         writeArgToEmulation(command, argMeta, static_cast<uint64_t>(resolvedArg));
         currentArgIndex++;
     }

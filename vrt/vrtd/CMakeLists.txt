@@ -52,6 +52,17 @@ else()
   find_package(slash REQUIRED)
 endif()
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ami.cmake)
+
+find_package(Threads REQUIRED)
+find_package(PkgConfig REQUIRED)
+
+# Find libsystemd
+pkg_check_modules(SYSTEMD REQUIRED IMPORTED_TARGET libsystemd)
+
+# Find libinih
+pkg_check_modules(INIH REQUIRED IMPORTED_TARGET inih)
+
 add_subdirectory(src)
 
 add_subdirectory(libvrtd)

@@ -18,7 +18,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <sys/syslog.h>
 #define _GNU_SOURCE
 
 #include <assert.h>
@@ -31,6 +30,7 @@
 #include <systemd/sd-journal.h>
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
+#include <sys/syslog.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -46,6 +46,8 @@
 #include "auth.h"
 #include "clock.h"
 #include "design_writer.h"
+#include "hotplug.h"
+#include "reset.h"
 #include "serve.h"
 #include "utils.h"
 #include "state.h"
@@ -163,125 +165,13 @@ static uint16_t client_handle_request_clock_op(
     uint16_t *resp_size
 );
 
-static int device_read_sysfs_bdf(const struct device *d, char out_bdf[VRTD_PCI_BDF_LEN]);
-static int device_read_pci_info(const struct device *d, struct vrtd_pci_info *out);
-static uint16_t hotplug_errno_to_vrtd_ret(int err);
-static int pci_bdf_set_function(const char *bdf, uint8_t func, char out_bdf[VRTD_PCI_BDF_LEN]);
 static uint16_t device_refresh_pf2_after_design_write(const struct device *d);
 static void cleanup_client_buffers(struct client *client);
 
-static int device_read_sysfs_bdf(const struct device *d, char out_bdf[VRTD_PCI_BDF_LEN])
-{
-    if (d == NULL || d->path == NULL || out_bdf == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    _cleanup_(cleanup_free)
-    char *path = strdup(d->path);
-    if (path == NULL) {
-        return -1;
-    }
-
-    char sysfs_link[PATH_MAX];
-    if (snprintf(sysfs_link, sizeof(sysfs_link), "/sys/class/misc/%s/device", basename(path)) >=
-        (int)sizeof(sysfs_link)) {
-        errno = ENAMETOOLONG;
-        return -1;
-    }
-
-    char resolved[PATH_MAX];
-    ssize_t n = readlink(sysfs_link, resolved, sizeof(resolved) - 1);
-    if (n < 0) {
-        return -1;
-    }
-    resolved[n] = '\0';
-
-    const char *last = strrchr(resolved, '/');
-    const char *candidate = last ? last + 1 : resolved;
-    if (*candidate == '\0') {
-        errno = ENOENT;
-        return -1;
-    }
-
-    if (snprintf(out_bdf, VRTD_PCI_BDF_LEN, "%s", candidate) >= VRTD_PCI_BDF_LEN) {
-        errno = ENAMETOOLONG;
-        return -1;
-    }
-
-    return 0;
-}
-
-static int device_read_pci_info(const struct device *d, struct vrtd_pci_info *out)
-{
-    if (d == NULL || out == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    memset(out, 0, sizeof(*out));
-
-#if defined(SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO) && defined(SLASH_PCI_BDF_LEN)
-    if (d->ctl != NULL) {
-        struct slash_ioctl_device_info info = {0};
-        info.size = sizeof(info);
-
-        if (ioctl(d->ctl->fd, SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO, &info) == 0) {
-            (void) snprintf(out->bdf, sizeof(out->bdf), "%s", info.bdf);
-            out->vendor_id = info.vendor_id;
-            out->device_id = info.device_id;
-            out->subsystem_vendor_id = info.subsystem_vendor_id;
-            out->subsystem_device_id = info.subsystem_device_id;
-            return 0;
-        }
-    }
-#endif
-
-    return device_read_sysfs_bdf(d, out->bdf);
-}
-
-static int pci_bdf_set_function(const char *bdf, uint8_t func, char out_bdf[VRTD_PCI_BDF_LEN])
-{
-    if (bdf == NULL || out_bdf == NULL || func > 7) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    size_t len = strnlen(bdf, VRTD_PCI_BDF_LEN);
-    if (len == 0 || len >= VRTD_PCI_BDF_LEN) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    const char *dot = strrchr(bdf, '.');
-    if (dot == NULL || dot == bdf || dot[1] == '\0' || dot[2] != '\0') {
-        errno = EINVAL;
-        return -1;
-    }
-
-    size_t prefix_len = (size_t)(dot - bdf);
-    if (prefix_len + 2 >= VRTD_PCI_BDF_LEN) {
-        errno = ENAMETOOLONG;
-        return -1;
-    }
-
-    memcpy(out_bdf, bdf, prefix_len);
-    out_bdf[prefix_len] = '.';
-    out_bdf[prefix_len + 1] = (char)('0' + func);
-    out_bdf[prefix_len + 2] = '\0';
-
-    return 0;
-}
-
 static uint16_t device_refresh_pf2_after_design_write(const struct device *d)
 {
-    struct vrtd_pci_info pci = {0};
-    if (device_read_pci_info(d, &pci) != 0 || pci.bdf[0] == '\0') {
-        return VRTD_RET_INTERNAL_ERROR;
-    }
-
     char pf2_bdf[VRTD_PCI_BDF_LEN] = {0};
-    if (pci_bdf_set_function(pci.bdf, 2, pf2_bdf) != 0) {
+    if (pci_bdf_set_function(d->pci_info.bdf, 2, pf2_bdf) != 0) {
         return VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -330,7 +220,7 @@ static void cleanup_client_buffers(struct client *client)
                 continue;
             }
 
-            buffer_ptr_array_rm_by_value(&d->buffers, buf);
+            buffer_ptr_array_rm_by_reference(&d->buffers, buf);
         }
     }
 }
@@ -370,7 +260,7 @@ int on_client_io(sd_event_source *s, int fd, uint32_t revents, void *user)
     int ret;
 
     if (revents & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
-        client_ptr_array_rm_by_value(&client->state->clients, client);
+        client_ptr_array_rm_by_reference(&client->state->clients, client);
         return 0;
     }
 
@@ -925,23 +815,6 @@ static uint16_t client_handle_request_design_write(
     return VRTD_RET_OK;
 }
 
-static uint16_t hotplug_errno_to_vrtd_ret(int err)
-{
-    switch (err) {
-    case EINVAL:
-        return VRTD_RET_INVALID_ARGUMENT;
-    case ENODEV:
-        return VRTD_RET_NOEXIST;
-    case EBUSY:
-        return VRTD_RET_BUSY;
-    case EPERM:
-    case EACCES:
-        return VRTD_RET_AUTH_ERROR;
-    default:
-        return VRTD_RET_INTERNAL_ERROR;
-    }
-}
-
 static uint16_t client_handle_request_device_hotplug_op(
     struct client *client,
     const struct vrtd_req_device_hotplug_op *req_body,
@@ -972,11 +845,6 @@ static uint16_t client_handle_request_device_hotplug_op(
         return VRTD_RET_NOEXIST;
     }
 
-    struct vrtd_pci_info pci = {0};
-    if (device_read_pci_info(d, &pci) != 0 || pci.bdf[0] == '\0') {
-        return VRTD_RET_INTERNAL_ERROR;
-    }
-
     struct slash_hotplug *hotplug = slash_hotplug_open(NULL);
     if (hotplug == NULL) {
         return hotplug_errno_to_vrtd_ret(errno);
@@ -987,13 +855,16 @@ static uint16_t client_handle_request_device_hotplug_op(
         ret = slash_hotplug_rescan(hotplug);
         break;
     case VRTD_DEVICE_HOTPLUG_OP_REMOVE:
-        ret = slash_hotplug_remove(hotplug, pci.bdf);
+        ret = slash_hotplug_remove(hotplug, d->pci_info.bdf);
         break;
     case VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR:
-        ret = slash_hotplug_toggle_sbr(hotplug, pci.bdf);
+        ret = slash_hotplug_toggle_sbr(hotplug, d->pci_info.bdf);
         break;
     case VRTD_DEVICE_HOTPLUG_OP_HOTPLUG:
-        ret = slash_hotplug_hotplug(hotplug, pci.bdf);
+        ret = slash_hotplug_hotplug(hotplug, d->pci_info.bdf);
+        break;
+    case VRTD_DEVICE_HOTPLUG_OP_RESET_SEQUENCE:
+        ret = reset_with_ami(d, &client->state->devices);
         break;
     default:
         (void) slash_hotplug_close(hotplug);
@@ -1343,7 +1214,7 @@ static uint16_t client_handle_request_buffer_close(
         return VRTD_RET_NOEXIST;
     }
 
-    buffer_ptr_array_rm_by_value(&d->buffers, found);
+    buffer_ptr_array_rm_by_reference(&d->buffers, found);
 
     resp_body->zero = 0;
     *resp_size = sizeof(*resp_body);
@@ -1492,9 +1363,7 @@ static uint16_t client_handle_request_get_device_info(
 
     memset(resp_body, 0, sizeof(*resp_body));
     snprintf(resp_body->info.name, sizeof(resp_body->info.name), "%s", basename(path));
-    if (device_read_pci_info(d, &resp_body->info.pci) != 0) {
-        memset(&resp_body->info.pci, 0, sizeof(resp_body->info.pci));
-    }
+    memcpy(&resp_body->info.pci, &d->pci_info, sizeof(struct vrtd_pci_info));
 
     *resp_size = sizeof(*resp_body);
     return VRTD_RET_OK;
@@ -1531,14 +1400,8 @@ static uint16_t client_handle_request_get_device_by_bdf(
 
     for (size_t i = 0; i < client->state->devices.len; ++i) {
         struct device *d = client->state->devices.d[i];
-        struct vrtd_pci_info pci = {0};
-        if (device_read_pci_info(d, &pci) != 0) {
-            continue;
-        }
 
-        int match = strcmp(pci.bdf, bdf) == 0;
-
-        if (match) {
+        if (strcmp(d->pci_info.bdf, bdf) == 0) {
             resp_body->dev_number = (uint32_t) i;
             *resp_size = sizeof(*resp_body);
             return VRTD_RET_OK;

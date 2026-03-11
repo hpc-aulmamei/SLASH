@@ -205,11 +205,17 @@
     } \
     \
     static inline \
-    void T_ARRAY##_rm_by_value(struct T_ARRAY *arr, T value) \
+    void T_ARRAY##_rm_by_reference(struct T_ARRAY *arr, T value) \
     { \
-        T_ARRAY##_rm_by_value_impl(arr, value); \
-    \
-        CLEANUP(value); \
+        size_t j = 0; \
+        for (size_t i = 0; i < arr->len; i++) { \
+            if (arr->d[i] == value) { \
+                CLEANUP(arr->d[i]);  \
+                continue; \
+            } \
+            arr->d[j++] = arr->d[i]; \
+        } \
+        arr->len = j; \
     }
 
 DECLARE_ARRAY(int_array, int)

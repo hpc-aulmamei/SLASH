@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
@@ -20,8 +18,32 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-set -euxo pipefail
+add_executable(
+    v80-smi
+    
+    inspect.cpp
+    list.cpp
+    program.cpp
+    reset.cpp
+    validate.cpp
+    smi.cpp
+)
 
-cd "$(dirname "$0")/.."
+target_compile_features(v80-smi PRIVATE cxx_std_20)
 
-cmake --build pbuild/smi
+target_include_directories(
+    v80-smi
+
+    PRIVATE
+
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/../generated # For version.hpp
+)
+
+target_link_libraries(
+    v80-smi
+
+    PRIVATE
+
+    vrt::vrt
+)

@@ -60,14 +60,14 @@ file(
   GLOB
   LIB_SOURCES
   
-  ${CMAKE_SOURCE_DIR}/src/allocator/*.cpp
-  ${CMAKE_SOURCE_DIR}/include/buffer/*.hpp
-  ${CMAKE_SOURCE_DIR}/src/qdma/*.cpp
-  ${CMAKE_SOURCE_DIR}/src/*.cpp 
-  ${CMAKE_SOURCE_DIR}/src/parser/*.cpp
-  ${CMAKE_SOURCE_DIR}/src/register/*.cpp
-  ${CMAKE_SOURCE_DIR}/src/driver/*.cpp
-  ${CMAKE_SOURCE_DIR}/src/utils/*.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/allocator/*.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/buffer/*.hpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/qdma/*.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp 
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/parser/*.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/register/*.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/driver/*.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/*.cpp
 )
 
 add_library(vrt SHARED ${LIB_SOURCES})

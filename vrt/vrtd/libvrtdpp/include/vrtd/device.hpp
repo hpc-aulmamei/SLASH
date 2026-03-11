@@ -44,6 +44,7 @@ enum class HotplugOp : uint8_t {
     Remove = VRTD_DEVICE_HOTPLUG_OP_REMOVE,
     ToggleSbr = VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR,
     Hotplug = VRTD_DEVICE_HOTPLUG_OP_HOTPLUG,
+    ResetSequence = VRTD_DEVICE_HOTPLUG_OP_RESET_SEQUENCE,
 };
 
 /**

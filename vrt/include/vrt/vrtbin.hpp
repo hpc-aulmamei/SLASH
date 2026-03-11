@@ -110,6 +110,13 @@ class Vrtbin {
      * @return The path to the simulation executable file.
      */
     std::string getSimulationExec();
+
+    /**
+     * @brief Gets the path to the system map last loaded on a bdf.
+     * @param bdf The bdf to query.
+     * @return The path to the system map.
+     */
+    static std::string getSystemMapPathFromBdf(const std::string& bdf);
 };
 
 }  // namespace vrt

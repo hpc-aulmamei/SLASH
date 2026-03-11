@@ -74,7 +74,7 @@ static inline uint64_t bit_ceil_u64(uint64_t n) {
 #define min(a,b) \
    ({ __auto_type _a = (a); \
       __auto_type _b = (b); \
-     _a > _b ? _a : _b; })
+     _a < _b ? _a : _b; })
 
 #define SIZEOF_ARRAY(X) (sizeof(X) / sizeof(X[0]))
 
@@ -96,11 +96,9 @@ static inline uint64_t bit_ceil_u64(uint64_t n) {
 #define likely(x) __builtin_expect(!!(x), 1)
 #endif
 
-// #define ASSERT_TYPE(var, type)                                      \
-//         static_assert(                                              \
-//             __builtin_types_compatible_p(__typeof__(var), type),    \
-//             "Type assertion failed: variable is not of type " #type \
-//         )                                                          
+#ifndef _cleanup_
+#define _cleanup_(FOO) __attribute__((cleanup(FOO)))
+#endif
 
 #define _PROPAGATE_ERROR_INTERNAL_NOLOG(RET, CMP, JUMP)      \
     ({                                                       \
@@ -136,9 +134,6 @@ static inline uint64_t bit_ceil_u64(uint64_t n) {
     _PROPAGATE_ERROR_INTERNAL_LOG(RET, (_ret == NULL), return -1, LOGLEVEL, FMT ": %m", ##__VA_ARGS__)
 #define PROPAGATE_ERROR_SD_LOG(RET, LOGLEVEL, FMT, ...) \
     _PROPAGATE_ERROR_INTERNAL_LOG(RET, (_ret < 0), return -1, LOGLEVEL, FMT ": %s", ##__VA_ARGS__, strerrordesc_np(-_ret))
-
-
-#define _cleanup_(f) __attribute__((cleanup(f)))
 
 static inline const char *glob_err_to_string(int err)
 {

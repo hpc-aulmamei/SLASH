@@ -1,6 +1,6 @@
 /**
  * The MIT License (MIT)
- * Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -18,45 +18,34 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef VRTD_DEVICE_H
-#define VRTD_DEVICE_H
+/// @file program.hpp
+/// @brief Declaration of the Program command.
+///
+/// The Program command loads a vbin file onto a V80 device identified
+/// by its BDF address.
 
-#include <stddef.h>
+#ifndef SMI_PROGRAM_HPP
+#define SMI_PROGRAM_HPP
 
-#include <slash/ctldev.h>
-#include <slash/qdma.h>
+#include <string>
 
-#include "array.h"
-#include "buffer.h"
+/// @brief Static entry-point for the program command.
+///
+/// This class is not instantiable; it groups the command's option
+/// struct and its run() entry-point.
+class Program {
+    Program() = delete;
+public:
+    /// @brief Options parsed from the CLI for the program command.
+    struct Options {
+        std::string vbinPath;   ///< Path to the vbin file to load onto the device.
+        std::string bdf;        ///< BDF (Bus:Device.Function) address of the target device.
+    };
 
-struct design_writer;
-struct clock_driver;
-struct device_memory_map;
-
-struct device {
-    char *path; /* owning */
-    struct slash_ctldev *ctl;
-    struct slash_qdma *qdma;
-    struct slash_ioctl_bar_info *bar_info[6];
-    struct slash_bar_file *bar_files[6];
-    struct design_writer *design_writer;
-    struct clock_driver *clock_driver;
-    struct device_memory_map *memory_map;
-    struct buffer_ptr_array buffers;
-    struct vrtd_pci_info pci_info;
+    /// @brief Executes the program command.
+    /// @param options Populated options struct.
+    /// @return Exit code (0 on success).
+    static int run(const Options& options);
 };
 
-void cleanup_device(struct device *d);
-static inline
-void cleanup_devicep(struct device **d)
-{
-    cleanup_device(*d);
-
-    *d = NULL;
-}
-
-DECLARE_OWNING_PTR_ARRAY(device_ptr_array, struct device *, cleanup_device);
-
-int devices_discover_and_open(struct device_ptr_array *devices);
-
-#endif // VRTD_DEVICE_H
+#endif // SMI_PROGRAM_HPP

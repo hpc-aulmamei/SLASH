@@ -18,52 +18,34 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # ##################################################################################################
 
-cmake_minimum_required(VERSION 3.10)
+set(AMI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../linker/submodules/AVED/sw/AMI")
+set(AMI_API_DIR "${AMI_DIR}/api")
+set(AMI_API_SRC_DIR "${AMI_API_DIR}/src")
+set(AMI_API_INCLUDE_DIR "${AMI_API_DIR}/include")
 
-# Read version from packaging/version
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../packaging/version" SMI_VERSION)
-string(STRIP "${SMI_VERSION}" SMI_VERSION)
-
-# Parse into components
-string(REPLACE "." ";" VERSION_LIST "${SMI_VERSION}")
-list(GET VERSION_LIST 0 SMI_VERSION_MAJOR)
-list(GET VERSION_LIST 1 SMI_VERSION_MINOR)
-list(GET VERSION_LIST 2 SMI_VERSION_PATCH)
-
-message(STATUS "SMI version: ${SMI_VERSION} (${SMI_VERSION_MAJOR}.${SMI_VERSION_MINOR}.${SMI_VERSION_PATCH})")
-
-project(
-    v80-smi
+add_library(
+    ami
     
-    VERSION ${SMI_VERSION}
-    LANGUAGES C CXX
+    STATIC
+    
+    "${AMI_API_SRC_DIR}/ami.c"
+    "${AMI_API_SRC_DIR}/ami_device.c"
+    "${AMI_API_SRC_DIR}/ami_eeprom_access.c"
+    "${AMI_API_SRC_DIR}/ami_mem_access.c"
+    "${AMI_API_SRC_DIR}/ami_mfg_info.c"
+    "${AMI_API_SRC_DIR}/ami_module_access.c"
+    "${AMI_API_SRC_DIR}/ami_program.c"
+    "${AMI_API_SRC_DIR}/ami_sensor.c"
 )
 
-option(SMI_INCLUDE_VRT "Include vrtd as subdirectory instead of building from system" OFF)
+target_include_directories(
+    ami
 
-include(GNUInstallDirs)
+    PUBLIC
+        ${AMI_API_INCLUDE_DIR}
 
-if (SMI_INCLUDE_VRT)
-  add_subdirectory(../vrt vrt)
-else()
-  find_package(vrt REQUIRED CONFIG)
-endif()
-
-if(NOT TARGET vrt::vrt)
-  message(FATAL_ERROR
-    "vrt package is missing target vrt::vrt. "
-    "Build and install vrt first (cmake --install), then configure smi again.")
-endif()
-
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.hpp.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/generated/version.hpp"
-    @ONLY
+    PRIVATE
+        ${AMI_API_SRC_DIR}
 )
 
-add_subdirectory(src)
-
-install(
-    TARGETS v80-smi
-    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-)
+add_library(ami::ami ALIAS ami)

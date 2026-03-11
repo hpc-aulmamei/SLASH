@@ -43,6 +43,7 @@
 #include "accept.h"
 #include "device.h"
 #include "signals.h"
+#include "hotplug.h"
 
 #define VRTD_DEFERRED_WORK_INTERVAL_USEC (20ULL * 1000ULL)
 
@@ -53,11 +54,16 @@ static int configure_sockets(sd_event *ev, struct vrtd *state);
 static int configure_background_tasks(sd_event *ev, struct vrtd *state);
 static int block_signals(const int *signals, size_t n);
 
+void globals_init();
+void globals_destroy();
+
 int main(void)
 {
     struct vrtd state = {0};
 
     check_journal_and_abort_if_needed();
+
+    globals_init();
 
     int ret = config_load(&state.config);
     if (ret == -1) {
@@ -118,6 +124,8 @@ int main(void)
     }
 
     (void) sd_notify(0, "STOPPING=1");
+
+    globals_destroy();
 
     return ret;
 }
@@ -306,4 +314,14 @@ static int configure_background_tasks(sd_event *ev, struct vrtd *state)
     PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to set exit-on-failure for deferred work timer");
 
     return 0;
+}
+
+void globals_init(void)
+{
+    hotplug_global_init();
+}
+
+void globals_destroy(void)
+{
+    hotplug_global_destroy();
 }

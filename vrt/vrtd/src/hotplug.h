@@ -1,6 +1,6 @@
 /**
  * The MIT License (MIT)
- * Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -18,45 +18,24 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef VRTD_DEVICE_H
-#define VRTD_DEVICE_H
+#ifndef VRTD_HOTPLUG_H
+#define VRTD_HOTPLUG_H
 
-#include <stddef.h>
+#include <slash/hotplug.h>
+#include <vrtd/wire.h>
 
-#include <slash/ctldev.h>
-#include <slash/qdma.h>
+// Hotplug is a single device so it can be a global.
+extern struct slash_hotplug *g_hotplug;
 
-#include "array.h"
-#include "buffer.h"
+void hotplug_global_init(void);
+void hotplug_global_destroy(void);
 
-struct design_writer;
-struct clock_driver;
-struct device_memory_map;
+uint16_t hotplug_errno_to_vrtd_ret(int err);
 
-struct device {
-    char *path; /* owning */
-    struct slash_ctldev *ctl;
-    struct slash_qdma *qdma;
-    struct slash_ioctl_bar_info *bar_info[6];
-    struct slash_bar_file *bar_files[6];
-    struct design_writer *design_writer;
-    struct clock_driver *clock_driver;
-    struct device_memory_map *memory_map;
-    struct buffer_ptr_array buffers;
-    struct vrtd_pci_info pci_info;
-};
+// Helper function but useful and generally used with hotplug
+int pci_bdf_set_function(const char *bdf, uint8_t func, char out_bdf[VRTD_PCI_BDF_LEN]);
 
-void cleanup_device(struct device *d);
-static inline
-void cleanup_devicep(struct device **d)
-{
-    cleanup_device(*d);
+// Extract BDF prefix (bus:device without function), e.g. "0000:65:00.2" -> "0000:65:00"
+int pci_bdf_prefix(const char *bdf, char out_prefix[VRTD_PCI_BDF_LEN]);
 
-    *d = NULL;
-}
-
-DECLARE_OWNING_PTR_ARRAY(device_ptr_array, struct device *, cleanup_device);
-
-int devices_discover_and_open(struct device_ptr_array *devices);
-
-#endif // VRTD_DEVICE_H
+#endif
