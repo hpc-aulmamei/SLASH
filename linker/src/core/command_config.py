@@ -76,6 +76,40 @@ class CommandConfiguration(object):
     def __init__(self, args: argparse.Namespace):
         self._args = args
 
+        def valid_resource_directory(candidate: Path) -> bool:
+            return (candidate / "slash.tcl").is_file()
+
+        def find_resource_directory() -> Path:
+            # Find the resource directory
+            env_resource_dir = os.getenv("V80PP_RESOURCE_DIR")
+            if env_resource_dir is not None:
+                env_resource_dir = Path(
+                    env_resource_dir).expanduser().resolve()
+                if valid_resource_directory(env_resource_dir):
+                    return env_resource_dir
+                else:
+                    raise RuntimeError(
+                        f"The requested resource directory in V80PP_RESOURCE_DIR='{env_resource_dir}' does not exist!")
+
+            # Assumes that this class is defined in linker/src/core/linker_config.py
+            repo_root_dir = Path(__file__).parent.parent.parent.resolve()
+
+            candidates = [
+                repo_root_dir / "resources",
+                Path("~/.local/share/v80++/").expanduser().resolve(),
+                Path("/usr/local/share/v80++/"),
+                Path("/usr/share/v80++/")
+            ]
+            resource_dir = next(
+                filter(valid_resource_directory, candidates), None)
+            if resource_dir is None:
+                raise RuntimeError(
+                    f"Unable to find the resource directory! Evaluated candidates are: {[str(path) for path in candidates]}")
+            else:
+                return resource_dir
+
+        self._resource_dir = find_resource_directory()
+
         # Resolve and verify the IP repository
         if args.ip_repository is None:
             self._ip_repository: Optional[Path] = None
@@ -109,9 +143,7 @@ class CommandConfiguration(object):
 
     @property
     def resources_dir(self) -> Path:
-        # Assumes that this class is defined in linker/src/core/linker_config.py!
-        root_dir =  Path(__file__).parent.parent.parent
-        return (root_dir / "resources").resolve()
+        return self._resource_dir
 
     @property
     def abstract_shell_dir(self) -> Path:
