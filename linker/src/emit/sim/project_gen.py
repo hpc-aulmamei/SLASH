@@ -106,8 +106,7 @@ def build_sim_project(config: LinkerConfiguration) -> None:
         shutil.rmtree(xsim_build_dir, ignore_errors=True)
     shutil.copytree(xsim_dir / "xsim.dir", xsim_build_dir)
 
-    # TODO: Mabye move sim sources into resources directory
-    sim_src_dir = config.linker_root_dir / "sim"
+    sim_src_dir = config.resources_dir / "sim"
 
     subprocess.run(["cmake", str(sim_src_dir)], cwd=str(build_dir), check=True)
     jobs = str(os.cpu_count() or 8)
