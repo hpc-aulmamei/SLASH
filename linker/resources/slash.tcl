@@ -1040,11 +1040,6 @@ update_compile_order -fileset sources_1
   {% endfor %}
   {% endif %}
 
-# === Import kernel IP repos ===
-set existing_repos [get_property ip_repo_paths [current_project]]
-set_property ip_repo_paths [concat $existing_repos {{ kernel_ip_paths | join(" ") }}] [current_project]
-update_ip_catalog 
-
 # === Instantiate kernel IPs ===
 {% for name, inst in instances.items() %}
 set {{ name }} [ create_bd_cell -type ip -vlnv {{ inst.kernel.vlnv }} {{ name }} ]
