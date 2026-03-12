@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -19,7 +19,7 @@
 # ##################################################################################################
 from __future__ import annotations
 
-import os
+from enum import Enum
 from pathlib import Path
 import logging
 import re
@@ -27,51 +27,11 @@ import shutil
 import subprocess
 from typing import Optional
 from emit.metadata.report_util import convert_report_utilization_to_xml
-from core.results_dir import resolve_linker_platform_dir
+from core.command_config import LinkerConfiguration, InstallerConfiguration, CommandConfiguration
 
 logger = logging.getLogger(__name__)
 
 AVED_DESIGN_NAME = "amd_v80_gen5x8_25.1"
-HW_BUILD_DIR_ENV_KEYS = ("SLASH_HW_BUILD_DIR", "slash_hw_build_dir")
-
-
-def _default_create_project_tcl() -> Path:
-    # linker/src/emit/hw -> linker/resources/base/scripts/create_project.tcl
-    return Path(__file__).resolve().parents[3] / "resources" / "base" / "scripts" / "create_project.tcl"
-
-def _default_slash_rm_build_tcl() -> Path:
-    return Path(__file__).resolve().parents[3] / "resources" / "base" / "scripts" / "slash_project_build.tcl"
-
-def _default_service_layer_rm_build_tcl() -> Path:
-    return Path(__file__).resolve().parents[3] / "resources" / "base" / "scripts" / "service_layer_build.tcl"
-
-def get_hw_build_dir() -> Path:
-    for key in HW_BUILD_DIR_ENV_KEYS:
-        configured_build_dir = os.getenv(key)
-        if configured_build_dir:
-            return Path(configured_build_dir).expanduser().resolve()
-
-    raise SystemExit(
-        "ERROR: Missing required HW build directory environment variable. "
-        "Set SLASH_HW_BUILD_DIR (or slash_hw_build_dir) to an absolute writable path."
-    )
-
-def _default_pdi_dir() -> Path:
-    return get_hw_build_dir()
-
-def _default_results_dir() -> Path:
-    # linker/src/emit/hw -> linker root
-    return Path(__file__).resolve().parents[3]
-
-
-def _default_project_results_root(project_name: str, results_dir: Optional[Path] = None) -> Path:
-    if results_dir is not None:
-        return Path(results_dir).resolve()
-    return resolve_linker_platform_dir(project_name, "hw")
-
-
-def _default_install_dir() -> Path:
-    return _default_results_dir() / "results" / "base"
 
 
 def _copy_checked(src: Path, dest: Path) -> None:
@@ -89,7 +49,8 @@ def _copy_files(src_files: list[Path], destination: Path) -> None:
         if dst.exists():
             try:
                 if src.samefile(dst):
-                    logger.info("Skipping copy because source and destination are the same file: %s", src)
+                    logger.info(
+                        "Skipping copy because source and destination are the same file: %s", src)
                     continue
             except FileNotFoundError:
                 pass
@@ -124,10 +85,11 @@ def _ensure_boot_device_pcie_in_bif(bif_path: Path) -> None:
 
 def _generate_top_wrapper_pdi_with_bootgen(impl_dir: Path) -> Path:
     bif_path = impl_dir / "top_wrapper.bif"
-    output_pdi = impl_dir / "top_wrapperr.pdi"
+    output_pdi = impl_dir / "top_wrapper.pdi"
 
     _ensure_boot_device_pcie_in_bif(bif_path)
-    logger.info("Running bootgen in %s to generate %s", impl_dir, output_pdi.name)
+    logger.info("Running bootgen in %s to generate %s",
+                impl_dir, output_pdi.name)
     subprocess.run(
         [
             "bootgen",
@@ -144,30 +106,40 @@ def _generate_top_wrapper_pdi_with_bootgen(impl_dir: Path) -> Path:
     )
 
     if not output_pdi.exists():
-        raise FileNotFoundError(f"Expected bootgen output not found: {output_pdi}")
+        raise FileNotFoundError(
+            f"Expected bootgen output not found: {output_pdi}")
     return output_pdi
 
 
-def generate_base_pdi_with_aved(project_name: str, workdir: Optional[Path] = None) -> None:
-    linker_root = _default_results_dir()
-    results_base_dir = linker_root / "results" / "base"
-    aved_root = linker_root / "submodules" / "AVED"
-    aved_hw_dir = aved_root / "hw" / AVED_DESIGN_NAME
+def generate_base_pdi_with_aved(config: CommandConfiguration) -> Path:
+    aved_reference_dir = config.resources_dir / "submodules" / "AVED"
+    if not aved_reference_dir.is_dir():
+        raise FileNotFoundError(aved_reference_dir)
+
+    aved_dir = config.build_dir / "AVED"
+    if aved_dir.is_dir():
+        shutil.rmtree(aved_dir)
+    shutil.copytree(aved_reference_dir, aved_dir)
+
+    aved_hw_dir = aved_dir / "hw" / AVED_DESIGN_NAME
     aved_build_dir = aved_hw_dir / "build"
     aved_fpt_dir = aved_hw_dir / "fpt"
-    aved_fw_profile_hal = aved_root / "fw" / "AMC" / "src" / "profiles" / "v80" / "profile_hal.h"
+    aved_fw_profile_hal = aved_dir / "fw" / "AMC" / \
+        "src" / "profiles" / "v80" / "profile_hal.h"
 
-    static_impl_dir = get_hw_build_dir() / "slash.runs" / "impl_1"
-    aved_build_script = linker_root / "resources" / "aved" / "build_all.sh"
-    aved_profile_hal_src = linker_root / "resources" / "aved" / "profile_hal.h"
-    aved_pdi_combine_src = linker_root / "resources" / "aved" / "pdi_combine.bif"
-    xsa_src = linker_root / "resources" / "aved" / f"{AVED_DESIGN_NAME}.xsa"
+    static_impl_dir = config.build_dir / "slash.runs" / "impl_1"
+    aved_build_script = config.resources_dir / "aved" / "build_all.sh"
+    aved_profile_hal_src = config.resources_dir / "aved" / "profile_hal.h"
+    aved_pdi_combine_src = config.resources_dir / "aved" / "pdi_combine.bif"
+    xsa_src = config.resources_dir / "aved" / f"{AVED_DESIGN_NAME}.xsa"
 
-    logger.info("Starting AVED base build for %s", project_name)
+    logger.info("Starting AVED base build for %s", config.project_name)
     aved_build_dir.mkdir(parents=True, exist_ok=True)
 
-    regenerated_top_wrapper_pdi = _generate_top_wrapper_pdi_with_bootgen(static_impl_dir)
-    _copy_checked(regenerated_top_wrapper_pdi, aved_build_dir / "top_wrapper.pdi")
+    regenerated_top_wrapper_pdi = _generate_top_wrapper_pdi_with_bootgen(
+        static_impl_dir)
+    _copy_checked(regenerated_top_wrapper_pdi,
+                  aved_build_dir / "top_wrapper.pdi")
     _copy_checked(aved_build_script, aved_hw_dir / "build_all.sh")
     _copy_checked(aved_profile_hal_src, aved_fw_profile_hal)
     _copy_checked(aved_pdi_combine_src, aved_fpt_dir / "pdi_combine.bif")
@@ -179,29 +151,22 @@ def generate_base_pdi_with_aved(project_name: str, workdir: Optional[Path] = Non
     aved_pdi = aved_hw_dir / f"{AVED_DESIGN_NAME}.pdi"
     if not aved_pdi.exists():
         raise FileNotFoundError(f"Expected AVED output not found: {aved_pdi}")
-    results_base_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(aved_pdi, results_base_dir / f"{AVED_DESIGN_NAME}.pdi")
-    logger.info("AVED fallback complete. Generated %s", results_base_dir / f"{AVED_DESIGN_NAME}.pdi")
+    logger.info("AVED fallback complete. Generated %s", aved_pdi)
+    return aved_pdi
 
 
 def create_build_project(
-    project_name: str,
-    ip_repository: Optional[str] = None,
-    tcl_path: Optional[Path] = None,
-    vivado_bin: str = "vivado",
-    workdir: Optional[Path] = None,
-    action: Optional[str] = None,
-    results_dir: Optional[Path] = None,
+    config: CommandConfiguration,
+    action: Optional[str] = None
 ) -> None:
-    tcl = Path(tcl_path) if tcl_path else _default_create_project_tcl()
+    tcl = config.resources_dir / "base" / "scripts" / "create_project.tcl"
     if not tcl.exists():
         raise FileNotFoundError(f"create_project.tcl not found: {tcl}")
 
-    log_path = _default_project_results_root(project_name, results_dir) / "vivado.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path = config.build_dir / "vivado.log"
 
     cmd = [
-        vivado_bin,
+        config.vivado_bin,
         "-mode",
         "batch",
         "-nojournal",
@@ -210,246 +175,141 @@ def create_build_project(
         "-source",
         str(tcl),
         "-tclargs",
-        project_name,
+        config.project_name,
     ]
-    if ip_repository:
-        cmd.append(ip_repository)
+    if config.ip_repository:
+        cmd.append(str(config.ip_repository))
     if action:
         cmd.append(action)
 
-    subprocess.run(cmd, cwd=str(workdir) if workdir else None, check=True)
+    subprocess.run(cmd, cwd=str(config.build_dir), check=True)
 
 
-def _run_rm_build(
-    *,
-    project_name: str,
-    ip_repository: str,
-    rm_kind: str,
-    tcl_path: Path,
-    vivado_bin: str = "vivado",
-    install_dir: Optional[Path] = None,
-    workdir: Optional[Path] = None,
-    jobs: int = 8,
-    util_report_file: Optional[Path] = None,
-    linker_results_dir: Optional[Path] = None,
-    pre_synth_tcls: Optional[list[Path]] = None,
-) -> None:
-    if not ip_repository:
+class RM_KIND(Enum):
+    SLASH_PROJECT = "slash"
+    SERVICE_LAYER = "service_layer"
+
+
+def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
+    if not config.ip_repository:
         raise ValueError("ip_repository is required for RM builds")
 
-    tcl = Path(tcl_path)
-    if not tcl.exists():
-        raise FileNotFoundError(f"RM build Tcl not found: {tcl}")
-
-    linker_results_root = _default_project_results_root(project_name, linker_results_dir)
-    hw_build_dir = get_hw_build_dir()
-    logs_dir = hw_build_dir / "logs"
-    artifact_out_dir = hw_build_dir / "slash.runs" / f"{project_name}_impl_1"
-    rm_work_dir = hw_build_dir / "rm" / f"{rm_kind}_{project_name}"
-    install_root = (install_dir if install_dir else _default_install_dir()).expanduser().resolve()
+    logs_dir = config.build_dir / "logs"
+    image_out_dir = config.build_dir / "images"
+    rm_work_dir = config.build_dir / f"{rm_kind.value}_rm"
 
     logs_dir.mkdir(parents=True, exist_ok=True)
-    artifact_out_dir.mkdir(parents=True, exist_ok=True)
+    image_out_dir.mkdir(parents=True, exist_ok=True)
     rm_work_dir.mkdir(parents=True, exist_ok=True)
 
-    log_name = "service_layer_build.log" if rm_kind == "service_layer" else "slash_project_build.log"
-    log_path = logs_dir / log_name
+    if rm_kind == RM_KIND.SERVICE_LAYER:
+        tcl_path = config.resources_dir / "base" / "scripts" / "service_layer_build.tcl"
+        log_path = logs_dir / "service_layer_build.log"
+    else:
+        tcl_path = config.resources_dir / "base" / "scripts" / "slash_project_build.tcl"
+        log_path = logs_dir / "slash_project_build.log"
+
+    if not tcl_path.exists():
+        raise FileNotFoundError(f"RM build Tcl not found: {tcl_path}")
 
     cmd = [
-        vivado_bin,
+        config.vivado_bin,
         "-mode",
         "batch",
         "-nojournal",
         "-log",
         str(log_path),
         "-source",
-        str(tcl),
+        str(tcl_path),
         "-tclargs",
         "--project-name",
-        project_name,
+        config.project_name,
         "--ip-repo",
-        str(Path(ip_repository).expanduser().resolve()),
+        str(config.ip_repository),
         "--install-dir",
-        str(install_root),
+        str(config.abstract_shell_dir),
         "--linker-results-dir",
-        str(linker_results_root),
+        str(config.build_dir),
         "--rm-work-dir",
         str(rm_work_dir),
         "--artifact-out-dir",
-        str(artifact_out_dir),
+        str(image_out_dir),
         "--jobs",
-        str(jobs),
+        str(config.n_jobs),
     ]
-    if util_report_file is not None:
-        util_report_path = util_report_file.expanduser().resolve()
+    if rm_kind == RM_KIND.SLASH_PROJECT:
+        util_report_path = config.build_dir / \
+            f"report_utilization_{config.project_name}.txt"
         util_report_path.parent.mkdir(parents=True, exist_ok=True)
         cmd.extend(["--util-report-file", str(util_report_path)])
 
-    if rm_kind == "slash" and pre_synth_tcls:
-        resolved_pre_synth_tcls: list[Path] = []
-        for pre_synth_tcl in pre_synth_tcls:
-            resolved_pre_synth_tcl = pre_synth_tcl.expanduser().resolve()
-            if not resolved_pre_synth_tcl.exists() or not resolved_pre_synth_tcl.is_file():
-                raise FileNotFoundError(f"pre_synth Tcl not found: {resolved_pre_synth_tcl}")
-            resolved_pre_synth_tcls.append(resolved_pre_synth_tcl)
-        for resolved_pre_synth_tcl in resolved_pre_synth_tcls:
-            cmd.extend(["--pre-synth-tcl", str(resolved_pre_synth_tcl)])
+        for path in config.pre_synth_tcls:
+            cmd.extend(["--pre-synth-tcl", str(path)])
 
-    subprocess.run(cmd, cwd=str(workdir) if workdir else str(hw_build_dir), check=True)
+    subprocess.run(cmd, cwd=str(config.build_dir), check=True)
 
+    if rm_kind == RM_KIND.SLASH_PROJECT:
+        pdi_out_path = image_out_dir / \
+            f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
+    else:
+        pdi_out_path = image_out_dir / \
+            f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
 
-def build_service_layer_rm(
-    project_name: str,
-    ip_repository: str,
-    tcl_path: Optional[Path] = None,
-    vivado_bin: str = "vivado",
-    install_dir: Optional[Path] = None,
-    workdir: Optional[Path] = None,
-    jobs: int = 8,
-    linker_results_dir: Optional[Path] = None,
-) -> None:
-    _run_rm_build(
-        project_name=project_name,
-        ip_repository=ip_repository,
-        rm_kind="service_layer",
-        tcl_path=Path(tcl_path) if tcl_path else _default_service_layer_rm_build_tcl(),
-        vivado_bin=vivado_bin,
-        install_dir=install_dir,
-        workdir=workdir,
-        jobs=jobs,
-        linker_results_dir=linker_results_dir,
-    )
+    if not pdi_out_path.is_file():
+        raise FileNotFoundError(
+            f"{str(pdi_out_path)} is missing! Check {str(log_path)} for errors!")
 
 
-def build_slash_rm(
-    project_name: str,
-    ip_repository: str,
-    tcl_path: Optional[Path] = None,
-    vivado_bin: str = "vivado",
-    install_dir: Optional[Path] = None,
-    workdir: Optional[Path] = None,
-    jobs: int = 8,
-    linker_results_dir: Optional[Path] = None,
-    pre_synth_tcls: Optional[list[Path]] = None,
-) -> None:
-    hw_build_dir = get_hw_build_dir()
-    util_report_file = hw_build_dir / "reports" / f"report_utilization_{project_name}.txt"
-    _run_rm_build(
-        project_name=project_name,
-        ip_repository=ip_repository,
-        rm_kind="slash",
-        tcl_path=Path(tcl_path) if tcl_path else _default_slash_rm_build_tcl(),
-        vivado_bin=vivado_bin,
-        install_dir=install_dir,
-        workdir=workdir,
-        jobs=jobs,
-        util_report_file=util_report_file,
-        linker_results_dir=linker_results_dir,
-        pre_synth_tcls=pre_synth_tcls,
-    )
+def build_service_layer_rm(config: LinkerConfiguration) -> None:
+    _run_rm_build(config, RM_KIND.SERVICE_LAYER)
 
 
-def install_abstract_shell(
-    project_name: str,
-    ip_repository: Optional[str] = None,
-    install_dir: Optional[Path] = None,
-    tcl_path: Optional[Path] = None,
-    vivado_bin: str = "vivado",
-    workdir: Optional[Path] = None,
-) -> None:
-    # Install flow requires an explicit HW build root.
-    get_hw_build_dir()
+def build_slash_rm(config: LinkerConfiguration) -> None:
+    _run_rm_build(config, RM_KIND.SLASH_PROJECT)
 
-    # `build_project.tcl` writes abstract-shell DCPs into <linker>/results/base.
-    # Ensure it exists before Vivado runs to avoid write_abstract_shell failures.
-    (_default_results_dir() / "results" / "base").mkdir(parents=True, exist_ok=True)
 
-    create_build_project(
-        project_name=project_name,
-        ip_repository=ip_repository,
-        tcl_path=tcl_path,
-        vivado_bin=vivado_bin,
-        workdir=workdir,
-    )
+def install_abstract_shell(config: InstallerConfiguration) -> None:
+    config.abstract_shell_dir.mkdir(parents=True, exist_ok=True)
 
-    impl_dir = get_hw_build_dir() / "slash.runs" / "impl_1"
-    bd_source_dirs = (
-        get_hw_build_dir() / "slash.srcs" / "sources_1" / "bd" / "slash_base",
-        get_hw_build_dir() / "slash.srcs" / "sources_1" / "bd" / "service_layer",
-    )
-    results_base_dir = _default_results_dir() / "results" / "base"
+    create_build_project(config)
+
+    impl_dir = config.build_dir / "slash.runs" / "impl_1"
     dcp_sources = (
         impl_dir / "top_wrapper_routed_bb.dcp",
-        results_base_dir / "abs_shell_slash.dcp",
-        results_base_dir / "abs_shell_service_layer.dcp",
+        impl_dir / "abs_shell_slash.dcp",
+        impl_dir / "abs_shell_service_layer.dcp",
     )
-    destination = (install_dir if install_dir else _default_install_dir()).expanduser().resolve()
-    destination.mkdir(parents=True, exist_ok=True)
-
     for src in dcp_sources:
         if not src.exists():
-            raise FileNotFoundError(f"Expected install artifact not found: {src}")
-    _copy_files(list(dcp_sources), destination)
+            raise FileNotFoundError(
+                f"Expected install artifact not found: {src}")
+    _copy_files(list(dcp_sources), config.abstract_shell_dir)
 
-    for src_dir in bd_source_dirs:
+    src_dirs = config.build_dir / "slash.srcs" / "sources_1" / "bd"
+    for src_dir in (src_dirs / "slash_base", src_dirs / "service_layer"):
         if not src_dir.is_dir():
-            raise FileNotFoundError(f"Expected install BD directory not found: {src_dir}")
-        _copy_tree(src_dir, destination)
+            raise FileNotFoundError(
+                f"Expected install BD directory not found: {src_dir}")
+        _copy_tree(src_dir, config.abstract_shell_dir)
 
-    generate_base_pdi_with_aved(project_name=project_name, workdir=workdir)
-    aved_pdi = results_base_dir / f"{AVED_DESIGN_NAME}.pdi"
-    if not aved_pdi.exists():
-        raise FileNotFoundError(f"Expected AVED PDI not found in results/base: {aved_pdi}")
-    _copy_files([aved_pdi], destination)
+    aved_pdi_path = generate_base_pdi_with_aved(config)
+    if not aved_pdi_path.exists():
+        raise FileNotFoundError(
+            f"Expected AVED PDI not found in results/base: {aved_pdi_path}")
+    _copy_files([aved_pdi_path], config.abstract_shell_dir)
 
-def generate_image(
-    project_name: str,
-    workdir: Optional[Path] = None,
-    include_service_layer: bool = True,
-    results_dir: Optional[Path] = None,
-) -> None:
-    impl_dir = _default_pdi_dir() / "slash.runs" / f"{project_name}_impl_1"
-    dest_dir = _default_project_results_root(project_name, results_dir) / "images"
-    logger.info("Generating PDI images for project %s", project_name)
-    logger.info("PDI source dir: %s", impl_dir)
-    logger.info("PDI destination dir: %s", dest_dir)
-    dest_dir.mkdir(parents=True, exist_ok=True)
 
-    service_layer_filename = f"top_i_service_layer_service_layer_{project_name}_inst_0_partial.pdi"
-    if not include_service_layer:
-        stale_service_pdi = dest_dir / service_layer_filename
-        if stale_service_pdi.exists():
-            logger.info("Removing stale service-layer PDI: %s", stale_service_pdi)
-            stale_service_pdi.unlink()
-
-    pdi_files = []
-    if include_service_layer:
-        pdi_files.append(service_layer_filename)
-    pdi_files.append(f"top_i_slash_slash_{project_name}_inst_0_partial.pdi")
-
-    for filename in pdi_files:
-        src = impl_dir / filename
-        if not src.exists():
-            raise FileNotFoundError(f"Expected image file not found: {src}")
-        dest = dest_dir / filename
-        logger.info("Copying PDI image: %s -> %s", src, dest)
-        shutil.copy2(src, dest)
-    logger.info("PDI image generation complete for %s", project_name)
-
-def generate_util_report(project_name: str, results_dir: Optional[Path] = None) -> None:
-    report_dir = _default_project_results_root(project_name, results_dir)
-
-    report_file = report_dir / f"report_utilization_{project_name}.txt"
-    xml_file = report_dir / f"report_utilization_{project_name}.xml"
-    logger.info("Generating utilization report XML for project %s", project_name)
-    logger.info("Utilization report input: %s", report_file)
-    logger.info("Utilization report output: %s", xml_file)
-    if not report_file.exists():
-        logger.warning(
-            "Utilization report input missing for %s (%s). Skipping XML generation.",
-            project_name,
-            report_file,
-        )
-        return
-    convert_report_utilization_to_xml(report_file, xml_file)
-    logger.info("Utilization report XML generation complete for %s", project_name)
+def generate_util_report(config: CommandConfiguration) -> None:
+    report_path = config.build_dir / \
+        f"report_utilization_{config.project_name}.txt"
+    xml_path = config.build_dir / \
+        f"report_utilization_{config.project_name}.xml"
+    logger.info("Generating utilization report XML for project %s",
+                config.project_name)
+    logger.info("Utilization report input: %s", report_path)
+    logger.info("Utilization report output: %s", xml_path)
+    if not report_path.exists():
+        raise FileNotFoundError(report_path)
+    convert_report_utilization_to_xml(report_path, xml_path)
+    logger.info("Utilization report XML generation complete for %s",
+                config.project_name)

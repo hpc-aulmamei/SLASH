@@ -66,32 +66,20 @@ set design_name "slash"
 set bd_slash_name        "slash_${project_name}"
 set bd_service_layer_name "service_layer_${project_name}"
 
-# Build directory:
-# env `SLASH_HW_BUILD_DIR` (or `slash_hw_build_dir`) if provided,
-# otherwise default under current working directory.
-if {[info exists ::env(SLASH_HW_BUILD_DIR)] && $::env(SLASH_HW_BUILD_DIR) ne ""} {
-  set project_build_dir [file normalize $::env(SLASH_HW_BUILD_DIR)]
-} elseif {[info exists ::env(slash_hw_build_dir)] && $::env(slash_hw_build_dir) ne ""} {
-  set project_build_dir [file normalize $::env(slash_hw_build_dir)]
-} else {
-  set project_build_dir [file normalize [file join $cwd ".slash_hw_build" $project_name]]
-  puts "INFO: SLASH_HW_BUILD_DIR not set; defaulting build dir to '$project_build_dir'."
-}
-
 puts "PROJECT:        $project_name"
 puts "IP REPOS:       $iprepos"
 puts "ACTION:         $action"
-puts "BUILD DIR:      $project_build_dir"
+puts "BUILD DIR:      $cwd"
 
 
-set proj_exists [file normalize [file join $project_build_dir "${design_name}.xpr"]]
+set proj_exists [file normalize [file join $cwd "${design_name}.xpr"]]
 if {![file exists $proj_exists]} {
   if {!$do_create} {
     error "Project not found at $proj_exists. Run with action 'create' first."
   }
   lappend iprepos $default_iprepos
-  puts "INFO: Creating new project '$design_name' in '$project_build_dir' ..."
-  create_project $design_name $project_build_dir -part xcv80-lsva4737-2MHP-e-S -force
+  puts "INFO: Creating new project '$design_name' in '$cwd' ..."
+  create_project $design_name $cwd -part xcv80-lsva4737-2MHP-e-S -force
   set_property ip_repo_paths $iprepos [current_project]
   update_ip_catalog
 
@@ -106,7 +94,7 @@ if {![file exists $proj_exists]} {
   source [file normalize [file join $src_dir "add_constraints.tcl"]]
 } else {
   puts "INFO: Project already exists; opening '$proj_exists'."
-  open_project [file normalize [file join $project_build_dir "slash.xpr"]]
+  open_project [file normalize [file join $cwd "slash.xpr"]]
   if {$do_create} {
     set repos [get_property ip_repo_paths [current_project]]
     set iprepos [concat $iprepos $repos]

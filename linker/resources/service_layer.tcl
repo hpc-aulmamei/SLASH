@@ -1140,7 +1140,6 @@ proc add_dcmac_inst {} {
 # create_service_layer ""
 
 # Absolute paths (normalized)
-set ::slash_proj_root  [file normalize "{{ proj_root }}"]
 set ::slash_dcmac_tcl  [file normalize "{{ dcmac_tcl }}"]
 set ::slash_dcmac_hdl  [file normalize "{{ dcmac_hdl_dir }}"]
 

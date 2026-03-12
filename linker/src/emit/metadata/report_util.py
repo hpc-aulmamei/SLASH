@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -20,17 +20,18 @@
 
 from __future__ import annotations
 
-import sys
 import logging
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 
+
 @dataclass
 class ValueWithPercent:
     value: Optional[int]
     pct: Optional[float]
+
 
 @dataclass
 class UtilRow:
@@ -87,7 +88,10 @@ class ResourceTotals:
     def ramb_equivalent_18k(self) -> int:
         return self.ramb18 + 2 * self.ramb36
 
-CELL_VALUE_PCT = re.compile(r"^\s*(?P<val>\d+)\s*(?:\(\s*(?P<pct>\d+(?:\.\d+)?)%\s*\))?\s*$")
+
+CELL_VALUE_PCT = re.compile(
+    r"^\s*(?P<val>\d+)\s*(?:\(\s*(?P<pct>\d+(?:\.\d+)?)%\s*\))?\s*$")
+
 
 def parse_cell_value_and_percent(cell: str) -> ValueWithPercent:
     """! @brief Parse a utilization cell containing a value and optional percent.
@@ -227,6 +231,7 @@ def walk_subtree(node: TreeNode) -> List[TreeNode]:
         stack.extend(reversed(n.children))
     return out
 
+
 def slash_hidden_cell_patterns() -> List[re.Pattern]:
     """! @brief Return regex patterns for cells hidden in the SLASH report.
 
@@ -234,7 +239,7 @@ def slash_hidden_cell_patterns() -> List[re.Pattern]:
     """
     return [
         re.compile(r".*_sc_.*"),        # hbm_sc_01, etc.
-        re.compile(r"^smartconnect.*"), # smartconnect_0, etc.
+        re.compile(r"^smartconnect.*"),  # smartconnect_0, etc.
     ]
 
 
@@ -333,22 +338,30 @@ def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
     SLASH = "slash"
 
     if SLASH not in nodes:
-        raise SystemExit(f"Could not find instance '{SLASH}' in the utilization table.")
+        raise SystemExit(
+            f"Could not find instance '{SLASH}' in the utilization table.")
 
     root = ET.Element("utilization_report")
 
     if SERVICE_LAYER in nodes:
         sl_node = nodes[SERVICE_LAYER]
-        sl_block = ET.SubElement(root, "block", name="service_layer", instance=sl_node.row.instance, pr=sl_node.row.pr_attribute)
-        write_totals_attributes_from_row(ET.SubElement(sl_block, "totals"), sl_node.row)
+        sl_block = ET.SubElement(root, "block", name="service_layer",
+                                 instance=sl_node.row.instance, pr=sl_node.row.pr_attribute)
+        write_totals_attributes_from_row(
+            ET.SubElement(sl_block, "totals"), sl_node.row)
     else:
-        logger.warning("Could not find instance '%s' in utilization table. Emitting zeroed service_layer block.", SERVICE_LAYER)
-        sl_block = ET.SubElement(root, "block", name="service_layer", instance=SERVICE_LAYER, pr="Reconfigurable")
-        write_totals_attributes_from_totals(ET.SubElement(sl_block, "totals"), ResourceTotals())
+        logger.warning(
+            "Could not find instance '%s' in utilization table. Emitting zeroed service_layer block.", SERVICE_LAYER)
+        sl_block = ET.SubElement(
+            root, "block", name="service_layer", instance=SERVICE_LAYER, pr="Reconfigurable")
+        write_totals_attributes_from_totals(
+            ET.SubElement(sl_block, "totals"), ResourceTotals())
 
     sh_node = nodes[SLASH]
-    sh_block = ET.SubElement(root, "block", name="slash", instance=sh_node.row.instance, pr=sh_node.row.pr_attribute)
-    write_totals_attributes_from_row(ET.SubElement(sh_block, "totals"), sh_node.row)
+    sh_block = ET.SubElement(root, "block", name="slash",
+                             instance=sh_node.row.instance, pr=sh_node.row.pr_attribute)
+    write_totals_attributes_from_row(
+        ET.SubElement(sh_block, "totals"), sh_node.row)
 
     sub = ET.SubElement(sh_block, "subhierarchy")
     visible_cells = ET.SubElement(sub, "cells")
@@ -364,16 +377,20 @@ def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
                 continue
 
             if is_hidden_in_slash_report(inst):
-                c = ET.SubElement(hidden_cells, "cell", instance=inst, module=n.row.module, pr=n.row.pr_attribute)
+                c = ET.SubElement(hidden_cells, "cell", instance=inst,
+                                  module=n.row.module, pr=n.row.pr_attribute)
                 write_cell(c, n.row)
                 hidden_sum.add(n.row)
             else:
-                c = ET.SubElement(visible_cells, "cell", instance=inst, module=n.row.module, pr=n.row.pr_attribute)
+                c = ET.SubElement(visible_cells, "cell", instance=inst,
+                                  module=n.row.module, pr=n.row.pr_attribute)
                 write_cell(c, n.row)
                 visible_sum.add(n.row)
 
-    write_totals_attributes_from_totals(ET.SubElement(sub, "subhierarchy_sum"), visible_sum)
-    write_totals_attributes_from_totals(ET.SubElement(sub, "slash_logic_sum"), hidden_sum)
+    write_totals_attributes_from_totals(
+        ET.SubElement(sub, "subhierarchy_sum"), visible_sum)
+    write_totals_attributes_from_totals(
+        ET.SubElement(sub, "slash_logic_sum"), hidden_sum)
 
     tree = ET.ElementTree(root)
     pretty_indent_xml(root)

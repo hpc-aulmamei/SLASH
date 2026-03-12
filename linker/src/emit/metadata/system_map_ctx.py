@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -159,7 +159,8 @@ def _build_functional_args_from_hls(
     if reg_block is None or not reg_block.registers:
         return []
 
-    reg_by_name = {str(r.name): r for r in reg_block.registers if getattr(r, "name", None)}
+    reg_by_name = {
+        str(r.name): r for r in reg_block.registers if getattr(r, "name", None)}
     out: List[tuple[int, int, dict]] = []
 
     for order_idx, arg in enumerate(parse_hls_args(hls_data)):
@@ -205,15 +206,18 @@ def _build_functional_args_from_hls(
         if r_flag == 0 and w_flag == 0:
             continue
 
-        base_offset = min(int(getattr(reg, "address_offset", 0) or 0) for reg in refs)
-        logical_name = _register_stem(str(getattr(refs[0], "name", "") or arg["name"]))
+        base_offset = min(int(getattr(reg, "address_offset", 0) or 0)
+                          for reg in refs)
+        logical_name = _register_stem(
+            str(getattr(refs[0], "name", "") or arg["name"]))
         src_type = str(arg.get("src_type", ""))
         src_size = arg.get("src_size")
         reg_bits = sum(int(getattr(reg, "size", 32) or 32) for reg in refs)
         has_address_ref = any(
             str(ref.get("usage", "")).lower() == "address" for ref in (arg.get("hw_refs", []) or [])
         )
-        arg_type = "buffer" if ("*" in src_type or has_address_ref) else "scalar"
+        arg_type = "buffer" if (
+            "*" in src_type or has_address_ref) else "scalar"
 
         if arg_type == "buffer":
             if reg_bits > 0 and src_size is not None and src_size > 0:
@@ -315,7 +319,8 @@ def _build_functional_args_fallback(reg_block: Optional[AddressBlock]) -> List[d
             groups[stem] = g
         g["regs"].append(reg)
         g["split"] = bool(g["split"] or _is_split_register_name(reg_name))
-        g["offset"] = min(g["offset"], int(getattr(reg, "address_offset", 0) or 0))
+        g["offset"] = min(g["offset"], int(
+            getattr(reg, "address_offset", 0) or 0))
 
     ordered = sorted(groups.values(), key=lambda g: (g["offset"], g["name"]))
     out: List[dict] = []
@@ -367,7 +372,8 @@ def _assign_mem_indices(
     *,
     num_mem_ports: int = 8,
 ) -> Dict[Tuple[str, str], int]:
-    buckets: Dict[int, List[Tuple[str, str]]] = {i: [] for i in range(num_mem_ports)}
+    buckets: Dict[int, List[Tuple[str, str]]] = {
+        i: [] for i in range(num_mem_ports)}
     rr = 0
 
     for inst in instances.values():
@@ -428,13 +434,15 @@ def build_system_map_context(
         if hls_path is None:
             hls_cache[kernel_type] = None
             return None
-        hls_cache[kernel_type] = load_hls_metadata(Path(hls_path), strict=False)
+        hls_cache[kernel_type] = load_hls_metadata(
+            Path(hls_path), strict=False)
         return hls_cache[kernel_type]
 
     kernels: List[dict] = []
     for inst_name in sorted(instances.keys()):
         inst = instances[inst_name]
-        entries = sorted(axilite_by_inst.get(inst_name, []), key=lambda e: e["busif"])
+        entries = sorted(axilite_by_inst.get(
+            inst_name, []), key=lambda e: e["busif"])
         if not entries:
             continue
 

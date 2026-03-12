@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -19,13 +19,15 @@
 # ##################################################################################################
 
 from __future__ import annotations
+from typing import Set, Dict, Any, List
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Set, Dict, Any
+from core.command_config import CommandConfiguration
+
 
 @dataclass(frozen=True)
 class NetworkSpecView:
     enabled_eth: Set[int]
+
 
 def build_service_layer_context(net) -> dict:
     """
@@ -45,16 +47,12 @@ def build_service_layer_context(net) -> dict:
         "dual_qsfp_1": 0,
     }
 
-def compute_paths(proj_root: Path | None = None) -> Dict[str, Any]:
+
+def compute_paths(config: CommandConfiguration) -> Dict[str, Any]:
     """
     Resolve absolute paths for service-layer assets regardless of CWD.
-    Assumes main.py is <root>/src/main.py if proj_root not provided.
     """
-    if proj_root is None:
-        # main.py is <root>/src/main.py  -> go up two levels
-        proj_root = Path(__file__).resolve().parents[4]
-
-    dcmac_dir = proj_root / "resources" / "dcmac"
+    dcmac_dir = config.resources_dir / "dcmac"
     dcmac_tcl = dcmac_dir / "tcl" / "dcmac.tcl"
     dcmac_hdl = dcmac_dir / "hdl"
 
@@ -68,13 +66,11 @@ def compute_paths(proj_root: Path | None = None) -> Dict[str, Any]:
     ]
 
     return {
-        "proj_root": str(proj_root),
         "dcmac_tcl": str(dcmac_tcl),
         "dcmac_hdl_dir": str(dcmac_hdl),
         "dcmac_hdl_files": [str(dcmac_hdl / f) for f in hdl_files],
     }
 
-from typing import Dict, Any
 
 def build_service_axilite_ctx(net) -> Dict[str, Any]:
     """
@@ -110,12 +106,14 @@ def build_service_axilite_ctx(net) -> Dict[str, Any]:
         "sl_num_mi": num_mi,
 
         # wiring
-        "sl_si_src_if": "axi_noc_0/M00_AXI",   # top-level service_layer AXI-Lite interface
+        # top-level service_layer AXI-Lite interface
+        "sl_si_src_if": "axi_noc_0/M00_AXI",
         "sl_clk0": "service_clk",            # service_layer clock pins
         "sl_rstn": "ilreduced_logic_0/Res",
 
         # MI endpoints and qsfp blocks for clk/rst tie-off
-        "sl_mi_targets": mi_targets,       # e.g. ["qsfp_0_n_1/s_axi", "qsfp_2_n_3/s_axi"]
+        # e.g. ["qsfp_0_n_1/s_axi", "qsfp_2_n_3/s_axi"]
+        "sl_mi_targets": mi_targets,
         "sl_qsfp_blocks": qsfp_blocks,     # e.g. ["qsfp_0_n_1", "qsfp_2_n_3"]
 
         # preferred instance names
@@ -126,7 +124,6 @@ def build_service_axilite_ctx(net) -> Dict[str, Any]:
 
 # emit/service_layer_ctx.py
 
-from typing import Dict, Any, List
 
 def build_service_noc_axis_ctx(net) -> Dict[str, Any]:
     """

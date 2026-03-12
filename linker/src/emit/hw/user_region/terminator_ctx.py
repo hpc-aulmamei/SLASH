@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -19,17 +19,19 @@
 # ##################################################################################################
 
 from __future__ import annotations
-from typing import Dict, List, Set
+from typing import List, Set
 import re
-from xml import dom
 from core.port import BusType
 from core.bd_ports import BlockDesignPorts, BdPort
 
-_RX_SKIP_TOP = re.compile(r"^(M\d{2}_INI|HBM_VNOC_INI_\d{2}|HBM_AXI_\d{2})$", re.IGNORECASE)
+_RX_SKIP_TOP = re.compile(
+    r"^(M\d{2}_INI|HBM_VNOC_INI_\d{2}|HBM_AXI_\d{2})$", re.IGNORECASE)
+
 
 def _is_bd_port(p: BdPort) -> bool:
     """True if destination is a *BD interface port* (not a NoC/pin path)."""
     return not ((p.rtl_name or "").startswith("/"))
+
 
 def _want_generic_term(p: BdPort) -> bool:
     """
@@ -51,6 +53,7 @@ def _want_generic_term(p: BdPort) -> bool:
     if _RX_SKIP_TOP.match(rtl):
         return False
     return True
+
 
 def build_axi_terminators_context(
     bd: BlockDesignPorts,
@@ -80,6 +83,7 @@ def build_axi_terminators_context(
 
     return {"axi_terminators": terms}
 
+
 def build_ddr_noc_terminators(
     used_targets: Set[str],
     *,
@@ -100,6 +104,7 @@ def build_ddr_noc_terminators(
         })
         seq += 1
     return {"axi_terminators": axi_terms}
+
 
 def build_mem_noc_terminators(
     used_targets: Set[str],
@@ -145,6 +150,7 @@ def build_virt_noc_terminators(
         })
         seq += 1
     return {"axi_terminators": axi_terms}
+
 
 def build_host_noc_terminator(
     used_targets: set[str],

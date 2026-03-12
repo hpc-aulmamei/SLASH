@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -25,6 +25,7 @@ from core.kernel import KernelInstance
 from core.port import BusType
 from core.bd_ports import BlockDesignPorts
 
+
 def _to_int_or_none(v: Optional[object]) -> Optional[int]:
     if v is None:
         return None
@@ -37,6 +38,7 @@ def _to_int_or_none(v: Optional[object]) -> Optional[int]:
         return int(s, 0)
     except ValueError:
         return None
+
 
 def build_hbm_smartconnect_context(
     instances: Dict[str, KernelInstance],
@@ -84,14 +86,14 @@ def build_hbm_smartconnect_context(
             continue
 
         # Destination BD port name (HBM_AXI_XX)
-        dst_bd   = bd.mem("HBM", h_idx)
+        dst_bd = bd.mem("HBM", h_idx)
         dst_port = dst_bd.rtl_name or dst_bd.name
 
         # Root SC config: 2 clocks (aclk, aclk1), 1 SI, 1 MI
         root_name = f"{base_name}_{h_idx:02d}"
         clk0 = "user_clk"
         clk1 = "[get_bd_ports static_region_clk]"
-        rst  = "ilreduced_logic_0/Res"
+        rst = "ilreduced_logic_0/Res"
 
         hbm_root_create.append({
             "name": root_name,
@@ -112,7 +114,8 @@ def build_hbm_smartconnect_context(
             level = 0
             current = [{"src": s} for s in sources]
             while len(current) > 1:
-                groups = [current[i:i+max_si] for i in range(0, len(current), max_si)]
+                groups = [current[i:i+max_si]
+                          for i in range(0, len(current), max_si)]
                 next_level = []
                 for g_idx, group in enumerate(groups):
                     scn = f"{base_name}_{h_idx:02d}_L{level}_{g_idx}"

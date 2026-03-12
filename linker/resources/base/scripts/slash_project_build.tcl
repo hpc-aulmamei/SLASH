@@ -1,5 +1,5 @@
 proc _slash_usage {} {
-    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> --util-report-file <path> [--install-dir <path>] [--jobs <n>] [--pre-synth-tcl <path> ...]"
+    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> --util-report-file <path> --install-dir <path> --jobs <n> --pre-synth-tcl <path> ..."
 }
 
 proc _require_file {path label} {
@@ -17,7 +17,7 @@ proc _require_dir {path label} {
 array set opts {
     --project-name ""
     --ip-repo ""
-    --install-dir "/opt/amd/slash"
+    --install-dir ""
     --linker-results-dir ""
     --rm-work-dir ""
     --artifact-out-dir ""
@@ -54,7 +54,7 @@ while {$idx < [llength $argv]} {
     incr idx
 }
 
-foreach req {--project-name --ip-repo --linker-results-dir --rm-work-dir --artifact-out-dir --util-report-file} {
+foreach req {--project-name --ip-repo --install-dir --linker-results-dir --rm-work-dir --artifact-out-dir --util-report-file} {
     if {$opts($req) eq ""} {
         error "Missing required argument '$req'. [_slash_usage]"
     }
@@ -80,7 +80,7 @@ set ltx_file [file join $artifact_out_dir "top_i_slash_slash_${proj_name}_inst_0
 
 set abs_shell_dcp [file join $install_dir "abs_shell_slash.dcp"]
 set base_bd [file join $install_dir "slash_base" "slash_base.bd"]
-set generated_bd_tcl [file join $linker_results_dir "bd" "slash_${proj_name}.tcl"]
+set generated_bd_tcl [file join $linker_results_dir "slash.tcl"]
 set script_dir [file dirname [file normalize [info script]]]
 set linker_root [file normalize [file join $script_dir ".." ".." ".."]]
 set base_ip_repo [file join $linker_root "resources" "base" "iprepo"]
