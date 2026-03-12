@@ -25,20 +25,10 @@ set -euxo pipefail
 # SLASH root
 cd "$(dirname "$0")/.."
 
-if [[ $# -ne 1 ]]; then
-    LIBDIR=lib
-else
-    LIBDIR="$1"
-fi
+# make -C linker/resources/base/iprepo
+make -C linker/resources/base/iprepo/traffic_producer
+make -C linker/resources/base/iprepo/hbm_bandwidth
 
-COMMON_CMAKE_OPTIONS=(
-    "-DCMAKE_INSTALL_PREFIX=/usr"
-    "-DCMAKE_INSTALL_BINDIR=bin"
-    "-DCMAKE_INSTALL_LIBDIR=${LIBDIR}"
-    "-DCMAKE_INSTALL_SYSCONF=/etc"
-    "-DCMAKE_INSTALL_LOCALSTATEDIR=/var"
-    # These get stripped to separate debug symbol deb files
-    "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
-)
-
-cmake -B pbuild/smi -S smi -G Ninja -DSMI_INCLUDE_VRT=ON -DVRT_INCLUDE_VRTD=ON -DVRTD_INCLUDE_LIBSLASH=ON "${COMMON_CMAKE_OPTIONS[@]}"
+pushd linker/src
+python3 main.py install
+popd

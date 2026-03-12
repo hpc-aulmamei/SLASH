@@ -22,6 +22,7 @@
 
 set -euxo pipefail
 
+# SLASH root
 cd "$(dirname "$0")/.."
 
 if [[ $# -ne 2 ]]; then
@@ -32,12 +33,16 @@ fi
 # Install smi, vrt, vrtd, libvrt*, libslash
 DESTDIR="$1" cmake --build pbuild/smi --target install
 
-# Install the linker
-mkdir -p "$1$2/slash/linker"
-rsync --delete -a linker/ "$1$2/slash/linker/"
+# Install the linker (src only)
+mkdir -p "$1$2/v80++"
+rsync --delete -a linker/src/ "$1$2/v80++/"
 cat <<EOF >"$1/usr/bin/v80++"
 #!/bin/sh
 
-python3 $2/slash/linker/src/main.py \"\$@\"
+python3 $2/v80++/main.py "\$@"
 EOF
 chmod 0755 "$1/usr/bin/v80++"
+
+# Install linker resources
+mkdir -p "$1/usr/share/v80++"
+rsync --delete -a linker/resources/ "$1/usr/share/v80++/"

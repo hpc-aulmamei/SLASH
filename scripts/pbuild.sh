@@ -22,6 +22,11 @@
 
 set -euxo pipefail
 
+# SLASH root
 cd "$(dirname "$0")/.."
 
 cmake --build pbuild/smi
+
+if [[ -z "${SLASH_PKG_SKIP_ROOT_DESIGN_BUILD:-}" ]]; then
+    bash scripts/root-design-build.sh
+fi

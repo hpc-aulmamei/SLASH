@@ -271,7 +271,8 @@ EOF
 
 %files -n v80++
 %{_bindir}/v80++
-%{_prefix}/libexec/slash/linker/
+%{_prefix}/libexec/v80++/
+%{_datadir}/v80++/
 
 # ---- Scriptlets ----
 

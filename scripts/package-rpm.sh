@@ -22,6 +22,7 @@
 
 set -euxo pipefail
 
+# SLASH root
 cd "$(dirname "$0")/.."
 
 VERSION="$(tr -d '[:space:]' < packaging/version)"
