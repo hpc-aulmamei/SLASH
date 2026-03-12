@@ -43,8 +43,25 @@ target_include_directories(
 
     PUBLIC
         ${AMI_API_INCLUDE_DIR}
-
-    PRIVATE
+        # AMI_API_SRC_DIR is exposed as PUBLIC rather than PRIVATE so that vrtd can
+        # include ami_ioctl.h and ami_device_internal.h directly.  This is necessary
+        # because ami_prog_device_boot() (the natural public API for setting the boot
+        # partition) internally calls ami_dev_hot_reset(), which performs its own
+        # remove-device / toggle-SBR / rescan sequence by opening the PCI config-space
+        # sysfs file (O_RDWR on /sys/bus/pci/devices/<port>/config).  That file is
+        # mode 0600 and owned by root, so the open fails with EBADF when vrtd runs as
+        # the unprivileged 'vrtd' user.  Even if we granted the capability required to
+        # open it, ami_dev_hot_reset would still conflict with vrtd's own hotplug
+        # reset sequence (slash_hotplug_remove / slash_hotplug_toggle_sbr /
+        # slash_hotplug_rescan), resulting in the device being reset twice.
+        #
+        # The correct behaviour for vrtd is to issue the AMI_IOC_DEVICE_BOOT ioctl
+        # only (to set the AMC firmware boot partition), and then let vrtd manage the
+        # full hotplug reset itself.  There is no public AMI API that does just the
+        # ioctl without the embedded hot-reset, so we call it directly from reset.c
+        # using the internal headers.  The AMI library is a static library consumed
+        # exclusively by vrtd, so widening the include visibility has no impact on
+        # other consumers.
         ${AMI_API_SRC_DIR}
 )
 

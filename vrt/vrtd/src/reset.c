@@ -26,10 +26,13 @@
 #include <stddef.h>
 #include <unistd.h>
 
+#include <sys/ioctl.h>
+
 #include <ami.h>
 #include <ami_device.h>
+#include <ami_device_internal.h>
+#include <ami_ioctl.h>
 #include <ami_mem_access.h>
-#include <ami_program.h>
 
 #include "device.h"
 #include "hotplug.h"
@@ -77,11 +80,54 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    ret = ami_prog_device_boot(&ami_device, 1);
-    if (ret != AMI_STATUS_OK) {
-        LOG(LOG_ERR, "reset_with_ami: ami_prog_device_boot(%s) failed: %s", pf0_bdf, ami_get_last_error());
-        ami_dev_delete(&ami_device);
-        return VRTD_RET_INTERNAL_ERROR;
+    /*
+     * We issue AMI_IOC_DEVICE_BOOT directly rather than calling
+     * ami_prog_device_boot(), even though the latter is the intended public
+     * API for this operation.  The reason is that ami_prog_device_boot()
+     * unconditionally calls ami_dev_hot_reset() after the ioctl succeeds.
+     * ami_dev_hot_reset() performs its own full remove-device / toggle-SBR /
+     * rescan cycle by opening the PCIe bridge config-space sysfs file
+     * (/sys/bus/pci/devices/<port>/config) with O_RDWR.  That file is mode
+     * 0600 and owned by root; vrtd runs as the unprivileged 'vrtd' user, so
+     * the open always fails with EBADF regardless of any Linux capabilities
+     * granted to the process.
+     *
+     * More fundamentally, even if the open succeeded, ami_dev_hot_reset would
+     * conflict with vrtd's own hotplug reset sequence that follows immediately
+     * below.  vrtd drives hotplug through the slash kernel module
+     * (slash_hotplug_remove / slash_hotplug_toggle_sbr / slash_hotplug_rescan),
+     * which is the authoritative hotplug path for SLASH devices.  Letting both
+     * ami_dev_hot_reset and the slash hotplug sequence run would reset the
+     * device twice and leave the AMI device handle in an inconsistent state.
+     *
+     * The correct behaviour is to issue only the AMI_IOC_DEVICE_BOOT ioctl to
+     * inform the AMC firmware of the desired boot partition, then hand control
+     * back to vrtd to drive the full hotplug sequence itself.  We set
+     * cap_override from the device handle (populated earlier by
+     * ami_dev_request_access) so that the kernel driver's per-ioctl permission
+     * check passes for the unprivileged vrtd user.  CAP_DAC_OVERRIDE granted
+     * via AmbientCapabilities in vrtd.service provides an additional fallback
+     * that satisfies the IS_ROOT_USER() check in the driver independently of
+     * cap_override.
+     */
+    {
+        struct ami_ioc_data_payload boot_payload = { 0 };
+        boot_payload.partition = 1;
+        boot_payload.cap_override = ami_device->cap_override;
+
+        if (ami_open_cdev(ami_device) != AMI_STATUS_OK) {
+            LOG(LOG_ERR, "reset_with_ami: ami_open_cdev(%s) failed: %s", pf0_bdf, ami_get_last_error());
+            ami_dev_delete(&ami_device);
+            return VRTD_RET_INTERNAL_ERROR;
+        }
+
+        errno = 0;
+        if (ioctl(ami_device->cdev, AMI_IOC_DEVICE_BOOT, &boot_payload) != 0) {
+            LOG(LOG_ERR, "reset_with_ami: AMI_IOC_DEVICE_BOOT(%s) failed: errno %d (%s)",
+                pf0_bdf, errno, strerror(errno));
+            ami_dev_delete(&ami_device);
+            return VRTD_RET_INTERNAL_ERROR;
+        }
     }
 
     ret = ami_mem_bar_write(ami_device, 0, 0x1040000, 1);
