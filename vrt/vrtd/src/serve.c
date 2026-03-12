@@ -708,6 +708,13 @@ static int client_handle_request(struct client *client)
         return 0;
     }
 
+    if (resp_header->ret != VRTD_RET_OK) {
+        LOG(LOG_DEBUG, "Request opcode=%u(%s) failed ret=%u uid=%u conn_id=%llu",
+            (unsigned int)req_header->opcode, vrtd_opcode_to_string(req_header->opcode),
+            (unsigned int)resp_header->ret,
+            (unsigned int)client->uid, (unsigned long long)client->conn_id);
+    }
+
     resp_header->size = size;
 
     if (client->have_in_fd) {
@@ -799,6 +806,7 @@ static uint16_t client_handle_request_get_num_devices(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "get_num_devices: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
@@ -833,19 +841,23 @@ static uint16_t client_handle_request_design_write(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "design_write: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "design_write: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL || d->design_writer == NULL) {
+        LOG(LOG_NOTICE, "design_write: device %u has no design writer", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     if (!client->have_in_fd || client->in_fd < 0) {
+        LOG(LOG_WARNING, "design_write: no input fd provided");
         return VRTD_RET_BAD_REQUEST;
     }
 
@@ -854,8 +866,10 @@ static uint16_t client_handle_request_design_write(
     ret = design_writer_submit_fd_async(d->design_writer, fd);
     if (ret != 0) {
         if (writer_busy_before || design_writer_is_busy(d->design_writer)) {
+            LOG(LOG_NOTICE, "design_write: writer busy for device %u", (unsigned int)req_body->dev_number);
             return VRTD_RET_BUSY;
         }
+        LOG(LOG_WARNING, "design_write: failed to submit async write for device %u", (unsigned int)req_body->dev_number);
         return VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -891,15 +905,18 @@ static uint16_t client_handle_request_device_hotplug_op(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "hotplug_op: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "hotplug_op: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL) {
+        LOG(LOG_NOTICE, "hotplug_op: device %u is null", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
@@ -931,10 +948,15 @@ static uint16_t client_handle_request_device_hotplug_op(
         return VRTD_RET_OK;
     }
     default:
+        LOG(LOG_WARNING, "hotplug_op: invalid op %u for device %u",
+            (unsigned int)req_body->op, (unsigned int)req_body->dev_number);
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
     if (ret != 0) {
+        LOG(LOG_WARNING, "hotplug_op: %s failed for device %u bdf=%s: %m",
+            vrtd_hotplug_op_to_string(req_body->op),
+            (unsigned int)req_body->dev_number, d->pci_info.bdf);
         return hotplug_errno_to_vrtd_ret(errno);
     }
 
@@ -961,19 +983,23 @@ static uint16_t client_handle_request_qdma_get_info(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "qdma_get_info: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "qdma_get_info: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL || d->qdma == NULL) {
+        LOG(LOG_NOTICE, "qdma_get_info: device %u has no QDMA", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     if (slash_qdma_info_read(d->qdma, &resp_body->info) != 0) {
+        LOG(LOG_WARNING, "qdma_get_info: failed to read info for device %u: %m", (unsigned int)req_body->dev_number);
         return VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -1004,21 +1030,25 @@ static uint16_t client_handle_request_qdma_qpair_add(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "qdma_qpair_add: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "qdma_qpair_add: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL || d->qdma == NULL) {
+        LOG(LOG_NOTICE, "qdma_qpair_add: device %u has no QDMA", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     resp_body->add = req_body->add;
 
     if (slash_qdma_qpair_add(d->qdma, &resp_body->add) != 0) {
+        LOG(LOG_WARNING, "qdma_qpair_add: failed for device %u: %m", (unsigned int)req_body->dev_number);
         return VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -1049,15 +1079,18 @@ static uint16_t client_handle_request_qdma_qpair_op(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "qdma_qpair_op: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "qdma_qpair_op: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL || d->qdma == NULL) {
+        LOG(LOG_NOTICE, "qdma_qpair_op: device %u has no QDMA", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
@@ -1072,10 +1105,14 @@ static uint16_t client_handle_request_qdma_qpair_op(
         ret = slash_qdma_qpair_del(d->qdma, req_body->qid);
         break;
     default:
+        LOG(LOG_WARNING, "qdma_qpair_op: invalid op %u for device %u qid=%u",
+            (unsigned int)req_body->op, (unsigned int)req_body->dev_number, (unsigned int)req_body->qid);
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
     if (ret != 0) {
+        LOG(LOG_WARNING, "qdma_qpair_op: op %u failed for device %u qid=%u: %m",
+            (unsigned int)req_body->op, (unsigned int)req_body->dev_number, (unsigned int)req_body->qid);
         return VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -1111,20 +1148,25 @@ static uint16_t client_handle_request_qdma_qpair_get_fd(
     *have_out_fd = false;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "qdma_qpair_get_fd: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "qdma_qpair_get_fd: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL || d->qdma == NULL) {
+        LOG(LOG_NOTICE, "qdma_qpair_get_fd: device %u has no QDMA", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     int fd = slash_qdma_qpair_get_fd(d->qdma, req_body->qid, (int)req_body->flags);
     if (fd < 0) {
+        LOG(LOG_WARNING, "qdma_qpair_get_fd: failed for device %u qid=%u: %m",
+            (unsigned int)req_body->dev_number, (unsigned int)req_body->qid);
         return VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -1204,9 +1246,12 @@ static uint16_t client_handle_request_buffer_open(
     );
     if (buf == NULL) {
         if (errno == EINVAL) {
+            LOG(LOG_WARNING, "buffer_open: invalid allocation arguments for device %u", (unsigned int)req_body->dev_number);
             return VRTD_RET_INVALID_ARGUMENT;
         }
         if (errno == ENOMEM) {
+            LOG(LOG_NOTICE, "buffer_open: out of memory for device %u size=%llu",
+                (unsigned int)req_body->dev_number, (unsigned long long)req_body->size);
             return VRTD_RET_BUSY;
         }
 
@@ -1260,19 +1305,23 @@ static uint16_t client_handle_request_buffer_close(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "buffer_close: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "buffer_close: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     if (req_body->size == 0) {
+        LOG(LOG_WARNING, "buffer_close: zero size");
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL) {
+        LOG(LOG_NOTICE, "buffer_close: device %u is null", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
@@ -1286,6 +1335,9 @@ static uint16_t client_handle_request_buffer_close(
             continue;
         }
         if (buf->size != req_body->size) {
+            LOG(LOG_WARNING, "buffer_close: size mismatch at addr=0x%llx (expected %llu, got %llu)",
+                (unsigned long long)req_body->phys_addr,
+                (unsigned long long)buf->size, (unsigned long long)req_body->size);
             return VRTD_RET_INVALID_ARGUMENT;
         }
         if (buf->client_id != client->conn_id) {
@@ -1303,6 +1355,8 @@ static uint16_t client_handle_request_buffer_close(
     }
 
     if (found == NULL) {
+        LOG(LOG_NOTICE, "buffer_close: no buffer at addr=0x%llx on device %u",
+            (unsigned long long)req_body->phys_addr, (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
@@ -1336,15 +1390,18 @@ static uint16_t client_handle_request_clock_op(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "clock_op: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "clock_op: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL || d->clock_driver == NULL) {
+        LOG(LOG_NOTICE, "clock_op: device %u has no clock driver", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
@@ -1354,6 +1411,8 @@ static uint16_t client_handle_request_clock_op(
     case VRTD_CLOCK_REGION_SERVICE:
         if (req_body->op == VRTD_CLOCK_OP_GET) {
             if (clock_driver_get_service_region_rate_hz(d->clock_driver, &rate) != 0) {
+                LOG(LOG_WARNING, "clock_op: failed to get service region rate for device %u: %m",
+                    (unsigned int)req_body->dev_number);
                 return VRTD_RET_INTERNAL_ERROR;
             }
         } else if (req_body->op == VRTD_CLOCK_OP_SET) {
@@ -1384,6 +1443,8 @@ static uint16_t client_handle_request_clock_op(
     case VRTD_CLOCK_REGION_USER:
         if (req_body->op == VRTD_CLOCK_OP_GET) {
             if (clock_driver_get_user_region_rate_hz(d->clock_driver, &rate) != 0) {
+                LOG(LOG_WARNING, "clock_op: failed to get user region rate for device %u: %m",
+                    (unsigned int)req_body->dev_number);
                 return VRTD_RET_INTERNAL_ERROR;
             }
         } else if (req_body->op == VRTD_CLOCK_OP_SET) {
@@ -1449,10 +1510,12 @@ static uint16_t client_handle_request_get_device_info(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "get_device_info: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "get_device_info: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
@@ -1461,6 +1524,7 @@ static uint16_t client_handle_request_get_device_info(
     _cleanup_(cleanup_free)
     char *path = strdup(d->path);
     if (unlikely(path == NULL)) {
+        LOG(LOG_WARNING, "get_device_info: allocation failure");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -1495,6 +1559,7 @@ static uint16_t client_handle_request_get_device_by_bdf(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "get_device_by_bdf: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
@@ -1503,6 +1568,7 @@ static uint16_t client_handle_request_get_device_by_bdf(
     bdf[sizeof(bdf) - 1] = '\0';
 
     if (bdf[0] == '\0') {
+        LOG(LOG_WARNING, "get_device_by_bdf: empty BDF string");
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
@@ -1519,6 +1585,7 @@ static uint16_t client_handle_request_get_device_by_bdf(
         }
     }
 
+    LOG(LOG_NOTICE, "get_device_by_bdf: no device found for bdf=%s", bdf);
     return VRTD_RET_NOEXIST;
 }
 
@@ -1540,20 +1607,25 @@ static uint16_t client_handle_request_get_bar_info(
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "get_bar_info: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "get_bar_info: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     if (req_body->bar_number >= 6) {
+        LOG(LOG_WARNING, "get_bar_info: invalid BAR number %u", (unsigned int)req_body->bar_number);
         return VRTD_RET_BAD_REQUEST;
     }
 
     // TODO: Free this
     struct slash_ioctl_bar_info *bar_info = client->state->devices.d[req_body->dev_number]->bar_info[req_body->bar_number];
     if (bar_info == NULL) {
+        LOG(LOG_NOTICE, "get_bar_info: BAR %u not available on device %u",
+            (unsigned int)req_body->bar_number, (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
@@ -1589,19 +1661,24 @@ static uint16_t client_handle_request_get_bar_fd(
     *have_out_fd = false;
 
     if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "get_bar_fd: malformed request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "get_bar_fd: device %u does not exist", (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
     if (req_body->bar_number >= 6) {
+        LOG(LOG_WARNING, "get_bar_fd: invalid BAR number %u", (unsigned int)req_body->bar_number);
         return VRTD_RET_BAD_REQUEST;
     }
 
     struct slash_bar_file *bar_file = client->state->devices.d[req_body->dev_number]->bar_files[req_body->bar_number];
     if (bar_file == NULL) {
+        LOG(LOG_NOTICE, "get_bar_fd: BAR %u not available on device %u",
+            (unsigned int)req_body->bar_number, (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
     }
 
