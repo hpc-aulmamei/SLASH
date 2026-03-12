@@ -132,8 +132,15 @@ Device Session::getDeviceByBdf(std::string_view bdf) const {
     }
     std::lock_guard<std::mutex> lk(*m);
 
+    // Normalize short BDF (e.g. "21:00.2") to full form ("0000:21:00.2") so
+    // the lookup matches what the kernel/daemon stores.
+    std::string bdf_str(bdf);
+    if (bdf_str.find(':') == bdf_str.rfind(':')) {
+        bdf_str = "0000:" + bdf_str;
+    }
+
     uint32_t dev_num = 0;
-    auto ret = vrtd_get_device_by_bdf(fd, std::string(bdf).c_str(), &dev_num);
+    auto ret = vrtd_get_device_by_bdf(fd, bdf_str.c_str(), &dev_num);
     if (ret != VRTD_RET_OK) {
         throw Error(ret);
     }
