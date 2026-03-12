@@ -193,7 +193,8 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
     if rm_kind == RM_KIND.SLASH_PROJECT:
         # Copy all kernels into the ip repository
         for kernel in config.kernels:
-            shutil.copytree(kernel.component_xml_path.parent, config.ip_repository / kernel.name)
+            shutil.copytree(kernel.component_xml_path.parent,
+                            config.ip_repository / kernel.name)
 
     logs_dir = config.build_dir / "logs"
     image_out_dir = config.build_dir / "images"

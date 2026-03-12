@@ -266,7 +266,8 @@ def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
     @return XML element tree representing utilization report.
     """
     root = ET.Element("utilization_report")
-    write_totals_attributes_from_row(ET.SubElement(root, "totals"), nodes["top_wrapper"].row)
+    write_totals_attributes_from_row(ET.SubElement(
+        root, "totals"), nodes["top_wrapper"].row)
 
     for region_name in ["static_region", "service_layer"]:
         if region_name not in nodes:

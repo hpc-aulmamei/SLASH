@@ -30,6 +30,7 @@ from core.command_config import LinkerConfiguration
 
 logger = logging.getLogger(__name__)
 
+
 def create_sim_project(config: LinkerConfiguration) -> None:
     config.build_dir.mkdir(parents=True, exist_ok=True)
 
@@ -44,10 +45,11 @@ def create_sim_project(config: LinkerConfiguration) -> None:
                 p.unlink()
             except OSError:
                 pass
-    
+
     # Copy all kernels into the IP repository
     for kernel in config.kernels:
-        shutil.copytree(kernel.component_xml_path.parent, config.ip_repository / kernel.name)
+        shutil.copytree(kernel.component_xml_path.parent,
+                        config.ip_repository / kernel.name)
 
     tcl = config.build_dir / "run_pre.tcl"
     if not tcl.exists():

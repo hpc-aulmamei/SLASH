@@ -249,7 +249,8 @@ def _build_functional_args_from_hls(
         if arg_type == "buffer" and kernel is not None and connected_axi_ports is not None:
             resolved_port = None
             for iface_name in interface_refs:
-                canonical_port = _resolve_axi4full_port_name(kernel, iface_name)
+                canonical_port = _resolve_axi4full_port_name(
+                    kernel, iface_name)
                 if canonical_port is None:
                     continue
                 if canonical_port not in connected_axi_ports:
