@@ -80,9 +80,18 @@ class Buffer {
      * @param device VRT Device of the buffer.
      * @param size The size of the buffer.
      * @param type The type of memory range.
-     * @param port The HBM port number. This would not have any effect if the type is DDR.
+     * @param port The HBM port number. Only valid when type is MemoryRangeType::HBM.
      */
     Buffer(Device device, size_t size, MemoryRangeType type, uint8_t port);
+
+    /**
+     * @brief Constructor for Buffer from a MemoryConfig.
+     * @param device VRT Device of the buffer.
+     * @param size The size of the buffer.
+     * @param config Memory configuration, typically obtained via Kernel::portMemoryConfig()
+     *               or Kernel::argMemoryConfig().
+     */
+    Buffer(Device device, size_t size, MemoryConfig config);
 
     /**
      * @brief Destructor for Buffer.
@@ -155,6 +164,7 @@ class Buffer {
    private:
     static BufferAllocType resolveAllocType(MemoryRangeType type, bool hasPort);
     static HBMRegion resolveRegion(MemoryRangeType type, bool hasPort, uint8_t port);
+    void initAllocate();
 
     uint64_t startAddress;           ///< The starting address of the buffer
     T* localBuffer;                  ///< Pointer to the local buffer
@@ -184,10 +194,53 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type)
       view(nullptr),
       ownsLocalBuffer(false),
       index(bufferIndex++) {
+    if (type == MemoryRangeType::HBM) {
+        throw std::invalid_argument("HBM buffers require an explicit port. Use Buffer(device, size, MemoryRangeType::HBM, port)");
+    }
+    initAllocate();
+}
+
+template <typename T>
+Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type, uint8_t port)
+    : startAddress(0),
+      localBuffer(nullptr),
+      size(size),
+      type(type),
+      hbmPort(port),
+      hasPort(true),
+      device(device),
+      block(nullptr),
+      view(nullptr),
+      ownsLocalBuffer(false),
+      index(bufferIndex++) {
+    if (type != MemoryRangeType::HBM) {
+        throw std::invalid_argument("The port argument is only valid for HBM buffers. Use Buffer(device, size, type) for DDR or HBM_VNOC");
+    }
+    initAllocate();
+}
+
+template <typename T>
+Buffer<T>::Buffer(Device device, size_t size, MemoryConfig config)
+    : startAddress(0),
+      localBuffer(nullptr),
+      size(size),
+      type(config.type),
+      hbmPort(config.hbmPort.value_or(0)),
+      hasPort(config.hbmPort.has_value()),
+      device(device),
+      block(nullptr),
+      view(nullptr),
+      ownsLocalBuffer(false),
+      index(bufferIndex++) {
+    initAllocate();
+}
+
+template <typename T>
+void Buffer<T>::initAllocate() {
     Platform platform = this->device.getPlatform();
     if (platform == Platform::HARDWARE) {
-        BufferAllocType allocType = resolveAllocType(type, false);
-        HBMRegion region = resolveRegion(type, false, 0);
+        BufferAllocType allocType = resolveAllocType(type, hasPort);
+        HBMRegion region = resolveRegion(type, hasPort, hbmPort);
         block = this->device.getHandle()->getAllocator()->allocate(this->device.getHandle()->getVrtdDevice(), allocType,
                                                                    BufferAllocDir::Bidirectional,
                                                                    size * sizeof(T), region);
@@ -214,51 +267,6 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type)
             server->sendBuffer(std::to_string(getPhysAddr()), sendData);
         }
     }
-}
-
-template <typename T>
-Buffer<T>::Buffer(Device device, size_t size, MemoryRangeType type, uint8_t port)
-    : startAddress(0),
-      localBuffer(nullptr),
-      size(size),
-      type(type),
-      hbmPort(port),
-      hasPort(true),
-      device(device),
-      block(nullptr),
-      view(nullptr),
-      ownsLocalBuffer(false),
-      index(bufferIndex++) {
-    Platform platform = this->device.getPlatform();
-    if (platform == Platform::HARDWARE) {
-        BufferAllocType allocType = resolveAllocType(type, true);
-        HBMRegion region = resolveRegion(type, true, port);
-        block = this->device.getHandle()->getAllocator()->allocate(this->device.getHandle()->getVrtdDevice(), allocType,
-                                                                   BufferAllocDir::Bidirectional,
-                                                                   size * sizeof(T), region);
-        if (!block) {
-            throw std::bad_alloc();
-        }
-        view = block->getUntypedBuffer();
-        startAddress = view->getPhysAddr();
-        localBuffer = static_cast<T*>(view->data());
-        utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
-                           "Allocated buffer final_space_bytes={} phys_addr={x}",
-                           view->getSize(), startAddress);
-    } else {
-        startAddress = detail::reserveFakePhysAddr(size * sizeof(T), type);
-        localBuffer = new T[size];
-        ownsLocalBuffer = true;
-        if (platform == Platform::EMULATION) {
-            // send initial buffer so it is populated in the emulation environment
-            std::shared_ptr<ZmqServer> server = this->device.getHandle()->getZmqServer();
-            std::vector<uint8_t> sendData;
-            std::size_t dataSize = size * sizeof(T);
-            sendData.resize(dataSize);
-            std::memcpy(sendData.data(), localBuffer, dataSize);
-            server->sendBuffer(std::to_string(getPhysAddr()), sendData);
-        }
-    } 
 }
 
 template <typename T>

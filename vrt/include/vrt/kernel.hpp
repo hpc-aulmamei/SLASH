@@ -277,6 +277,29 @@ class Kernel {
     void setConnections(const std::map<std::string, std::string>& conns);
 
     /**
+     * @brief Returns the memory configuration for a named AXI port.
+     *
+     * Looks up the port in the kernel's connection map (populated from system_map.xml)
+     * and returns a MemoryConfig that can be passed directly to the Buffer constructor.
+     *
+     * @param portName The AXI port name (e.g. "m_axi_gmem0").
+     * @throws std::runtime_error if the port has no connection entry.
+     */
+    MemoryConfig portMemoryConfig(std::string_view portName) const;
+
+    /**
+     * @brief Returns the memory configuration for a named kernel argument.
+     *
+     * Resolves the argument to its AXI port via functional_args metadata and then
+     * delegates to portMemoryConfig(). The returned MemoryConfig can be passed
+     * directly to the Buffer constructor.
+     *
+     * @param argName The argument name from functional_args metadata.
+     * @throws std::runtime_error if the argument is not found or has no AXI port.
+     */
+    MemoryConfig argMemoryConfig(std::string_view argName) const;
+
+    /**
      * @brief Set argument value by argument index from functional_args metadata.
      */
     template <typename T>

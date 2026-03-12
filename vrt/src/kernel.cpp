@@ -28,6 +28,23 @@
 namespace vrt {
 namespace {
 
+MemoryConfig parseMemoryTarget(const std::string& target) {
+    if (target.rfind("DDR", 0) == 0) {
+        return {MemoryRangeType::DDR, std::nullopt};
+    }
+    if (target.rfind("HBM", 0) == 0) {
+        std::string bankStr = target.substr(3);
+        if (!bankStr.empty()) {
+            return {MemoryRangeType::HBM, static_cast<uint8_t>(std::stoul(bankStr))};
+        }
+        return {MemoryRangeType::HBM_VNOC, std::nullopt};
+    }
+    if (target == "MEM") {
+        return {MemoryRangeType::HBM_VNOC, std::nullopt};
+    }
+    throw std::runtime_error("Unknown memory target '" + target + "'");
+}
+
 uint64_t resolveBarOffset(uint64_t absoluteAddr, uint64_t accessSize, uint64_t barLen) {
     if (barLen == 0) {
         throw std::runtime_error("BAR length is zero");
@@ -366,6 +383,25 @@ void Kernel::validateBufferMemoryType(const FunctionalArg& argMeta, MemoryRangeT
                 " (use an HBM_VNOC or HBM buffer)");
         }
     }
+}
+
+MemoryConfig Kernel::portMemoryConfig(std::string_view portName) const {
+    auto it = connections.find(std::string(portName));
+    if (it == connections.end()) {
+        throw std::runtime_error("Kernel '" + name + "' has no memory connection for port '" +
+                                 std::string(portName) + "'");
+    }
+    return parseMemoryTarget(it->second);
+}
+
+MemoryConfig Kernel::argMemoryConfig(std::string_view argName) const {
+    const uint32_t idx = functionalArgIdxByName(argName);
+    const FunctionalArg& arg = functionalArgByIdx(idx);
+    if (arg.port.empty()) {
+        throw std::runtime_error("Kernel '" + name + "' argument '" + std::string(argName) +
+                                 "' has no associated AXI port");
+    }
+    return portMemoryConfig(arg.port);
 }
 
 void Kernel::wait() {

@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
@@ -116,6 +117,18 @@ enum class HBMRegion : uint64_t {
     HBM63 = 63,
 
     NON_HBM = std::numeric_limits<uint64_t>::max(),
+};
+
+/**
+ * @brief Describes the memory type and optional HBM port for a Buffer.
+ *
+ * Obtained from Kernel::portMemoryConfig() or Kernel::argMemoryConfig() and
+ * passed directly to the Buffer constructor so callers do not need to specify
+ * type and port separately.
+ */
+struct MemoryConfig {
+    MemoryRangeType type;            ///< DDR, HBM, or HBM_VNOC
+    std::optional<uint8_t> hbmPort; ///< Set only when type == HBM
 };
 
 class UntypedBuffer {
