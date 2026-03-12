@@ -168,6 +168,39 @@ static uint16_t client_handle_request_clock_op(
 static uint16_t device_refresh_pf2_after_design_write(const struct device *d);
 static void cleanup_client_buffers(struct client *client);
 
+static const char *vrtd_opcode_to_string(uint16_t opcode)
+{
+    switch (opcode) {
+    case VRTD_REQ_GET_NUM_DEVICES:   return "GET_NUM_DEVICES";
+    case VRTD_REQ_GET_DEVICE_INFO:   return "GET_DEVICE_INFO";
+    case VRTD_REQ_GET_DEVICE_BY_BDF: return "GET_DEVICE_BY_BDF";
+    case VRTD_REQ_GET_BAR_INFO:      return "GET_BAR_INFO";
+    case VRTD_REQ_GET_BAR_FD:        return "GET_BAR_FD";
+    case VRTD_REQ_QDMA_GET_INFO:     return "QDMA_GET_INFO";
+    case VRTD_REQ_QDMA_QPAIR_ADD:   return "QDMA_QPAIR_ADD";
+    case VRTD_REQ_QDMA_QPAIR_OP:    return "QDMA_QPAIR_OP";
+    case VRTD_REQ_QDMA_QPAIR_GET_FD:return "QDMA_QPAIR_GET_FD";
+    case VRTD_REQ_DESIGN_WRITE:      return "DESIGN_WRITE";
+    case VRTD_REQ_CLOCK_OP:          return "CLOCK_OP";
+    case VRTD_REQ_BUFFER_OPEN:       return "BUFFER_OPEN";
+    case VRTD_REQ_BUFFER_CLOSE:      return "BUFFER_CLOSE";
+    case VRTD_REQ_DEVICE_HOTPLUG_OP: return "DEVICE_HOTPLUG_OP";
+    default:                         return "UNKNOWN";
+    }
+}
+
+static const char *vrtd_hotplug_op_to_string(uint32_t op)
+{
+    switch (op) {
+    case VRTD_DEVICE_HOTPLUG_OP_RESCAN:         return "rescan";
+    case VRTD_DEVICE_HOTPLUG_OP_REMOVE:         return "remove";
+    case VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR:     return "toggle_sbr";
+    case VRTD_DEVICE_HOTPLUG_OP_HOTPLUG:        return "hotplug";
+    case VRTD_DEVICE_HOTPLUG_OP_RESET_SEQUENCE: return "reset_sequence";
+    default:                                    return "unknown";
+    }
+}
+
 static uint16_t device_refresh_pf2_after_design_write(const struct device *d)
 {
     char pf2_bdf[VRTD_PCI_BDF_LEN] = {0};
@@ -205,6 +238,9 @@ static void cleanup_client_buffers(struct client *client)
     if (client == NULL || client->state == NULL || client->conn_id == 0) {
         return;
     }
+
+    LOG(LOG_DEBUG, "Cleaning up buffers for disconnecting client uid=%u conn_id=%llu",
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
 
     for (size_t dev_idx = 0; dev_idx < client->state->devices.len; ++dev_idx) {
         struct device *d = client->state->devices.d[dev_idx];
@@ -260,6 +296,8 @@ int on_client_io(sd_event_source *s, int fd, uint32_t revents, void *user)
     int ret;
 
     if (revents & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
+        LOG(LOG_DEBUG, "Client disconnected uid=%u conn_id=%llu fd=%d",
+            (unsigned int)client->uid, (unsigned long long)client->conn_id, client->fd);
         client_ptr_array_rm_by_reference(&client->state->clients, client);
         return 0;
     }
@@ -481,7 +519,7 @@ retry:
     }
 
     if (n != size) {
-        (void) sd_journal_print(LOG_ERR, "Message truncated");
+        LOG(LOG_ERR, "Message truncated");
         return -1;
     }
 
@@ -500,6 +538,10 @@ static int client_handle_request(struct client *client)
     struct vrtd_resp_header *resp_header = CLIENT_OUT_HEADER(*client);
 
     resp_header->seqno = req_header->seqno;
+
+    LOG(LOG_DEBUG, "Request opcode=%u(%s) uid=%u conn_id=%llu",
+        (unsigned int)req_header->opcode, vrtd_opcode_to_string(req_header->opcode),
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
 
     // Separate variable for allignment reasons
     uint16_t size = 0;
@@ -653,6 +695,9 @@ static int client_handle_request(struct client *client)
         break;
 
     default:
+        LOG(LOG_WARNING, "Unknown opcode=%u from uid=%u conn_id=%llu",
+            (unsigned int)req_header->opcode,
+            (unsigned int)client->uid, (unsigned long long)client->conn_id);
         resp_header->ret = VRTD_RET_BAD_REQUEST;
         resp_header->size = 0;
 
@@ -705,7 +750,11 @@ static int client_finalize_pending_design_write(struct client *client)
     uint16_t design_write_ret = VRTD_RET_OK;
     if (transfer_error == 0) {
        // design_write_ret = device_refresh_pf2_after_design_write(d);
+        LOG(LOG_INFO, "Design write completed successfully for uid=%u conn_id=%llu",
+            (unsigned int)client->uid, (unsigned long long)client->conn_id);
     } else {
+        LOG(LOG_WARNING, "Design write failed (error=%d) for uid=%u conn_id=%llu",
+            transfer_error, (unsigned int)client->uid, (unsigned long long)client->conn_id);
         design_write_ret = VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -754,8 +803,13 @@ static uint16_t client_handle_request_get_num_devices(
     }
 
     resp_body->num_devices = client->state->devices.len;
-    
+
     *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_DEBUG, "get_num_devices: count=%zu uid=%u conn_id=%llu",
+        (size_t)resp_body->num_devices,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }
 
@@ -811,6 +865,10 @@ static uint16_t client_handle_request_design_write(
     client->pending_design_write = true;
     client->pending_design_write_device = d;
 
+    LOG(LOG_INFO, "Design write submitted dev=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     *resp_size = 0;
     return VRTD_RET_OK;
 }
@@ -844,6 +902,11 @@ static uint16_t client_handle_request_device_hotplug_op(
     if (d == NULL) {
         return VRTD_RET_NOEXIST;
     }
+
+    LOG(LOG_INFO, "Hotplug op=%s(%u) bdf=%s dev=%u uid=%u conn_id=%llu",
+        vrtd_hotplug_op_to_string(req_body->op), (unsigned int)req_body->op,
+        d->pci_info.bdf, (unsigned int)req_body->dev_number,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
 
     switch (req_body->op) {
     case VRTD_DEVICE_HOTPLUG_OP_RESCAN:
@@ -915,6 +978,11 @@ static uint16_t client_handle_request_qdma_get_info(
     }
 
     *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_DEBUG, "qdma_get_info: dev=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }
 
@@ -955,6 +1023,11 @@ static uint16_t client_handle_request_qdma_qpair_add(
     }
 
     *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_DEBUG, "qdma_qpair_add: dev=%u qid=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number, (unsigned int)resp_body->add.qid,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }
 
@@ -1008,6 +1081,12 @@ static uint16_t client_handle_request_qdma_qpair_op(
 
     resp_body->zero = 0;
     *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_DEBUG, "qdma_qpair_op: dev=%u qid=%u op=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number, (unsigned int)req_body->qid,
+        (unsigned int)req_body->op,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }
 
@@ -1054,6 +1133,11 @@ static uint16_t client_handle_request_qdma_qpair_get_fd(
 
     resp_body->zero = 0;
     *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_DEBUG, "qdma_qpair_get_fd: dev=%u qid=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number, (unsigned int)req_body->qid,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }
 
@@ -1070,7 +1154,7 @@ static uint16_t client_handle_request_buffer_open(
     int ret = auth_request_buffer_open(client, req_body);
     if (ret == -1) {
         char pwbuf[1024];
-        (void) sd_journal_print(LOG_WARNING, "Failed to authorize buffer open request for uid %u(%s): %m",
+        LOG(LOG_WARNING, "Failed to authorize buffer open request for uid %u(%s): %m",
             (unsigned int) client->uid, uid_to_username(client->uid, pwbuf, sizeof(pwbuf)));
         return VRTD_RET_INTERNAL_ERROR;
     } else if (ret == 0) {
@@ -1081,29 +1165,29 @@ static uint16_t client_handle_request_buffer_open(
     *have_out_fd = false;
 
     if (req_size < sizeof(*req_body)) {
-        (void) sd_journal_print(LOG_WARNING, "Received malformed buffer open request");
+        LOG(LOG_WARNING, "Received malformed buffer open request");
         return VRTD_RET_BAD_REQUEST;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
-        (void) sd_journal_print(LOG_WARNING, "Received buffer open request for non-existent device");
+        LOG(LOG_WARNING, "Received buffer open request for non-existent device");
         return VRTD_RET_NOEXIST;
     }
 
     if (req_body->size == 0) {
-        (void) sd_journal_print(LOG_WARNING, "Received buffer open request with zero size");
+        LOG(LOG_WARNING, "Received buffer open request with zero size");
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL || d->qdma == NULL || d->memory_map == NULL) {
-        (void) sd_journal_print(LOG_WARNING, "Received buffer open request for non-existent or non-functional device");
+        LOG(LOG_WARNING, "Received buffer open request for non-existent or non-functional device");
         return VRTD_RET_NOEXIST;
     }
 
     uint64_t client_id = client->conn_id;
     if (client_id == 0) {
-        (void) sd_journal_print(LOG_ERR, "Invalid client connection id");
+        LOG(LOG_ERR, "Invalid client connection id");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -1126,12 +1210,12 @@ static uint16_t client_handle_request_buffer_open(
             return VRTD_RET_BUSY;
         }
 
-        (void) sd_journal_print(LOG_ERR, "Failed to create buffer for buffer open request: %m");
+        LOG(LOG_ERR, "Failed to create buffer for buffer open request: %m");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
     if (buf->fd < 0) {
-        (void) sd_journal_print(LOG_ERR, "Buffer created without valid fd");
+        LOG(LOG_ERR, "Buffer created without valid fd");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -1140,7 +1224,7 @@ static uint16_t client_handle_request_buffer_open(
     uint64_t phys_addr = buf->addr;
 
     if (buffer_ptr_array_push_move(&d->buffers, &buf) != 0) {
-        (void) sd_journal_print(LOG_ERR, "Failed to add buffer to device buffer list");
+        LOG(LOG_ERR, "Failed to add buffer to device buffer list");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
@@ -1149,6 +1233,12 @@ static uint16_t client_handle_request_buffer_open(
     *out_fd = fd;
     *have_out_fd = true;
     *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_INFO, "Buffer opened size=%llu phys_addr=0x%llx dev=%u uid=%u conn_id=%llu",
+        (unsigned long long)real_size, (unsigned long long)phys_addr,
+        (unsigned int)req_body->dev_number,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }
 
@@ -1200,7 +1290,7 @@ static uint16_t client_handle_request_buffer_close(
         }
         if (buf->client_id != client->conn_id) {
             char pwbuf[1024];
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Permission denied for uid %u(%s): 'buffer_close' requires buffer ownership",
                 (unsigned int) client->uid,
@@ -1215,6 +1305,11 @@ static uint16_t client_handle_request_buffer_close(
     if (found == NULL) {
         return VRTD_RET_NOEXIST;
     }
+
+    LOG(LOG_INFO, "Buffer closed addr=0x%llx size=%llu dev=%u uid=%u conn_id=%llu",
+        (unsigned long long)found->addr, (unsigned long long)found->size,
+        (unsigned int)req_body->dev_number,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
 
     buffer_ptr_array_rm_by_reference(&d->buffers, found);
 
@@ -1263,14 +1358,14 @@ static uint16_t client_handle_request_clock_op(
             }
         } else if (req_body->op == VRTD_CLOCK_OP_SET) {
             if (rate == 0) {
-                (void) sd_journal_print(
+                LOG(
                     LOG_WARNING,
                     "Received set frequency request with zero rate for service region"
                 );
                 return VRTD_RET_INVALID_ARGUMENT;
             }
             if (clock_driver_set_service_region_rate_hz(d->clock_driver, &rate) != 0) {
-                (void) sd_journal_print(
+                LOG(
                     LOG_ERR,
                     "Failed to set service region frequency to %u Hz: %m",
                     req_body->rate_hz
@@ -1278,7 +1373,7 @@ static uint16_t client_handle_request_clock_op(
                 return VRTD_RET_INTERNAL_ERROR;
             }
         } else {
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Received invalid clock op %u for service region",
                 (unsigned int)req_body->op
@@ -1293,14 +1388,14 @@ static uint16_t client_handle_request_clock_op(
             }
         } else if (req_body->op == VRTD_CLOCK_OP_SET) {
             if (rate == 0) {
-                (void) sd_journal_print(
+                LOG(
                     LOG_WARNING,
                     "Received set frequency request with zero rate for user region"
                 );
                 return VRTD_RET_INVALID_ARGUMENT;
             }
             if (clock_driver_set_user_region_rate_hz(d->clock_driver, &rate) != 0) {
-                (void) sd_journal_print(
+                LOG(
                     LOG_ERR,
                     "Failed to set user region frequency to %u Hz: %m",
                     req_body->rate_hz
@@ -1308,7 +1403,7 @@ static uint16_t client_handle_request_clock_op(
                 return VRTD_RET_INTERNAL_ERROR;
             }
         } else {
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Received invalid clock op %u for user region",
                 (unsigned int)req_body->op
@@ -1317,7 +1412,7 @@ static uint16_t client_handle_request_clock_op(
         }
         break;
     default:
-        (void) sd_journal_print(
+        LOG(
             LOG_WARNING,
             "Received clock request with invalid region %u",
             (unsigned int)req_body->region
@@ -1327,6 +1422,12 @@ static uint16_t client_handle_request_clock_op(
 
     resp_body->rate_hz = rate;
     *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_INFO, "clock_op: op=%u region=%u rate_hz=%u dev=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->op, (unsigned int)req_body->region, rate,
+        (unsigned int)req_body->dev_number,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }
 
@@ -1368,6 +1469,11 @@ static uint16_t client_handle_request_get_device_info(
     memcpy(&resp_body->info.pci, &d->pci_info, sizeof(struct vrtd_pci_info));
 
     *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_DEBUG, "get_device_info: dev=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }
 
@@ -1406,6 +1512,9 @@ static uint16_t client_handle_request_get_device_by_bdf(
         if (strcmp(d->pci_info.bdf, bdf) == 0) {
             resp_body->dev_number = (uint32_t) i;
             *resp_size = sizeof(*resp_body);
+            LOG(LOG_DEBUG, "get_device_by_bdf: bdf=%s -> dev=%u uid=%u conn_id=%llu",
+                bdf, (unsigned int)i,
+                (unsigned int)client->uid, (unsigned long long)client->conn_id);
             return VRTD_RET_OK;
         }
     }
@@ -1451,6 +1560,11 @@ static uint16_t client_handle_request_get_bar_info(
     resp_body->bar_info = *bar_info;
 
     *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_DEBUG, "get_bar_info: dev=%u bar=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number, (unsigned int)req_body->bar_number,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }
 
@@ -1496,5 +1610,10 @@ static uint16_t client_handle_request_get_bar_fd(
     *have_out_fd = true;
 
     *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_DEBUG, "get_bar_fd: dev=%u bar=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number, (unsigned int)req_body->bar_number,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }

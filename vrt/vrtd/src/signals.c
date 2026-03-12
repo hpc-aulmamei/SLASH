@@ -45,6 +45,7 @@ int on_event_signal(sd_event_source *s, const struct signalfd_siginfo *si, void 
     case SIGINT:
     case SIGTERM: {
         // Stop the event loop gracefully
+        LOG(LOG_INFO, "Received signal %s (%d), shutting down", sigabbrev_np(sig), sig);
         sd_event *event = sd_event_source_get_event(s);
         if (event) {
             sd_event_exit(event, 0);
@@ -53,12 +54,13 @@ int on_event_signal(sd_event_source *s, const struct signalfd_siginfo *si, void 
     }
 
     case SIGHUP: {
+        LOG(LOG_INFO, "Received SIGHUP, reloading configuration");
         reload_config(state);
         break;
     }
 
     default: {
-        (void) sd_journal_print(LOG_WARNING, "Unhandled signal: %s (%d)\n", sigabbrev_np(sig), sig);
+        LOG(LOG_WARNING, "Unhandled signal: %s (%d)\n", sigabbrev_np(sig), sig);
 
         break;
     }
@@ -80,6 +82,8 @@ int reload_config(struct vrtd *state)
 
     int ret = config_load(&state->config);
     PROPAGATE_ERROR(ret);
+
+    LOG(LOG_INFO, "Configuration reloaded successfully");
 
     return 0;
 }

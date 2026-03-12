@@ -232,6 +232,8 @@ int config_load(struct config **configp)
     ret = assign_groups_roles(config);
     PROPAGATE_ERROR(ret);
 
+    LOG(LOG_INFO, "Configuration loaded successfully");
+
     // No error, do not cleanup
     *configp = config;
     config = NULL;
@@ -249,7 +251,7 @@ static int parse_file_glob(struct config_parse_state *state, const char *pattern
     if (ret == GLOB_NOMATCH) {
         return 0;
     } else if (ret != 0) {
-        (void) sd_journal_print(
+        LOG(
             LOG_WARNING,
             "Error matching pattern %s: %s",
             pattern,
@@ -285,6 +287,8 @@ static int parse_file(struct config_parse_state *state, const char *path)
     int ret = str_array_push_move(&state->visited_files, &full_path);
     PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Error processing %s", full_path);
 
+    LOG(LOG_DEBUG, "Parsing config file %s", full_path_ref);
+
     ret = parse_file_unique(state, full_path_ref);
     PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Error parsing file %s", full_path_ref);
 
@@ -296,16 +300,16 @@ static int parse_file_unique(struct config_parse_state *state, const char *path)
     int ret = ini_parse(path, parse_config_callback, state);
     if (ret != 0) {
         if (ret > 0) {
-            (void) sd_journal_print(LOG_ERR, "Parse error at %s:%d", path, ret);
+            LOG(LOG_ERR, "Parse error at %s:%d", path, ret);
             return -1;
         } else if (ret == -1) {
-            (void) sd_journal_print(LOG_ERR, "Could not open file %s", path);
+            LOG(LOG_ERR, "Could not open file %s", path);
             return -1;
         } else if (ret == -2) {
-            (void) sd_journal_print(LOG_ERR, "Out of memory reading file %s", path);
+            LOG(LOG_ERR, "Out of memory reading file %s", path);
             return -1;
         } else {
-            (void) sd_journal_print(LOG_WARNING, "Unknown error reading file %s", path);
+            LOG(LOG_WARNING, "Unknown error reading file %s", path);
             return 0;
         }
     }
@@ -356,7 +360,7 @@ static int parse_config_callback(void *user, const char *section, const char *na
             return 0;
         }
     } else {
-        (void) sd_journal_print(LOG_WARNING, "Unknown section/key: [%s] %s", section, name);
+        LOG(LOG_WARNING, "Unknown section/key: [%s] %s", section, name);
         return 1;
     }
 
@@ -606,7 +610,7 @@ static int assign_user_roles(struct config *config, struct user_config *user)
         }
 
         if (!found_role_name) {
-            (void) sd_journal_print(LOG_WARNING, "Failed to find user role %s for user %s", user->role_names.d[j], user->name);
+            LOG(LOG_WARNING, "Failed to find user role %s for user %s", user->role_names.d[j], user->name);
         }
     }
 
@@ -639,7 +643,7 @@ static int assign_group_roles(struct config *config, struct group_config *group)
         }
 
         if (!found_role_name) {
-            (void) sd_journal_print(LOG_WARNING, "Failed to find group role %s for group %s", group->role_names.d[j], group->name);
+            LOG(LOG_WARNING, "Failed to find group role %s for group %s", group->role_names.d[j], group->name);
         }
     }
 

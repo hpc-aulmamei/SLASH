@@ -64,7 +64,7 @@ int on_event_new_connection(sd_event_source *s, int fd, uint32_t revents, void *
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 break;  /* all pending connections accepted */
             }
-            (void) sd_journal_print(LOG_ERR, "accept4() failed: %m");
+            LOG(LOG_ERR, "accept4() failed: %m");
             return -1;
         }
 
@@ -80,7 +80,7 @@ int on_event_new_connection(sd_event_source *s, int fd, uint32_t revents, void *
 
         ret = client_ptr_array_push_move(&state->clients, &client);
         if (ret == -1) {
-            (void) sd_journal_print(LOG_ERR, "Failed to allocate memory when adding new client");
+            LOG(LOG_ERR, "Failed to allocate memory when adding new client");
             continue;
         }
     }
@@ -136,6 +136,7 @@ static int create_client_event(sd_event_source *listener_event_source, int cfd, 
     client->fd = cfd;
     client->in_fd = -1;
     client->conn_id = state->next_conn_id;
+    LOG(LOG_DEBUG, "New client connection uid=%u conn_id=%llu fd=%d", (unsigned int)client->uid, (unsigned long long)client->conn_id, cfd);
     client->state = state;
     client->event_source = source;
 
@@ -152,7 +153,7 @@ static
 int populate_uid_gid(int cfd, struct client *client)
 {
     if (!client || cfd < 0) {
-        sd_journal_print(LOG_ERR, "populate_uid_gid: invalid arguments");
+        LOG(LOG_ERR, "populate_uid_gid: invalid arguments");
         return -1;
     }
 
@@ -174,7 +175,7 @@ int populate_uid_gid(int cfd, struct client *client)
     struct passwd pwent, *pw = NULL;
     int pr = getpwuid_r(new_uid, &pwent, pwbuf, (size_t)buflen, &pw);
     if (pr != 0 || !pw) {
-        sd_journal_print(LOG_ERR, "getpwuid_r(%u) failed: %s",
+        LOG(LOG_ERR, "getpwuid_r(%u) failed: %s",
                          (unsigned)new_uid,
                          pr ? strerrordesc_np(pr) : "not found");
         return -1;
@@ -184,7 +185,7 @@ int populate_uid_gid(int cfd, struct client *client)
     int ngroups = 0;
     (void)getgrouplist(pw->pw_name, cred.gid, NULL, &ngroups); // expected to return -1
     if (ngroups <= 0) {
-        sd_journal_print(LOG_ERR, "getgrouplist probe returned non-positive size for user %s", pw->pw_name);
+        LOG(LOG_ERR, "getgrouplist probe returned non-positive size for user %s", pw->pw_name);
         return -1;
     }
 
@@ -193,7 +194,7 @@ int populate_uid_gid(int cfd, struct client *client)
 
     int gl = getgrouplist(pw->pw_name, cred.gid, groups, &ngroups);
     if (gl < 0 || ngroups <= 0) {
-        sd_journal_print(LOG_ERR, "getgrouplist fetch failed for user %s", pw->pw_name);
+        LOG(LOG_ERR, "getgrouplist fetch failed for user %s", pw->pw_name);
         return -1;
     }
 
@@ -205,7 +206,7 @@ int populate_uid_gid(int cfd, struct client *client)
     for (int i = 0; i < ngroups; ++i) {
         int r = gid_t_array_push(&client->gids, groups[i]);
         if (r == -1) {
-            sd_journal_print(LOG_ERR, "gid_t_array_push failed at index %d", i);
+            LOG(LOG_ERR, "gid_t_array_push failed at index %d", i);
             // Roll back to consistent "unset" state
             gid_t_array_free(&client->gids);
             client->uid = (uid_t)-1;

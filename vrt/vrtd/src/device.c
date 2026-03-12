@@ -70,7 +70,7 @@ static int find_qdma_dev_path_by_bdf(const char *ctl_bdf, char **out_path)
     }
 
     if (g.gl_pathc > 1) {
-        (void) sd_journal_print(
+        LOG(
             LOG_WARNING,
             "Multiple QDMA devices found for BDF prefix %s; using first match",
             prefix
@@ -122,7 +122,7 @@ int devices_discover_and_open(struct device_ptr_array *devices)
     int ret = glob("/dev/slash_ctl*", GLOB_ERR, NULL, &g);
 
     if (ret == GLOB_NOMATCH) {
-        (void) sd_journal_print(
+        LOG(
             LOG_WARNING,
             "No devices found matching /dev/slash_ctl*"
         );
@@ -130,7 +130,7 @@ int devices_discover_and_open(struct device_ptr_array *devices)
     }
 
     if (ret != 0) {
-        (void) sd_journal_print(
+        LOG(
             LOG_ERR,
             "Error matching pattern /dev/slash_ctl*: %s",
             glob_err_to_string(ret)
@@ -138,6 +138,8 @@ int devices_discover_and_open(struct device_ptr_array *devices)
 
         return -1;
     }
+
+    LOG(LOG_INFO, "Discovered %zu device(s) matching /dev/slash_ctl*", g.gl_pathc);
 
     return devices_open(devices, g.gl_pathc, g.gl_pathv);
 }
@@ -194,7 +196,7 @@ static int device_open(struct device **out, const char *path)
         struct vrtd_pci_info pci_info = {0};
         int pci_ret = device_read_pci_info(d, &pci_info);
         if (pci_ret != 0) {
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Could not read PCI info for %s; skipping QDMA lookup",
                 d->path
@@ -204,7 +206,7 @@ static int device_open(struct device **out, const char *path)
             char *qdma_path = NULL;
             int find_ret = find_qdma_dev_path_by_bdf(pci_info.bdf, &qdma_path);
             if (find_ret != 0) {
-                (void) sd_journal_print(
+                LOG(
                     LOG_WARNING,
                     "Error searching for QDMA device for BDF %s (%s)",
                     pci_info.bdf, d->path
@@ -212,13 +214,13 @@ static int device_open(struct device **out, const char *path)
             } else if (qdma_path != NULL) {
                 d->qdma = slash_qdma_open(qdma_path);
                 if (d->qdma == NULL) {
-                    (void) sd_journal_print(
+                    LOG(
                         LOG_WARNING,
                         "Error opening QDMA device %s (for %s): %m",
                         qdma_path, d->path
                     );
                 } else {
-                    (void) sd_journal_print(
+                    LOG(
                         LOG_INFO,
                         "Matched QDMA device %s for ctldev %s (BDF %s)",
                         qdma_path, d->path, pci_info.bdf
@@ -227,7 +229,7 @@ static int device_open(struct device **out, const char *path)
                     PROPAGATE_ERROR_NULL_STDC_LOG(d->design_writer, LOG_ERR, "Error creating design writer for %s", d->path);
                 }
             } else {
-                (void) sd_journal_print(
+                LOG(
                     LOG_WARNING,
                     "No QDMA device found for BDF %s (%s)",
                     pci_info.bdf, d->path
@@ -239,7 +241,7 @@ static int device_open(struct device **out, const char *path)
     for (size_t i = 0; i < SIZEOF_ARRAY(d->bar_info); i++) {
         d->bar_info[i] = slash_bar_info_read(d->ctl, i);
         if (d->bar_info[i] == NULL) {
-            (void) sd_journal_print(
+            LOG(
                 LOG_ERR,
                 "Error opening bar_info %zu on device %s: %m",
                 i, d->path
@@ -252,7 +254,7 @@ static int device_open(struct device **out, const char *path)
         if (d->bar_info[i]->usable) {
             d->bar_files[i] = slash_bar_file_open(d->ctl, i, O_CLOEXEC);
             if (d->bar_files[i] == NULL) {
-                (void) sd_journal_print(
+                LOG(
                     LOG_ERR,
                     "Error opening bar_file %zu on device %s: %m",
                     i, d->path
@@ -313,6 +315,8 @@ void cleanup_device(struct device *d)
         return;
     }
 
+    LOG(LOG_DEBUG, "Cleaning up device %s", d->path ? d->path : "(unknown)");
+
     buffer_ptr_array_free(&d->buffers);
 
     if (d->design_writer != NULL) {
@@ -332,7 +336,7 @@ void cleanup_device(struct device *d)
 
     if (d->qdma != NULL) {
         if (slash_qdma_close(d->qdma) != 0) {
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Error closing qdma device for %s: %m (ignored)",
                 d->path ? d->path : "(unknown)"
@@ -345,7 +349,7 @@ void cleanup_device(struct device *d)
     for (size_t i = 0; i < SIZEOF_ARRAY(d->bar_files); i++) {
         if (d->bar_files[i] != NULL) {
             if (slash_bar_file_close(d->bar_files[i]) != 0) {
-                (void) sd_journal_print(
+                LOG(
                     LOG_WARNING,
                     "Error closing bar_file %zu for %s: %m (ignored)",
                     i, d->path ? d->path : "(unknown)"
@@ -366,7 +370,7 @@ void cleanup_device(struct device *d)
     /* Close control device last */
     if (d->ctl != NULL) {
         if (slash_ctldev_close(d->ctl) != 0) {
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Error closing ctldevice %s: %m (ignored)",
                 d->path ? d->path : "(unknown)"

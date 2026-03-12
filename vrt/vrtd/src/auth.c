@@ -112,7 +112,7 @@ static void auth_log_denied(
     char pwbuf[1024];
     const char *username = uid_to_username(client->uid, pwbuf, sizeof(pwbuf));
 
-    (void) sd_journal_print(
+    LOG(
         LOG_WARNING,
         "Permission denied for uid %u(%s): '%s' requires '%s'",
         (unsigned int) client->uid,
@@ -123,7 +123,7 @@ static void auth_log_denied(
 
     char *roles_str = auth_collect_role_names(client);
     if (roles_str != NULL) {
-        (void) sd_journal_print(
+        LOG(
             LOG_INFO,
             "User uid %u(%s) has roles: %s",
             (unsigned int) client->uid,
@@ -132,7 +132,7 @@ static void auth_log_denied(
         );
         free(roles_str);
     } else {
-        (void) sd_journal_print(
+        LOG(
             LOG_INFO,
             "User uid %u(%s) has no roles",
             (unsigned int) client->uid,

@@ -109,7 +109,7 @@ static int write_all_at_pos(int fd, const void *buf, size_t len, off_t pos)
     size_t off = 0;
 
     while (off < len) {
-        (void) sd_journal_print(
+        LOG(
             LOG_INFO,
             "Attempting to write to design writer file descriptor at offset 0x%lx (progress: %zu/%zu)",
             (unsigned long)(pos + off), off, len
@@ -132,7 +132,7 @@ static int write_all_at_pos(int fd, const void *buf, size_t len, off_t pos)
 
         off += (size_t)n;
 
-        (void) sd_journal_print(
+        LOG(
             LOG_INFO,
             "Design writer: wrote %zu bytes at offset 0x%lx (total written: %zu/%zu)",
             (size_t)n, (unsigned long)(pos + off), off, len
@@ -184,10 +184,11 @@ static void *design_writer_thread(void *arg)
         int transfer_errno = 0;
 
         (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+        LOG(LOG_INFO, "Design writer transfer starting");
         if (input_fd >= 0) {
             if (design_writer_transfer(writer, input_fd) != 0) {
                 transfer_errno = (errno != 0) ? errno : EIO;
-                (void) sd_journal_print(
+                LOG(
                     LOG_WARNING,
                     "Design writer transfer failed: %m"
                 );
@@ -237,7 +238,7 @@ static void design_writer_release_qpair(struct design_writer *writer)
 
     if (writer->qpair_created && writer->qdma != NULL) {
         if (writer->qpair_started && slash_qdma_qpair_stop(writer->qdma, writer->qid) == -1) {
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Error stopping design writer qpair %u: %m (ignored)",
                 writer->qid
@@ -245,7 +246,7 @@ static void design_writer_release_qpair(struct design_writer *writer)
         }
 
         if (slash_qdma_qpair_del(writer->qdma, writer->qid) == -1) {
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Error deleting design writer qpair %u: %m (ignored)",
                 writer->qid
@@ -343,7 +344,7 @@ static int design_writer_open_qpair(struct design_writer *writer)
 
     ret = slash_qdma_qpair_start(writer->qdma, writer->qid);
     if (ret == -1) {
-        (void) sd_journal_print(LOG_ERR, "Failed to start design writer QDMA qpair: %m");
+        LOG(LOG_ERR, "Failed to start design writer QDMA qpair: %m");
         design_writer_release_qpair(writer);
         return -1;
     }
@@ -351,7 +352,7 @@ static int design_writer_open_qpair(struct design_writer *writer)
 
     writer->fd = slash_qdma_qpair_get_fd(writer->qdma, writer->qid, O_CLOEXEC);
     if (writer->fd == -1) {
-        (void) sd_journal_print(LOG_ERR, "Failed to get design writer QDMA file descriptor: %m");
+        LOG(LOG_ERR, "Failed to get design writer QDMA file descriptor: %m");
         design_writer_release_qpair(writer);
         return -1;
     }
@@ -503,6 +504,7 @@ int design_writer_submit_fd_async(struct design_writer *writer, int fd)
     writer->last_error = 0;
     (void) pthread_cond_signal(&writer->cond);
 
+    LOG(LOG_DEBUG, "Design write enqueued fd=%d", fd);
     return 0;
 }
 

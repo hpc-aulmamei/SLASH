@@ -67,59 +67,61 @@ int main(void)
 
     int ret = config_load(&state.config);
     if (ret == -1) {
-        (void) sd_journal_print(LOG_CRIT, "Failed to load config");
+        LOG(LOG_CRIT, "Failed to load config");
         exit(EXIT_FAILURE);
     }
 
     ret = devices_discover_and_open(&state.devices);
     if (ret == -1) {
-        (void) sd_journal_print(LOG_CRIT, "Failed to load devices");
+        LOG(LOG_CRIT, "Failed to load devices");
         exit(EXIT_FAILURE);
     }
+
+    LOG(LOG_INFO, "Discovered %zu device(s)", state.devices.len);
 
     _cleanup_(sd_event_unrefp)
     sd_event *ev = NULL;
     ret = sd_event_default(&ev);
     if (ret < 0) {
-        (void) sd_journal_print(LOG_CRIT, "Failed to allocate event loop: %s", strerrordesc_np(-ret));
+        LOG(LOG_CRIT, "Failed to allocate event loop: %s", strerrordesc_np(-ret));
         exit(EXIT_FAILURE);
     }
 
     ret = configure_watchdog(ev);
     if (ret == -1) {
-        (void) sd_journal_print(LOG_CRIT, "Failed to configure watchdog");
+        LOG(LOG_CRIT, "Failed to configure watchdog");
         exit(EXIT_FAILURE);
     }
 
     ret = configure_signals(ev, &state);
     if (ret == -1) {
-        (void) sd_journal_print(LOG_CRIT, "Failed to configure signals");
+        LOG(LOG_CRIT, "Failed to configure signals");
         exit(EXIT_FAILURE);
     }
 
     ret = configure_sockets(ev, &state);
     if (ret == -1) {
-        (void) sd_journal_print(LOG_CRIT, "Failed to configure sockets");
+        LOG(LOG_CRIT, "Failed to configure sockets");
         exit(EXIT_FAILURE);
     }
 
     ret = configure_background_tasks(ev, &state);
     if (ret == -1) {
-        (void) sd_journal_print(LOG_CRIT, "Failed to configure background tasks");
+        LOG(LOG_CRIT, "Failed to configure background tasks");
         exit(EXIT_FAILURE);
     }
 
     ret = sd_notify(0, "READY=1");
     if (ret < 0) {
-        (void) sd_journal_print(LOG_CRIT, "Failed to notify ready: %s", strerrordesc_np(-ret));
+        LOG(LOG_CRIT, "Failed to notify ready: %s", strerrordesc_np(-ret));
         exit(EXIT_FAILURE);
     } else if (ret == 0) {
-        (void) sd_journal_print(LOG_INFO, "No notification socket");
+        LOG(LOG_INFO, "No notification socket");
     }
 
     ret = sd_event_loop(ev);
     if (ret < 0) {
-        (void) sd_journal_print(LOG_CRIT, "Critical error: %s", strerrordesc_np(-ret));
+        LOG(LOG_CRIT, "Critical error: %s", strerrordesc_np(-ret));
         exit(EXIT_FAILURE);
     }
 
@@ -229,7 +231,7 @@ static int configure_sockets(sd_event *ev, struct vrtd *state)
     int ret = sd_listen_fds_with_names(1, &names);
     PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Could not list listen fds");
     if (ret == 0) {
-        (void) sd_journal_print(LOG_ERR, "No socket provided");
+        LOG(LOG_ERR, "No socket provided");
         return -1;
     }
 
@@ -239,7 +241,7 @@ static int configure_sockets(sd_event *ev, struct vrtd *state)
         ret = sd_is_socket(fd, AF_UNIX, SOCK_SEQPACKET, 1);
         PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to get state of socket %s", names[i]);
         if (ret == 0) {
-            (void) sd_journal_print(LOG_ERR, "Bad socket type %s", names[i]);
+            LOG(LOG_ERR, "Bad socket type %s", names[i]);
             return -1;
         }
 
@@ -271,7 +273,7 @@ static int configure_sockets(sd_event *ev, struct vrtd *state)
         ret = sd_event_source_set_exit_on_failure(source, 1);
         PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to set up exit on failure for socket %s", names[i]);
 
-        (void) sd_journal_print(LOG_INFO, "Listening on unix socket %s", names[i]);
+        LOG(LOG_INFO, "Listening on unix socket %s", names[i]);
     }
 
     return 0;

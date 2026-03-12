@@ -30,6 +30,8 @@
 
 #include <systemd/sd-journal.h>
 
+#include "utils.h"
+
 // Offsets from xclk_wiz_hw.h
 #define XCLK_WIZ_RECONFIG_OFFSET 0x00000014u
 #define XCLK_WIZ_REG1_OFFSET     0x00000330u
@@ -127,12 +129,12 @@ struct clock_driver *clock_driver_create(struct slash_ctldev *ctl)
 {
     struct clock_driver *clk = calloc(1, sizeof(*clk));
     if (clk == NULL) {
-        (void) sd_journal_print(LOG_ERR, "Failed to allocate clock driver: %m");
+        LOG(LOG_ERR, "Failed to allocate clock driver: %m");
         return NULL;
     }
 
     if (clock_driver_init(clk, ctl) != 0) {
-        (void) sd_journal_print(LOG_ERR, "Failed to initialize clock driver: %m");
+        LOG(LOG_ERR, "Failed to initialize clock driver: %m");
         cleanup_clock_driver(clk);
         return NULL;
     }
@@ -286,7 +288,7 @@ static void clock_driver_log_state(
     uint64_t fvco_hz = clock_driver_get_vco_hz(clk, wizard_offset);
     uint64_t rate_hz = clock_driver_get_rate_hz(clk, wizard_offset, clock_id);
 
-    (void) sd_journal_print(
+    LOG(
         LOG_INFO,
         "clock_driver[%s]: wiz=0x%08x clk=%u prim_in_hz=%u fvco_hz=%" PRIu64
         " rate_hz=%" PRIu64 " status=0x%08x reconfig=0x%08x reg1=0x%08x reg2=0x%08x"
@@ -586,7 +588,7 @@ static int clock_driver_try_set_rate_hz(
 {
     if (clk == NULL || rate_hz_inout == NULL || *rate_hz_inout == 0) {
         errno = EINVAL;
-        (void) sd_journal_print(
+        LOG(
             LOG_WARNING,
             "clock_driver: invalid set_rate arguments (clk=%p rate_ptr=%p rate_hz=%u)",
             (void *)clk,
@@ -605,7 +607,7 @@ static int clock_driver_try_set_rate_hz(
     );
     if (count == 0) {
         errno = ERANGE;
-        (void) sd_journal_print(
+        LOG(
             LOG_WARNING,
             "clock_driver: failed to calculate divisors for request_hz=%u: %m",
             *rate_hz_inout
@@ -622,7 +624,7 @@ static int clock_driver_try_set_rate_hz(
         uint64_t predicted_fvco_hz = ((uint64_t)clk->prim_in_hz * clk->m) / clk->d;
         uint32_t predicted_divo = clock_driver_effective_divo_from_o(clk->o);
         uint64_t predicted_rate_hz = predicted_fvco_hz / predicted_divo;
-        (void) sd_journal_print(
+        LOG(
             LOG_INFO,
             "clock_driver: request_hz=%u trying candidate=%zu/%zu m=%u d=%u o=%u est_hz=%" PRIu64
             " diff_hz=%" PRIu64 " predicted_divo=%u predicted_rate_hz=%" PRIu64,
@@ -648,7 +650,7 @@ static int clock_driver_try_set_rate_hz(
         clock_driver_log_state(clk, wizard_offset, clock_id, "after_program");
 
         if (ok == 0) {
-            (void) sd_journal_print(
+            LOG(
                 LOG_INFO,
                 "clock_driver: set_rate request_hz=%u reported_hz=%" PRIu64
                 " m=%u d=%u o=%u candidate=%zu/%zu",
@@ -664,7 +666,7 @@ static int clock_driver_try_set_rate_hz(
             return 0;
         }
 
-        (void) sd_journal_print(
+        LOG(
             LOG_WARNING,
             "clock_driver: lock timeout request_hz=%u candidate=%zu/%zu m=%u d=%u o=%u timeout_ms=%u",
             *rate_hz_inout,
@@ -703,7 +705,7 @@ int clock_driver_get_service_region_rate_hz(struct clock_driver *clk, uint32_t *
 int clock_driver_set_service_region_rate_hz(struct clock_driver *clk, uint32_t *rate_hz_inout)
 {
     if (clock_driver_check_wizard_bounds(clk, CLOCK_DRIVER_SERVICE_REGION_WIZARD_OFFSET) != 0) {
-        (void) sd_journal_print(LOG_ERR, "clock_driver: service region wizard bounds check failed: %m");
+        LOG(LOG_ERR, "clock_driver: service region wizard bounds check failed: %m");
         return -1;
     }
     int ret = clock_driver_try_set_rate_hz(
@@ -713,7 +715,7 @@ int clock_driver_set_service_region_rate_hz(struct clock_driver *clk, uint32_t *
         rate_hz_inout
     );
     if (ret != 0) {
-        (void) sd_journal_print(
+        LOG(
             LOG_WARNING,
             "clock_driver: failed to set service region frequency request_hz=%u: %m",
             (rate_hz_inout != NULL) ? *rate_hz_inout : 0u
@@ -744,7 +746,7 @@ int clock_driver_get_user_region_rate_hz(struct clock_driver *clk, uint32_t *rat
 int clock_driver_set_user_region_rate_hz(struct clock_driver *clk, uint32_t *rate_hz_inout)
 {
     if (clock_driver_check_wizard_bounds(clk, CLOCK_DRIVER_USER_REGION_WIZARD_OFFSET) != 0) {
-        (void) sd_journal_print(LOG_ERR, "clock_driver: user region wizard bounds check failed: %m");
+        LOG(LOG_ERR, "clock_driver: user region wizard bounds check failed: %m");
         return -1;
     }
     int ret = clock_driver_try_set_rate_hz(
@@ -754,7 +756,7 @@ int clock_driver_set_user_region_rate_hz(struct clock_driver *clk, uint32_t *rat
         rate_hz_inout
     );
     if (ret != 0) {
-        (void) sd_journal_print(
+        LOG(
             LOG_WARNING,
             "clock_driver: failed to set user region frequency request_hz=%u: %m",
             (rate_hz_inout != NULL) ? *rate_hz_inout : 0u

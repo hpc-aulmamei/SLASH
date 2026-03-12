@@ -31,6 +31,8 @@
 #include <glob.h>
 #include <systemd/sd-journal.h>
 
+#define LOG (void) sd_journal_print
+
 /*
  * Look up the username for @uid. Writes the name into @buf (size @bufsz).
  * Returns @buf on success, or an empty string if the lookup fails.

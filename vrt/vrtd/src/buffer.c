@@ -19,6 +19,7 @@
  */
 
 #include "buffer.h"
+#include "utils.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -45,7 +46,7 @@ static int buffer_init(struct buffer *buf,
 {
     if (buf == NULL) {
         errno = EINVAL;
-        (void) sd_journal_print(LOG_ERR, "Failed to initialize buffer: invalid output pointer");
+        LOG(LOG_ERR, "Failed to initialize buffer: invalid output pointer");
         return -1;
     }
 
@@ -66,7 +67,7 @@ static int buffer_init(struct buffer *buf,
 
     if (qdma == NULL || map == NULL || size == 0 || client_id == 0) {
         errno = EINVAL;
-        (void) sd_journal_print(
+        LOG(
             LOG_ERR,
             "Failed to initialize buffer: invalid arguments (qdma=%p map=%p size=%llu client_id=%llu)",
             (void *)qdma,
@@ -90,7 +91,7 @@ static int buffer_init(struct buffer *buf,
         break;
     default:
         errno = EINVAL;
-        (void) sd_journal_print(
+        LOG(
             LOG_ERR,
             "Failed to initialize buffer: invalid allocation direction %u",
             (unsigned int)alloc_dir
@@ -110,7 +111,7 @@ static int buffer_init(struct buffer *buf,
     );
     if (ares != ALLOCATION_RESULT_SUCCESS) {
         errno = (ares == ALLOCATION_RESULT_NO_MEMORY) ? ENOMEM : EINVAL;
-        (void) sd_journal_print(
+        LOG(
             LOG_ERR,
             "Failed to allocate device memory for buffer (result=%d alloc_type=%u size=%llu alloc_arg=%llu client_id=%llu): %m",
             (int)ares,
@@ -139,7 +140,7 @@ static int buffer_init(struct buffer *buf,
     qpair.size = sizeof(qpair);
 
     if (slash_qdma_qpair_add(qdma, &qpair) != 0) {
-        (void) sd_journal_print(LOG_ERR, "Failed to add buffer qpair: %m");
+        LOG(LOG_ERR, "Failed to add buffer qpair: %m");
         goto fail;
     }
 
@@ -147,17 +148,18 @@ static int buffer_init(struct buffer *buf,
     buf->qpair_created = true;
 
     if (slash_qdma_qpair_start(qdma, buf->qid) != 0) {
-        (void) sd_journal_print(LOG_ERR, "Failed to start buffer qpair %u: %m", buf->qid);
+        LOG(LOG_ERR, "Failed to start buffer qpair %u: %m", buf->qid);
         goto fail;
     }
 
     int fd = slash_qdma_qpair_get_fd(qdma, buf->qid, O_CLOEXEC);
     if (fd < 0) {
-        (void) sd_journal_print(LOG_ERR, "Failed to get fd for buffer qpair %u: %m", buf->qid);
+        LOG(LOG_ERR, "Failed to get fd for buffer qpair %u: %m", buf->qid);
         goto fail;
     }
     buf->fd = fd;
 
+    LOG(LOG_DEBUG, "Buffer initialized addr=0x%llx size=%llu qid=%u", (unsigned long long)buf->addr, (unsigned long long)buf->size, buf->qid);
     return 0;
 
 fail:
@@ -176,12 +178,12 @@ struct buffer *buffer_create(struct slash_qdma *qdma,
 {
     struct buffer *buf = calloc(1, sizeof(*buf));
     if (buf == NULL) {
-        (void) sd_journal_print(LOG_ERR, "Failed to allocate buffer: %m");
+        LOG(LOG_ERR, "Failed to allocate buffer: %m");
         return NULL;
     }
 
     if (buffer_init(buf, qdma, map, alloc_type, alloc_dir, size, alloc_arg, client_id, qpair_params) != 0) {
-        (void) sd_journal_print(LOG_ERR, "Failed to initialize buffer: %m");
+        LOG(LOG_ERR, "Failed to initialize buffer: %m");
         return NULL;
     }
 
@@ -194,6 +196,8 @@ void cleanup_buffer(struct buffer *buf)
         return;
     }
 
+    LOG(LOG_DEBUG, "Freeing buffer addr=0x%llx size=%llu qid=%u", (unsigned long long)buf->addr, (unsigned long long)buf->size, buf->qid);
+
     if (buf->fd >= 0) {
         (void) close(buf->fd);
         buf->fd = -1;
@@ -201,14 +205,14 @@ void cleanup_buffer(struct buffer *buf)
 
     if (buf->qpair_created && buf->qdma != NULL) {
         if (slash_qdma_qpair_stop(buf->qdma, buf->qid) != 0) {
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Error stopping buffer qpair %u: %m (ignored)",
                 buf->qid
             );
         }
         if (slash_qdma_qpair_del(buf->qdma, buf->qid) != 0) {
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Error deleting buffer qpair %u: %m (ignored)",
                 buf->qid
@@ -224,7 +228,7 @@ void cleanup_buffer(struct buffer *buf)
                 buf->size,
                 buf->client_id
             ) != ALLOCATION_RESULT_SUCCESS) {
-            (void) sd_journal_print(
+            LOG(
                 LOG_WARNING,
                 "Error freeing buffer allocation (addr=0x%llx size=%llu): %m (ignored)",
                 (unsigned long long)buf->addr,
