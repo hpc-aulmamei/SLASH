@@ -143,32 +143,48 @@ static int slash_hotplug_handle_remove(const char *bdf)
 static int slash_hotplug_handle_toggle_sbr(const char *bdf)
 {
     struct pci_dev *pdev;
-    struct pci_dev *root;
+    struct pci_dev *bridge = NULL;
+    int domain, bus_nr, slot, func;
     int ret;
     u16 ctrl;
 
-    ret = slash_hotplug_get_pci_dev(bdf, &pdev);
-    if (ret) {
-        pr_err("slash_hotplug: toggle_sbr: BDF %s unavailable (%d)\n", bdf, ret);
-        return ret;
+    if (sscanf(bdf, "%x:%x:%x.%x", &domain, &bus_nr, &slot, &func) != 4)
+        return -EINVAL;
+
+    /*
+     * Try to resolve the upstream bridge from the endpoint.  If the
+     * endpoint has already been removed (e.g. by a prior hotplug remove),
+     * fall back to locating the bridge via the bus number, which survives
+     * endpoint removal.
+     */
+    pdev = pci_get_domain_bus_and_slot(domain, bus_nr, PCI_DEVFN(slot, func));
+    if (pdev) {
+        struct pci_dev *root = pcie_find_root_port(pdev);
+
+        if (root)
+            bridge = pci_dev_get(root);
+        pci_dev_put(pdev);
     }
 
-    root = pcie_find_root_port(pdev);
-    if (!root) {
-        pr_err("slash_hotplug: toggle_sbr: no root port for %s\n", pci_name(pdev));
-        pci_dev_put(pdev);
+    if (!bridge) {
+        struct pci_bus *ep_bus = pci_find_bus(domain, bus_nr);
+
+        if (ep_bus && ep_bus->self)
+            bridge = pci_dev_get(ep_bus->self);
+    }
+
+    if (!bridge) {
+        pr_err("slash_hotplug: toggle_sbr: no upstream bridge for %s\n", bdf);
         return -ENODEV;
     }
 
-    pci_dev_get(root);
-
-    ret = pci_read_config_word(root, PCI_BRIDGE_CONTROL, &ctrl);
+    ret = pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl);
     if (ret) {
         pr_err("slash_hotplug: toggle_sbr: read control failed (%d)\n", ret);
         goto out_put;
     }
 
-    ret = pci_write_config_word(root, PCI_BRIDGE_CONTROL, ctrl | PCI_BRIDGE_CTL_BUS_RESET);
+    ret = pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl | PCI_BRIDGE_CTL_BUS_RESET);
     if (ret) {
         pr_err("slash_hotplug: toggle_sbr: assert SBR failed (%d)\n", ret);
         goto out_put;
@@ -176,15 +192,14 @@ static int slash_hotplug_handle_toggle_sbr(const char *bdf)
 
     msleep(2);
 
-    ret = pci_write_config_word(root, PCI_BRIDGE_CONTROL, ctrl & ~PCI_BRIDGE_CTL_BUS_RESET);
+    ret = pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl & ~PCI_BRIDGE_CTL_BUS_RESET);
     if (ret)
         pr_err("slash_hotplug: toggle_sbr: deassert SBR failed (%d)\n", ret);
     else
         msleep(5000);
 
 out_put:
-    pci_dev_put(root);
-    pci_dev_put(pdev);
+    pci_dev_put(bridge);
     return ret;
 }
 
