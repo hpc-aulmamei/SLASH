@@ -1075,10 +1075,11 @@ static uint16_t client_handle_request_buffer_open(
 {
     int ret = auth_request_buffer_open(client, req_body);
     if (ret == -1) {
-        (void) sd_journal_print(LOG_WARNING, "Failed to authorize buffer open request: %m");
+        char pwbuf[1024];
+        (void) sd_journal_print(LOG_WARNING, "Failed to authorize buffer open request for uid %u(%s): %m",
+            (unsigned int) client->uid, uid_to_username(client->uid, pwbuf, sizeof(pwbuf)));
         return VRTD_RET_INTERNAL_ERROR;
     } else if (ret == 0) {
-        (void) sd_journal_print(LOG_WARNING, "Unauthorized buffer open request");
         return VRTD_RET_AUTH_ERROR;
     }
 
@@ -1204,6 +1205,13 @@ static uint16_t client_handle_request_buffer_close(
             return VRTD_RET_INVALID_ARGUMENT;
         }
         if (buf->client_id != client->conn_id) {
+            char pwbuf[1024];
+            (void) sd_journal_print(
+                LOG_WARNING,
+                "Permission denied for uid %u(%s): 'buffer_close' requires buffer ownership",
+                (unsigned int) client->uid,
+                uid_to_username(client->uid, pwbuf, sizeof(pwbuf))
+            );
             return VRTD_RET_AUTH_ERROR;
         }
         found = buf;

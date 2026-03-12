@@ -26,9 +26,16 @@
 #include <stdbool.h>
 #include <ctype.h>
 #include <strings.h>
+#include <sys/types.h>
 
 #include <glob.h>
 #include <systemd/sd-journal.h>
+
+/*
+ * Look up the username for @uid. Writes the name into @buf (size @bufsz).
+ * Returns @buf on success, or an empty string if the lookup fails.
+ */
+const char *uid_to_username(uid_t uid, char *buf, size_t bufsz);
 
 #if defined(__has_include)
 #  if __has_include(<stdbit.h>)

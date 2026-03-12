@@ -33,6 +33,7 @@ add_executable(vrtd
   ${CMAKE_CURRENT_SOURCE_DIR}/reset.c
   ${CMAKE_CURRENT_SOURCE_DIR}/serve.c
   ${CMAKE_CURRENT_SOURCE_DIR}/signals.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/utils.c
 )
 
 # C standard / properties
