@@ -94,3 +94,6 @@ debian/vrtd.udev
 # Output files for package
 /deb/
 /rpm/
+
+# VBIN build directories
+*.prj

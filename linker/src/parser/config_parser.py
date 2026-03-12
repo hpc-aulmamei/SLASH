@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -26,15 +26,8 @@ import re
 
 from core.kernel import Kernel, KernelInstance
 from core.connectivity import *
-from core.port import BusType, Port
+from core.port import BusType
 
-# -----------------------------
-# Network model (local)
-# -----------------------------
-
-@dataclass
-class NetworkSpec:
-    enabled_eth: set[int]
 
 # -----------------------------
 # Parsing helpers
@@ -43,14 +36,18 @@ class NetworkSpec:
 _RE_TARGET = re.compile(r"^\s*([A-Za-z]+)\s*(\d*)\s*$")
 _RE_NK = re.compile(r"^\s*([^:]+)\s*:\s*(\d+)(?::(.*))?\s*$")
 _RE_ETH_KEY = re.compile(r"^eth_(\d+)$", re.IGNORECASE)
+_RE_DEBUG_NET = re.compile(r"^\s*([^.:\s]+)\.([^.:\s]+)\s*$")
+
 
 def _parse_target(s: str) -> MemoryTarget:
     m = _RE_TARGET.match(s)
     if not m:
-        raise ValueError(f"Invalid memory target '{s}'. Expected e.g. HBM0, DDR3, MEM, HOST.")
+        raise ValueError(
+            f"Invalid memory target '{s}'. Expected e.g. HBM0, DDR3, MEM, HOST.")
     domain, idx_str = m.group(1).upper(), m.group(2)
     if domain not in {"HBM", "DDR", "MEM", "VIRT", "HOST"}:
-        raise ValueError(f"Unsupported memory domain '{domain}'. Use HBM, DDR, MEM, VIRT or HOST.")
+        raise ValueError(
+            f"Unsupported memory domain '{domain}'. Use HBM, DDR, MEM, VIRT or HOST.")
     # HOST (and MEM) have no numeric index
     idx = int(idx_str) if (idx_str and domain not in {"MEM", "HOST"}) else ""
     return MemoryTarget(domain=domain, index=idx)
@@ -58,6 +55,7 @@ def _parse_target(s: str) -> MemoryTarget:
 
 def _split_instance_names(s: str) -> list[str]:
     return [x for x in re.split(r"[.\s,]+", s.strip()) if x]
+
 
 def _parse_nk_value(val: str) -> NKSpec:
     """
@@ -69,7 +67,8 @@ def _parse_nk_value(val: str) -> NKSpec:
     """
     m = _RE_NK.match(val)
     if not m:
-        raise ValueError(f"Invalid nk entry: '{val}' (expected '<kernel>:<count>[:<names>]').")
+        raise ValueError(
+            f"Invalid nk entry: '{val}' (expected '<kernel>:<count>[:<names>]').")
 
     kernel_type = m.group(1).strip()
     count = int(m.group(2))
@@ -79,9 +78,11 @@ def _parse_nk_value(val: str) -> NKSpec:
     if len(names) != count:
         # Auto-fill or trim to match 'count'
         base = kernel_type
-        names = (names + [f"{base}_{i}" for i in range(len(names), count)])[:count]
+        names = (
+            names + [f"{base}_{i}" for i in range(len(names), count)])[:count]
 
     return NKSpec(kernel_type=kernel_type, count=count, instance_names=names)
+
 
 def _parse_stream_connect_value(val: str) -> StreamConnect:
     """
@@ -94,7 +95,9 @@ def _parse_stream_connect_value(val: str) -> StreamConnect:
         return StreamConnect(src_inst.strip(), src_port.strip(),
                              dst_inst.strip(), dst_port.strip())
     except Exception as e:
-        raise ValueError(f"Invalid stream_connect '{val}'. Expected 'a.b:c.d'") from e
+        raise ValueError(
+            f"Invalid stream_connect '{val}'. Expected 'a.b:c.d'") from e
+
 
 def _parse_sp_value(val: str) -> SpMapping:
     """
@@ -104,9 +107,19 @@ def _parse_sp_value(val: str) -> SpMapping:
         left, right = val.split(":")
         inst, port = left.split(".", 1)
     except Exception as e:
-        raise ValueError(f"Invalid sp '{val}'. Expected 'inst.port:TARGET'") from e
+        raise ValueError(
+            f"Invalid sp '{val}'. Expected 'inst.port:TARGET'") from e
     target = _parse_target(right.strip())
     return SpMapping(inst=inst.strip(), port=port.strip(), target=target)
+
+
+def _parse_debug_net_value(val: str) -> DebugNetSpec:
+    m = _RE_DEBUG_NET.match(val)
+    if not m:
+        raise ValueError(
+            f"Invalid debug net '{val}'. Expected '<instance>.<port>'.")
+    return DebugNetSpec(inst=m.group(1).strip(), port=m.group(2).strip())
+
 
 # -----------------------------
 # Main parser
@@ -115,7 +128,7 @@ def _parse_sp_value(val: str) -> SpMapping:
 def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
     """
     Custom parser that supports repeated [clock] sections, [network] section,
-    and a single [connectivity] section.
+    [user_region] section, [debug] section, and a single [connectivity] section.
     Lines beginning with '#' or ';' are ignored as comments.
     """
     cfg = ConnectivityConfig()
@@ -125,6 +138,8 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
     section: Optional[str] = None
     pending_clock: Dict[str, str] = {}
     enabled_eth: set[int] = set()
+    pre_synth_tcls: list[str] = []
+    debug_nets: list[DebugNetSpec] = []
 
     def _commit_clock():
         nonlocal pending_clock
@@ -134,11 +149,13 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
         freq = pending_clock.get("freqhz")
         if krnl and freq:
             try:
-                cfg.clocks.append(ClockSpec(inst=krnl.strip(), freq_hz=int(freq.strip())))
+                cfg.clocks.append(
+                    ClockSpec(inst=krnl.strip(), freq_hz=int(freq.strip())))
             except ValueError:
                 raise ValueError(f"Invalid freqhz value in [clock]: '{freq}'")
         elif krnl or freq:
-            raise ValueError("Incomplete [clock] block: both 'krnl' and 'freqhz' are required.")
+            raise ValueError(
+                "Incomplete [clock] block: both 'krnl' and 'freqhz' are required.")
         pending_clock = {}
 
     for raw in lines:
@@ -160,7 +177,8 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
             if line.startswith("nk="):
                 cfg.nk.append(_parse_nk_value(line.split("=", 1)[1].strip()))
             elif line.startswith("stream_connect="):
-                cfg.streams.append(_parse_stream_connect_value(line.split("=", 1)[1].strip()))
+                cfg.streams.append(_parse_stream_connect_value(
+                    line.split("=", 1)[1].strip()))
             elif line.startswith("sp="):
                 cfg.sps.append(_parse_sp_value(line.split("=", 1)[1].strip()))
             continue
@@ -169,7 +187,8 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
             if line.startswith("nk="):
                 cfg.nk.append(_parse_nk_value(line.split("=", 1)[1].strip()))
             elif line.startswith("stream_connect="):
-                cfg.streams.append(_parse_stream_connect_value(line.split("=", 1)[1].strip()))
+                cfg.streams.append(_parse_stream_connect_value(
+                    line.split("=", 1)[1].strip()))
             elif line.startswith("sp="):
                 cfg.sps.append(_parse_sp_value(line.split("=", 1)[1].strip()))
             else:
@@ -186,7 +205,8 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
         elif section == "network":
             # Parse eth_<idx>=<0|1> (nonzero means enabled)
             if "=" not in line:
-                raise ValueError(f"Invalid line in [network] section: '{line}'")
+                raise ValueError(
+                    f"Invalid line in [network] section: '{line}'")
             k, v = [t.strip() for t in line.split("=", 1)]
             m = _RE_ETH_KEY.match(k)
             if not m:
@@ -200,20 +220,46 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
             if val != 0:
                 enabled_eth.add(idx)
 
+        elif section == "user_region":
+            if "=" not in line:
+                raise ValueError(
+                    f"Invalid line in [user_region] section: '{line}'")
+            k, v = [t.strip() for t in line.split("=", 1)]
+            if k.lower() == "pre_synth":
+                if not v:
+                    raise ValueError(
+                        "Invalid line in [user_region] section: empty pre_synth path")
+                tcl_path = Path(v).expanduser()
+                if not tcl_path.is_absolute():
+                    tcl_path = path.parent / tcl_path
+                pre_synth_tcls.append(str(tcl_path.resolve()))
+            else:
+                # ignore unknown keys in [user_region] to be lenient
+                continue
+
+        elif section == "debug":
+            if "=" not in line:
+                raise ValueError(f"Invalid line in [debug] section: '{line}'")
+            k, v = [t.strip() for t in line.split("=", 1)]
+            if k.lower() != "net":
+                raise ValueError(
+                    f"Invalid key '{k}' in [debug] section. Only 'net=<instance>.<port>' is supported."
+                )
+            debug_nets.append(_parse_debug_net_value(v))
+
         else:
             pass
 
     # End of file: commit any trailing clock block
     _commit_clock()
 
-    # Attach network spec (works even if ConnectivityConfig has no typed field)
-    net = NetworkSpec(enabled_eth=enabled_eth)
-    try:
-        cfg.network = net  # type: ignore[attr-defined]
-    except Exception:
-        setattr(cfg, "network", net)
+    # Attach network spec
+    cfg.net = NetworkSpec(enabled_eth=enabled_eth)
+    cfg.user_region = UserRegionSpec(pre_synth_tcls=pre_synth_tcls)
+    cfg.debug = DebugSpec(nets=debug_nets)
 
     return cfg
+
 
 def _resolve_port_name_for_kernel(kernel: Kernel, requested: str) -> str:
     # Case-insensitive resolution to the canonical name from component.xml
@@ -228,18 +274,21 @@ def _resolve_port_name_for_kernel(kernel: Kernel, requested: str) -> str:
         f"Available: {list(kernel.ports.keys())}"
     )
 
+
 def apply_config_to_instances(
     cfg: ConnectivityConfig,
-    kernel_library: Dict[str, Kernel],
+    kernel_library: List[Kernel],
     *,
     default_ddr_index: int = 0  # DDR0 fallback for missing AXI4FULL ports
-) -> Tuple[Dict[str, KernelInstance], List[StreamConnect]]:
+) -> List[KernelInstance]:
     instances: Dict[str, KernelInstance] = {}
+    kernel_library = {kernel.name: kernel for kernel in kernel_library}
 
     # 1) Instantiate from nk
     for nk in cfg.nk:
         if nk.kernel_type not in kernel_library:
-            raise KeyError(f"Kernel type '{nk.kernel_type}' not found in kernel_library.")
+            raise KeyError(
+                f"Kernel type '{nk.kernel_type}' not found in kernel_library.")
         k = kernel_library[nk.kernel_type]
         for name in nk.instance_names:
             if name in instances:
@@ -255,7 +304,8 @@ def apply_config_to_instances(
     # 3) Apply explicit sp mappings (store with CANONICAL port names)
     for sp in cfg.sps:
         if sp.inst not in instances:
-            raise KeyError(f"[connectivity] sp refers to unknown instance '{sp.inst}'.")
+            raise KeyError(
+                f"[connectivity] sp refers to unknown instance '{sp.inst}'.")
         inst = instances[sp.inst]
         canon_port = _resolve_port_name_for_kernel(inst.kernel, sp.port)
         if inst.kernel.port(canon_port).ptype != BusType.AXI4FULL:
@@ -263,15 +313,16 @@ def apply_config_to_instances(
                 f"[connectivity] sp '{sp.inst}.{sp.port}' is not an AXI4FULL port on kernel '{inst.kernel.name}'."
             )
         mem_map: Dict[str, dict] = inst.params.setdefault("mem_sp", {})
-        mem_map[canon_port] = {"domain": sp.target.domain, "index": sp.target.index}
+        mem_map[canon_port] = {
+            "domain": sp.target.domain, "index": sp.target.index}
 
     # 4) Per-instance fallback: fill ONLY the missing AXI4FULL ports with MEM (round-robin later)
     for inst in instances.values():
         mem_map: Dict[str, dict] = inst.params.setdefault("mem_sp", {})
-        axi_full_ports = [p.name for p in inst.kernel.ports_of_type(BusType.AXI4FULL)]
+        axi_full_ports = [
+            p.name for p in inst.kernel.ports_of_type(BusType.AXI4FULL)]
         for pname in axi_full_ports:
             if pname not in mem_map:
                 mem_map[pname] = {"domain": "MEM", "index": ""}
 
-    # return streams as-is; networking layer will split eth_* endpoints later
-    return instances, cfg.streams
+    return list(instances.values())

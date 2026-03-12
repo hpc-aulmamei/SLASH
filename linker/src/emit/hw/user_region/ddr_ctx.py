@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -24,12 +24,14 @@ from typing import Dict, List
 from core.kernel import KernelInstance
 from core.port import BusType
 
+
 def build_ddr_smartconnect_context(
     instances: Dict[str, KernelInstance],
     *,
     max_si: int = 16,
     base_name: str = "sc_ddr",
-    noc_pin_fmt: str = "/ddr_noc_{index}/S00_AXI",  # absolute path to NoC slave pin
+    # absolute path to NoC slave pin
+    noc_pin_fmt: str = "/ddr_noc_{index}/S00_AXI",
 ) -> dict:
     """
     Plan SmartConnect reduction per DDR<i>. If only 1 source -> direct connect to
@@ -69,7 +71,8 @@ def build_ddr_smartconnect_context(
         root_sc_name = None
 
         while len(current) > 1:
-            groups = [current[i:i + max_si] for i in range(0, len(current), max_si)]
+            groups = [current[i:i + max_si]
+                      for i in range(0, len(current), max_si)]
             next_level = []
 
             for g_idx, group in enumerate(groups):
@@ -88,7 +91,8 @@ def build_ddr_smartconnect_context(
             level += 1
 
         if root_sc_name:
-            ddr_smart_roots.append({"sc_name": root_sc_name, "dst_pin": dst_pin})
+            ddr_smart_roots.append(
+                {"sc_name": root_sc_name, "dst_pin": dst_pin})
 
     return {
         "ddr_direct": ddr_direct,

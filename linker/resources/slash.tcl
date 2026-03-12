@@ -1308,6 +1308,23 @@ connect_bd_intf_net \
 {% endfor %}
 
 
+# === Optional AXIS ILA debug ===
+{% if debug_axis_ila_enabled|default(false) %}
+set {{ debug_axis_ila_name }} [ create_bd_cell -type ip -vlnv xilinx.com:ip:axis_ila:1.3 {{ debug_axis_ila_name }} ]
+set_property -dict [list \
+  CONFIG.C_MON_TYPE {Interface_Monitor} \
+  CONFIG.C_NUM_MONITOR_SLOTS {{ "{" ~ debug_axis_ila_num_slots ~ "}" }} \
+] [get_bd_cells {{ debug_axis_ila_name }}]
+{% for s in debug_axis_ila_slots %}
+set_property CONFIG.C_SLOT_{{ s.idx }}_INTF_TYPE {{ "{" ~ s.intf_type ~ "}" }} [get_bd_cells {{ debug_axis_ila_name }}]
+{% endfor %}
+connect_bd_net [get_bd_pins {{ debug_axis_ila_name }}/clk] [get_bd_pins user_clk]
+connect_bd_net [get_bd_pins {{ debug_axis_ila_name }}/resetn] [get_bd_pins ilreduced_logic_0/Res]
+{% for s in debug_axis_ila_slots %}
+connect_bd_intf_net [get_bd_intf_pins {{ debug_axis_ila_name }}/{{ s.slot_pin }}] [get_bd_intf_pins {{ s.src_pin }}]
+{% endfor %}
+{% endif %}
+
 # === AXI-Lite address map ===
 {% for a in axilite_addr %}
 assign_bd_address -offset {{ "0x%012X"|format(a.offset) }} -range {{ "0x%08X"|format(a.range)  }} -target_address_space [get_bd_addr_spaces {{ a.addr_space }}] [get_bd_addr_segs {{ a.inst }}/{{ a.busif }}/{{ a.segment }}] -force

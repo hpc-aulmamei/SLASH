@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -21,6 +21,7 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import logging
 import re
 
 from core.kernel import KernelInstance
@@ -31,6 +32,8 @@ from emit.hls_meta import load_hls_metadata, parse_hls_args
 DEFAULT_CLOCK_HZ = 200_000_000
 _REG_SPLIT_RE = re.compile(r"^(.*)_\d+$")
 _CONTROL_REGS = {"ctrl", "gier", "ip_ier", "ip_isr"}
+_PORT_NORM_RE = re.compile(r"[^a-z0-9]")
+logger = logging.getLogger(__name__)
 
 
 def resolve_system_map_clock(
@@ -119,23 +122,61 @@ def _access_flags(access: Optional[str]) -> tuple[int, int]:
     return (1 if "R" in norm else 0, 1 if "W" in norm else 0)
 
 
+def _port_norm(name: str) -> str:
+    return _PORT_NORM_RE.sub("", (name or "").lower())
+
+
+def _resolve_axi4full_port_name(kernel, requested: str) -> Optional[str]:
+    if not requested:
+        return None
+
+    axi4_ports = [p.name for p in kernel.ports_of_type(BusType.AXI4FULL)]
+    if requested in axi4_ports:
+        return requested
+
+    by_lower = {p.lower(): p for p in axi4_ports}
+    req_low = requested.lower()
+    if req_low in by_lower:
+        return by_lower[req_low]
+
+    by_norm = {_port_norm(p): p for p in axi4_ports}
+    req_norm = _port_norm(requested)
+    if req_norm in by_norm:
+        return by_norm[req_norm]
+
+    return None
+
+
 def _build_functional_args_from_hls(
     hls_data: dict,
     busif: str,
     reg_block: Optional[AddressBlock],
+    *,
+    kernel=None,
+    connected_axi_ports: Optional[set[str]] = None,
+    instance_name: Optional[str] = None,
 ) -> List[dict]:
     if reg_block is None or not reg_block.registers:
         return []
 
-    reg_by_name = {str(r.name): r for r in reg_block.registers if getattr(r, "name", None)}
+    reg_by_name = {
+        str(r.name): r for r in reg_block.registers if getattr(r, "name", None)}
     out: List[tuple[int, int, dict]] = []
 
     for order_idx, arg in enumerate(parse_hls_args(hls_data)):
         idx = arg["index"] if arg["index"] is not None else order_idx
         refs = []
         seen_names = set()
+        interface_refs: List[str] = []
+        seen_ifaces = set()
         for ref in arg.get("hw_refs", []):
             ref_type = str(ref.get("type", "")).lower()
+            if ref_type == "interface":
+                iface_name = str(ref.get("interface", "") or "")
+                if iface_name and iface_name not in seen_ifaces:
+                    seen_ifaces.add(iface_name)
+                    interface_refs.append(iface_name)
+                continue
             if ref_type != "register":
                 continue
             usage = str(ref.get("usage", "")).lower()
@@ -165,15 +206,18 @@ def _build_functional_args_from_hls(
         if r_flag == 0 and w_flag == 0:
             continue
 
-        base_offset = min(int(getattr(reg, "address_offset", 0) or 0) for reg in refs)
-        logical_name = _register_stem(str(getattr(refs[0], "name", "") or arg["name"]))
+        base_offset = min(int(getattr(reg, "address_offset", 0) or 0)
+                          for reg in refs)
+        logical_name = _register_stem(
+            str(getattr(refs[0], "name", "") or arg["name"]))
         src_type = str(arg.get("src_type", ""))
         src_size = arg.get("src_size")
         reg_bits = sum(int(getattr(reg, "size", 32) or 32) for reg in refs)
         has_address_ref = any(
             str(ref.get("usage", "")).lower() == "address" for ref in (arg.get("hw_refs", []) or [])
         )
-        arg_type = "buffer" if ("*" in src_type or has_address_ref) else "scalar"
+        arg_type = "buffer" if (
+            "*" in src_type or has_address_ref) else "scalar"
 
         if arg_type == "buffer":
             if reg_bits > 0 and src_size is not None and src_size > 0:
@@ -192,19 +236,44 @@ def _build_functional_args_from_hls(
             else:
                 range_bits = 32
 
+        arg_item = {
+            "idx": int(idx),
+            "name": logical_name,
+            "type": arg_type,
+            "offset": _format_hex_prefixed(base_offset),
+            "range": str(int(range_bits)),
+            "r": int(r_flag),
+            "w": int(w_flag),
+        }
+
+        if arg_type == "buffer" and kernel is not None and connected_axi_ports is not None:
+            resolved_port = None
+            for iface_name in interface_refs:
+                canonical_port = _resolve_axi4full_port_name(kernel, iface_name)
+                if canonical_port is None:
+                    continue
+                if canonical_port not in connected_axi_ports:
+                    continue
+                resolved_port = canonical_port
+                break
+            if resolved_port is None:
+                logger.warning(
+                    "Could not correlate buffer arg '%s' on instance '%s' (kernel '%s') "
+                    "to a connected AXI4FULL port from hwRefs interfaces %s; "
+                    "omitting functional_args port metadata.",
+                    arg["name"],
+                    instance_name or "",
+                    getattr(kernel, "name", ""),
+                    interface_refs,
+                )
+            else:
+                arg_item["port"] = resolved_port
+
         out.append(
             (
                 int(idx),
                 base_offset,
-                {
-                    "idx": int(idx),
-                    "name": logical_name,
-                    "type": arg_type,
-                    "offset": _format_hex_prefixed(base_offset),
-                    "range": str(int(range_bits)),
-                    "r": int(r_flag),
-                    "w": int(w_flag),
-                },
+                arg_item,
             )
         )
 
@@ -250,7 +319,8 @@ def _build_functional_args_fallback(reg_block: Optional[AddressBlock]) -> List[d
             groups[stem] = g
         g["regs"].append(reg)
         g["split"] = bool(g["split"] or _is_split_register_name(reg_name))
-        g["offset"] = min(g["offset"], int(getattr(reg, "address_offset", 0) or 0))
+        g["offset"] = min(g["offset"], int(
+            getattr(reg, "address_offset", 0) or 0))
 
     ordered = sorted(groups.values(), key=lambda g: (g["offset"], g["name"]))
     out: List[dict] = []
@@ -302,7 +372,8 @@ def _assign_mem_indices(
     *,
     num_mem_ports: int = 8,
 ) -> Dict[Tuple[str, str], int]:
-    buckets: Dict[int, List[Tuple[str, str]]] = {i: [] for i in range(num_mem_ports)}
+    buckets: Dict[int, List[Tuple[str, str]]] = {
+        i: [] for i in range(num_mem_ports)}
     rr = 0
 
     for inst in instances.values():
@@ -363,13 +434,15 @@ def build_system_map_context(
         if hls_path is None:
             hls_cache[kernel_type] = None
             return None
-        hls_cache[kernel_type] = load_hls_metadata(Path(hls_path), strict=False)
+        hls_cache[kernel_type] = load_hls_metadata(
+            Path(hls_path), strict=False)
         return hls_cache[kernel_type]
 
     kernels: List[dict] = []
     for inst_name in sorted(instances.keys()):
         inst = instances[inst_name]
-        entries = sorted(axilite_by_inst.get(inst_name, []), key=lambda e: e["busif"])
+        entries = sorted(axilite_by_inst.get(
+            inst_name, []), key=lambda e: e["busif"])
         if not entries:
             continue
 
@@ -400,22 +473,14 @@ def build_system_map_context(
                         "range": str(reg.size),
                     }
                 )
-        hls_data = _kernel_hls_data(inst.kernel.name)
-        if hls_data is not None:
-            functional_args = _build_functional_args_from_hls(
-                hls_data,
-                selected["busif"],
-                reg_block,
-            )
-        else:
-            functional_args = _build_functional_args_fallback(reg_block)
-
         connections: List[dict] = []
+        connected_axi_ports: set[str] = set()
         mem_sp = inst.params.get("mem_sp", {}) or {}
         for port in inst.kernel.ports_of_type(BusType.AXI4FULL):
             tgt = mem_sp.get(port.name)
             if not tgt:
                 continue
+            connected_axi_ports.add(port.name)
             domain = str(tgt.get("domain", "")).upper()
             idx = _coerce_optional_int(tgt.get("index"))
             if domain == "MEM" and idx is None:
@@ -426,6 +491,18 @@ def build_system_map_context(
                     "target": _format_target(domain, idx),
                 }
             )
+        hls_data = _kernel_hls_data(inst.kernel.name)
+        if hls_data is not None:
+            functional_args = _build_functional_args_from_hls(
+                hls_data,
+                selected["busif"],
+                reg_block,
+                kernel=inst.kernel,
+                connected_axi_ports=connected_axi_ports,
+                instance_name=inst_name,
+            )
+        else:
+            functional_args = _build_functional_args_fallback(reg_block)
 
         kernels.append(
             {

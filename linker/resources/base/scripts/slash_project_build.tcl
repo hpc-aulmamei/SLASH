@@ -1,5 +1,5 @@
 proc _slash_usage {} {
-    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> --util-report-file <path> [--install-dir <path>] [--jobs <n>]"
+    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> --util-report-file <path> --install-dir <path> --jobs <n> --pre-synth-tcl <path> ..."
 }
 
 proc _require_file {path label} {
@@ -17,7 +17,7 @@ proc _require_dir {path label} {
 array set opts {
     --project-name ""
     --ip-repo ""
-    --install-dir "/opt/amd/slash"
+    --install-dir ""
     --linker-results-dir ""
     --rm-work-dir ""
     --artifact-out-dir ""
@@ -25,9 +25,24 @@ array set opts {
     --jobs 8
 }
 
+set pre_synth_tcls [list]
+
 set idx 0
 while {$idx < [llength $argv]} {
     set key [lindex $argv $idx]
+    if {$key eq "--pre-synth-tcl"} {
+        incr idx
+        if {$idx >= [llength $argv]} {
+            error "Missing value for '$key'. [_slash_usage]"
+        }
+        set pre_synth_tcl [lindex $argv $idx]
+        if {$pre_synth_tcl eq ""} {
+            error "Empty value for '$key'. [_slash_usage]"
+        }
+        lappend pre_synth_tcls [file normalize $pre_synth_tcl]
+        incr idx
+        continue
+    }
     if {![info exists opts($key)]} {
         error "Unknown argument '$key'. [_slash_usage]"
     }
@@ -39,7 +54,7 @@ while {$idx < [llength $argv]} {
     incr idx
 }
 
-foreach req {--project-name --ip-repo --linker-results-dir --rm-work-dir --artifact-out-dir --util-report-file} {
+foreach req {--project-name --ip-repo --install-dir --linker-results-dir --rm-work-dir --artifact-out-dir --util-report-file} {
     if {$opts($req) eq ""} {
         error "Missing required argument '$req'. [_slash_usage]"
     }
@@ -60,10 +75,12 @@ file mkdir [file dirname $util_report_file]
 set rm_work_dir [file normalize $rm_work_dir]
 set artifact_out_dir [file normalize $artifact_out_dir]
 set util_report_file [file normalize $util_report_file]
+set timing_report_file [file join $rm_work_dir "report_timing_${proj_name}.txt"]
+set ltx_file [file join $artifact_out_dir "top_i_slash_slash_${proj_name}_inst_0_hw_probes.ltx"]
 
 set abs_shell_dcp [file join $install_dir "abs_shell_slash.dcp"]
 set base_bd [file join $install_dir "slash_base" "slash_base.bd"]
-set generated_bd_tcl [file join $linker_results_dir "bd" "slash_${proj_name}.tcl"]
+set generated_bd_tcl [file join $linker_results_dir "slash.tcl"]
 set script_dir [file dirname [file normalize [info script]]]
 set linker_root [file normalize [file join $script_dir ".." ".." ".."]]
 set base_ip_repo [file join $linker_root "resources" "base" "iprepo"]
@@ -74,6 +91,9 @@ _require_dir $base_ip_repo "base IP repository directory"
 _require_file $abs_shell_dcp "abstract shell DCP"
 _require_file $base_bd "installed slash_base BD"
 _require_file $generated_bd_tcl "generated slash BD Tcl"
+foreach pre_synth_tcl $pre_synth_tcls {
+    _require_file $pre_synth_tcl "pre-synth Tcl"
+}
 
 puts "PROJECT NAME:      $proj_name"
 puts "IP REPO:           $ip_repo"
@@ -83,7 +103,10 @@ puts "BASE IP REPO:      $base_ip_repo"
 puts "RM WORK DIR:       $rm_work_dir"
 puts "ARTIFACT OUT DIR:  $artifact_out_dir"
 puts "UTIL REPORT FILE:  $util_report_file"
+puts "TIMING REPORT:     $timing_report_file"
+puts "HW PROBES LTX:     $ltx_file"
 puts "JOBS:              $jobs"
+puts "PRE-SYNTH TCLS:    $pre_synth_tcls"
 
 set slash_proj_name "slash_${proj_name}"
 set slash_rm_name "${slash_proj_name}_rm"
@@ -111,6 +134,10 @@ foreach p [get_bd_intf_ports] {
     set_property HDL_ATTRIBUTE.LOCKED {TRUE} $p
 }
 source $generated_bd_tcl
+foreach pre_synth_tcl $pre_synth_tcls {
+    puts "Sourcing pre-synth Tcl: $pre_synth_tcl"
+    source $pre_synth_tcl
+}
 
 launch_runs "${slash_rm_name}_synth_1" -jobs $jobs
 wait_on_run "${slash_rm_name}_synth_1"
@@ -124,6 +151,9 @@ launch_runs impl_1 -jobs $jobs
 wait_on_run impl_1
 open_run impl_1
 
+report_timing_summary -delay_type min_max -check_timing_verbose -max_paths 1 -input_pins -routable_nets -file $timing_report_file
+
 set partial_pdi [file join $artifact_out_dir "top_i_slash_slash_${proj_name}_inst_0_partial.pdi"]
 write_device_image -cell top_i/slash -force $partial_pdi
+write_debug_probes -cell top_i/slash -force $ltx_file
 report_utilization -hierarchical -hierarchical_depth 3 -hierarchical_percentages -file $util_report_file

@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -29,26 +29,12 @@ import shlex
 import shutil
 import subprocess
 import tarfile
-from typing import Iterable, Optional
+from typing import Iterable
 
-from emit.emu.tb_ctx import infer_sol1_json_from_component_xml
-from core.results_dir import resolve_linker_platform_dir
+from emit.hls_meta import infer_hls_json_from_component_xml
+from core.command_config import LinkerConfiguration
 
 logger = logging.getLogger(__name__)
-
-
-def _results_root(project_name: str, results_dir: Optional[Path] = None) -> Path:
-    if results_dir is not None:
-        return Path(results_dir).resolve()
-    return resolve_linker_platform_dir(project_name, "emu")
-
-
-def _emu_root(project_name: str, results_dir: Optional[Path] = None) -> Path:
-    return _results_root(project_name, results_dir) / "sw_emu"
-
-
-def _project_root(project_name: str, results_dir: Optional[Path] = None) -> Path:
-    return _results_root(project_name, results_dir)
 
 
 def _find_vitis_include() -> Path:
@@ -74,12 +60,11 @@ def _find_vitis_include() -> Path:
     )
 
 
-def _collect_kernel_cpp(component_xmls: Iterable[str | Path]) -> list[Path]:
+def _collect_kernel_cpp(config: LinkerConfiguration) -> list[Path]:
     cpp_files: list[Path] = []
     seen: set[Path] = set()
 
-    for kxml in component_xmls:
-        kpath = Path(kxml).resolve()
+    for kpath in config.kernel_component_paths:
         if not kpath.exists():
             raise FileNotFoundError(f"Kernel component.xml not found: {kpath}")
         # component.xml -> ip -> impl -> <solution>
@@ -228,7 +213,8 @@ def _collect_user_headers_from_sources(sources: Iterable[Path], include_dirs: It
         visited_files.add(rp)
 
         try:
-            lines = rp.read_text(encoding="utf-8", errors="ignore").splitlines()
+            lines = rp.read_text(
+                encoding="utf-8", errors="ignore").splitlines()
         except OSError:
             return
 
@@ -254,23 +240,21 @@ def _collect_user_headers_from_sources(sources: Iterable[Path], include_dirs: It
     return header_list
 
 
-def _collect_emu_compile_inputs(component_xmls: Iterable[str | Path]) -> tuple[list[Path], list[Path], list[Path]]:
+def _collect_emu_compile_inputs(config: LinkerConfiguration) -> tuple[list[Path], list[Path], list[Path]]:
     """
     Returns:
       (user_cpp_sources, user_include_dirs, force_include_headers)
     """
-    component_xml_list = [Path(p) for p in component_xmls]
-
     cpp_files: list[Path] = []
     include_dirs: list[Path] = []
     force_headers: list[Path] = []
 
-    for kxml in component_xml_list:
+    for kxml in config.kernel_component_paths:
         kpath = Path(kxml).resolve()
         if not kpath.exists():
             raise FileNotFoundError(f"Kernel component.xml not found: {kpath}")
 
-        hls_json = infer_sol1_json_from_component_xml(kpath)
+        hls_json = infer_hls_json_from_component_xml(kpath)
         srcs = _resolve_hls_c_sources(hls_json)
         cpp_files.extend(srcs)
 
@@ -282,37 +266,31 @@ def _collect_emu_compile_inputs(component_xmls: Iterable[str | Path]) -> tuple[l
             include_dirs.extend(_extract_include_dirs_from_cfg(cfg))
 
         include_dirs.extend([p.parent for p in srcs])
-        force_headers.extend(_collect_user_headers_from_sources(srcs, include_dirs))
+        force_headers.extend(
+            _collect_user_headers_from_sources(srcs, include_dirs))
 
     return (
-        _dedupe_paths(cpp_files) or _collect_kernel_cpp(component_xml_list),
+        _dedupe_paths(cpp_files) or _collect_kernel_cpp(
+            config.kernel_component_paths),
         _dedupe_paths(include_dirs),
         _dedupe_paths(force_headers),
     )
 
 
-def build_emu_project(
-    project_name: str,
-    component_xmls: Iterable[str | Path],
-    *,
-    tb_cpp: Optional[Path] = None,
-    output_name: str = "vpp_emu",
-    results_dir: Optional[Path] = None,
-) -> None:
-    emu_root = _emu_root(project_name, results_dir)
-    emu_root.mkdir(parents=True, exist_ok=True)
-
-    tb_path = Path(tb_cpp) if tb_cpp else emu_root / "tb.cpp"
+def build_emu_project(config: LinkerConfiguration) -> None:
+    tb_path = config.build_dir / "tb.cpp"
     if not tb_path.exists():
         raise FileNotFoundError(f"tb.cpp not found: {tb_path}")
 
-    kernel_cpps, user_include_dirs, force_headers = _collect_emu_compile_inputs(component_xmls)
+    kernel_cpps, user_include_dirs, force_headers = _collect_emu_compile_inputs(
+        config)
     cpp_files = [tb_path] + kernel_cpps
     if not cpp_files:
-        raise FileNotFoundError("No C++ sources found to build emulation executable.")
+        raise FileNotFoundError(
+            "No C++ sources found to build emulation executable.")
 
     vitis_include = _find_vitis_include()
-    out_path = emu_root / output_name
+    vpp_emu_path = config.build_dir / "vpp_emu"
 
     include_flags = []
     for inc in user_include_dirs:
@@ -327,44 +305,35 @@ def build_emu_project(
         + include_flags
         + force_include_flags
         + [str(p) for p in cpp_files]
-        + ["-o", str(out_path), "-I", str(vitis_include), "-lzmq", "-I", "/usr/include/jsoncpp/", "-ljsoncpp"]
+        + ["-o", str(vpp_emu_path), "-I", str(vitis_include),
+           "-lzmq", "-I", "/usr/include/jsoncpp/", "-ljsoncpp"]
     )
     if force_headers:
-        logger.info("EMU compile force-including %d user header(s)", len(force_headers))
+        logger.info("EMU compile force-including %d user header(s)",
+                    len(force_headers))
     if user_include_dirs:
-        logger.info("EMU compile adding %d user include dir(s)", len(user_include_dirs))
+        logger.info("EMU compile adding %d user include dir(s)",
+                    len(user_include_dirs))
     logger.info("Building emulation executable: %s", " ".join(cmd))
-    subprocess.run(cmd, cwd=str(emu_root), check=True)
-    logger.info("Emulation build outputs in %s", emu_root)
+    subprocess.run(cmd, cwd=str(config.build_dir), check=True)
+    logger.info("Emulation build outputs in %s", config.build_dir)
 
 
-def package_emu_artifacts(
-    project_name: str,
-    *,
-    output_name: Optional[str] = None,
-    results_dir: Optional[Path] = None,
-) -> Path:
-    project_root = _project_root(project_name, results_dir)
-    emu_root = _emu_root(project_name, results_dir)
-    system_map = project_root / "system_map.xml"
-    vpp_emu = emu_root / "vpp_emu"
-    emu_manifest = emu_root / "emu_manifest.json"
+def package_emu_artifacts(config: LinkerConfiguration) -> Path:
+    system_map = config.build_dir / "system_map.xml"
+    vpp_emu = config.build_dir / "vpp_emu"
+    emu_manifest = config.build_dir / "emu_manifest.json"
 
     if not system_map.exists():
         raise FileNotFoundError(f"system_map.xml not found: {system_map}")
     if not vpp_emu.exists():
         raise FileNotFoundError(f"vpp_emu not found: {vpp_emu}")
 
-    out_name = output_name or f"{project_name}_emu.vbin"
-    out_path = project_root / out_name
-    if out_path.exists():
-        out_path.unlink()
-
-    with tarfile.open(out_path, mode="w") as tf:
+    with tarfile.open(config.out_path, mode="w") as tf:
         tf.add(system_map, arcname="system_map.xml")
         tf.add(vpp_emu, arcname="vpp_emu")
         if emu_manifest.exists():
             tf.add(emu_manifest, arcname="emu_manifest.json")
 
-    logger.info("Emulation vbin in %s", out_path)
-    return out_path
+    logger.info("Emulation vbin in %s", config.out_path)
+    return config.out_path

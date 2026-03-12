@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-#
+# 
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-#
+# 
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-#
+# 
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -19,75 +19,85 @@
 # ##################################################################################################
 
 from __future__ import annotations
+
 import re
-from typing import Dict, List
+from typing import Dict
+
 from core.kernel import KernelInstance
 from core.port import BusType
 
-_ETH_EP_RE = re.compile(r"^eth_(\d+)\.(tx0|tx1|rx0|rx1)$", re.IGNORECASE)
-def _port_norm(s): return re.sub(r"[^a-z0-9]", "", s.lower())
+
+_AXIS_ILA_NAME = "axis_ila_debug_0"
+_MAX_MONITOR_SLOTS = 16
+_port_norm = lambda s: re.sub(r"[^a-z0-9]", "", s.lower())
 
 
 def _resolve_port_name(kernel, requested: str) -> str:
     if requested in kernel.ports:
         return requested
+
     low = {n.lower(): n for n in kernel.ports.keys()}
     rlow = requested.lower()
     if rlow in low:
         return low[rlow]
+
     norm_map = {_port_norm(n): n for n in kernel.ports.keys()}
     rnorm = _port_norm(requested)
     if rnorm in norm_map:
         return norm_map[rnorm]
+
     raise KeyError(
-        f"Kernel '{kernel.name}' has no port named '{requested}'. "
+        f"Port '{requested}' not found on kernel '{kernel.name}'. "
         f"Available: {list(kernel.ports.keys())}"
     )
 
 
-def build_stream_connect_context(
+def _axis_ila_slot_meta(ptype: BusType) -> tuple[str, str]:
+    if ptype == BusType.AXIS:
+        return ("AXIS", "xilinx.com:interface:axis_rtl:1.0")
+    if ptype in {BusType.AXILITE, BusType.AXI4FULL}:
+        return ("AXI", "xilinx.com:interface:aximm_rtl:1.0")
+    raise ValueError(
+        "[debug] only AXIS/AXILITE/AXI4FULL ports are supported for axis_ila probes."
+    )
+
+
+def build_system_ila_debug_context(
     instances: Dict[str, KernelInstance],
-    streams: List[object],
+    debug_spec,
 ) -> dict:
-    """
-    Convert config 'stream_connect=src_inst.src_port:dst_inst.dst_port'
-    into {src_pin, dst_pin}, validating AXIS.
-    NOTE: pass ONLY non-eth streams here (use build_network_axis_context first).
-    """
-    out: List[dict] = []
+    """Build context for one multi-slot axis_ila core."""
+    debug_nets = list(getattr(debug_spec, "nets", []) or [])
+    if len(debug_nets) > _MAX_MONITOR_SLOTS:
+        raise ValueError(
+            f"[debug] configured {len(debug_nets)} nets, but axis_ila supports at most "
+            f"{_MAX_MONITOR_SLOTS} monitor slots."
+        )
 
-    for s in streams:
-        # prevent accidental eth_* usage here
-        if _ETH_EP_RE.match(f"{s.src_inst}.{s.src_port}") or _ETH_EP_RE.match(f"{s.dst_inst}.{s.dst_port}"):
-            raise ValueError(
-                "eth_* endpoint seen in generic builder. "
-                "Call build_network_axis_context() first and pass only its 'streams_leftover' here."
-            )
+    slots: list[dict] = []
+    for idx, net in enumerate(debug_nets):
+        inst_name = getattr(net, "inst", "")
+        port_name = getattr(net, "port", "")
 
-        if s.src_inst not in instances:
-            raise KeyError(f"stream_connect: unknown instance '{s.src_inst}'")
-        if s.dst_inst not in instances:
-            raise KeyError(f"stream_connect: unknown instance '{s.dst_inst}'")
+        if inst_name not in instances:
+            raise KeyError(f"[debug] net refers to unknown instance '{inst_name}'.")
 
-        src_inst = instances[s.src_inst]
-        dst_inst = instances[s.dst_inst]
+        inst = instances[inst_name]
+        canon_port = _resolve_port_name(inst.kernel, port_name)
+        slot_suffix, intf_type = _axis_ila_slot_meta(inst.kernel.port(canon_port).ptype)
 
-        src_port = _resolve_port_name(src_inst.kernel, s.src_port)
-        dst_port = _resolve_port_name(dst_inst.kernel, s.dst_port)
+        slots.append(
+            {
+                "idx": idx,
+                "src_pin": f"{inst_name}/{canon_port}",
+                "slot_pin": f"SLOT_{idx}_{slot_suffix}",
+                "intf_type": intf_type,
+            }
+        )
 
-        src_p = src_inst.kernel.port(src_port)
-        dst_p = dst_inst.kernel.port(dst_port)
-
-        if src_p.ptype != BusType.AXIS:
-            raise ValueError(
-                f"stream_connect: {s.src_inst}.{src_port} is not AXIS (got {src_p.ptype.name})")
-        if dst_p.ptype != BusType.AXIS:
-            raise ValueError(
-                f"stream_connect: {s.dst_inst}.{dst_port} is not AXIS (got {dst_p.ptype.name})")
-
-        out.append({
-            "src_pin": f"{s.src_inst}/{src_port}",
-            "dst_pin": f"{s.dst_inst}/{dst_port}",
-        })
-
-    return {"axis_streams": out}
+    return {
+        "debug_axis_ila_enabled": bool(slots),
+        "debug_axis_ila_name": _AXIS_ILA_NAME,
+        "debug_axis_ila_slots": slots,
+        "debug_axis_ila_num_slots": len(slots),
+    }
