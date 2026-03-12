@@ -37,6 +37,7 @@ def _register_block_for_axilite(inst: KernelInstance, busif: str):
     """
     k = inst.kernel
     mmaps = getattr(k, "memory_maps", []) or []
+
     for mm in mmaps:
         if mm.name and mm.name.lower() == busif.lower():
             for ab in mm.address_blocks:
@@ -76,9 +77,9 @@ def build_axilite_address_context(
 
     for iname in sorted(instances.keys()):
         inst = instances[iname]
-        # Derive both segment name and range from the register addressBlock in component.xml.
+        # For each AXI-Lite interface on this kernel
         for p in inst.kernel.ports_of_type(BusType.AXILITE):
-            # Decide the address block from memory maps
+            # Derive both segment name and range from the register addressBlock in component.xml.
             ab = _register_block_for_axilite(inst, p.name)
             rg = int(ab.range)
             if rg <= 0:
