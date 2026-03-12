@@ -20,43 +20,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import logging
 import os
 import shutil
 import subprocess
 import tarfile
-import tempfile
-from typing import Iterable
 
 from core.command_config import LinkerConfiguration
 
 logger = logging.getLogger(__name__)
 
-
-def _copy_kernels_to_iprepo(component_xmls: Iterable[str | Path], iprepo_dir: Path) -> None:
-    iprepo_dir.mkdir(parents=True, exist_ok=True)
-
-    # Clean previous kernel_* entries
-    for p in iprepo_dir.glob("kernel_*"):
-        if p.is_dir():
-            shutil.rmtree(p, ignore_errors=True)
-
-    for kxml in component_xmls:
-        kpath = Path(kxml).resolve()
-        if not kpath.exists():
-            raise FileNotFoundError(f"Kernel component.xml not found: {kpath}")
-        kernel_dir = kpath.parent
-        target_dir = Path(tempfile.mkdtemp(
-            prefix="kernel_", dir=str(iprepo_dir)))
-        shutil.copytree(kernel_dir, target_dir, dirs_exist_ok=True)
-
-
 def create_sim_project(config: LinkerConfiguration) -> None:
     config.build_dir.mkdir(parents=True, exist_ok=True)
 
     # Clean generated subfolders but keep run_pre.tcl if already generated.
-    for sub in ["sim_prj", "iprepo", "build", "xsim.dir"]:
+    for sub in ["sim_prj", "build", "xsim.dir"]:
         p = config.build_dir / sub
         if p.exists():
             shutil.rmtree(p, ignore_errors=True)
@@ -66,9 +44,10 @@ def create_sim_project(config: LinkerConfiguration) -> None:
                 p.unlink()
             except OSError:
                 pass
-
-    iprepo_dir = config.build_dir / "iprepo"
-    _copy_kernels_to_iprepo(config.kernel_component_paths, iprepo_dir)
+    
+    # Copy all kernels into the IP repository
+    for kernel in config.kernels:
+        shutil.copytree(kernel.component_xml_path.parent, config.ip_repository / kernel.name)
 
     tcl = config.build_dir / "run_pre.tcl"
     if not tcl.exists():
