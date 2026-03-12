@@ -845,40 +845,34 @@ static uint16_t client_handle_request_device_hotplug_op(
         return VRTD_RET_NOEXIST;
     }
 
-    struct slash_hotplug *hotplug = slash_hotplug_open(NULL);
-    if (hotplug == NULL) {
-        return hotplug_errno_to_vrtd_ret(errno);
-    }
-
     switch (req_body->op) {
     case VRTD_DEVICE_HOTPLUG_OP_RESCAN:
-        ret = slash_hotplug_rescan(hotplug);
+        ret = slash_hotplug_rescan(g_hotplug);
         break;
     case VRTD_DEVICE_HOTPLUG_OP_REMOVE:
-        ret = slash_hotplug_remove(hotplug, d->pci_info.bdf);
+        ret = slash_hotplug_remove(g_hotplug, d->pci_info.bdf);
         break;
     case VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR:
-        ret = slash_hotplug_toggle_sbr(hotplug, d->pci_info.bdf);
+        ret = slash_hotplug_toggle_sbr(g_hotplug, d->pci_info.bdf);
         break;
     case VRTD_DEVICE_HOTPLUG_OP_HOTPLUG:
-        ret = slash_hotplug_hotplug(hotplug, d->pci_info.bdf);
+        ret = slash_hotplug_hotplug(g_hotplug, d->pci_info.bdf);
         break;
-    case VRTD_DEVICE_HOTPLUG_OP_RESET_SEQUENCE:
-        ret = reset_with_ami(d, &client->state->devices);
-        break;
+    case VRTD_DEVICE_HOTPLUG_OP_RESET_SEQUENCE: {
+        uint16_t reset_ret = reset_with_ami(d, &client->state->devices);
+        if (reset_ret != VRTD_RET_OK) {
+            return reset_ret;
+        }
+        resp_body->zero = 0;
+        *resp_size = sizeof(*resp_body);
+        return VRTD_RET_OK;
+    }
     default:
-        (void) slash_hotplug_close(hotplug);
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
     if (ret != 0) {
-        int err = errno;
-        (void) slash_hotplug_close(hotplug);
-        return hotplug_errno_to_vrtd_ret(err);
-    }
-
-    if (slash_hotplug_close(hotplug) != 0) {
-        return VRTD_RET_INTERNAL_ERROR;
+        return hotplug_errno_to_vrtd_ret(errno);
     }
 
     resp_body->zero = 0;

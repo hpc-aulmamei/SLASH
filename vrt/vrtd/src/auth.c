@@ -544,7 +544,7 @@ int ensure_role(struct client *client)
     char *role_name = NULL;
 
     int ret = asprintf(&role_name, "Internal role for user: %u", (unsigned int) client->uid);
-    PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Allocation error when intenral role for user");
+    PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Allocation error when creating internal role for user");
 
     _cleanup_(cleanup_rolep)
     struct role *role = NULL;
