@@ -21,7 +21,6 @@
 from __future__ import annotations
 from typing import Dict, List
 from core.kernel import KernelInstance
-from core.regs import AddressBlock
 from core.port import BusType
 
 
@@ -31,28 +30,27 @@ def _align_up(x: int, a: int) -> int:
 
 def _register_block_for_axilite(inst: KernelInstance, busif: str):
     """
-    Try to find a 'register' usage AddressBlock under a MemoryMap that matches the busif.
+    Find the 'register' usage addressBlock for an AXI-Lite bus interface.
     Heuristics:
       - memoryMap.name equals busif; use its first 'register' addressBlock
       - otherwise, first 'register' block in any map
-      - otherwise, raise a ValueError
     """
     k = inst.kernel
-    for mm in k.memory_maps:
-        if (not mm.name) or (mm.name.lower() != busif.lower()):
-            continue
-
+    mmaps = getattr(k, "memory_maps", []) or []
+    for mm in mmaps:
+        if mm.name and mm.name.lower() == busif.lower():
+            for ab in mm.address_blocks:
+                if (ab.usage or "").lower() == "register":
+                    return ab
+    for mm in mmaps:
         for ab in mm.address_blocks:
-            if (ab.usage or "").lower() == "register" and ab.range:
-                return ab
-    
-    # Otherwise first register block anywhere
-    for mm in k.memory_maps:
-        for ab in mm.address_blocks:
-            if (ab.usage or "").lower() == "register" and ab.range:
+            if (ab.usage or "").lower() == "register":
                 return ab
 
-    raise ValueError(f"AXI-Lite interface '{busif}' on kernel '{k.name}' has no matching 'register' address block in its memory maps.")
+    raise ValueError(
+        f"No AXI-Lite register addressBlock found in component.xml for "
+        f"kernel '{k.name}' bus interface '{busif}'"
+    )
 
 
 def build_axilite_address_context(
@@ -78,13 +76,18 @@ def build_axilite_address_context(
 
     for iname in sorted(instances.keys()):
         inst = instances[iname]
-        # For each AXI-Lite interface on this kernel
+        # Derive both segment name and range from the register addressBlock in component.xml.
         for p in inst.kernel.ports_of_type(BusType.AXILITE):
             # Decide the address block from memory maps
             ab = _register_block_for_axilite(inst, p.name)
-            range = int(ab.range)
+            rg = int(ab.range)
+            if rg <= 0:
+                raise ValueError(
+                    f"AXI-Lite register addressBlock '{ab.name}' for kernel '{inst.kernel.name}' "
+                    f"bus interface '{p.name}' has invalid range {rg}"
+                )
             # Hardware address windows should be aligned to their size (and at least min_align)
-            align = max(min_align, range)
+            align = max(min_align, rg)
             next_off = _align_up(next_off, align)
 
             items.append({
@@ -92,9 +95,9 @@ def build_axilite_address_context(
                 "busif": p.name,
                 "segment": ab.name,
                 "offset": next_off,
-                "range": range,
+                "range": rg,
                 "addr_space": addr_space,
             })
-            next_off += _align_up(range, align)
+            next_off += _align_up(rg, align)
 
     return {"axilite_addr": items}
