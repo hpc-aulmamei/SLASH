@@ -21,8 +21,8 @@ PrivateDevices=false
 RuntimeDirectory=vrtd
 RuntimeDirectoryMode=0755
 
-AmbientCapabilities=CAP_SYS_RAWIO
-CapabilityBoundingSet=CAP_SYS_RAWIO
+AmbientCapabilities=CAP_SYS_RAWIO CAP_DAC_OVERRIDE
+CapabilityBoundingSet=CAP_SYS_RAWIO CAP_DAC_OVERRIDE
 
 # Hardening
 NoNewPrivileges=true
