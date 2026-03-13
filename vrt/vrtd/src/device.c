@@ -18,6 +18,24 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file device.c
+ * @brief Sysfs-based device discovery and initialization for SLASH FPGA devices.
+ *
+ * This module implements the device lifecycle for the vrtd daemon. It discovers
+ * AMD Alveo V80 (SLASH) devices by globbing /dev/slash_ctl* character device
+ * nodes exposed by the kernel driver, then opens each device by:
+ *
+ *   1. Opening the control device via libslash (slash_ctldev_open).
+ *   2. Locating the matching QDMA control device by PCI BDF (bus:device prefix)
+ *      via sysfs enumeration under /sys/class/misc/.
+ *   3. Probing all six PCI BARs and memory-mapping the usable ones.
+ *   4. Initializing subsystem drivers: clock driver, design writer, memory map.
+ *
+ * Teardown (cleanup_device) releases resources in reverse order to ensure
+ * dependent subsystems are torn down before the underlying control device.
+ */
+
 #define _GNU_SOURCE
 
 #include "device.h"
@@ -46,6 +64,20 @@ static int device_read_pci_info(struct device *d, struct vrtd_pci_info *out);
  * Find the /dev/ path of the qdma_ctl device sharing the same PCI bus:device
  * as the given BDF. Returns 0 on success (path written to out_path), -1 on
  * failure or no match (out_path set to NULL).
+ *
+ * The lookup works by:
+ *   1. Extracting the bus:device prefix from ctl_bdf (e.g., "0000:65:00" from
+ *      "0000:65:00.1").
+ *   2. Globbing /sys/class/misc/slash_qdma_ctl_<prefix>.* to find any QDMA
+ *      misc device nodes registered by the kernel driver on the same PCI slot.
+ *   3. Reading the uevent file under the matched sysfs entry to extract the
+ *      DEVNAME, and prepending "/dev/" to form the full device path.
+ *
+ * @param ctl_bdf   PCI BDF string of the control device (e.g., "0000:65:00.1").
+ * @param out_path  On success, receives a heap-allocated string with the /dev/
+ *                  path of the QDMA device. Set to NULL if no match is found
+ *                  (which is not an error). Caller must free.
+ * @return 0 on success (match found or no match), -1 on I/O or allocation error.
  */
 static int find_qdma_dev_path_by_bdf(const char *ctl_bdf, char **out_path)
 {
@@ -56,6 +88,7 @@ static int find_qdma_dev_path_by_bdf(const char *ctl_bdf, char **out_path)
         return -1;
     }
 
+    /* Build a glob pattern to match any QDMA misc device on the same PCI slot. */
     _cleanup_(cleanup_free)
     char *pattern = NULL;
     if (asprintf(&pattern, "/sys/class/misc/slash_qdma_ctl_%s.*", prefix) < 0) {
@@ -79,6 +112,7 @@ static int find_qdma_dev_path_by_bdf(const char *ctl_bdf, char **out_path)
 
     const char *entry = g.gl_pathv[0];
 
+    /* Read the uevent file to extract the kernel-assigned DEVNAME. */
     _cleanup_(cleanup_free)
     char *uevent_path = NULL;
     if (asprintf(&uevent_path, "%s/uevent", entry) < 0) {
@@ -90,6 +124,7 @@ static int find_qdma_dev_path_by_bdf(const char *ctl_bdf, char **out_path)
         return -1;
     }
 
+    /* Parse uevent line-by-line looking for DEVNAME=<name>. */
     char line[256];
     while (fgets(line, sizeof(line), f) != NULL) {
         static const char devname_key[] = "DEVNAME=";
@@ -98,6 +133,7 @@ static int find_qdma_dev_path_by_bdf(const char *ctl_bdf, char **out_path)
         }
         const char *devname = line + sizeof(devname_key) - 1;
         size_t len = strlen(devname);
+        /* Strip trailing newline/carriage return characters. */
         while (len > 0 && (devname[len - 1] == '\n' || devname[len - 1] == '\r')) {
             len--;
         }
@@ -114,6 +150,18 @@ static int find_qdma_dev_path_by_bdf(const char *ctl_bdf, char **out_path)
     return 0;
 }
 
+/**
+ * Discover all SLASH control devices and open them.
+ *
+ * Enumerates device nodes by globbing /dev/slash_ctl* and opens each one
+ * that is not already present in the @p devices array. New devices are
+ * appended to the array.
+ *
+ * @param devices  Array of already-opened device pointers; newly discovered
+ *                 devices are appended here. May be empty on first call.
+ * @return 0 on success (including the case where no devices are found),
+ *         -1 on glob or device-open error.
+ */
 int devices_discover_and_open(struct device_ptr_array *devices)
 {
     _cleanup_(globfree)
@@ -144,6 +192,18 @@ int devices_discover_and_open(struct device_ptr_array *devices)
     return devices_open(devices, g.gl_pathc, g.gl_pathv);
 }
 
+/**
+ * Open a set of devices given their /dev/ paths.
+ *
+ * Iterates over @p paths, skipping any that are already present in
+ * @p devices (idempotent re-discovery). Each new device is opened via
+ * device_open() and appended to the array with ownership transfer.
+ *
+ * @param devices  Owning array of device pointers.
+ * @param pathc    Number of paths in @p paths.
+ * @param paths    Array of /dev/ path strings.
+ * @return 0 on success, -1 on error (logged).
+ */
 static int devices_open(struct device_ptr_array *devices, size_t pathc, char **paths)
 {
     for (size_t i = 0; i < pathc; ++i) {
@@ -166,6 +226,28 @@ static int devices_open(struct device_ptr_array *devices, size_t pathc, char **p
     return 0;
 }
 
+/**
+ * Open a single SLASH device and initialize all its subsystems.
+ *
+ * The initialization sequence is:
+ *   1. Allocate the device struct and duplicate the path string.
+ *   2. Open the libslash control device (slash_ctldev_open) for ioctl access.
+ *   3. Initialize the buffer tracking array.
+ *   4. Create the device memory map (for BAR-based address translation).
+ *   5. Create the clock driver (Xilinx clock wizard access via BAR4).
+ *   6. Read PCI info (BDF, vendor/device IDs) via ioctl, then locate and open
+ *      the matching QDMA device by PCI BDF prefix.
+ *   7. If QDMA is available, create the design writer (bitstream programming).
+ *   8. Probe all six PCI BARs: read bar_info and mmap usable BARs.
+ *
+ * On success, ownership of the device is transferred to *out.
+ * On failure, all partially-initialized resources are cleaned up automatically
+ * via the _cleanup_ attribute on the local device pointer.
+ *
+ * @param out   Receives the fully initialized device pointer. Must not be NULL.
+ * @param path  /dev/ path of the control device (e.g., "/dev/slash_ctl0").
+ * @return 0 on success, -1 on error (logged).
+ */
 static int device_open(struct device **out, const char *path)
 {
     PROPAGATE_ERROR_NULL_LOG(out, LOG_ERR, "Internal error: bad call of device_open: null out");
@@ -178,11 +260,13 @@ static int device_open(struct device **out, const char *path)
     d->path = strdup(path);
     PROPAGATE_ERROR_NULL_STDC_LOG(d->path, LOG_ERR, "Failed to allocate memory for device data");
 
+    /* Step 1: Open the libslash control device for ioctl-based communication. */
     d->ctl = slash_ctldev_open(path);
     PROPAGATE_ERROR_NULL_STDC_LOG(d->ctl, LOG_ERR, "Error opening device %s", path);
 
     assert(d->ctl != NULL);
 
+    /* Step 2: Initialize tracking structures and subsystem drivers. */
     d->buffers = buffer_ptr_array_init();
 
     d->memory_map = device_memory_map_create();
@@ -191,7 +275,7 @@ static int device_open(struct device **out, const char *path)
     d->clock_driver = clock_driver_create(d->ctl);
     PROPAGATE_ERROR_NULL_STDC_LOG(d->clock_driver, LOG_ERR, "Error creating clock driver for %s", path);
 
-    /* Match the QDMA ctl device by PCI BDF (bus:device prefix). */
+    /* Step 3: Match the QDMA ctl device by PCI BDF (bus:device prefix). */
     {
         struct vrtd_pci_info pci_info = {0};
         int pci_ret = device_read_pci_info(d, &pci_info);
@@ -225,6 +309,7 @@ static int device_open(struct device **out, const char *path)
                         "Matched QDMA device %s for ctldev %s (BDF %s)",
                         qdma_path, d->path, pci_info.bdf
                     );
+                    /* QDMA available -- create the design writer for bitstream programming. */
                     d->design_writer = design_writer_create(d->qdma);
                     PROPAGATE_ERROR_NULL_STDC_LOG(d->design_writer, LOG_ERR, "Error creating design writer for %s", d->path);
                 }
@@ -238,6 +323,7 @@ static int device_open(struct device **out, const char *path)
         }
     }
 
+    /* Step 4: Probe all PCI BARs (0-5). Read metadata and mmap usable ones. */
     for (size_t i = 0; i < SIZEOF_ARRAY(d->bar_info); i++) {
         d->bar_info[i] = slash_bar_info_read(d->ctl, i);
         if (d->bar_info[i] == NULL) {
@@ -251,6 +337,7 @@ static int device_open(struct device **out, const char *path)
 
         assert(d->bar_info[i] != NULL);
 
+        /* Only open (mmap) BARs that the kernel driver marks as usable. */
         if (d->bar_info[i]->usable) {
             d->bar_files[i] = slash_bar_file_open(d->ctl, i, O_CLOEXEC);
             if (d->bar_files[i] == NULL) {
@@ -263,12 +350,23 @@ static int device_open(struct device **out, const char *path)
         }
     }
 
+    /* Transfer ownership to caller; set local to NULL to prevent cleanup. */
     *out = d;
     d = NULL;
 
-    return 0;   
+    return 0;
 }
 
+/**
+ * Read PCI identification info from the kernel driver via ioctl.
+ *
+ * Populates @p out with the device's BDF string, vendor/device IDs, and
+ * subsystem vendor/device IDs. Also caches the info in d->pci_info.
+ *
+ * @param d    Device with an open control device (d->ctl).
+ * @param out  Receives the PCI info. Zeroed before filling.
+ * @return 0 on success, -1 on error (logged).
+ */
 static int device_read_pci_info(struct device *d, struct vrtd_pci_info *out)
 {
     PROPAGATE_ERROR_NULL_LOG(d, LOG_ERR, "Internal error: bad call of device_read_pci_info: null device");
@@ -296,6 +394,15 @@ static int device_read_pci_info(struct device *d, struct vrtd_pci_info *out)
     return 0;
 }
 
+/**
+ * Check whether a device with the given /dev/ path is already in the array.
+ *
+ * Used during re-discovery to avoid opening the same device twice.
+ *
+ * @param devices  Array of opened devices.
+ * @param path     /dev/ path to search for.
+ * @return true if a device with a matching path exists, false otherwise.
+ */
 static bool devices_contains_path(const struct device_ptr_array *devices, const char *path)
 {
     if (!devices || !path) return false;
@@ -309,6 +416,25 @@ static bool devices_contains_path(const struct device_ptr_array *devices, const 
     return false;
 }
 
+/**
+ * Release all resources held by a device, in reverse initialization order.
+ *
+ * Teardown sequence:
+ *   1. Free DMA buffers.
+ *   2. Destroy the design writer (QDMA bitstream programming).
+ *   3. Destroy the device memory map.
+ *   4. Destroy the clock driver (BAR4 clock wizard access).
+ *   5. Close the QDMA device.
+ *   6. Close all opened BAR file mappings.
+ *   7. Free BAR info metadata.
+ *   8. Close the libslash control device.
+ *   9. Free the path string and the device struct itself.
+ *
+ * Safe to call with NULL (no-op). Errors during close are logged as
+ * warnings but do not prevent further cleanup.
+ *
+ * @param d  Device to clean up, or NULL.
+ */
 void cleanup_device(struct device *d)
 {
     if (d == NULL) {

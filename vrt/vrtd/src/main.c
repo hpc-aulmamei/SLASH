@@ -45,6 +45,14 @@
 #include "signals.h"
 #include "hotplug.h"
 
+/*
+ * The deferred work timer fires every 20ms to poll for completion of
+ * asynchronous design writes (e.g. bitstream loads to the FPGA fabric).
+ * These operations are initiated by client requests but complete
+ * asynchronously via the QDMA subsystem; a 20ms polling interval strikes
+ * a balance between responsiveness and CPU overhead -- fast enough that
+ * clients see sub-frame latency, slow enough to avoid busy-spinning.
+ */
 #define VRTD_DEFERRED_WORK_INTERVAL_USEC (20ULL * 1000ULL)
 
 static void check_journal_and_abort_if_needed(void);
@@ -61,6 +69,13 @@ int main(void)
 {
     struct vrtd state = {0};
 
+    /*
+     * Verify the systemd journal is reachable before doing anything else.
+     * If logging is broken we want to fail *before* sd_notify(READY=1),
+     * so the service never appears started and the sysadmin gets a clear
+     * error from systemctl.  See the detailed rationale above
+     * check_journal_and_abort_if_needed().
+     */
     check_journal_and_abort_if_needed();
 
     globals_init();
@@ -87,6 +102,13 @@ int main(void)
         exit(EXIT_FAILURE);
     }
 
+    /*
+     * Enable the systemd watchdog so that systemd can detect if vrtd
+     * becomes unresponsive (e.g. blocked on a stuck QDMA ioctl or
+     * deadlocked).  sd_event_set_watchdog() automatically sends
+     * keepalive pings at half the interval configured in the unit file
+     * (WatchdogSec=); if we stop pinging, systemd will restart us.
+     */
     ret = configure_watchdog(ev);
     if (ret == -1) {
         LOG(LOG_CRIT, "Failed to configure watchdog");

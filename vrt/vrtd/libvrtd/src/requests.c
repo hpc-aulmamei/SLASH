@@ -18,6 +18,24 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file requests.c
+ *
+ * Wire protocol request/response marshalling for the vrtd C client library.
+ *
+ * Each public vrtd_*() function builds a wire protocol message (header +
+ * body), sends it to the daemon over the AF_UNIX SOCK_SEQPACKET socket,
+ * and receives the response.  File descriptors (BAR fds, QDMA qpair fds)
+ * are passed out-of-band via SCM_RIGHTS ancillary data on the Unix socket.
+ *
+ * The protocol is strictly request-response: one sendmsg() followed by
+ * one recvmsg().  Sequence numbers are included for future pipelining
+ * but currently always set to 1.
+ *
+ * All functions are synchronous and thread-safe only if each thread uses
+ * its own connection fd (obtained from vrtd_connect()).
+ */
+
 #define _GNU_SOURCE
 
 #include <slash/uapi/slash_interface.h>
@@ -37,6 +55,21 @@
 
 #include <vrtd/vrtd.h>
 
+/**
+ * vrtd_recv_response() - Receive a response message from the daemon.
+ * @fd:            Connection socket.
+ * @resp_body_buf: Buffer for the response body (may be NULL if no body expected).
+ * @resp_bufsz:    Size of @resp_body_buf.
+ * @resp_fd:       If non-NULL, receives an out-of-band file descriptor
+ *                 sent by the daemon via SCM_RIGHTS (e.g. a BAR fd or
+ *                 QDMA qpair fd).  Set to -1 if no fd was received.
+ *
+ * Uses recvmsg() with scatter-gather I/O: the header and body are read
+ * into separate buffers in a single system call.  MSG_CMSG_CLOEXEC
+ * ensures any received fd is close-on-exec.
+ *
+ * Return: VRTD_RET_OK on success, or an error code.
+ */
 static enum vrtd_ret vrtd_recv_response(
     int fd,
     void *resp_body_buf,
@@ -85,7 +118,7 @@ static enum vrtd_ret vrtd_recv_response(
         return VRTD_RET_BAD_CONN;
     }
 
-    /* Extract FD if any */
+    /* Extract file descriptor from SCM_RIGHTS ancillary data, if any. */
     for (struct cmsghdr *c = CMSG_FIRSTHDR(&rmsg); c != NULL; c = CMSG_NXTHDR(&rmsg, c)) {
         if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS && c->cmsg_len >= CMSG_LEN(sizeof(int))) {
             assert(resp_fd != NULL);
@@ -127,6 +160,24 @@ int vrtd_connect(const char *path)
     return fd;
 }
 
+/**
+ * vrtd_raw_request() - Send a request and receive the response.
+ * @fd:            Connection socket (from vrtd_connect()).
+ * @opcode:        Wire protocol opcode (VRTD_REQ_*).
+ * @req_body:      Request body payload (may be NULL if @req_size is 0).
+ * @req_size:      Size of @req_body in bytes.
+ * @resp_body_buf: Buffer for the response body.
+ * @resp_bufsz:    Size of @resp_body_buf.
+ * @resp_fd:       If non-NULL, receives an out-of-band fd from the daemon.
+ * @req_fd:        If non-NULL and *req_fd >= 0, sends this fd to the daemon
+ *                 via SCM_RIGHTS (e.g. a bitstream fd for design_write).
+ *
+ * Builds a request message (header + body), optionally attaches an fd
+ * via SCM_RIGHTS ancillary data, sends it with sendmsg(), then waits
+ * for the response via vrtd_recv_response().
+ *
+ * Return: VRTD_RET_OK on success, or an error code.
+ */
 enum vrtd_ret vrtd_raw_request(
     int fd,
     uint16_t opcode,

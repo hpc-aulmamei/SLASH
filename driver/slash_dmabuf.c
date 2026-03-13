@@ -12,6 +12,30 @@
  * 02110-1301, USA.
  */
 
+/**
+ * @file slash_dmabuf.c
+ *
+ * DMA-buf exporter for PCI BAR regions.
+ *
+ * This file implements a dma-buf wrapper around a PCI BAR, allowing
+ * userspace to obtain a file descriptor (via the control device ioctl)
+ * and mmap the BAR for direct MMIO register access.
+ *
+ * Only userspace mmap is supported.  Kernel-side device attachments
+ * (the normal dma-buf import path) are intentionally rejected because
+ * a PCI BAR is I/O memory, not DMA-able system RAM.  The dma-buf
+ * framework is used here solely for its fd-based lifetime management
+ * and mmap infrastructure.
+ *
+ * Cache attribute selection:
+ *   - **Prefetchable BARs** → write-combine mapping (pgprot_writecombine).
+ *     Suitable for frame buffers or bulk data regions where write
+ *     coalescing improves throughput.
+ *   - **Non-prefetchable BARs** → device/uncached mapping (pgprot_device).
+ *     Required for control registers where every write must hit the
+ *     device immediately and in order.
+ */
+
 #include "slash_dmabuf.h"
 
 #include "slash.h"
@@ -21,6 +45,13 @@
 #include <linux/printk.h>
 #include <linux/slab.h>
 
+/**
+ * struct slash_bar_dmabuf_data - Private data attached to each BAR dma-buf.
+ * @bar_number: Which PCI BAR (0-5) this dma-buf represents.
+ * @len:        Size of the BAR region in bytes.
+ * @pdev:       PCI device owning the BAR.  Held via pci_dev_get()
+ *              for the lifetime of this struct.
+ */
 struct slash_bar_dmabuf_data {
     int bar_number;
     resource_size_t len;
@@ -28,8 +59,12 @@ struct slash_bar_dmabuf_data {
     struct pci_dev *pdev;
 };
 
-/* We only support userspace mmaps of the BAR; importing into other devices is
- * intentionally rejected because a PCI BAR is not system memory. */
+/*
+ * We only support userspace mmaps of the BAR; importing into other
+ * devices is intentionally rejected because a PCI BAR is not system
+ * memory — it cannot be scatter-gathered or DMA-mapped by another
+ * device.
+ */
 static int slash_bar_dmabuf_attach(struct dma_buf *dmabuf, struct dma_buf_attachment *attach)
 {
     dev_warn(attach->dev, "%s: device attachments are not supported for BAR dmabuf", SLASH_NAME);
@@ -54,6 +89,26 @@ static void slash_bar_dmabuf_unmap(struct dma_buf_attachment *attach,
     dev_dbg(attach->dev, "slash: dmabuf unmap (noop)\n");
 }
 
+/**
+ * slash_bar_dmabuf_mmap() - Map a BAR region into userspace.
+ * @dmabuf: The BAR dma-buf being mapped.
+ * @vma:    The VMA describing the mapping request.
+ *
+ * Maps the physical address range of the PCI BAR into the process's
+ * address space using io_remap_pfn_range().  The cache attribute is
+ * chosen based on whether the BAR is prefetchable:
+ *
+ *   - Prefetchable → write-combine (pgprot_writecombine): allows the
+ *     CPU to coalesce writes for better throughput on bulk data BARs.
+ *   - Non-prefetchable → device (pgprot_device): strict ordering for
+ *     control registers.
+ *
+ * VM_DONTDUMP prevents the mapping from appearing in core dumps (it's
+ * I/O memory, not useful data).  VM_DONTEXPAND prevents mremap from
+ * growing the mapping beyond the BAR boundary.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
 static int slash_bar_dmabuf_mmap(struct dma_buf *dmabuf, struct vm_area_struct *vma)
 {
     struct slash_bar_dmabuf_data *priv = dmabuf->priv;
@@ -65,7 +120,7 @@ static int slash_bar_dmabuf_mmap(struct dma_buf *dmabuf, struct vm_area_struct *
 
     bool wc = !!(pci_resource_flags(priv->pdev, priv->bar_number) & IORESOURCE_PREFETCH);
 
-    /* Ensure the requested range lies fully within the BAR */
+    /* Ensure the requested range lies fully within the BAR. */
     if (offset > priv->len || size > priv->len - offset)
         return -EINVAL;
 
@@ -75,11 +130,16 @@ static int slash_bar_dmabuf_mmap(struct dma_buf *dmabuf, struct vm_area_struct *
     vma->vm_page_prot = wc ? pgprot_writecombine(vma->vm_page_prot)
                            : pgprot_device(vma->vm_page_prot);
 
-    /* Map within the BAR: add BAR start (in PFNs) to user-provided offset */
+    /*
+     * Compute the PFN (page frame number) for the start of the mapping.
+     * The BAR's physical start address is converted to a PFN, then the
+     * user-provided page offset (vm_pgoff) is added to allow mapping
+     * sub-regions of the BAR.
+     */
     pfn = (pci_resource_start(priv->pdev, priv->bar_number) >> PAGE_SHIFT) + vma->vm_pgoff;
 
     dev_dbg(&priv->pdev->dev, "slash: mmap BAR%d wc=%d start_pfn=0x%lx len=0x%lx\n", priv->bar_number, wc, pfn, vma->vm_end - vma->vm_start);
-   
+
     err = io_remap_pfn_range(vma, vma->vm_start, pfn,
                              vma->vm_end - vma->vm_start, vma->vm_page_prot);
     if (err) {
@@ -90,6 +150,13 @@ static int slash_bar_dmabuf_mmap(struct dma_buf *dmabuf, struct vm_area_struct *
     return 0;
 }
 
+/**
+ * slash_bar_dmabuf_release() - Free resources when all references are dropped.
+ * @dmabuf: The BAR dma-buf being released.
+ *
+ * Drops the PCI device reference taken in slash_bar_dmabuf_create()
+ * and frees the private data.
+ */
 static void slash_bar_dmabuf_release(struct dma_buf *dmabuf)
 {
     struct slash_bar_dmabuf_data *priv = dmabuf->priv;
@@ -109,6 +176,18 @@ static const struct dma_buf_ops slash_bar_dmabuf_ops = {
     .release       = slash_bar_dmabuf_release,
 };
 
+/**
+ * slash_bar_dmabuf_create() - Export a PCI BAR as a dma-buf.
+ * @pdev:       PCI device owning the BAR.
+ * @bar_number: BAR index (0-5).  Must be present and MMIO.
+ *
+ * Allocates private state, takes a reference on @pdev, and registers a
+ * dma-buf exporter.  The DEFINE_DMA_BUF_EXPORT_INFO macro initializes
+ * the export info struct with sensible defaults; we override ops, size,
+ * flags, priv, and exp_name.
+ *
+ * Return: Pointer to the new dma_buf on success, ERR_PTR on failure.
+ */
 struct dma_buf *slash_bar_dmabuf_create(struct pci_dev *pdev, int bar_number)
 {
     long err;
@@ -133,15 +212,16 @@ struct dma_buf *slash_bar_dmabuf_create(struct pci_dev *pdev, int bar_number)
     len = pci_resource_len(pdev, bar_number);
 
     dev_dbg(&pdev->dev, "slash: exporting BAR%d as dma-buf (size=%pa)\n", bar_number, &len);
-    
+
     priv = kzalloc(sizeof(*priv), GFP_KERNEL);
     if (!priv) {
         dev_err(&pdev->dev, "slash: kzalloc(priv) failed\n");
         return ERR_PTR(-ENOMEM);
     }
-    
+
     priv->bar_number = bar_number;
     priv->len = len;
+    /* Hold a PCI device reference for the lifetime of the dma-buf. */
     priv->pdev = pci_dev_get(pdev);
 
     exp_info.ops = &slash_bar_dmabuf_ops;
@@ -167,6 +247,13 @@ err_free_priv:
     return ERR_PTR(err);
 }
 
+/**
+ * slash_bar_dmabuf_destroy() - Release the driver's reference on a BAR dma-buf.
+ * @dmabuf: dma-buf returned by slash_bar_dmabuf_create().
+ *
+ * Drops one reference.  The dma-buf (and its private data) are actually
+ * freed only when the last holder — including any userspace fd — closes.
+ */
 void slash_bar_dmabuf_destroy(struct dma_buf *dmabuf)
 {
     pr_debug("slash: dmabuf_destroy()\n");

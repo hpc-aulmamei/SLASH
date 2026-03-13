@@ -18,6 +18,88 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file serve.c
+ * @brief Event-driven request dispatcher and client I/O engine for vrtd.
+ *
+ * This file implements the core request/response loop for the V80 Runtime
+ * Daemon (vrtd).  vrtd multiplexes access to SLASH FPGA devices on behalf of
+ * multiple unprivileged clients.  Clients connect over AF_UNIX SOCK_SEQPACKET
+ * sockets and exchange record-oriented messages defined in wire.h.
+ *
+ * ## Architecture
+ *
+ * The daemon runs a single-threaded sd_event loop (systemd event loop).  Each
+ * connected client is represented by a `struct client` whose socket fd is
+ * registered as an sd_event I/O source.  The main callback, on_client_io(),
+ * is invoked whenever a client socket becomes readable or writable, and drives
+ * the per-client state machine described below.
+ *
+ * ## Client state machine
+ *
+ * Each client processes one request at a time.  Four boolean flags track
+ * the progress of that single in-flight request:
+ *
+ *   have_request          -- A complete request message has been received into
+ *                            client->inb and is ready for dispatch.
+ *   have_response         -- A response message has been serialized into
+ *                            client->outb and is ready to be sent.
+ *   have_new_response     -- Set together with have_response so that we
+ *                            attempt an immediate send in the same event
+ *                            callback rather than waiting for the next
+ *                            EPOLLOUT wakeup.
+ *   pending_design_write  -- The DESIGN_WRITE request has been submitted
+ *                            asynchronously and the client is blocked until
+ *                            the transfer completes.  While this flag is set,
+ *                            have_request remains true and no new EPOLLIN
+ *                            events are armed, so the client cannot send
+ *                            another request.  Completion is polled by
+ *                            on_event_deferred_work() every 20 ms.
+ *
+ * Typical synchronous request lifecycle:
+ *
+ *   1. EPOLLIN fires  -> client_handle_in()   -> have_request = true
+ *   2. (same callback) -> client_handle_request() dispatches the opcode
+ *                        -> have_response = true, have_request = false
+ *   3. EPOLLOUT fires -> client_handle_out()  -> have_response = false
+ *      (or immediately via have_new_response in the same callback)
+ *
+ * Asynchronous DESIGN_WRITE lifecycle:
+ *
+ *   1. EPOLLIN fires  -> client_handle_in()   -> have_request = true
+ *   2. client_handle_request() submits async write
+ *      -> pending_design_write = true, response deferred
+ *   3. on_event_deferred_work() polls completion every 20 ms
+ *      -> on completion: have_response = true, have_request = false,
+ *         pending_design_write = false
+ *   4. EPOLLOUT fires -> client_handle_out()  -> have_response = false
+ *
+ * ## FD passing via SCM_RIGHTS
+ *
+ * Several operations pass file descriptors out-of-band using the Unix
+ * SCM_RIGHTS ancillary-data mechanism:
+ *
+ *   Inbound (client -> daemon):
+ *     - DESIGN_WRITE: The client sends an fd to the bitstream file that the
+ *       daemon reads from asynchronously.  client_handle_in() extracts exactly
+ *       one fd from the cmsg ancillary data and stores it in client->in_fd.
+ *
+ *   Outbound (daemon -> client):
+ *     - GET_BAR_FD: Sends a BAR mmap-able fd.
+ *     - QDMA_QPAIR_GET_FD: Sends a QDMA queue pair character-device fd.
+ *     - BUFFER_OPEN: Sends the fd for the newly allocated buffer's qpair.
+ *     client_handle_out() attaches client->out_fd as SCM_RIGHTS ancillary
+ *     data on the sendmsg() call when client->have_out_fd is true.
+ *
+ * ## Authorization
+ *
+ * Every request handler calls an auth_request_*() function before doing any
+ * work.  These functions (defined in auth.c) check the client's uid and
+ * group memberships against the daemon's role-based access control policy.
+ * A return of 0 means "denied" (-> VRTD_RET_AUTH_ERROR), -1 means "internal
+ * error", and 1 means "permitted".
+ */
+
 #define _GNU_SOURCE
 
 #include <assert.h>
@@ -53,7 +135,14 @@
 #include "state.h"
 #include "vrtd/wire.h"
 
+/**
+ * Polling interval (in microseconds) for the deferred-work timer.
+ * on_event_deferred_work() fires every 20 ms to check whether any pending
+ * asynchronous design writes have completed.
+ */
 #define VRTD_DEFERRED_WORK_INTERVAL_USEC (20ULL * 1000ULL)
+
+/* ---- Forward declarations ------------------------------------------------ */
 
 static int client_update_wanted_epoll_events(struct client *client, sd_event_source *s);
 static int client_handle_in(struct client *client);
@@ -168,6 +257,15 @@ static uint16_t client_handle_request_clock_op(
 static uint16_t device_refresh_pf2_after_design_write(const struct device *d);
 static void cleanup_client_buffers(struct client *client);
 
+/* ---- Helper: opcode / hotplug-op to human-readable string --------------- */
+
+/**
+ * Returns the human-readable name of a vrtd wire opcode.
+ * Used for diagnostic log messages.
+ *
+ * @param opcode  One of the VRTD_REQ_* constants from wire.h.
+ * @return Static string; "UNKNOWN" for unrecognized values.
+ */
 static const char *vrtd_opcode_to_string(uint16_t opcode)
 {
     switch (opcode) {
@@ -189,6 +287,12 @@ static const char *vrtd_opcode_to_string(uint16_t opcode)
     }
 }
 
+/**
+ * Returns the human-readable name of a hotplug operation.
+ *
+ * @param op  One of the VRTD_DEVICE_HOTPLUG_OP_* constants from wire.h.
+ * @return Static string; "unknown" for unrecognized values.
+ */
 static const char *vrtd_hotplug_op_to_string(uint32_t op)
 {
     switch (op) {
@@ -201,6 +305,19 @@ static const char *vrtd_hotplug_op_to_string(uint32_t op)
     }
 }
 
+/* ---- Post-design-write device refresh ----------------------------------- */
+
+/**
+ * Refreshes PCI function 2 (PF2) after a design write completes.
+ *
+ * After a new bitstream is loaded, the PF2 device may have changed identity
+ * or capabilities.  This function removes the old PF2 from the PCI bus and
+ * triggers a rescan so that the kernel re-enumerates it with updated
+ * configuration.
+ *
+ * @param d  The device whose PF2 should be refreshed.
+ * @return   VRTD_RET_OK on success, or an appropriate VRTD_RET_* error code.
+ */
 static uint16_t device_refresh_pf2_after_design_write(const struct device *d)
 {
     char pf2_bdf[VRTD_PCI_BDF_LEN] = {0};
@@ -213,6 +330,7 @@ static uint16_t device_refresh_pf2_after_design_write(const struct device *d)
         return hotplug_errno_to_vrtd_ret(errno);
     }
 
+    /* Remove the old PF2 device; ENODEV is tolerated (already absent). */
     int ret = slash_hotplug_remove(hotplug, pf2_bdf);
     if (ret != 0 && errno != ENODEV) {
         int err = errno;
@@ -220,6 +338,7 @@ static uint16_t device_refresh_pf2_after_design_write(const struct device *d)
         return hotplug_errno_to_vrtd_ret(err);
     }
 
+    /* Rescan the PCI bus so the kernel discovers the new PF2. */
     if (slash_hotplug_rescan(hotplug) != 0) {
         int err = errno;
         (void) slash_hotplug_close(hotplug);
@@ -233,6 +352,18 @@ static uint16_t device_refresh_pf2_after_design_write(const struct device *d)
     return VRTD_RET_OK;
 }
 
+/* ---- Client cleanup ----------------------------------------------------- */
+
+/**
+ * Releases all buffers owned by a disconnecting client.
+ *
+ * When a client disconnects (gracefully or not), any QDMA buffers it opened
+ * via BUFFER_OPEN must be freed so that device memory is not leaked.  This
+ * function iterates over all devices and removes buffers whose client_id
+ * matches the disconnecting client's conn_id.
+ *
+ * @param client  The client being torn down.  May be NULL (no-op).
+ */
 static void cleanup_client_buffers(struct client *client)
 {
     if (client == NULL || client->state == NULL || client->conn_id == 0) {
@@ -256,11 +387,25 @@ static void cleanup_client_buffers(struct client *client)
                 continue;
             }
 
+            /*
+             * buffer_ptr_array_rm_by_reference() frees the buffer and
+             * shrinks the array, so we do not increment i -- the next
+             * element slides into position i.
+             */
             buffer_ptr_array_rm_by_reference(&d->buffers, buf);
         }
     }
 }
 
+/**
+ * Tears down a client: releases buffers, closes fds, unregisters the event
+ * source, and frees memory.
+ *
+ * Called when the client disconnects (EPOLLHUP / EPOLLRDHUP / EPOLLERR) or
+ * when the daemon shuts down.  Safe to call with a NULL pointer.
+ *
+ * @param client  The client to destroy.
+ */
 void cleanup_client(struct client *client)
 {
     if (client == NULL) {
@@ -271,11 +416,13 @@ void cleanup_client(struct client *client)
 
     gid_t_array_free(&client->gids);
 
+    /* Close the inbound SCM_RIGHTS fd if one was received but not consumed. */
     if (client->in_fd >= 0) {
         (void) close(client->in_fd);
         client->in_fd = -1;
     }
 
+    /* Close the client's SOCK_SEQPACKET connection fd. */
     if (client->fd >= 0) {
         (void) close(client->fd);
         client->fd = -1;
@@ -286,6 +433,34 @@ void cleanup_client(struct client *client)
     free(client);
 }
 
+/* ---- sd_event I/O callback ---------------------------------------------- */
+
+/**
+ * Main sd_event I/O callback for a connected client.
+ *
+ * This function is registered with sd_event_add_io() for each client socket
+ * and is invoked whenever the socket has pending I/O events.  It drives the
+ * client state machine:
+ *
+ *   1. If the socket has error/hangup events, the client is disconnected
+ *      and removed from the client list (which frees it via the owning
+ *      array destructor).
+ *   2. If EPOLLIN is set and we have no pending request, we receive the
+ *      next message (client_handle_in).
+ *   3. If a request is pending and no response has been prepared yet,
+ *      we dispatch it (client_handle_request).
+ *   4. If a response is ready and EPOLLOUT is set (or the response was
+ *      just prepared in step 3, flagged by have_new_response), we send
+ *      the response (client_handle_out).
+ *   5. Update the epoll event mask so that we only wake up for events
+ *      relevant to the current state.
+ *
+ * @param s       The sd_event_source for this client's fd.
+ * @param fd      The client's socket fd.
+ * @param revents The epoll event bitmask that triggered this callback.
+ * @param user    Pointer to the `struct client`.
+ * @return 0 on success, negative errno on fatal error.
+ */
 int on_client_io(sd_event_source *s, int fd, uint32_t revents, void *user)
 {
     struct client *client = user;
@@ -295,6 +470,7 @@ int on_client_io(sd_event_source *s, int fd, uint32_t revents, void *user)
 
     int ret;
 
+    /* Disconnect on error / hangup / remote close. */
     if (revents & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
         LOG(LOG_DEBUG, "Client disconnected uid=%u conn_id=%llu fd=%d",
             (unsigned int)client->uid, (unsigned long long)client->conn_id, client->fd);
@@ -302,16 +478,24 @@ int on_client_io(sd_event_source *s, int fd, uint32_t revents, void *user)
         return 0;
     }
 
+    /* Step 1: Receive a new request if the slot is free. */
     if (!client->have_request && (revents & EPOLLIN)) {
         ret = client_handle_in(client);
         PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to handle client input");
     }
 
+    /* Step 2: Dispatch the request synchronously (unless async design write). */
     if (client->have_request && !client->have_response) {
         ret = client_handle_request(client);
         PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to handle client request");
     }
 
+    /*
+     * Step 3: Send the response.
+     * have_new_response allows an immediate send attempt even if EPOLLOUT
+     * was not in revents -- this avoids a round-trip through the event loop
+     * when the socket is writable and we just prepared the response above.
+     */
     if ((client->have_response && (revents & EPOLLOUT)) ||
          client->have_new_response) {
         client->have_new_response = false;
@@ -320,12 +504,30 @@ int on_client_io(sd_event_source *s, int fd, uint32_t revents, void *user)
         PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to handle client output");
     }
 
+    /* Step 4: Adjust EPOLLIN/EPOLLOUT based on current state. */
     ret = client_update_wanted_epoll_events(client, s);
     PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to update epoll events");
 
     return 0;
 }
 
+/* ---- Deferred work timer ------------------------------------------------ */
+
+/**
+ * Timer callback that polls for completion of asynchronous design writes.
+ *
+ * Registered as a monotonic sd_event timer source.  Fires every
+ * VRTD_DEFERRED_WORK_INTERVAL_USEC (20 ms).  For each client that has
+ * pending_design_write == true, it calls client_finalize_pending_design_write()
+ * to check whether the async write has finished.  If it has, that function
+ * prepares the response and transitions the client state machine so the
+ * response can be sent on the next I/O event.
+ *
+ * @param s     The sd_event_source for this timer.
+ * @param usec  The monotonic timestamp at which this callback was scheduled.
+ * @param user  Pointer to the global `struct vrtd` daemon state.
+ * @return 0 on success, negative errno on fatal error.
+ */
 int on_event_deferred_work(sd_event_source *s, uint64_t usec, void *user)
 {
     struct vrtd *state = user;
@@ -334,6 +536,7 @@ int on_event_deferred_work(sd_event_source *s, uint64_t usec, void *user)
         return -1;
     }
 
+    /* Re-arm the timer for the next interval. */
     uint64_t next_usec = usec + VRTD_DEFERRED_WORK_INTERVAL_USEC;
     int ret = sd_event_source_set_time(s, next_usec);
     PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to set deferred work timer");
@@ -341,6 +544,7 @@ int on_event_deferred_work(sd_event_source *s, uint64_t usec, void *user)
     ret = sd_event_source_set_enabled(s, SD_EVENT_ON);
     PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to re-enable deferred work timer");
 
+    /* Check each client for a completed async design write. */
     for (size_t i = 0; i < state->clients.len; i++) {
         struct client *client = state->clients.d[i];
         if (client == NULL) {
@@ -350,6 +554,11 @@ int on_event_deferred_work(sd_event_source *s, uint64_t usec, void *user)
         ret = client_finalize_pending_design_write(client);
         PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to finalize deferred design write");
 
+        /*
+         * client_finalize_pending_design_write() returns 1 when the write
+         * finished and the response was prepared.  In that case, re-arm the
+         * client's epoll events so that EPOLLOUT triggers a send.
+         */
         if (ret == 1) {
             ret = client_update_wanted_epoll_events(client, client->event_source);
             PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to update epoll events for deferred response");
@@ -359,10 +568,29 @@ int on_event_deferred_work(sd_event_source *s, uint64_t usec, void *user)
     return 0;
 }
 
+/* ---- Epoll event management --------------------------------------------- */
+
+/**
+ * Recalculates and applies the set of epoll events we want for a client.
+ *
+ * The desired event set depends on the client's state machine position:
+ *   - EPOLLRDHUP is always armed so we detect remote close.
+ *   - EPOLLIN is armed only when we have no pending request (ready to
+ *     receive the next one).
+ *   - EPOLLOUT is armed only when we have a response to send.
+ *
+ * To avoid unnecessary sd_event_source_set_io_events() syscalls, the
+ * previously applied mask is cached in client->wanted_epoll_events and
+ * the call is skipped when nothing changed.
+ *
+ * @param client  The client whose epoll mask should be updated.
+ * @param s       The client's sd_event I/O source.
+ * @return 0 on success, negative errno on failure.
+ */
 static int client_update_wanted_epoll_events(struct client *client, sd_event_source *s)
 {
     uint32_t events =
-        EPOLLRDHUP | 
+        EPOLLRDHUP |
         (!client->have_request ? EPOLLIN : 0) |
         (client->have_response ? EPOLLOUT : 0)
     ;
@@ -378,20 +606,60 @@ static int client_update_wanted_epoll_events(struct client *client, sd_event_sou
     return 0;
 }
 
+/* ---- Inbound message reception (SCM_RIGHTS extraction) ------------------ */
+
+/**
+ * Receives the next request message from a client's socket.
+ *
+ * Uses recvmsg() to read both the message payload (into client->inb) and any
+ * ancillary data carrying SCM_RIGHTS file descriptors (into client->in_fd).
+ *
+ * ## SCM_RIGHTS handling
+ *
+ * The cmsg ancillary-data buffer is sized for exactly one fd.  The loop over
+ * CMSG_FIRSTHDR / CMSG_NXTHDR extracts fds as follows:
+ *   - If the ancillary data is malformed (fractional fd size), all received
+ *     fds are closed and the function returns -1.
+ *   - If more than one fd was sent, or if a second SCM_RIGHTS header appears,
+ *     all fds are closed and the function returns -1.  The daemon expects at
+ *     most one inbound fd per message (currently only DESIGN_WRITE uses it).
+ *   - On success the single fd is stored in client->in_fd and
+ *     client->have_in_fd is set to true.
+ *
+ * ## Message validation
+ *
+ * After a successful recvmsg(), the function validates the framing:
+ *   - The received byte count must be at least sizeof(vrtd_req_header).
+ *   - header->size + sizeof(header) must equal the byte count.
+ *   - header->size must not overflow the buffer.
+ *
+ * On success, client->have_request is set to true and the caller (on_client_io)
+ * proceeds to dispatch.
+ *
+ * @param client  The client to receive from.
+ * @return 0 on success (including EAGAIN -- no data ready yet),
+ *        -1 on protocol error or I/O error.
+ */
 static int client_handle_in(struct client *client)
 {
     assert(!client->have_request);
 
+    /* Close any leftover inbound fd from a previous request cycle. */
     if (client->in_fd >= 0) {
         (void) close(client->in_fd);
         client->in_fd = -1;
         client->have_in_fd = false;
     }
 
+    /* Set up the iovec to receive the message payload. */
     struct iovec iovec[1] = {
         { .iov_base = client->inb, .iov_len = VRTD_MSG_MAX_SIZE },
     };
 
+    /*
+     * Allocate a cmsg buffer large enough for one fd.
+     * CMSG_SPACE includes alignment padding required by the kernel.
+     */
     char cbuf[CMSG_SPACE(sizeof(int))];
     struct msghdr msg = {
         .msg_name       = NULL,
@@ -420,11 +688,16 @@ retry:
         }
     }
 
+    /* Reject truncated messages -- this should not happen with SEQPACKET. */
     if (msg.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) {
         // TODO: handle error from client
         return -1;
     }
 
+    /*
+     * Walk the cmsg chain to extract any SCM_RIGHTS file descriptors.
+     * We expect at most one fd; anything else is a protocol violation.
+     */
     client->in_fd = -1;
     client->have_in_fd = false;
     for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
@@ -437,12 +710,16 @@ retry:
         size_t data_len = cmsg->cmsg_len - CMSG_LEN(0);
         size_t count = data_len / sizeof(int);
         int *fds = (int *) CMSG_DATA(cmsg);
+
+        /* Reject malformed ancillary data (fractional fd). */
         if (data_len < sizeof(int) || (data_len % sizeof(int)) != 0) {
             for (size_t i = 0; i < count; ++i) {
                 (void) close(fds[i]);
             }
             return -1;
         }
+
+        /* Reject multiple fds or multiple SCM_RIGHTS headers. */
         if (count != 1 || client->have_in_fd) {
             for (size_t i = 0; i < count; ++i) {
                 (void) close(fds[i]);
@@ -454,6 +731,7 @@ retry:
         client->have_in_fd = true;
     }
 
+    /* Validate request framing. */
     struct vrtd_req_header *header = (struct vrtd_req_header *) client->inb;
     if (n < sizeof(struct vrtd_req_header) || header->size + sizeof(struct vrtd_req_header) != n || header->size > VRTD_MSG_MAX_SIZE - sizeof *header) {
         // TODO: handle error from client
@@ -465,6 +743,30 @@ retry:
     return 0;
 }
 
+/* ---- Outbound message transmission (SCM_RIGHTS attachment) -------------- */
+
+/**
+ * Sends the prepared response message to a client.
+ *
+ * Uses sendmsg() to transmit the response from client->outb.  If a file
+ * descriptor needs to be passed to the client (client->have_out_fd is true),
+ * the fd stored in client->out_fd is attached as SCM_RIGHTS ancillary data.
+ *
+ * ## SCM_RIGHTS construction
+ *
+ * When have_out_fd is set:
+ *   1. A cmsg control buffer (cbuf) is zeroed and attached to the msghdr.
+ *   2. A single cmsghdr is constructed with level=SOL_SOCKET, type=SCM_RIGHTS,
+ *      and len=CMSG_LEN(sizeof(int)).
+ *   3. The fd is copied into the cmsg data area via memcpy.
+ *   4. sendmsg() delivers both the response payload and the fd atomically.
+ *
+ * After a successful send, have_response and have_out_fd are cleared,
+ * allowing the client to send a new request.
+ *
+ * @param client  The client to send to.
+ * @return 0 on success (including EAGAIN), -1 on error.
+ */
 static int client_handle_out(struct client *client)
 {
     assert(client->have_response);
@@ -487,6 +789,10 @@ static int client_handle_out(struct client *client)
 
     char cbuf[CMSG_SPACE(sizeof(int))];
 
+    /*
+     * If we have an outbound fd, construct SCM_RIGHTS ancillary data.
+     * The cbuf is zeroed to satisfy kernel expectations about padding.
+     */
     if (client->have_out_fd) {
         memset(cbuf, 0, sizeof cbuf);
 
@@ -518,17 +824,54 @@ retry:
         }
     }
 
+    /*
+     * SOCK_SEQPACKET guarantees atomic delivery; a short write means
+     * something went wrong.
+     */
     if (n != size) {
         LOG(LOG_ERR, "Message truncated");
         return -1;
     }
 
+    /* Response sent -- clear state so the client can send a new request. */
     client->have_response = false;
     client->have_out_fd = false;
 
     return 0;
 }
 
+/* ---- Request dispatch (opcode switch) ----------------------------------- */
+
+/**
+ * Dispatches a received request to the appropriate handler.
+ *
+ * Reads the opcode from the request header, logs the request, and switches
+ * on the opcode to invoke the correct handler function.  Each handler follows
+ * a uniform signature:
+ *
+ *   uint16_t handler(client, req_body, req_size, resp_body, resp_size
+ *                    [, out_fd, have_out_fd])
+ *
+ * The handler returns a VRTD_RET_* status code which is stored in the
+ * response header.  Handlers that pass an fd to the client (GET_BAR_FD,
+ * QDMA_QPAIR_GET_FD, BUFFER_OPEN) also write to client->out_fd and
+ * client->have_out_fd.
+ *
+ * Special case -- DESIGN_WRITE:
+ *   The handler submits the write asynchronously and sets
+ *   client->pending_design_write.  In that case this function returns early
+ *   *without* marking have_response or clearing have_request.  The response
+ *   is deferred until client_finalize_pending_design_write() detects
+ *   completion.
+ *
+ * For all other (synchronous) opcodes, after the handler returns:
+ *   - have_request is cleared
+ *   - have_response and have_new_response are set
+ *   - Any unconsumed inbound fd is closed
+ *
+ * @param client  The client whose request should be dispatched.
+ * @return 0 on success, negative on fatal error.
+ */
 static int client_handle_request(struct client *client)
 {
     assert(client->have_request);
@@ -537,6 +880,7 @@ static int client_handle_request(struct client *client)
     struct vrtd_req_header *req_header = CLIENT_IN_HEADER(*client);
     struct vrtd_resp_header *resp_header = CLIENT_OUT_HEADER(*client);
 
+    /* Echo the client's sequence number back in the response. */
     resp_header->seqno = req_header->seqno;
 
     LOG(LOG_DEBUG, "Request opcode=%u(%s) uid=%u conn_id=%llu",
@@ -704,6 +1048,12 @@ static int client_handle_request(struct client *client)
         break;
     }
 
+    /*
+     * DESIGN_WRITE is asynchronous: the handler sets pending_design_write
+     * and the response will be prepared later by
+     * client_finalize_pending_design_write().  Do not transition the state
+     * machine yet.
+     */
     if (client->pending_design_write) {
         return 0;
     }
@@ -717,12 +1067,18 @@ static int client_handle_request(struct client *client)
 
     resp_header->size = size;
 
+    /* Close the inbound fd if the handler did not consume it. */
     if (client->have_in_fd) {
         (void) close(client->in_fd);
         client->in_fd = -1;
         client->have_in_fd = false;
     }
 
+    /*
+     * Transition the state machine: mark the request as consumed and the
+     * response as ready.  have_new_response triggers an immediate send
+     * attempt in the same on_client_io() invocation.
+     */
     client->have_request = false;
     client->have_response = true;
     client->have_new_response = true;
@@ -730,6 +1086,28 @@ static int client_handle_request(struct client *client)
     return 0;
 }
 
+/* ---- Async design-write completion -------------------------------------- */
+
+/**
+ * Checks whether a pending asynchronous design write has completed and,
+ * if so, prepares the response.
+ *
+ * Called from on_event_deferred_work() every 20 ms for each client that has
+ * pending_design_write == true.
+ *
+ * If the design_writer reports completion (success or failure):
+ *   - The response header is populated with the appropriate status.
+ *   - The client state machine is transitioned: pending_design_write is
+ *     cleared, have_request is cleared, have_response and have_new_response
+ *     are set.
+ *   - Returns 1 to signal the caller that the epoll events need updating.
+ *
+ * If the write is still in progress, returns 0 (no-op).
+ *
+ * @param client  The client whose pending write should be checked.
+ * @return 0 if still in progress or not applicable, 1 if the write completed
+ *         and the response was prepared, negative on fatal error.
+ */
 static int client_finalize_pending_design_write(struct client *client)
 {
     if (client == NULL || !client->pending_design_write) {
@@ -754,6 +1132,7 @@ static int client_finalize_pending_design_write(struct client *client)
         return 0;
     }
 
+    /* Build the deferred response now that the async write has finished. */
     uint16_t design_write_ret = VRTD_RET_OK;
     if (transfer_error == 0) {
        // design_write_ret = device_refresh_pf2_after_design_write(d);
@@ -779,6 +1158,10 @@ static int client_finalize_pending_design_write(struct client *client)
         resp_header->size = 0;
     }
 
+    /*
+     * Transition the state machine: the async operation is done, so clear
+     * the blocking flag and allow the response to be sent.
+     */
     client->pending_design_write = false;
     client->pending_design_write_device = NULL;
     client->have_request = false;
@@ -788,6 +1171,37 @@ static int client_finalize_pending_design_write(struct client *client)
     return 1;
 }
 
+/* ======================================================================== */
+/* Request handler functions                                                 */
+/*                                                                           */
+/* Each handler follows a uniform pattern:                                   */
+/*   1. Authorize the request via auth_request_*().                          */
+/*   2. Validate req_size and request-specific parameters.                   */
+/*   3. Perform the operation (device lookup, ioctl, etc.).                  */
+/*   4. Populate resp_body and *resp_size.                                   */
+/*   5. Return a VRTD_RET_* status code.                                    */
+/*                                                                           */
+/* Handlers that pass an fd back to the client additionally accept out_fd    */
+/* and have_out_fd output parameters.  The fd is delivered via SCM_RIGHTS    */
+/* in client_handle_out().                                                   */
+/* ======================================================================== */
+
+/**
+ * Handles VRTD_REQ_GET_NUM_DEVICES.
+ *
+ * Returns the number of SLASH devices currently known to the daemon.
+ * Devices are numbered 0..n-1 and the count may be used by clients to
+ * enumerate them.
+ *
+ * Auth: auth_request_get_num_devices (typically unrestricted).
+ * FD passing: none.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_get_num_devices  (placeholder zero byte)
+ *   Response body: vrtd_resp_get_num_devices { uint32_t num_devices }
+ *
+ * @return VRTD_RET_OK on success, or VRTD_RET_AUTH_ERROR / VRTD_RET_BAD_REQUEST.
+ */
 static uint16_t client_handle_request_get_num_devices(
     struct client *client,
     const struct vrtd_req_get_num_devices *req_body,
@@ -821,6 +1235,33 @@ static uint16_t client_handle_request_get_num_devices(
     return VRTD_RET_OK;
 }
 
+/* ---- DESIGN_WRITE ------------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_DESIGN_WRITE -- initiates an asynchronous bitstream load.
+ *
+ * The client sends a file descriptor (via SCM_RIGHTS in the request message)
+ * pointing to the bitstream file.  This handler takes ownership of that fd,
+ * submits it to the device's design_writer for asynchronous DMA transfer,
+ * and sets the pending_design_write flag.
+ *
+ * Because the transfer is asynchronous, this handler does NOT prepare a
+ * response.  The response is deferred until on_event_deferred_work() detects
+ * completion via client_finalize_pending_design_write().  While
+ * pending_design_write is true the client is blocked from sending further
+ * requests (EPOLLIN is disarmed).
+ *
+ * Auth: auth_request_design_write (typically requires elevated privileges).
+ * FD passing: inbound -- the client sends the bitstream fd via SCM_RIGHTS.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_design_write { uint32_t dev_number }
+ *   Response body: vrtd_resp_design_write { uint8_t zero } (deferred)
+ *
+ * @return VRTD_RET_OK if the write was successfully submitted,
+ *         VRTD_RET_BUSY if the design writer is already active,
+ *         or other VRTD_RET_* codes on error.
+ */
 static uint16_t client_handle_request_design_write(
     struct client *client,
     const struct vrtd_req_design_write *req_body,
@@ -861,6 +1302,10 @@ static uint16_t client_handle_request_design_write(
         return VRTD_RET_BAD_REQUEST;
     }
 
+    /*
+     * Submit the fd for asynchronous DMA.  design_writer_submit_fd_async()
+     * takes ownership of the fd -- we must not close it on success.
+     */
     int fd = client->in_fd;
     bool writer_busy_before = design_writer_is_busy(d->design_writer);
     ret = design_writer_submit_fd_async(d->design_writer, fd);
@@ -873,9 +1318,14 @@ static uint16_t client_handle_request_design_write(
         return VRTD_RET_INTERNAL_ERROR;
     }
 
+    /* The design writer now owns the fd; clear our reference. */
     client->in_fd = -1;
     client->have_in_fd = false;
 
+    /*
+     * Enter the async-waiting state.  client_handle_request() will see
+     * pending_design_write and skip the normal response path.
+     */
     client->pending_design_write = true;
     client->pending_design_write_device = d;
 
@@ -887,6 +1337,34 @@ static uint16_t client_handle_request_design_write(
     return VRTD_RET_OK;
 }
 
+/* ---- DEVICE_HOTPLUG_OP -------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_DEVICE_HOTPLUG_OP -- performs a PCIe hotplug operation.
+ *
+ * Dispatches one of several PCIe topology-management operations on the
+ * specified device:
+ *
+ *   RESCAN         -- Triggers a PCI bus rescan (all devices).
+ *   REMOVE         -- Removes the device from the PCI bus.
+ *   TOGGLE_SBR     -- Toggles Secondary Bus Reset on the device's upstream
+ *                     bridge.
+ *   HOTPLUG        -- Performs a full hotplug cycle (remove + SBR + rescan).
+ *   RESET_SEQUENCE -- Performs a reset using the AMI-based reset flow
+ *                     (reset_with_ami), which includes SBR, device removal,
+ *                     rescan, and re-enumeration.
+ *
+ * Auth: auth_request_device_hotplug_op (typically requires elevated
+ *       privileges, as these operations can disrupt other users).
+ * FD passing: none.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_device_hotplug_op { uint32_t dev_number,
+ *                                               uint8_t op }
+ *   Response body: vrtd_resp_device_hotplug_op { uint8_t zero }
+ *
+ * @return VRTD_RET_OK on success, VRTD_RET_INVALID_ARGUMENT for unknown ops.
+ */
 static uint16_t client_handle_request_device_hotplug_op(
     struct client *client,
     const struct vrtd_req_device_hotplug_op *req_body,
@@ -965,6 +1443,23 @@ static uint16_t client_handle_request_device_hotplug_op(
     return VRTD_RET_OK;
 }
 
+/* ---- QDMA_GET_INFO ------------------------------------------------------ */
+
+/**
+ * Handles VRTD_REQ_QDMA_GET_INFO -- queries QDMA capabilities of a device.
+ *
+ * Reads the QDMA information structure (slash_qdma_info) from the device's
+ * QDMA subsystem and returns it to the client.
+ *
+ * Auth: auth_request_qdma_get_info.
+ * FD passing: none.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_qdma_get_info { uint32_t dev_number }
+ *   Response body: vrtd_resp_qdma_get_info { slash_qdma_info info }
+ *
+ * @return VRTD_RET_OK on success, VRTD_RET_NOEXIST if the device has no QDMA.
+ */
 static uint16_t client_handle_request_qdma_get_info(
     struct client *client,
     const struct vrtd_req_qdma_get_info *req_body,
@@ -1012,6 +1507,26 @@ static uint16_t client_handle_request_qdma_get_info(
     return VRTD_RET_OK;
 }
 
+/* ---- QDMA_QPAIR_ADD ----------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_QDMA_QPAIR_ADD -- creates a QDMA queue pair on a device.
+ *
+ * Creates a new queue pair with the parameters specified in the request.
+ * The kernel allocates a queue ID (qid) which is returned in the response
+ * body.  The caller can then start the queue pair and obtain its fd.
+ *
+ * Auth: auth_request_qdma_qpair_add.
+ * FD passing: none (use QDMA_QPAIR_GET_FD after starting the queue).
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_qdma_qpair_add { uint32_t dev_number,
+ *                                             slash_qdma_qpair_add add }
+ *   Response body: vrtd_resp_qdma_qpair_add { slash_qdma_qpair_add add }
+ *                  (with qid filled in by the kernel)
+ *
+ * @return VRTD_RET_OK on success.
+ */
 static uint16_t client_handle_request_qdma_qpair_add(
     struct client *client,
     const struct vrtd_req_qdma_qpair_add *req_body,
@@ -1045,6 +1560,7 @@ static uint16_t client_handle_request_qdma_qpair_add(
         return VRTD_RET_NOEXIST;
     }
 
+    /* Copy request parameters into resp_body->add; the kernel fills in qid. */
     resp_body->add = req_body->add;
 
     if (slash_qdma_qpair_add(d->qdma, &resp_body->add) != 0) {
@@ -1061,6 +1577,27 @@ static uint16_t client_handle_request_qdma_qpair_add(
     return VRTD_RET_OK;
 }
 
+/* ---- QDMA_QPAIR_OP ----------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_QDMA_QPAIR_OP -- performs an operation on a QDMA queue pair.
+ *
+ * Dispatches one of the following operations on the specified queue pair:
+ *   - SLASH_QDMA_QUEUE_OP_START: Activates the queue for DMA transfers.
+ *   - SLASH_QDMA_QUEUE_OP_STOP:  Halts the queue.
+ *   - SLASH_QDMA_QUEUE_OP_DEL:   Deletes the queue pair and releases its
+ *                                 resources.
+ *
+ * Auth: auth_request_qdma_qpair_op.
+ * FD passing: none.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_qdma_qpair_op { uint32_t dev_number,
+ *                                            uint32_t qid, uint32_t op }
+ *   Response body: vrtd_resp_qdma_qpair_op { uint8_t zero }
+ *
+ * @return VRTD_RET_OK on success, VRTD_RET_INVALID_ARGUMENT for unknown ops.
+ */
 static uint16_t client_handle_request_qdma_qpair_op(
     struct client *client,
     const struct vrtd_req_qdma_qpair_op *req_body,
@@ -1127,6 +1664,28 @@ static uint16_t client_handle_request_qdma_qpair_op(
     return VRTD_RET_OK;
 }
 
+/* ---- QDMA_QPAIR_GET_FD ------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_QDMA_QPAIR_GET_FD -- obtains the character-device fd for
+ * a QDMA queue pair.
+ *
+ * Returns a file descriptor that the client can read/write to perform DMA
+ * transfers through the specified queue pair.  The fd is delivered to the
+ * client via SCM_RIGHTS in the response message.
+ *
+ * Auth: auth_request_qdma_qpair_get_fd.
+ * FD passing: outbound -- the qpair fd is sent via SCM_RIGHTS.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_qdma_qpair_get_fd { uint32_t dev_number,
+ *                                                uint32_t qid,
+ *                                                uint32_t flags }
+ *   Response body: vrtd_resp_qdma_qpair_get_fd { uint8_t zero }
+ *                  + SCM_RIGHTS fd
+ *
+ * @return VRTD_RET_OK on success.
+ */
 static uint16_t client_handle_request_qdma_qpair_get_fd(
     struct client *client,
     const struct vrtd_req_qdma_qpair_get_fd *req_body,
@@ -1170,6 +1729,7 @@ static uint16_t client_handle_request_qdma_qpair_get_fd(
         return VRTD_RET_INTERNAL_ERROR;
     }
 
+    /* Schedule this fd for delivery via SCM_RIGHTS in client_handle_out(). */
     *out_fd = fd;
     *have_out_fd = true;
 
@@ -1183,6 +1743,37 @@ static uint16_t client_handle_request_qdma_qpair_get_fd(
     return VRTD_RET_OK;
 }
 
+/* ---- BUFFER_OPEN -------------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_BUFFER_OPEN -- allocates a DMA buffer and returns its fd.
+ *
+ * Creates a new buffer on the specified device with the requested allocation
+ * type (DDR, HBM, HBM_VNOC), direction, and size.  The buffer consists of a
+ * device-memory allocation and an associated QDMA queue pair.  The qpair fd
+ * is returned to the client via SCM_RIGHTS so the client can read/write
+ * directly to perform DMA.
+ *
+ * The buffer is tracked in the device's buffer list with the client's conn_id
+ * so that it can be automatically freed if the client disconnects without
+ * calling BUFFER_CLOSE (see cleanup_client_buffers).
+ *
+ * Auth: auth_request_buffer_open.
+ * FD passing: outbound -- the buffer qpair fd is sent via SCM_RIGHTS.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_buffer_open { uint32_t dev_number,
+ *                                         uint32_t alloc_type,
+ *                                         uint32_t alloc_dir,
+ *                                         uint64_t alloc_arg,
+ *                                         uint64_t size }
+ *   Response body: vrtd_resp_buffer_open { uint64_t size,
+ *                                          uint64_t phys_addr }
+ *                  + SCM_RIGHTS fd
+ *
+ * @return VRTD_RET_OK on success, VRTD_RET_BUSY if memory is exhausted,
+ *         VRTD_RET_INVALID_ARGUMENT for bad allocation parameters.
+ */
 static uint16_t client_handle_request_buffer_open(
     struct client *client,
     const struct vrtd_req_buffer_open *req_body,
@@ -1233,6 +1824,11 @@ static uint16_t client_handle_request_buffer_open(
         return VRTD_RET_INTERNAL_ERROR;
     }
 
+    /*
+     * Create the buffer (allocation + qpair).  _cleanup_(cleanup_bufferp)
+     * ensures the buffer is freed if we return early before transferring
+     * ownership to the device's buffer array.
+     */
     _cleanup_(cleanup_bufferp)
     struct buffer *buf = buffer_create(
         d->qdma,
@@ -1268,6 +1864,11 @@ static uint16_t client_handle_request_buffer_open(
     int fd = buf->fd;
     uint64_t phys_addr = buf->addr;
 
+    /*
+     * Transfer ownership of the buffer into the device's buffer list.
+     * buffer_ptr_array_push_move() nullifies our local pointer so that the
+     * _cleanup_ destructor becomes a no-op.
+     */
     if (buffer_ptr_array_push_move(&d->buffers, &buf) != 0) {
         LOG(LOG_ERR, "Failed to add buffer to device buffer list");
         return VRTD_RET_INTERNAL_ERROR;
@@ -1287,6 +1888,28 @@ static uint16_t client_handle_request_buffer_open(
     return VRTD_RET_OK;
 }
 
+/* ---- BUFFER_CLOSE ------------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_BUFFER_CLOSE -- releases a previously opened DMA buffer.
+ *
+ * Looks up the buffer by its physical address on the specified device,
+ * verifies that the requesting client is the owner (by conn_id), checks
+ * that the size matches, and then removes and frees the buffer.
+ *
+ * Auth: auth_request_buffer_close, plus ownership check (conn_id must match).
+ * FD passing: none.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_buffer_close { uint32_t dev_number,
+ *                                          uint64_t phys_addr,
+ *                                          uint64_t size }
+ *   Response body: vrtd_resp_buffer_close { uint8_t zero }
+ *
+ * @return VRTD_RET_OK on success, VRTD_RET_AUTH_ERROR if the client does not
+ *         own the buffer, VRTD_RET_NOEXIST if no buffer was found at that
+ *         address.
+ */
 static uint16_t client_handle_request_buffer_close(
     struct client *client,
     const struct vrtd_req_buffer_close *req_body,
@@ -1325,6 +1948,7 @@ static uint16_t client_handle_request_buffer_close(
         return VRTD_RET_NOEXIST;
     }
 
+    /* Search for the buffer by physical address. */
     struct buffer *found = NULL;
     for (size_t i = 0; i < d->buffers.len; ++i) {
         struct buffer *buf = d->buffers.d[i];
@@ -1334,12 +1958,14 @@ static uint16_t client_handle_request_buffer_close(
         if (buf->addr != req_body->phys_addr) {
             continue;
         }
+        /* Found a buffer at the right address -- verify size. */
         if (buf->size != req_body->size) {
             LOG(LOG_WARNING, "buffer_close: size mismatch at addr=0x%llx (expected %llu, got %llu)",
                 (unsigned long long)req_body->phys_addr,
                 (unsigned long long)buf->size, (unsigned long long)req_body->size);
             return VRTD_RET_INVALID_ARGUMENT;
         }
+        /* Verify ownership: only the client that opened the buffer may close it. */
         if (buf->client_id != client->conn_id) {
             char pwbuf[1024];
             LOG(
@@ -1365,6 +1991,7 @@ static uint16_t client_handle_request_buffer_close(
         (unsigned int)req_body->dev_number,
         (unsigned int)client->uid, (unsigned long long)client->conn_id);
 
+    /* Remove and free the buffer (owning array destructor handles cleanup). */
     buffer_ptr_array_rm_by_reference(&d->buffers, found);
 
     resp_body->zero = 0;
@@ -1372,6 +1999,26 @@ static uint16_t client_handle_request_buffer_close(
     return VRTD_RET_OK;
 }
 
+/* ---- CLOCK_OP ----------------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_CLOCK_OP -- gets or sets a clock rate for a device region.
+ *
+ * Supports two clock regions (service and user) and two operations (get and
+ * set).  For SET operations, the requested rate must be non-zero.  The
+ * response always contains the current (or achieved) rate.
+ *
+ * Auth: auth_request_clock_op.
+ * FD passing: none.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_clock_op { uint32_t dev_number,
+ *                                      uint32_t rate_hz,
+ *                                      uint8_t op, uint8_t region }
+ *   Response body: vrtd_resp_clock_op { uint32_t rate_hz }
+ *
+ * @return VRTD_RET_OK on success, VRTD_RET_INVALID_ARGUMENT for bad op/region.
+ */
 static uint16_t client_handle_request_clock_op(
     struct client *client,
     const struct vrtd_req_clock_op *req_body,
@@ -1492,6 +2139,25 @@ static uint16_t client_handle_request_clock_op(
     return VRTD_RET_OK;
 }
 
+/* ---- GET_DEVICE_INFO ---------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_GET_DEVICE_INFO -- returns name and PCI metadata for a
+ * device.
+ *
+ * Populates a vrtd_device_info structure containing:
+ *   - name: the basename of the device's sysfs path (e.g. "0000:65:00.0").
+ *   - pci:  BDF string, vendor/device/subsystem IDs.
+ *
+ * Auth: auth_request_get_device_info.
+ * FD passing: none.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_get_device_info { uint32_t dev_number }
+ *   Response body: vrtd_resp_get_device_info { vrtd_device_info info }
+ *
+ * @return VRTD_RET_OK on success, VRTD_RET_NOEXIST if dev_number is invalid.
+ */
 static uint16_t client_handle_request_get_device_info(
     struct client *client,
     const struct vrtd_req_get_device_info *req_body,
@@ -1521,6 +2187,10 @@ static uint16_t client_handle_request_get_device_info(
 
     struct device *d = client->state->devices.d[req_body->dev_number];
 
+    /*
+     * basename() may modify its argument, so we duplicate the path first.
+     * The _cleanup_ attribute ensures the copy is freed on all return paths.
+     */
     _cleanup_(cleanup_free)
     char *path = strdup(d->path);
     if (unlikely(path == NULL)) {
@@ -1541,6 +2211,24 @@ static uint16_t client_handle_request_get_device_info(
     return VRTD_RET_OK;
 }
 
+/* ---- GET_DEVICE_BY_BDF -------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_GET_DEVICE_BY_BDF -- looks up a device index by PCI BDF
+ * string.
+ *
+ * Iterates over all known devices and compares their BDF against the
+ * client-provided string.  Returns the 0-based device index on match.
+ *
+ * Auth: auth_request_get_device_by_bdf.
+ * FD passing: none.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_get_device_by_bdf { char bdf[32] }
+ *   Response body: vrtd_resp_get_device_by_bdf { uint32_t dev_number }
+ *
+ * @return VRTD_RET_OK on match, VRTD_RET_NOEXIST if no device has the BDF.
+ */
 static uint16_t client_handle_request_get_device_by_bdf(
     struct client *client,
     const struct vrtd_req_get_device_by_bdf *req_body,
@@ -1563,6 +2251,7 @@ static uint16_t client_handle_request_get_device_by_bdf(
         return VRTD_RET_BAD_REQUEST;
     }
 
+    /* Defensively NUL-terminate the BDF string to prevent overreads. */
     char bdf[VRTD_PCI_BDF_LEN];
     memcpy(bdf, req_body->bdf, sizeof(bdf));
     bdf[sizeof(bdf) - 1] = '\0';
@@ -1572,6 +2261,7 @@ static uint16_t client_handle_request_get_device_by_bdf(
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
+    /* Linear scan; the device count is small (single digits). */
     for (size_t i = 0; i < client->state->devices.len; ++i) {
         struct device *d = client->state->devices.d[i];
 
@@ -1589,6 +2279,25 @@ static uint16_t client_handle_request_get_device_by_bdf(
     return VRTD_RET_NOEXIST;
 }
 
+/* ---- GET_BAR_INFO ------------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_GET_BAR_INFO -- returns metadata about a device BAR.
+ *
+ * Returns the slash_ioctl_bar_info structure for the specified BAR, which
+ * contains the BAR's size and resource type.  PCI devices have at most 6
+ * BARs (indices 0-5).
+ *
+ * Auth: auth_request_get_bar_info.
+ * FD passing: none.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_get_bar_info { uint32_t dev_number,
+ *                                          uint8_t bar_number }
+ *   Response body: vrtd_resp_get_bar_info { slash_ioctl_bar_info bar_info }
+ *
+ * @return VRTD_RET_OK on success, VRTD_RET_NOEXIST if the BAR is not present.
+ */
 static uint16_t client_handle_request_get_bar_info(
     struct client *client,
     const struct vrtd_req_get_bar_info *req_body,
@@ -1640,6 +2349,27 @@ static uint16_t client_handle_request_get_bar_info(
     return VRTD_RET_OK;
 }
 
+/* ---- GET_BAR_FD --------------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_GET_BAR_FD -- returns a mmap-able fd for a device BAR.
+ *
+ * The returned file descriptor can be mmap'd by the client to obtain direct
+ * userspace access to the BAR's MMIO region.  The fd and the BAR's length
+ * are delivered together: the length in the response body and the fd via
+ * SCM_RIGHTS ancillary data.
+ *
+ * Auth: auth_request_get_bar_fd.
+ * FD passing: outbound -- the BAR fd is sent via SCM_RIGHTS.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_get_bar_fd { uint32_t dev_number,
+ *                                        uint8_t bar_number }
+ *   Response body: vrtd_resp_get_bar_fd { uint64_t len }
+ *                  + SCM_RIGHTS fd
+ *
+ * @return VRTD_RET_OK on success, VRTD_RET_NOEXIST if the BAR is not present.
+ */
 static uint16_t client_handle_request_get_bar_fd(
     struct client *client,
     const struct vrtd_req_get_bar_fd *req_body,
@@ -1683,6 +2413,8 @@ static uint16_t client_handle_request_get_bar_fd(
     }
 
     resp_body->len = bar_file->len;
+
+    /* Schedule this fd for delivery via SCM_RIGHTS in client_handle_out(). */
     *out_fd = bar_file->fd;
     *have_out_fd = true;
 

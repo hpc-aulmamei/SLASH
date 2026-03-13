@@ -207,8 +207,17 @@ struct slash_bar_file *slash_bar_file_open(struct slash_ctldev *ctldev, int bar_
         goto err_free_bar_file;
     }
 
+    /* The kernel filled in req.length with the BAR size. */
     bar_file->len = (size_t) req.length;
 
+    /*
+     * Map the entire BAR into our address space.  The dma-buf fd
+     * backs this mapping — the kernel's slash_bar_dmabuf_mmap()
+     * handler translates this into an io_remap_pfn_range() of the
+     * BAR's physical address range.  Callers must bracket accesses
+     * with the DMA_BUF_IOCTL_SYNC start/end helpers (see the
+     * inline functions in ctldev.h).
+     */
     bar_file->map = mmap(NULL, bar_file->len, PROT_READ | PROT_WRITE, MAP_SHARED, bar_file->fd, 0);
     if (bar_file->map == MAP_FAILED) {
         goto err_close_fd;

@@ -18,6 +18,66 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file reset.c
+ * @brief Device reset sequence for AMD Alveo V80 using AMI + PCIe Secondary Bus Reset.
+ *
+ * This module implements the full reset-and-reconfiguration sequence for a
+ * SLASH FPGA device.  The sequence combines two mechanisms:
+ *
+ *   1. AMI (Alveo Management Interface) -- a firmware-level management
+ *      interface exposed through the AVED (Alveo Versal Example Design)
+ *      driver on PF0.  AMI provides ioctls for device management operations
+ *      such as programming boot partitions and triggering firmware-level
+ *      reconfiguration.
+ *      /* TODO(vserbu): explain AMI protocol details */
+ *
+ *   2. PCIe hotplug via the SLASH kernel module -- after the firmware has been
+ *      told to reconfigure, the PCIe device must be removed from the bus,
+ *      a Secondary Bus Reset (SBR) must be toggled on the upstream bridge,
+ *      and the bus must be rescanned so the newly-configured device is
+ *      re-enumerated by the kernel.
+ *
+ * Multi-PF handling
+ * -----------------
+ * The Alveo V80 exposes three PCIe Physical Functions (PFs) under the same
+ * bus:device address:
+ *
+ *   - PF0: AVED/AMI management function (used for firmware ioctls)
+ *   - PF1: QDMA function (used for DMA data transfers)
+ *   - PF2: Additional function
+ *   /* TODO(vserbu): clarify PF2 role (CMC? user PF?) */
+ *
+ * Before performing a Secondary Bus Reset, ALL three PFs must be removed from
+ * the Linux PCI subsystem.  If any PF is left attached while the SBR is
+ * toggled, the kernel may attempt to access a device whose configuration
+ * space is no longer valid, leading to machine checks or hangs.  After the
+ * SBR and a settling delay, a PCI bus rescan brings all three functions back.
+ *
+ * Reset sequence (step by step)
+ * -----------------------------
+ *   1. Compute BDF strings for PF0, PF1, PF2 from the device's BDF.
+ *   2. Remove the device from vrtd's tracked device list (it is about to
+ *      disappear from the bus).
+ *   3. Open the AMI device on PF0, request access.
+ *   4. Issue AMI_IOC_DEVICE_BOOT ioctl to tell the AMC firmware to boot
+ *      from partition 1 on the next reset.
+ *   5. Write a trigger value to BAR0 offset 0x1040000 to initiate the
+ *      firmware-level reconfiguration.
+ *      /* TODO(vserbu): explain what BAR0 register 0x1040000 controls in AMI */
+ *   6. Close the AMI device handle.
+ *   7. Remove PF0, PF1, PF2 from the PCI bus via slash_hotplug_remove().
+ *      ENODEV is tolerated (device may already have been removed by firmware).
+ *   8. Toggle Secondary Bus Reset on the upstream PCIe bridge via
+ *      slash_hotplug_toggle_sbr().
+ *   9. Wait 5 seconds for the device to complete reconfiguration and
+ *      re-train the PCIe link.
+ *  10. Rescan the PCI bus via slash_hotplug_rescan() to re-enumerate all PFs.
+ *  11. Verify the device is back by calling ami_dev_find() on PF0.
+ *  12. Run device discovery to re-add the reset device to vrtd's tracked
+ *      device list.
+ */
+
 #define _GNU_SOURCE
 
 #include "reset.h"
@@ -38,8 +98,29 @@
 #include "hotplug.h"
 #include "utils.h"
 
+/**
+ * Perform a full device reset using AMI firmware commands and PCIe hotplug.
+ *
+ * This function executes the complete reset sequence described in the file
+ * header.  It takes ownership of @device (removes it from @devices) because
+ * the device will be physically removed from the PCI bus during the reset.
+ * After the reset and rescan, devices_discover_and_open() re-populates the
+ * device list with the newly-enumerated device.
+ *
+ * @param device   The device to reset.  The caller must not use this pointer
+ *                 after the call, as the device is removed from the tracked
+ *                 list and freed.
+ * @param devices  The global array of tracked device pointers.  The target
+ *                 device is removed at the start; after a successful reset,
+ *                 the newly-discovered device is added back.
+ * @return VRTD_RET_OK on success, or a VRTD_RET_* error code on failure.
+ */
 uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices)
 {
+    /*
+     * Step 1: Compute BDF (Bus:Device.Function) strings for all three PFs.
+     * All PFs share the same bus:device but have different function numbers.
+     */
     char pf0_bdf[VRTD_PCI_BDF_LEN] = {0};
     char pf1_bdf[VRTD_PCI_BDF_LEN] = {0};
     char pf2_bdf[VRTD_PCI_BDF_LEN] = {0};
@@ -62,10 +143,24 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         return VRTD_RET_INTERNAL_ERROR;
     }
 
+    /*
+     * Step 2: Remove the device from vrtd's tracked device list.
+     * The device is about to be reset and will disappear from the PCI bus,
+     * so we must stop tracking it before proceeding.  After this point,
+     * the @device pointer is invalid and must not be dereferenced.
+     */
     // We are now removing this device.
     device_ptr_array_rm_by_reference(devices, device);
     device = NULL;
 
+    /*
+     * Step 3: Open the AMI management device on PF0 and request access.
+     * AMI (Alveo Management Interface) runs on PF0 (the AVED function).
+     * ami_dev_find() locates the AMI character device by PCI BDF, and
+     * ami_dev_request_access() acquires exclusive access for management
+     * operations.
+     * /* TODO(vserbu): explain AMI access model -- is this a lock? exclusive open? capability grant? */
+     */
     // PF0 is AVED/AMI bdf
     ret = ami_dev_find(pf0_bdf, &ami_device);
     if (ret != AMI_STATUS_OK) {
@@ -81,6 +176,8 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     }
 
     /*
+     * Step 4: Issue AMI_IOC_DEVICE_BOOT ioctl to select boot partition 1.
+     *
      * We issue AMI_IOC_DEVICE_BOOT directly rather than calling
      * ami_prog_device_boot(), even though the latter is the intended public
      * API for this operation.  The reason is that ami_prog_device_boot()
@@ -130,6 +227,12 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         }
     }
 
+    /*
+     * Step 5: Write a trigger value to BAR0 register at offset 0x1040000
+     * to initiate the firmware-level reconfiguration.
+     * /* TODO(vserbu): explain what BAR0 offset 0x1040000 controls -- is this
+     *    an AMC mailbox trigger, a reconfiguration strobe, or something else? */
+     */
     ret = ami_mem_bar_write(ami_device, 0, 0x1040000, 1);
     if (ret != AMI_STATUS_OK) {
         LOG(LOG_ERR, "reset_with_ami: ami_mem_bar_write(%s) failed: %s", pf0_bdf, ami_get_last_error());
@@ -137,8 +240,20 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         return VRTD_RET_INTERNAL_ERROR;
     }
 
+    /* Step 6: Close the AMI device handle -- we are done with firmware commands. */
     ami_dev_delete(&ami_device);
 
+    /*
+     * Step 7: Remove ALL three PFs from the Linux PCI subsystem.
+     *
+     * Every PF must be removed before we toggle SBR on the upstream bridge.
+     * If any function remains bound while the bus is reset, the kernel may
+     * attempt MMIO or config-space accesses to a device whose link is down,
+     * which can cause machine checks or system hangs.
+     *
+     * ENODEV is tolerated because the firmware reconfiguration triggered in
+     * step 5 may have already caused the device to disappear from the bus.
+     */
     ret = slash_hotplug_remove(g_hotplug, pf0_bdf);
     if (ret != 0 && errno != ENODEV) {
         LOG(LOG_ERR, "reset_with_ami: hotplug remove(%s) failed: %m", pf0_bdf);
@@ -155,14 +270,31 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         return hotplug_errno_to_vrtd_ret(errno);
     }
 
+    /*
+     * Step 8: Toggle Secondary Bus Reset (SBR) on the upstream PCIe bridge.
+     *
+     * SBR asserts the reset signal on the secondary side of the PCIe bridge,
+     * forcing all downstream devices (our FPGA) to re-initialize.  This is
+     * the mechanism that causes the FPGA to load the new configuration from
+     * the boot partition selected in step 4.
+     */
     ret = slash_hotplug_toggle_sbr(g_hotplug, pf0_bdf);
     if (ret != 0) {
         LOG(LOG_ERR, "reset_with_ami: hotplug toggle_sbr(%s) failed: %m", pf0_bdf);
         return hotplug_errno_to_vrtd_ret(errno);
     }
 
+    /*
+     * Step 9: Wait for the FPGA to complete reconfiguration and re-train
+     * the PCIe link.  5 seconds is a conservative estimate that accounts for
+     * bitstream loading time and link training.
+     */
     usleep(5000000);
 
+    /*
+     * Step 10: Rescan the PCI bus to re-enumerate all functions.
+     * This should re-introduce PF0, PF1, and PF2 with the new configuration.
+     */
     // Rescan device after reset. This should re-introduce the devices.
     ret = slash_hotplug_rescan(g_hotplug);
     if (ret != 0) {
@@ -170,6 +302,11 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         return hotplug_errno_to_vrtd_ret(errno);
     }
 
+    /*
+     * Step 11: Verify the device is back on the bus by probing PF0 via AMI.
+     * If ami_dev_find() fails, the device did not come back after the reset,
+     * which indicates a hardware or firmware problem.
+     */
     // Test that we found the newly added device
     ret = ami_dev_find(pf0_bdf, &ami_device);
     if (ret != AMI_STATUS_OK) {
@@ -179,6 +316,11 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
 
     ami_dev_delete(&ami_device);
 
+    /*
+     * Step 12: Run device discovery to re-add the reset device to vrtd's
+     * tracked device list.  This opens the QDMA function, sets up queues,
+     * and makes the device available for user requests again.
+     */
     // We now rescan for the reset device
     ret = devices_discover_and_open(devices);
     if (ret != 0) {

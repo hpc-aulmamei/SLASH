@@ -18,6 +18,22 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file session.cpp
+ *
+ * Implementation of the vrtd::Session C++ wrapper.
+ *
+ * Session manages a single AF_UNIX connection to the vrtd daemon,
+ * providing thread-safe request dispatch (via an internal mutex) and
+ * RAII resource management.
+ *
+ * The key design pattern is **callback injection**: when creating QDMA
+ * queue pairs or other resources, Session passes lambdas that capture
+ * the session fd.  This allows resource objects (QdmaQpair, etc.) to
+ * issue their own cleanup requests to the daemon when destroyed,
+ * without holding a direct reference to the Session.
+ */
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #include "vrtd/wire.h"

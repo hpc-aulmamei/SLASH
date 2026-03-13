@@ -78,7 +78,13 @@ bool parseBoolInt(const std::string& text, bool defaultValue = false) {
 XMLParser::XMLParser(const std::string& file_path) {
     this->filename = file_path;
     this->document = xmlReadFile(this->filename.c_str(), NULL, 0);
+    if (this->document == nullptr) {
+        throw std::runtime_error("Failed to parse XML file: " + file_path);
+    }
     this->rootNode = xmlDocGetRootElement(this->document);
+    if (this->rootNode == nullptr) {
+        throw std::runtime_error("XML file has no root element: " + file_path);
+    }
     this->workingNode = rootNode->children;
 }
 
