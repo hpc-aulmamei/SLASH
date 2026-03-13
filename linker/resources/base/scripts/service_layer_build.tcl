@@ -1,5 +1,5 @@
 proc _service_usage {} {
-    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> --install-dir <path> --jobs <n>"
+    return "Expected -tclargs: --project-name <name> --ip-repo <path> --linker-results-dir <path> --rm-work-dir <path> --artifact-out-dir <path> --resources-dir <path> --jobs <n>"
 }
 
 proc _require_file {path label} {
@@ -17,7 +17,7 @@ proc _require_dir {path label} {
 array set opts {
     --project-name ""
     --ip-repo ""
-    --install-dir ""
+    --resources-dir ""
     --linker-results-dir ""
     --rm-work-dir ""
     --artifact-out-dir ""
@@ -38,7 +38,7 @@ while {$idx < [llength $argv]} {
     incr idx
 }
 
-foreach req {--project-name --ip-repo --install-dir --linker-results-dir --rm-work-dir --artifact-out-dir} {
+foreach req {--project-name --ip-repo --resources-dir --linker-results-dir --rm-work-dir --artifact-out-dir} {
     if {$opts($req) eq ""} {
         error "Missing required argument '$req'. [_service_usage]"
     }
@@ -46,7 +46,7 @@ foreach req {--project-name --ip-repo --install-dir --linker-results-dir --rm-wo
 
 set proj_name $opts(--project-name)
 set ip_repo [file normalize $opts(--ip-repo)]
-set install_dir [file normalize $opts(--install-dir)]
+set resources_dir [file normalize $opts(--resources-dir)]
 set linker_results_dir [file normalize $opts(--linker-results-dir)]
 set rm_work_dir $opts(--rm-work-dir)
 set artifact_out_dir $opts(--artifact-out-dir)
@@ -57,16 +57,14 @@ file mkdir $artifact_out_dir
 set rm_work_dir [file normalize $rm_work_dir]
 set artifact_out_dir [file normalize $artifact_out_dir]
 
-set abs_shell_dcp [file join $install_dir "abs_shell_service_layer.dcp"]
-set base_bd [file join $install_dir "service_layer" "service_layer.bd"]
+set abs_shell_dcp [file join $resources_dir "abstract_shell" "abs_shell_service_layer.dcp"]
+set base_bd [file join $resources_dir "abstract_shell" "service_layer" "service_layer.bd"]
 set generated_bd_tcl [file join $linker_results_dir "service_layer.tcl"]
-set script_dir [file dirname [file normalize [info script]]]
-set linker_root [file normalize [file join $script_dir ".." ".." ".."]]
-set base_ip_repo [file join $linker_root "resources" "base" "iprepo"]
-set service_layer_eth_opt_post_tcl [file join $linker_root "resources" "base" "constraints" "service_layer" "eth" "service_layer_eth.opt.post.tcl"]
+set base_ip_repo [file join $resources_dir "base" "iprepo"]
+set service_layer_eth_opt_post_tcl [file join $resources_dir "base" "constraints" "service_layer" "eth" "service_layer_eth.opt.post.tcl"]
 
 _require_dir $ip_repo "IP repository directory"
-_require_dir $install_dir "install directory"
+_require_dir $resources_dir "resources directory"
 _require_dir $base_ip_repo "base IP repository directory"
 _require_file $abs_shell_dcp "abstract shell DCP"
 _require_file $base_bd "installed service_layer BD"
@@ -75,7 +73,7 @@ _require_file $service_layer_eth_opt_post_tcl "service_layer eth opt.post Tcl"
 
 puts "PROJECT NAME:      $proj_name"
 puts "IP REPO:           $ip_repo"
-puts "INSTALL DIR:       $install_dir"
+puts "RESOURCES DIR:     $resources_dir"
 puts "LINKER RESULTS:    $linker_results_dir"
 puts "BASE IP REPO:      $base_ip_repo"
 puts "RM WORK DIR:       $rm_work_dir"
