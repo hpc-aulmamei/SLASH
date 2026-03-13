@@ -67,8 +67,6 @@ class CommandConfiguration(object):
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         ap.formatter_class = argparse.RawTextHelpFormatter
-        ap.add_argument("--ip-repository", required=False, type=Path,
-                        default=None, help="IP repository path (stored for linker stages).")
         ap.add_argument("--vivado", required=False, type=Path, default=None,
                         help="Vivado binary to use for linking. If not given, it will be derived from PATH.")
         ap.add_argument("--jobs", required=False, type=int, default=8,
@@ -111,15 +109,6 @@ class CommandConfiguration(object):
 
         self._resource_dir = find_resource_directory()
 
-        # Resolve and verify the IP repository
-        if args.ip_repository is None:
-            self._ip_repository: Optional[Path] = None
-        else:
-            self._ip_repository: Optional[Path] = Path(
-                args.ip_repository).expanduser().resolve()
-            if not self._ip_repository.is_dir():
-                raise FileNotFoundError(self._ip_repository)
-
         # Resolve, if necessary find, and verify the Vivado binary
         self._vivado_bin: Path = args.vivado if args.vivado is not None else Path(
             shutil.which("vivado"))
@@ -151,8 +140,8 @@ class CommandConfiguration(object):
         return self.resources_dir / "abstract_shell"
 
     @property
-    def ip_repository(self) -> Optional[Path]:
-        return self._ip_repository
+    def ip_repository(self) -> Path:
+        return self.build_dir / "iprepo"
 
     @property
     def vivado_bin(self) -> Path:

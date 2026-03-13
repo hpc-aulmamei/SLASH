@@ -43,7 +43,6 @@ add_vbin(
   PLATFORM   "hw"
   CFG        "${CFG_FILE}"
   KERNELS    ${KERNELS}
-  IP_REPO    "${IP_REPO}"
 )
 
 add_vbin(
@@ -51,7 +50,6 @@ add_vbin(
   PLATFORM   "sim"
   CFG        "${CFG_FILE}"
   KERNELS    ${KERNELS}
-  IP_REPO    "${IP_REPO}"
 )
 
 add_vbin(
@@ -59,7 +57,6 @@ add_vbin(
   PLATFORM   "emu"
   CFG        "${CFG_FILE}"
   KERNELS    ${KERNELS}
-  IP_REPO    "${IP_REPO}"
 )
 
 # Include directories

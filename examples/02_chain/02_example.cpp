@@ -20,7 +20,6 @@
 
 #include <iostream>
 #include <cstdint>
-#include <utils/logger.hpp>
 #include <vrt/device.hpp>
 #include <vrt/buffer.hpp>
 #include <vrt/kernel.hpp>

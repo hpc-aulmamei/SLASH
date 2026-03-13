@@ -113,25 +113,6 @@ def parse_cell_value_and_percent(cell: str) -> ValueWithPercent:
     return ValueWithPercent(val, pct)
 
 
-def count_leading_spaces(s: str) -> int:
-    """! @brief Count leading spaces in a string.
-
-    @param s Input string.
-    @return Number of leading space characters.
-    """
-    return len(s) - len(s.lstrip(" "))
-
-
-def is_parenthesized_instance(instance: str) -> bool:
-    """! @brief Check whether an instance name is wrapped in parentheses.
-
-    @param instance Instance name string.
-    @return True if the instance is parenthesized.
-    """
-    inst = instance.strip()
-    return inst.startswith("(") and inst.endswith(")")
-
-
 def parse_vivado_hierarchical_utilization_table(text: str) -> List[UtilRow]:
     """! @brief Parse the Vivado hierarchical utilization table into rows.
 
@@ -166,7 +147,8 @@ def parse_vivado_hierarchical_utilization_table(text: str) -> List[UtilRow]:
         module_col_raw = raw_parts[1]
         pr_attr_col_raw = raw_parts[2]
 
-        depth = count_leading_spaces(instance_col_raw) // 2
+        depth = (len(instance_col_raw) -
+                 len(instance_col_raw.lstrip(" "))) // 2
         instance = instance_col_raw.strip()
         module = module_col_raw.strip()
         pr_attr = pr_attr_col_raw.strip()
@@ -217,78 +199,17 @@ def build_hierarchy_tree(rows: List[UtilRow]) -> Dict[str, TreeNode]:
     return nodes_by_instance
 
 
-def walk_subtree(node: TreeNode) -> List[TreeNode]:
-    """! @brief Walk a subtree in pre-order.
-
-    @param node Root node to walk.
-    @return List of nodes in traversal order.
-    """
-    out: List[TreeNode] = []
-    stack = [node]
-    while stack:
-        n = stack.pop()
-        out.append(n)
-        stack.extend(reversed(n.children))
-    return out
-
-
-def slash_hidden_cell_patterns() -> List[re.Pattern]:
-    """! @brief Return regex patterns for cells hidden in the SLASH report.
-
-    @return List of compiled regex patterns.
-    """
-    return [
-        re.compile(r".*_sc_.*"),        # hbm_sc_01, etc.
-        re.compile(r"^smartconnect.*"),  # smartconnect_0, etc.
-    ]
-
-
-def is_hidden_in_slash_report(instance_name: str) -> bool:
-    """! @brief Check whether an instance should be hidden in SLASH report.
-
-    @param instance_name Instance name to test.
-    @return True if the instance is hidden.
-    """
-    return any(p.search(instance_name) for p in slash_hidden_cell_patterns())
-
-
-def pretty_indent_xml(elem: ET.Element, level: int = 0) -> None:
-    """! @brief In-place pretty indent for XML output.
-
-    @param elem Root XML element.
-    @param level Starting indent level.
-    """
-    i = "\n" + "  " * level
-    if len(elem):
-        if not elem.text or not elem.text.strip():
-            elem.text = i + "  "
-        for child in elem:
-            pretty_indent_xml(child, level + 1)
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-    else:
-        if level and (not elem.tail or not elem.tail.strip()):
-            elem.tail = i
-
-
-def _set_val_pct(elem: ET.Element, base: str, v: ValueWithPercent) -> None:
-    """! @brief Set XML attributes for a value and optional percent.
-
-    @param elem XML element to update.
-    @param base Base attribute name.
-    @param v Value and percent container.
-    """
-    elem.set(base, str(v.value or 0))
-    if v.pct is not None:
-        elem.set(f"{base}_pct", f"{v.pct:.2f}")
-
-
 def write_totals_attributes_from_row(elem: ET.Element, r: UtilRow) -> None:
     """! @brief Write utilization totals (including pct) from a row.
 
     @param elem XML element to update.
     @param r Utilization row source.
     """
+    def _set_val_pct(elem: ET.Element, base: str, v: ValueWithPercent) -> None:
+        elem.set(base, str(v.value or 0))
+        if v.pct is not None:
+            elem.set(f"{base}_pct", f"{v.pct:.2f}")
+
     _set_val_pct(elem, "total_pplocs", r.total_pplocs)
     _set_val_pct(elem, "total_luts", r.total_luts)
     _set_val_pct(elem, "lutram", r.lutrams)
@@ -319,13 +240,23 @@ def write_totals_attributes_from_totals(elem: ET.Element, t: ResourceTotals) -> 
     elem.set("dsp", str(t.dsp))
 
 
-def write_cell(elem: ET.Element, r: UtilRow) -> None:
-    """! @brief Write per-cell utilization attributes.
+def write_cell(parent_element: ET.Element, node: TreeNode, is_kernel=False, recurse=False) -> None:
+    """! @brief Write a cell/kernel, potentially recursing into sub-cells
 
-    @param elem XML element to update.
-    @param r Utilization row source.
+    @param parent_element Parent element under which to place the new cell
+    @param node Utilization tree node.
+    @param is_kernel If true, call the cell a "kernel." Defaults to False, using the "cell" name.
+    @param recurse If true, add the cells within the tree node. Defaults to False.
     """
-    write_totals_attributes_from_row(elem, r)
+    name = "kernel" if is_kernel else "cell"
+    cell_element = ET.SubElement(
+        parent_element, name, instance=node.row.instance, module=node.row.module)
+    write_totals_attributes_from_row(
+        ET.SubElement(cell_element, "totals"), node.row)
+    if not recurse or len(node.children) == 0:
+        return
+    for child in node.children:
+        write_cell(cell_element, child, recurse=recurse)
 
 
 def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
@@ -334,66 +265,54 @@ def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
     @param nodes Map of instance name to tree node.
     @return XML element tree representing utilization report.
     """
-    SERVICE_LAYER = "service_layer"
-    SLASH = "slash"
-
-    if SLASH not in nodes:
-        raise SystemExit(
-            f"Could not find instance '{SLASH}' in the utilization table.")
-
     root = ET.Element("utilization_report")
+    write_totals_attributes_from_row(ET.SubElement(
+        root, "totals"), nodes["top_wrapper"].row)
 
-    if SERVICE_LAYER in nodes:
-        sl_node = nodes[SERVICE_LAYER]
-        sl_block = ET.SubElement(root, "block", name="service_layer",
-                                 instance=sl_node.row.instance, pr=sl_node.row.pr_attribute)
+    for region_name in ["static_region", "service_layer"]:
+        if region_name not in nodes:
+            continue
+        node = nodes[region_name]
+        element = ET.SubElement(root, region_name)
         write_totals_attributes_from_row(
-            ET.SubElement(sl_block, "totals"), sl_node.row)
-    else:
-        logger.warning(
-            "Could not find instance '%s' in utilization table. Emitting zeroed service_layer block.", SERVICE_LAYER)
-        sl_block = ET.SubElement(
-            root, "block", name="service_layer", instance=SERVICE_LAYER, pr="Reconfigurable")
-        write_totals_attributes_from_totals(
-            ET.SubElement(sl_block, "totals"), ResourceTotals())
+            ET.SubElement(element, "totals"), node.row)
 
-    sh_node = nodes[SLASH]
-    sh_block = ET.SubElement(root, "block", name="slash",
-                             instance=sh_node.row.instance, pr=sh_node.row.pr_attribute)
-    write_totals_attributes_from_row(
-        ET.SubElement(sh_block, "totals"), sh_node.row)
+    slash_node = nodes["slash"]
+    slash_element = ET.SubElement(root, "slash")
 
-    sub = ET.SubElement(sh_block, "subhierarchy")
-    visible_cells = ET.SubElement(sub, "cells")
-    hidden_cells = ET.SubElement(sub, "slash_logic")
+    kernels = ET.SubElement(slash_element, "kernels")
+    slash_logic_cells = ET.SubElement(slash_element, "slash_logic")
 
-    visible_sum = ResourceTotals()
-    hidden_sum = ResourceTotals()
+    kernel_sum = ResourceTotals()
+    slash_logic_sum = ResourceTotals()
 
-    for child in sh_node.children:
-        for n in walk_subtree(child):
-            inst = n.row.instance
-            if is_parenthesized_instance(inst):
-                continue
+    for child in slash_node.children:
+        inst = child.row.instance.strip()
+        if inst.startswith("(") and inst.endswith(")"):
+            continue
 
-            if is_hidden_in_slash_report(inst):
-                c = ET.SubElement(hidden_cells, "cell", instance=inst,
-                                  module=n.row.module, pr=n.row.pr_attribute)
-                write_cell(c, n.row)
-                hidden_sum.add(n.row)
-            else:
-                c = ET.SubElement(visible_cells, "cell", instance=inst,
-                                  module=n.row.module, pr=n.row.pr_attribute)
-                write_cell(c, n.row)
-                visible_sum.add(n.row)
+        is_slash_logic = any(p.search(inst) for p in [
+            re.compile(r".*_sc_.*"),        # hbm_sc_01, etc.
+            re.compile(r"^smartconnect.*"),  # smartconnect_0, etc.
+        ])
 
+        if is_slash_logic:
+            write_cell(slash_logic_cells, child)
+            slash_logic_sum.add(child.row)
+        else:
+            write_cell(kernels, child, recurse=True, is_kernel=True)
+            kernel_sum.add(child.row)
+
+    write_totals_attributes_from_row(ET.SubElement(
+        slash_element, "totals"), slash_node.row)
     write_totals_attributes_from_totals(
-        ET.SubElement(sub, "subhierarchy_sum"), visible_sum)
+        ET.SubElement(slash_element, "kernel_sum"), kernel_sum)
     write_totals_attributes_from_totals(
-        ET.SubElement(sub, "slash_logic_sum"), hidden_sum)
+        ET.SubElement(slash_element, "slash_logic_sum"), slash_logic_sum)
+    ET.Comment()
 
+    ET.indent(root)
     tree = ET.ElementTree(root)
-    pretty_indent_xml(root)
     return tree
 
 

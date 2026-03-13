@@ -40,7 +40,7 @@ else()
 endif()
 
 function(add_vbin)
-    set(oneValueArgs TARGET CFG PLATFORM IP_REPO)
+    set(oneValueArgs TARGET CFG PLATFORM)
     set(multiValueArgs KERNELS)
     cmake_parse_arguments(SLASH_VBIN "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
@@ -65,7 +65,6 @@ function(add_vbin)
             "-p" "${SLASH_VBIN_PLATFORM}"
             "-o" "${SLASH_VBIN_FILE}"
             "-k" ${SLASH_VBIN_KERNELS}
-            "--ip-repository" "${SLASH_VBIN_IP_REPO}"
             "--vivado" "${VIVADO_BINARY}"
         BYPRODUCTS "${SLASH_VBIN_FILE}.prj"
         DEPENDS "${SLASH_VBIN_CFG}" "${SLASH_VBIN_KERNELS}"

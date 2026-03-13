@@ -1040,7 +1040,6 @@ update_compile_order -fileset sources_1
   {% endfor %}
   {% endif %}
 
-
 # === Instantiate kernel IPs ===
 {% for name, inst in instances.items() %}
 set {{ name }} [ create_bd_cell -type ip -vlnv {{ inst.kernel.vlnv }} {{ name }} ]

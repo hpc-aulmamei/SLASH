@@ -176,9 +176,8 @@ def create_build_project(
         str(tcl),
         "-tclargs",
         config.project_name,
+        config.ip_repository
     ]
-    if config.ip_repository:
-        cmd.append(str(config.ip_repository))
     if action:
         cmd.append(action)
 
@@ -191,8 +190,11 @@ class RM_KIND(Enum):
 
 
 def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
-    if not config.ip_repository:
-        raise ValueError("ip_repository is required for RM builds")
+    if rm_kind == RM_KIND.SLASH_PROJECT:
+        # Copy all kernels into the ip repository
+        for kernel in config.kernels:
+            shutil.copytree(kernel.component_xml_path.parent,
+                            config.ip_repository / kernel.name)
 
     logs_dir = config.build_dir / "logs"
     image_out_dir = config.build_dir / "images"
