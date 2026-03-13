@@ -271,8 +271,7 @@ def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
 
     for region_name in ["static_region", "service_layer"]:
         if region_name not in nodes:
-            raise KeyError(
-                f"Could not find instance '{region_name}' in the utilization table.")
+            continue
         node = nodes[region_name]
         element = ET.SubElement(root, region_name)
         write_totals_attributes_from_row(

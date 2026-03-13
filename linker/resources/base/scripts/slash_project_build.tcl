@@ -156,4 +156,4 @@ report_timing_summary -delay_type min_max -check_timing_verbose -max_paths 1 -in
 set partial_pdi [file join $artifact_out_dir "top_i_slash_slash_${proj_name}_inst_0_partial.pdi"]
 write_device_image -cell top_i/slash -force $partial_pdi
 write_debug_probes -cell top_i/slash -force $ltx_file
-report_utilization -hierarchical -hierarchical_depth 3 -hierarchical_percentages -file $util_report_file
+report_utilization -hierarchical -hierarchical_percentages -file $util_report_file
