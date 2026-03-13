@@ -54,6 +54,7 @@ struct config_parse_state {
 };
 
 static int parse_file_glob(struct config_parse_state *state, const char *pattern);
+static int resolve_relative_pattern(struct config_parse_state *state, const char *pattern, char **abs_pattern);
 static int parse_file(struct config_parse_state *state, const char *path);
 static int parse_file_unique(struct config_parse_state *state, const char *path);
 static int parse_config_callback(void *user, const char *section, const char *name, const char *value);
@@ -241,11 +242,53 @@ int config_load(struct config **configp)
     return 0;
 }
 
+/*
+ * If pattern is a relative path, resolve it relative to the directory of the
+ * config file currently being parsed (i.e. the last entry in visited_files),
+ * and write the result into *abs_pattern (caller must free). If pattern is
+ * already absolute, or there is no current file to anchor against, *abs_pattern
+ * is set to NULL and the caller should use pattern directly.
+ */
+static int resolve_relative_pattern(struct config_parse_state *state, const char *pattern, char **abs_pattern)
+{
+    *abs_pattern = NULL;
+
+    if (pattern[0] == '/' || state->visited_files.len == 0) {
+        return 0;
+    }
+
+    const char *current_file = state->visited_files.d[state->visited_files.len - 1];
+
+    _cleanup_(cleanup_free)
+    char *dir = strdup(current_file);
+    PROPAGATE_ERROR_NULL_STDC_LOG(dir, LOG_ERR, "Error resolving glob pattern %s", pattern);
+
+    char *slash = strrchr(dir, '/');
+    if (slash == NULL) {
+        return 0;
+    }
+    slash[1] = '\0';
+
+    int r = asprintf(abs_pattern, "%s%s", dir, pattern);
+    PROPAGATE_ERROR_LOG(r, LOG_ERR, "Error resolving glob pattern %s", pattern);
+
+    return 0;
+}
+
 static int parse_file_glob(struct config_parse_state *state, const char *pattern)
 {
     _cleanup_(globfree)
     glob_t glob_state;
     memset(&glob_state, 0, sizeof(glob_state));
+
+    /* Resolve relative patterns against the including config file's directory. */
+    _cleanup_(cleanup_free)
+    char *abs_pattern = NULL;
+    int r = resolve_relative_pattern(state, pattern, &abs_pattern);
+    PROPAGATE_ERROR(r);
+    if (abs_pattern != NULL) {
+        pattern = abs_pattern;
+    }
 
     int ret = glob(pattern, GLOB_ERR, NULL, &glob_state);
     if (ret == GLOB_NOMATCH) {
@@ -386,10 +429,10 @@ static int role_find_and_add_value(struct config *config, const char *objname, c
     PROPAGATE_ERROR_NULL_STDC_LOG(role->name, LOG_ERR, "Could not allocate role name");
 
     int ret = role_add_value(role, name, value);
-    PROPAGATE_ERROR(ret);
+    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Invalid key/value for role %s: '%s' = '%s'", objname, name, value);
 
     ret = role_ptr_array_push_move(&config->roles, &role);
-    PROPAGATE_ERROR(ret);
+    PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Could not store role %s", objname);
 
     return 0;
 }
@@ -404,6 +447,7 @@ static int role_add_value(struct role *role, const char *name, const char *value
             role->pcie_hotplug = false;
             return 0;
         } else {
+            LOG(LOG_ERR, "Invalid value for role pcie-hotplug: '%s'", value);
             return -1;
         }
     } else if (strcmp(name, "bar-access") == 0) {
@@ -411,6 +455,7 @@ static int role_add_value(struct role *role, const char *name, const char *value
             role->bar_policy.any = true;
             return 0;
         } else {
+            LOG(LOG_ERR, "Invalid value for role bar-access: '%s'", value);
             return -1;
         }
     } else if (strcmp(name, "device") == 0) {
@@ -418,6 +463,7 @@ static int role_add_value(struct role *role, const char *name, const char *value
             role->allow_any_device = true;
             return 0;
         } else {
+            LOG(LOG_ERR, "Invalid value for role device: '%s'", value);
             return -1;
         }
     } else if (strcmp(name, "query-devices") == 0) {
@@ -428,9 +474,11 @@ static int role_add_value(struct role *role, const char *name, const char *value
             role->query = false;
             return 0;
         } else {
+            LOG(LOG_ERR, "Invalid value for role query-devices: '%s'", value);
             return -1;
         }
     } else {
+        LOG(LOG_ERR, "Unknown role key: '%s'", name);
         return -1;
     }
 }
@@ -458,10 +506,10 @@ static int user_find_and_add_value(struct config *config, const char *objname, c
     PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Could not find uid for user %s", objname);
 
     ret = user_add_value(user, name, value);
-    PROPAGATE_ERROR(ret);
+    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Invalid key/value for user %s: '%s' = '%s'", objname, name, value);
 
     ret = user_config_ptr_array_push_move(&config->users, &user);
-    PROPAGATE_ERROR(ret);
+    PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Could not store user %s", objname);
 
     return 0;
 }
@@ -474,7 +522,7 @@ static int user_add_value(struct user_config *user, const char *name, const char
         PROPAGATE_ERROR_NULL_STDC_LOG(role, LOG_ERR, "Could not allocate role name");
 
         int ret = str_array_push_move(&user->role_names, &role);
-        PROPAGATE_ERROR(ret);
+        PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Could not store role name for user");
 
         return 0;
     } else {
@@ -501,10 +549,10 @@ static int group_find_and_add_value(struct config *config, const char *objname, 
     PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Could not find gid for group %s", objname);
 
     ret = group_add_value(group, name, value);
-    PROPAGATE_ERROR(ret);
+    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Invalid key/value for group %s: '%s' = '%s'", objname, name, value);
 
     ret = group_config_ptr_array_push_move(&config->groups, &group);
-    PROPAGATE_ERROR(ret);
+    PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Could not store group %s", objname);
 
     return 0;
 }
@@ -517,7 +565,7 @@ static int group_add_value(struct group_config *group, const char *name, const c
         PROPAGATE_ERROR_NULL_STDC_LOG(role, LOG_ERR, "Could not allocate role name");
 
         int ret = str_array_push_move(&group->role_names, &role);
-        PROPAGATE_ERROR(ret);
+        PROPAGATE_ERROR_STDC_LOG(ret, LOG_ERR, "Could not store role name for group");
 
         return 0;
     } else {
