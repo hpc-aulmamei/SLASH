@@ -266,11 +266,24 @@ static long slash_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lo
         ret = slash_hotplug_copy_request(arg, &req);
         if (ret)
             break;
-        mutex_lock(&slash_hotplug_devices_lock);
-        ret = slash_hotplug_resolve_request_locked(&req, true);
-        mutex_unlock(&slash_hotplug_devices_lock);
-        if (!ret)
-            ret = slash_hotplug_handle_toggle_sbr(req.bdf);
+        /*
+         * Skip the tracked-device check when an explicit BDF is provided.
+         * toggle_sbr is normally called after the endpoint has already been
+         * removed, so it will no longer appear in the tracking list.  The
+         * handler itself resolves the upstream bridge from the bus topology,
+         * which survives endpoint removal.
+         *
+         * When no BDF is given, fall back to the resolver to pick the
+         * single tracked device (the usual default-device behaviour).
+         */
+        if (!req.bdf[0]) {
+            mutex_lock(&slash_hotplug_devices_lock);
+            ret = slash_hotplug_resolve_request_locked(&req, true);
+            mutex_unlock(&slash_hotplug_devices_lock);
+            if (ret)
+                break;
+        }
+        ret = slash_hotplug_handle_toggle_sbr(req.bdf);
         break;
     case SLASH_HOTPLUG_IOCTL_HOTPLUG:
         ret = slash_hotplug_copy_request(arg, &req);

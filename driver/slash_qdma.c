@@ -326,7 +326,7 @@ static const struct pci_device_id slash_qdma_ids[] = {
 MODULE_DEVICE_TABLE(pci, slash_qdma_ids);
 
 static struct pci_driver slash_qdma_driver = {
-    .name = SLASH_NAME "_qdma",
+    .name = SLASH_NAME,
     .id_table = slash_qdma_ids,
     .probe = slash_qdma_probe,
     .remove = slash_qdma_remove,
