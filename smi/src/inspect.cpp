@@ -28,6 +28,7 @@
 #include "inspect.hpp"
 
 #include <charconv>
+#include <filesystem>
 #include <iostream>
 #include <map>
 #include <sstream>
@@ -183,7 +184,22 @@ struct VbinData {
     /// Builds a VbinData by querying the system map currently loaded on
     /// the device at the given BDF address.
     static VbinData fromBdf(const std::string& bdf) {
-        vrt::XMLParser parser{vrt::Vrtbin::getSystemMapPathFromBdf(bdf)};
+        const std::string mapPath = vrt::Vrtbin::getSystemMapPathFromBdf(bdf);
+
+        if (!std::filesystem::exists(mapPath)) {
+            throw std::runtime_error(
+                "No vbin has been programmed on device " + bdf +
+                " (system map not found: " + mapPath + ")");
+        }
+
+        if ((std::filesystem::status(mapPath).permissions() & std::filesystem::perms::owner_read) ==
+            std::filesystem::perms::none) {
+            throw std::runtime_error(
+                "Cannot read system map for device " + bdf +
+                " (permission denied: " + mapPath + ")");
+        }
+
+        vrt::XMLParser parser{mapPath};
         parser.parseXML();
 
         return fromParser(parser, "on " + bdf);
