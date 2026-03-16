@@ -30,6 +30,7 @@
 #include <limits>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <vector>
 
 #include "utils.hpp"
@@ -46,6 +47,18 @@ constexpr unsigned int SLASH_DEVICE_ID{0x50B4};
 /// Physical Function number used by Slash on the V80.
 /// Only PF0 is relevant; other functions belong to other subsystems.
 constexpr unsigned int SLASH_PF_NUMBER{0};
+
+/// PCI device ID for the V80 QDMA function (PF1).
+constexpr unsigned int SLASH_PF1_DEVICE_ID{0x50B5};
+
+/// PCI device ID for the V80 control function (PF2).
+constexpr unsigned int SLASH_PF2_DEVICE_ID{0x50B6};
+
+/// Expected driver for PF0 (AMI management function).
+constexpr char PF0_EXPECTED_DRIVER[] = "ami";
+
+/// Expected driver for PF1 and PF2 (SLASH kernel module).
+constexpr char SLASH_EXPECTED_DRIVER[] = "slash";
 
 
 // ---------------------------------------------------------------------------
@@ -91,6 +104,62 @@ static std::string readStringFile(const std::filesystem::path& path) {
         }
     }
     return val;
+}
+
+// ---------------------------------------------------------------------------
+// PfStatus — per-physical-function readiness check
+// ---------------------------------------------------------------------------
+
+/// @brief Result of checking one physical function's readiness.
+struct PfStatus {
+    int         pfNumber{};  ///< Physical function number (0, 1, or 2).
+    std::string bdf;         ///< Full BDF address of this PF.
+    bool        ok{};        ///< True if the PF passes all checks.
+    std::string reason;      ///< Empty when ok; describes the failure otherwise.
+};
+
+/// Checks whether a given PCI physical function exists, has the expected
+/// device ID, and has the expected driver bound.
+///
+/// @param bdf              Full BDF string, e.g. "0000:03:00.1".
+/// @param pfNumber         PF index (0, 1, or 2).
+/// @param expectedDeviceId PCI device ID this PF should report.
+/// @param expectedDriver   Kernel driver name that should be bound.
+/// @return PfStatus with ok=true if all checks pass, or ok=false with reason.
+static PfStatus checkPf(const std::string& bdf, int pfNumber,
+                         unsigned int expectedDeviceId,
+                         const char* expectedDriver) {
+    std::filesystem::path devPath = PCI_DEVICES_PATH / bdf;
+
+    if (!std::filesystem::exists(devPath)) {
+        return {.pfNumber = pfNumber, .bdf = bdf, .ok = false, .reason = "not found"};
+    }
+
+    auto deviceId = readNumFile<unsigned int>(devPath / "device");
+    if (deviceId != expectedDeviceId) {
+        return {.pfNumber = pfNumber, .bdf = bdf, .ok = false, .reason = "bad device ID"};
+    }
+
+    std::string driver;
+    {
+        std::filesystem::path driverLink = devPath / "driver";
+        if (std::filesystem::is_symlink(driverLink)) {
+            driver = std::filesystem::read_symlink(driverLink).filename().string();
+        }
+    }
+
+    if (driver != expectedDriver) {
+        std::string actual = driver.empty() ? "(none)" : driver;
+        return {
+            .pfNumber = pfNumber,
+            .bdf = bdf,
+            .ok = false,
+            .reason = "wanted driver: '" + std::string(expectedDriver) +
+                      "', currently loaded driver: '" + actual + "'",
+        };
+    }
+
+    return {.pfNumber = pfNumber, .bdf = bdf, .ok = true};
 }
 
 // ---------------------------------------------------------------------------
@@ -278,14 +347,204 @@ std::vector<PciDevice> findPciDevices(unsigned int vendorId, unsigned int device
 }
 
 // ---------------------------------------------------------------------------
+// V80Board — aggregated board-level readiness
+// ---------------------------------------------------------------------------
+
+/// @brief Aggregated readiness status of one V80 board (PF0 + PF1 + PF2).
+struct V80Board {
+    std::string bdfBase;    ///< BDF prefix without function digit, e.g. "0000:03:00".
+    PfStatus    pf0;        ///< Status of PF0 (AMI management).
+    PfStatus    pf1;        ///< Status of PF1 (QDMA).
+    PfStatus    pf2;        ///< Status of PF2 (control).
+    bool        longPrinting{};  ///< If true, include detailed sysfs info per PF.
+
+    /// Detailed sysfs snapshot for each PF (populated only when longPrinting).
+    std::optional<PciDevice> pf0Device;
+    std::optional<PciDevice> pf1Device;
+    std::optional<PciDevice> pf2Device;
+
+    /// True when all three PFs are ready.
+    bool ok() const { return pf0.ok && pf1.ok && pf2.ok; }
+};
+
+/// Tries to read a PciDevice from sysfs for the given BDF.
+/// Returns std::nullopt if the sysfs path does not exist.
+static std::optional<PciDevice> tryReadDevice(const std::string& bdf, bool longPrinting) {
+    std::filesystem::path devPath = PCI_DEVICES_PATH / bdf;
+    if (!std::filesystem::exists(devPath)) {
+        return std::nullopt;
+    }
+    return PciDevice::fromDevPath(devPath, longPrinting);
+}
+
+/// Discovers V80 boards by scanning for PF0 devices, then checking PF1 and PF2.
+///
+/// @param longPrinting If true, also reads detailed sysfs attributes for each PF.
+static std::vector<V80Board> discoverBoards(bool longPrinting) {
+    auto pf0Devices = findPciDevices(SLASH_VENDOR_ID, SLASH_DEVICE_ID,
+                                      SLASH_PF_NUMBER, /*longPrinting=*/false);
+
+    std::vector<V80Board> boards;
+    boards.reserve(pf0Devices.size());
+
+    for (const auto& pf0Dev : pf0Devices) {
+        std::string base = pf0Dev.bdf.substr(0, pf0Dev.bdf.rfind('.'));
+        std::string pf1Bdf = base + ".1";
+        std::string pf2Bdf = base + ".2";
+
+        V80Board board{
+            .bdfBase = base,
+            .pf0 = checkPf(pf0Dev.bdf, 0, SLASH_DEVICE_ID, PF0_EXPECTED_DRIVER),
+            .pf1 = checkPf(pf1Bdf, 1, SLASH_PF1_DEVICE_ID, SLASH_EXPECTED_DRIVER),
+            .pf2 = checkPf(pf2Bdf, 2, SLASH_PF2_DEVICE_ID, SLASH_EXPECTED_DRIVER),
+            .longPrinting = longPrinting,
+        };
+
+        if (longPrinting) {
+            board.pf0Device = tryReadDevice(pf0Dev.bdf, true);
+            board.pf1Device = tryReadDevice(pf1Bdf, true);
+            board.pf2Device = tryReadDevice(pf2Bdf, true);
+        }
+
+        boards.push_back(std::move(board));
+    }
+
+    return boards;
+}
+
+// ---------------------------------------------------------------------------
+// V80Board text output
+// ---------------------------------------------------------------------------
+
+/// Writes a single PF's status in parenthesized form.
+static void printPfStatus(std::ostream& out, const PfStatus& pf) {
+    out << "(PF" << pf.pfNumber << ": ";
+    if (pf.ok) {
+        out << "OK";
+    } else {
+        out << "NOT READY: " << pf.reason;
+    }
+    out << ")";
+}
+
+/// Prints the long-form device details for a PF, indented under the board.
+static void printPfDetail(std::ostream& out, const PfStatus& pf,
+                           const std::optional<PciDevice>& device) {
+    out << INDENT1 << "PF" << pf.pfNumber << " " << pf.bdf << ": ";
+    if (pf.ok) {
+        out << "OK";
+    } else {
+        out << "NOT READY: " << pf.reason;
+    }
+    out << "\n";
+
+    if (device) {
+        const auto& dev = *device;
+        out << INDENT2 << "Vendor ID: " << toHexString(dev.vendorId) << "\n"
+            << INDENT2 << "Device ID: " << toHexString(dev.deviceId) << "\n"
+            << INDENT2 << "Class: " << toHexString(dev.classCode) << "\n"
+            << INDENT2 << "Subsystem vendor: " << toHexString(dev.subsysVendor) << "\n"
+            << INDENT2 << "Subsystem device: " << toHexString(dev.subsysDevice) << "\n"
+            << INDENT2 << "NUMA node: " << dev.numaNode << "\n"
+            << INDENT2 << "Driver: " << (dev.driver.empty() ? "(none)" : dev.driver) << "\n"
+            << INDENT2 << "IRQ: " << dev.irq << "\n"
+            << INDENT2 << "Enabled: " << (dev.enabled ? "yes" : "no") << "\n"
+            << INDENT2 << "Local CPUs: " << dev.localCpulist << "\n";
+    }
+}
+
+/// Human-readable output for one V80 board.
+/// In short mode, prints a single summary line.  In long mode, also
+/// prints detailed sysfs attributes for each PF.
+std::ostream& operator<<(std::ostream& out, const V80Board& board) {
+    out << "Board " << board.bdfBase << ": "
+        << (board.ok() ? "OK" : "NOT READY") << " ";
+    printPfStatus(out, board.pf0);
+    out << " ";
+    printPfStatus(out, board.pf1);
+    out << " ";
+    printPfStatus(out, board.pf2);
+    out << "\n";
+
+    if (board.longPrinting) {
+        printPfDetail(out, board.pf0, board.pf0Device);
+        printPfDetail(out, board.pf1, board.pf1Device);
+        printPfDetail(out, board.pf2, board.pf2Device);
+    }
+
+    return out;
+}
+
+/// Human-readable output for a list of V80 boards.
+std::ostream& operator<<(std::ostream& out, const std::vector<V80Board>& boards) {
+    for (const auto& board : boards) {
+        out << board;
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
+// V80Board JSON output
+// ---------------------------------------------------------------------------
+
+/// JSON representation of a single PF status.
+/// If @p device is provided, its sysfs attributes are merged in.
+static Json::Value pfToJson(const PfStatus& pf,
+                             const std::optional<PciDevice>& device) {
+    Json::Value j;
+    j["bdf"] = pf.bdf;
+    j["status"] = pf.ok ? "OK" : "NOT READY";
+    if (!pf.ok) {
+        j["reason"] = pf.reason;
+    }
+    if (device) {
+        const auto& dev = *device;
+        j["vendor_id"] = toHexString(dev.vendorId);
+        j["device_id"] = toHexString(dev.deviceId);
+        j["class"] = toHexString(dev.classCode);
+        j["subsystem_vendor"] = toHexString(dev.subsysVendor);
+        j["subsystem_device"] = toHexString(dev.subsysDevice);
+        j["numa_node"] = toHexString(static_cast<unsigned int>(dev.numaNode));
+        j["driver"] = dev.driver;
+        j["irq"] = dev.irq;
+        j["enabled"] = dev.enabled;
+        j["local_cpulist"] = dev.localCpulist;
+    }
+    return j;
+}
+
+/// JSON representation of a V80 board.
+Json::Value toJson(const V80Board& board) {
+    Json::Value j;
+    j["bdf_base"] = board.bdfBase;
+    j["status"] = board.ok() ? "OK" : "NOT READY";
+    j["pf0"] = pfToJson(board.pf0, board.pf0Device);
+    j["pf1"] = pfToJson(board.pf1, board.pf1Device);
+    j["pf2"] = pfToJson(board.pf2, board.pf2Device);
+    return j;
+}
+
+/// JSON representation of a list of V80 boards.
+Json::Value toJson(const std::vector<V80Board>& boards) {
+    Json::Value j;
+    j["boards"] = Json::Value(Json::arrayValue);
+    for (const auto& board : boards) {
+        j["boards"].append(toJson(board));
+    }
+    return j;
+}
+
+// ---------------------------------------------------------------------------
 // Command entry-point
 // ---------------------------------------------------------------------------
 
-/// Discovers all V80 devices on the PCI bus and prints them.
+/// Discovers all V80 boards and prints their readiness status.
+///
+/// In default mode, prints a one-line summary per board.  In long mode
+/// (`-l`), also prints detailed sysfs attributes for each PF.
 int List::run(const Options& options) {
-    auto devices{findPciDevices(SLASH_VENDOR_ID, SLASH_DEVICE_ID, SLASH_PF_NUMBER, options.longOutput)};
-
-    print(devices, options.jsonOutput, options.prettyJsonOutput);
+    auto boards = discoverBoards(options.longOutput);
+    print(boards, options.jsonOutput, options.prettyJsonOutput);
 
     return 0;
 }
