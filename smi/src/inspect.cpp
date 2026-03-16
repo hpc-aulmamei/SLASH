@@ -33,6 +33,7 @@
 #include <map>
 #include <sstream>
 
+#include <vrt/parser/utilization_parser.hpp>
 #include <vrt/vrtbin.hpp>
 
 #include "utils.hpp"
@@ -147,6 +148,135 @@ Json::Value toJson(const KernelData& kernel) {
 }
 
 // ---------------------------------------------------------------------------
+// Utilization formatting (text & JSON)
+// ---------------------------------------------------------------------------
+
+/// Helper to append " (X.XX%)" to a stream if a percentage is present.
+void streamPct(std::ostream& out, const std::optional<float>& pct) {
+    if (pct) {
+        out << " (" << *pct << "%)";
+    }
+}
+
+/// Human-readable output for resource metrics.
+std::ostream& operator<<(std::ostream& out, const vrt::ResourceMetrics& m) {
+    out << "LUTs: " << m.totalLuts;
+    streamPct(out, m.totalLutsPct);
+    out << ", FFs: " << m.ff;
+    streamPct(out, m.ffPct);
+    out << ", LUTRAM: " << m.lutram;
+    streamPct(out, m.lutramPct);
+    out << ", SRL: " << m.srl;
+    streamPct(out, m.srlPct);
+    out << ", RAMB36: " << m.ramb36;
+    streamPct(out, m.ramb36Pct);
+    out << ", RAMB18: " << m.ramb18;
+    streamPct(out, m.ramb18Pct);
+    out << ", URAM: " << m.uram;
+    streamPct(out, m.uramPct);
+    out << ", DSP: " << m.dsp;
+    streamPct(out, m.dspPct);
+    return out;
+}
+
+/// JSON representation of resource metrics.
+Json::Value toJson(const vrt::ResourceMetrics& m) {
+    Json::Value j;
+    j["total_luts"] = m.totalLuts;
+    if (m.totalLutsPct) j["total_luts_pct"] = *m.totalLutsPct;
+    j["lutram"] = m.lutram;
+    if (m.lutramPct) j["lutram_pct"] = *m.lutramPct;
+    j["srl"] = m.srl;
+    if (m.srlPct) j["srl_pct"] = *m.srlPct;
+    j["ff"] = m.ff;
+    if (m.ffPct) j["ff_pct"] = *m.ffPct;
+    j["ramb36"] = m.ramb36;
+    if (m.ramb36Pct) j["ramb36_pct"] = *m.ramb36Pct;
+    j["ramb18"] = m.ramb18;
+    if (m.ramb18Pct) j["ramb18_pct"] = *m.ramb18Pct;
+    j["ramb"] = m.ramb;
+    j["uram"] = m.uram;
+    if (m.uramPct) j["uram_pct"] = *m.uramPct;
+    j["dsp"] = m.dsp;
+    if (m.dspPct) j["dsp_pct"] = *m.dspPct;
+    return j;
+}
+
+/// JSON representation of a utilization cell.
+Json::Value toJson(const vrt::UtilizationCell& cell) {
+    Json::Value j;
+    j["instance"] = cell.instance;
+    j["module"] = cell.module;
+    j["metrics"] = toJson(cell.metrics);
+    return j;
+}
+
+/// JSON representation of a utilization block.
+Json::Value toJson(const vrt::UtilizationBlock& block) {
+    Json::Value j;
+    j["totals"] = toJson(block.totals);
+    if (block.subhierarchy) {
+        const auto& sub = *block.subhierarchy;
+        if (!sub.cells.empty()) {
+            j["cells"] = Json::Value(Json::arrayValue);
+            for (const auto& cell : sub.cells) {
+                j["cells"].append(toJson(cell));
+            }
+        }
+        if (!sub.slashLogic.empty()) {
+            j["slash_logic"] = Json::Value(Json::arrayValue);
+            for (const auto& cell : sub.slashLogic) {
+                j["slash_logic"].append(toJson(cell));
+            }
+        }
+        j["subhierarchy_sum"] = toJson(sub.subhierarchySum);
+        j["slash_logic_sum"] = toJson(sub.slashLogicSum);
+    }
+    return j;
+}
+
+/// JSON representation of the full utilization report.
+Json::Value toJson(const vrt::UtilizationReport& report) {
+    Json::Value j;
+    j["slash"] = toJson(report.slash);
+    if (report.serviceLayer) {
+        j["service_layer"] = toJson(*report.serviceLayer);
+    }
+    return j;
+}
+
+/// Human-readable output for a utilization block.
+void printBlock(std::ostream& out, const vrt::UtilizationBlock& block, const char* indent) {
+    out << indent << block.name << ": " << block.totals << "\n";
+    if (block.subhierarchy) {
+        const auto& sub = *block.subhierarchy;
+        if (!sub.cells.empty()) {
+            out << indent << INDENT1 << "Cells:\n";
+            for (const auto& cell : sub.cells) {
+                out << indent << INDENT2 << cell.instance
+                    << " (" << cell.module << "): " << cell.metrics << "\n";
+            }
+        }
+        if (!sub.slashLogic.empty()) {
+            out << indent << INDENT1 << "Slash logic:\n";
+            for (const auto& cell : sub.slashLogic) {
+                out << indent << INDENT2 << cell.instance
+                    << " (" << cell.module << "): " << cell.metrics << "\n";
+            }
+        }
+    }
+}
+
+/// Human-readable output for the full utilization report.
+std::ostream& operator<<(std::ostream& out, const vrt::UtilizationReport& report) {
+    printBlock(out, report.slash, INDENT2);
+    if (report.serviceLayer) {
+        printBlock(out, *report.serviceLayer, INDENT2);
+    }
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // VbinData — lightweight snapshot of a whole vbin / system-map
 // ---------------------------------------------------------------------------
 
@@ -156,6 +286,7 @@ struct VbinData {
     vrt::Platform platform{vrt::Platform::UNKNOWN};  ///< Target platform (HW / emulation / sim).
     uint64_t clockFrequency{};                       ///< Design clock frequency in Hz.
     std::map<std::string, KernelData> kernels;       ///< Kernels keyed by name.
+    std::optional<vrt::UtilizationReport> utilization; ///< Utilization report (if present).
 
     /// Builds a VbinData from an already-parsed system-map XMLParser.
     static VbinData fromParser(vrt::XMLParser& parser, const std::string& name) {
@@ -174,11 +305,20 @@ struct VbinData {
     }
 
     /// Builds a VbinData from a vrt::Vrtbin that has already been opened.
-    static VbinData fromVbin(vrt::Vrtbin& vbin, const std::string& name) {  
+    static VbinData fromVbin(vrt::Vrtbin& vbin, const std::string& name) {
         vrt::XMLParser parser{vbin.getSystemMapPath()};
         parser.parseXML();
 
-        return fromParser(parser, name);
+        auto data = fromParser(parser, name);
+
+        const auto utilPath = vbin.getUtilizationReportPath();
+        if (!utilPath.empty() && std::filesystem::exists(utilPath)) {
+            vrt::UtilizationParser utilParser{utilPath};
+            utilParser.parse();
+            data.utilization = utilParser.getReport();
+        }
+
+        return data;
     }
 
     /// Builds a VbinData by querying the system map currently loaded on
@@ -202,7 +342,16 @@ struct VbinData {
         vrt::XMLParser parser{mapPath};
         parser.parseXML();
 
-        return fromParser(parser, "on " + bdf);
+        auto data = fromParser(parser, "on " + bdf);
+
+        const std::string utilPath = vrt::Vrtbin::getUtilizationReportPathFromBdf(bdf);
+        if (std::filesystem::exists(utilPath)) {
+            vrt::UtilizationParser utilParser{utilPath};
+            utilParser.parse();
+            data.utilization = utilParser.getReport();
+        }
+
+        return data;
     }
 
     /// Builds a VbinData by extracting and parsing a vbin file on disk.
@@ -237,6 +386,10 @@ std::ostream& operator<<(std::ostream& out, const VbinData& vbin) {
         << INDENT1 << "Platform: " << toString(vbin.platform) << "\n"
         << INDENT1 << "Clock frequency: " << vbin.clockFrequency << "\n";
 
+    if (vbin.utilization) {
+        out << INDENT1 << "Utilization:\n" << *vbin.utilization;
+    }
+
     for (const auto& [_, kernel] : vbin.kernels) {
         out << kernel;
     }
@@ -250,6 +403,10 @@ Json::Value toJson(const VbinData& vbin) {
 
     j["clock_frequency"] = toHexString(vbin.clockFrequency);
 
+    if (vbin.utilization) {
+        j["utilization"] = toJson(*vbin.utilization);
+    }
+
     if (!vbin.kernels.empty()) {
         j["kernels"] = Json::Value{};
 
@@ -257,7 +414,7 @@ Json::Value toJson(const VbinData& vbin) {
             j["kernels"][name] = toJson(kernel);
         }
     }
-    
+
     return j;
 }
 
