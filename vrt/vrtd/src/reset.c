@@ -30,7 +30,7 @@
  *      driver on PF0.  AMI provides ioctls for device management operations
  *      such as programming boot partitions and triggering firmware-level
  *      reconfiguration.
- *      /* TODO(vserbu): explain AMI protocol details */
+ *      TODO(vserbu): explain AMI protocol details
  *
  *   2. PCIe hotplug via the SLASH kernel module -- after the firmware has been
  *      told to reconfigure, the PCIe device must be removed from the bus,
@@ -46,7 +46,7 @@
  *   - PF0: AVED/AMI management function (used for firmware ioctls)
  *   - PF1: QDMA function (used for DMA data transfers)
  *   - PF2: Additional function
- *   /* TODO(vserbu): clarify PF2 role (CMC? user PF?) */
+ *   TODO(vserbu): clarify PF2 role (CMC? user PF?)
  *
  * Before performing a Secondary Bus Reset, ALL three PFs must be removed from
  * the Linux PCI subsystem.  If any PF is left attached while the SBR is
@@ -64,7 +64,7 @@
  *      from partition 1 on the next reset.
  *   5. Write a trigger value to BAR0 offset 0x1040000 to initiate the
  *      firmware-level reconfiguration.
- *      /* TODO(vserbu): explain what BAR0 register 0x1040000 controls in AMI */
+ *      TODO(vserbu): explain what BAR0 register 0x1040000 controls in AMI
  *   6. Close the AMI device handle.
  *   7. Remove PF0, PF1, PF2 from the PCI bus via slash_hotplug_remove().
  *      ENODEV is tolerated (device may already have been removed by firmware).
