@@ -159,7 +159,7 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
      * ami_dev_find() locates the AMI character device by PCI BDF, and
      * ami_dev_request_access() acquires exclusive access for management
      * operations.
-     * /* TODO(vserbu): explain AMI access model -- is this a lock? exclusive open? capability grant? */
+     * TODO(vserbu): explain AMI access model -- is this a lock? exclusive open? capability grant?
      */
     // PF0 is AVED/AMI bdf
     ret = ami_dev_find(pf0_bdf, &ami_device);
