@@ -36,6 +36,8 @@
 #include <vrt/parser/utilization_parser.hpp>
 #include <vrt/vrtbin.hpp>
 
+#include "bdf.hpp"
+
 #include "utils.hpp"
 
 //. BDF string corresponding to the all-ones sentinel value (0xFFFF).
@@ -425,7 +427,8 @@ Json::Value toJson(const VbinData& vbin) {
 /// Loads and reads the data source (BDF query or file path) based on the options.
 VbinData getVbinData(const Inspect::Options& options) {
     if (options.isBdfQuery) {
-        return VbinData::fromBdf(options.bdf);
+        std::string bdf = resolveBoardBdf(options.bdf, "query");
+        return VbinData::fromBdf(bdf);
     } else {
         return VbinData::fromPath(options.vbinPath);
     }

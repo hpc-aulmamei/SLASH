@@ -181,9 +181,15 @@ public:
     /**
      * @brief Perform a PCIe hotplug operation for this device.
      *
+     * For board-level operations (Rescan, ResetSequence), @p function is ignored.
+     * For PF-level operations (Remove, ToggleSbr, Hotplug), @p function selects
+     * the PCI physical function (0-7).
+     *
+     * @param op       One of HotplugOp.
+     * @param function PCI function number (0-7) for PF-level ops.
      * @throws vrtd::Error on error.
      */
-    void hotplugOp(HotplugOp op) const;
+    void hotplugOp(HotplugOp op, uint8_t function = 0) const;
 
     /**
      * @brief Convenience helper for bus rescan.
@@ -194,23 +200,26 @@ public:
 
     /**
      * @brief Convenience helper for remove.
+     * @param function PCI function number (0-7). Required.
      */
-    void hotplugRemove() const {
-        hotplugOp(HotplugOp::Remove);
+    void hotplugRemove(uint8_t function) const {
+        hotplugOp(HotplugOp::Remove, function);
     }
 
     /**
      * @brief Convenience helper for SBR toggle.
+     * @param function PCI function number (0-7). Required.
      */
-    void hotplugToggleSbr() const {
-        hotplugOp(HotplugOp::ToggleSbr);
+    void hotplugToggleSbr(uint8_t function) const {
+        hotplugOp(HotplugOp::ToggleSbr, function);
     }
 
     /**
      * @brief Convenience helper for a remove+rescan hotplug cycle.
+     * @param function PCI function number (0-7). Required.
      */
-    void hotplug() const {
-        hotplugOp(HotplugOp::Hotplug);
+    void hotplug(uint8_t function) const {
+        hotplugOp(HotplugOp::Hotplug, function);
     }
 
     /**
@@ -304,7 +313,7 @@ private:
            std::function<Bar(const Device&, uint8_t)> fGetBar,
            std::function<QdmaQpair(const Device&, const struct slash_qdma_qpair_add&)> fCreateQdmaQpair,
            std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir)> fOpenBuffer,
-           std::function<void(const Device&, HotplugOp)> fHotplugOp,
+           std::function<void(const Device&, HotplugOp, uint8_t)> fHotplugOp,
            std::function<void(const Device&, int)> fDesignWrite,
            std::function<void(const Device&, std::string_view)> fDesignWriteFile,
            std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate,
@@ -321,7 +330,7 @@ private:
     std::function<Bar(const Device&, uint8_t)> fGetBar;
     std::function<QdmaQpair(const Device&, const struct slash_qdma_qpair_add&)> fCreateQdmaQpair;
     std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir)> fOpenBuffer;
-    std::function<void(const Device&, HotplugOp)> fHotplugOp;
+    std::function<void(const Device&, HotplugOp, uint8_t)> fHotplugOp;
     std::function<void(const Device&, int)> fDesignWrite;
     std::function<void(const Device&, std::string_view)> fDesignWriteFile;
     std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate;

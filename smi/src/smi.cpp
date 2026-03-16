@@ -78,7 +78,7 @@ static int smiMain(int argc, char **argv) {
     // -- query (inspect what's loaded on a device) --
     auto* queryCommand = app.add_subcommand("query", "Query vbin file last loaded on device");
     Query::Options queryOptions{.isBdfQuery=true};
-    queryCommand->add_option("-d,--device", queryOptions.bdf, "BDF of target device")->required();
+    queryCommand->add_option("-d,--device", queryOptions.bdf, "Board address (e.g. 03:00 or 0000:03:00)")->required();
     queryCommand->add_flag("-j,--json", queryOptions.jsonOutput, "Print information as compact json (default is human-readable)");
     queryCommand->add_flag("-J,--pretty-json", queryOptions.prettyJsonOutput, "Print information as json with indentation (default is human-readable)");
 
@@ -93,17 +93,17 @@ static int smiMain(int argc, char **argv) {
     auto* programCommand = app.add_subcommand("program", "Program a hardware device");
     Program::Options programOptions;
     programCommand->add_option("vbin", programOptions.vbinPath, "Path to vbin file")->required();
-    programCommand->add_option("-d,--device", programOptions.bdf, "BDF of target device")->required();
+    programCommand->add_option("-d,--device", programOptions.bdf, "Board address (e.g. 03:00 or 0000:03:00)")->required();
 
     // -- reset (hardware reset of board) --
     auto* resetCommand = app.add_subcommand("reset", "Hardware reset a V80 board");
     Reset::Options resetOptions;
-    resetCommand->add_option("-d,--device", resetOptions.bdf, "BDF of target device")->required();
+    resetCommand->add_option("-d,--device", resetOptions.bdf, "Board address (e.g. 03:00 or 0000:03:00)")->required();
 
     // -- validate (memory integrity + bandwidth) --
     auto* validateCommand = app.add_subcommand("validate", "Validate board memory (integrity + bandwidth)");
     Validate::Options validateOptions;
-    validateCommand->add_option("-d,--device", validateOptions.bdf, "BDF of target device")->required();
+    validateCommand->add_option("-d,--device", validateOptions.bdf, "Board address (e.g. 03:00 or 0000:03:00)")->required();
     validateCommand->add_option("-j,--threads", validateOptions.threads,
         "Number of parallel buffers/threads (1-64)")->default_val(8)->check(CLI::Range(1u, 64u));
 

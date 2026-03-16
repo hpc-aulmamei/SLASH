@@ -566,12 +566,14 @@ enum vrtd_ret vrtd_design_write_file(
 enum vrtd_ret vrtd_device_hotplug_op(
     int fd,
     uint32_t dev,
-    uint8_t op
+    uint8_t op,
+    uint8_t function
 )
 {
     struct vrtd_req_device_hotplug_op req = {
         .dev_number = dev,
         .op = op,
+        .function = function,
     };
     struct vrtd_resp_device_hotplug_op resp = {0};
 
@@ -588,22 +590,22 @@ enum vrtd_ret vrtd_device_hotplug_op(
 
 enum vrtd_ret vrtd_device_hotplug_rescan(int fd, uint32_t dev)
 {
-    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_RESCAN);
+    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_RESCAN, 0);
 }
 
-enum vrtd_ret vrtd_device_hotplug_remove(int fd, uint32_t dev)
+enum vrtd_ret vrtd_device_hotplug_remove(int fd, uint32_t dev, uint8_t function)
 {
-    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_REMOVE);
+    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_REMOVE, function);
 }
 
-enum vrtd_ret vrtd_device_hotplug_toggle_sbr(int fd, uint32_t dev)
+enum vrtd_ret vrtd_device_hotplug_toggle_sbr(int fd, uint32_t dev, uint8_t function)
 {
-    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR);
+    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR, function);
 }
 
-enum vrtd_ret vrtd_device_hotplug_hotplug(int fd, uint32_t dev)
+enum vrtd_ret vrtd_device_hotplug_hotplug(int fd, uint32_t dev, uint8_t function)
 {
-    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_HOTPLUG);
+    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_HOTPLUG, function);
 }
 
 enum vrtd_ret vrtd_clock_get_rate(

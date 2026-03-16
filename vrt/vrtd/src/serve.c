@@ -1408,14 +1408,41 @@ static uint16_t client_handle_request_device_hotplug_op(
         ret = slash_hotplug_rescan(g_hotplug);
         break;
     case VRTD_DEVICE_HOTPLUG_OP_REMOVE:
-        ret = slash_hotplug_remove(g_hotplug, d->pci_info.bdf);
-        break;
     case VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR:
-        ret = slash_hotplug_toggle_sbr(g_hotplug, d->pci_info.bdf);
+    case VRTD_DEVICE_HOTPLUG_OP_HOTPLUG: {
+        /* Individual hotplug operations are PCI-function-level (the hotplug
+         * interface is SLASH-agnostic).  Construct a full DDDD:BB:DD.F BDF
+         * from the device's board-level address and the requested function. */
+        if (req_body->function > 7) {
+            LOG(LOG_ERR, "hotplug_op: %s: invalid function number %u",
+                vrtd_hotplug_op_to_string(req_body->op),
+                (unsigned int)req_body->function);
+            return VRTD_RET_INVALID_ARGUMENT;
+        }
+
+        char pf_bdf[VRTD_PCI_BDF_LEN];
+        if (pci_bdf_set_function(d->pci_info.bdf, req_body->function, pf_bdf) != 0) {
+            LOG(LOG_ERR, "hotplug_op: %s: failed to construct PF%u BDF from %s",
+                vrtd_hotplug_op_to_string(req_body->op),
+                (unsigned int)req_body->function, d->pci_info.bdf);
+            return VRTD_RET_INTERNAL_ERROR;
+        }
+
+        switch (req_body->op) {
+        case VRTD_DEVICE_HOTPLUG_OP_REMOVE:
+            ret = slash_hotplug_remove(g_hotplug, pf_bdf);
+            break;
+        case VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR:
+            ret = slash_hotplug_toggle_sbr(g_hotplug, pf_bdf);
+            break;
+        case VRTD_DEVICE_HOTPLUG_OP_HOTPLUG:
+            ret = slash_hotplug_hotplug(g_hotplug, pf_bdf);
+            break;
+        default:
+            break;
+        }
         break;
-    case VRTD_DEVICE_HOTPLUG_OP_HOTPLUG:
-        ret = slash_hotplug_hotplug(g_hotplug, d->pci_info.bdf);
-        break;
+    }
     case VRTD_DEVICE_HOTPLUG_OP_RESET_SEQUENCE: {
         uint16_t reset_ret = reset_with_ami(d, &client->state->devices);
         if (reset_ret != VRTD_RET_OK) {
@@ -2259,6 +2286,34 @@ static uint16_t client_handle_request_get_device_by_bdf(
     if (bdf[0] == '\0') {
         LOG(LOG_WARNING, "get_device_by_bdf: empty BDF string");
         return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    /* Normalize to board-level BDF (DDDD:BB:DD) for matching.
+     * Strip any function suffix (.F) since devices are stored board-level.
+     * Prepend domain 0000: if only one colon is present (short BDF). */
+    {
+        char *dot = strrchr(bdf, '.');
+        if (dot != NULL) {
+            LOG(LOG_WARNING,
+                "get_device_by_bdf: client sent PF-level BDF '%s'; "
+                "stripping function %s — use board address instead",
+                req_body->bdf, dot);
+            *dot = '\0';
+        }
+
+        /* Count colons to detect short BDF (BB:DD vs DDDD:BB:DD). */
+        int colons = 0;
+        for (const char *p = bdf; *p != '\0'; ++p) {
+            if (*p == ':') colons++;
+        }
+        if (colons == 1) {
+            /* Short BDF — prepend default domain. */
+            char tmp[VRTD_PCI_BDF_LEN];
+            int n = snprintf(tmp, sizeof(tmp), "0000:%s", bdf);
+            if (n > 0 && (size_t)n < sizeof(tmp)) {
+                memcpy(bdf, tmp, (size_t)n + 1);
+            }
+        }
     }
 
     /* Linear scan; the device count is small (single digits). */

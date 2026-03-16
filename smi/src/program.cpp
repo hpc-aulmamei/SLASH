@@ -25,10 +25,14 @@
 
 #include <vrt/device.hpp>
 
+#include "bdf.hpp"
+
 int Program::run(const Options& options) {
+    std::string bdf = resolveBoardBdf(options.bdf, "program");
+
     // vrt::Device's constructor handles programming when the third argument
     // (program) is true, so simply constructing the object is sufficient.
-    vrt::Device device(options.bdf, options.vbinPath, true);
+    vrt::Device device(bdf, options.vbinPath, true);
 
     return 0;
 }

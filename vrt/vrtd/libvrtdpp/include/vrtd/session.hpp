@@ -204,11 +204,17 @@ private:
     /**
      * @internal Perform a PCIe hotplug operation.
      *
-     * @param device Device target.
-     * @param op     One of vrtd::HotplugOp.
+     * For board-level operations (Rescan, ResetSequence), @p function is ignored.
+     * For PF-level operations (Remove, ToggleSbr, Hotplug), @p function selects
+     * the PCI physical function (0-7).
+     *
+     * @param device   Device target.
+     * @param op       One of vrtd::HotplugOp.
+     * @param function PCI function number (0-7) for PF-level ops.
      * @throws vrtd::Error on error.
      */
-    void hotplugOp(const Device& device, HotplugOp op) const;
+    void hotplugOp(const Device& device, HotplugOp op,
+                   uint8_t function = 0) const;
 
     /**
      * @internal Perform a design writer transfer using an input FD.

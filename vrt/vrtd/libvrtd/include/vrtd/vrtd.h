@@ -398,16 +398,22 @@ enum vrtd_ret vrtd_design_write_file(
 /**
  * @brief Perform a PCIe hotplug operation for a device.
  *
- * @param fd   Connected vrtd socket file descriptor.
- * @param dev  Device index (0-based).
- * @param op   One of vrtd_device_hotplug_op.
+ * For board-level operations (RESCAN, RESET_SEQUENCE), @p function is ignored.
+ * For PF-level operations (REMOVE, TOGGLE_SBR, HOTPLUG), @p function selects
+ * the PCI physical function (0-7).
+ *
+ * @param fd       Connected vrtd socket file descriptor.
+ * @param dev      Device index (0-based).
+ * @param op       One of vrtd_device_hotplug_op.
+ * @param function PCI function number (0-7) for PF-level ops.
  *
  * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
  */
 enum vrtd_ret vrtd_device_hotplug_op(
     int fd,
     uint32_t dev,
-    uint8_t op
+    uint8_t op,
+    uint8_t function
 );
 
 enum vrtd_ret vrtd_device_hotplug_rescan(
@@ -417,17 +423,20 @@ enum vrtd_ret vrtd_device_hotplug_rescan(
 
 enum vrtd_ret vrtd_device_hotplug_remove(
     int fd,
-    uint32_t dev
+    uint32_t dev,
+    uint8_t function
 );
 
 enum vrtd_ret vrtd_device_hotplug_toggle_sbr(
     int fd,
-    uint32_t dev
+    uint32_t dev,
+    uint8_t function
 );
 
 enum vrtd_ret vrtd_device_hotplug_hotplug(
     int fd,
-    uint32_t dev
+    uint32_t dev,
+    uint8_t function
 );
 
 /**

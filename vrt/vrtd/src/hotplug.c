@@ -92,12 +92,14 @@ uint16_t hotplug_errno_to_vrtd_ret(int err)
  * Extract the BDF prefix (domain:bus:device) from a full BDF string,
  * stripping the ".function" suffix.
  *
- * Example: "0000:65:00.2" -> "0000:65:00"
+ * Examples:
+ *   "0000:65:00.2" -> "0000:65:00"
+ *   "0000:65:00"   -> "0000:65:00"   (already board-level, returned as-is)
  *
  * This is used when operating on the PCIe slot as a whole (e.g. secondary
  * bus reset affects all functions under the same bus:device).
  *
- * @param bdf         NUL-terminated BDF string.
+ * @param bdf         NUL-terminated BDF string (with or without .F suffix).
  * @param out_prefix  Output buffer of at least VRTD_PCI_BDF_LEN bytes.
  * @return 0 on success, -1 with errno set on failure.
  */
@@ -110,8 +112,15 @@ int pci_bdf_prefix(const char *bdf, char out_prefix[VRTD_PCI_BDF_LEN])
 
     const char *dot = strrchr(bdf, '.');
     if (dot == NULL || dot == bdf) {
-        errno = EINVAL;
-        return -1;
+        /* No dot — input is already board-level (DDDD:BB:DD).  Copy as-is. */
+        size_t len = strlen(bdf);
+        if (len == 0 || len >= VRTD_PCI_BDF_LEN) {
+            errno = (len == 0) ? EINVAL : ENAMETOOLONG;
+            return -1;
+        }
+        memcpy(out_prefix, bdf, len);
+        out_prefix[len] = '\0';
+        return 0;
     }
 
     size_t prefix_len = (size_t)(dot - bdf);
@@ -127,15 +136,20 @@ int pci_bdf_prefix(const char *bdf, char out_prefix[VRTD_PCI_BDF_LEN])
 }
 
 /**
- * Produce a new BDF string with a different function number.
+ * Produce a new BDF string with a specific function number.
  *
- * Example: pci_bdf_set_function("0000:65:00.0", 2, out) -> out = "0000:65:00.2"
+ * Accepts both full BDF ("0000:65:00.0") and board-level ("0000:65:00") input.
+ * In both cases, the output is "DDDD:BB:DD.F" with the requested function digit.
+ *
+ * Examples:
+ *   pci_bdf_set_function("0000:65:00.0", 2, out) -> out = "0000:65:00.2"
+ *   pci_bdf_set_function("0000:65:00",   2, out) -> out = "0000:65:00.2"
  *
  * V80 FPGA devices expose multiple PCIe functions (e.g. function 0 for QDMA,
- * function 1 for management).  This helper lets the daemon address a sibling
- * function given any BDF from the same device.
+ * function 1 for management).  This helper lets the daemon address a specific
+ * function given a board-level or PF-level BDF.
  *
- * @param bdf      NUL-terminated source BDF string.
+ * @param bdf      NUL-terminated source BDF string (with or without .F).
  * @param func     New function number (0-7).
  * @param out_bdf  Output buffer of at least VRTD_PCI_BDF_LEN bytes.
  * @return 0 on success, -1 with errno set on failure.
@@ -153,15 +167,17 @@ int pci_bdf_set_function(const char *bdf, uint8_t func, char out_bdf[VRTD_PCI_BD
         return -1;
     }
 
-    /* Locate the last '.' which separates the device from the function number.
-     * Validate that exactly one digit follows it (PCIe functions are 0-7). */
+    /* Find the "domain:bus:device" prefix length.  If the input contains
+     * a '.', the prefix is everything before it.  Otherwise the entire
+     * string is the prefix (board-level BDF without function digit). */
     const char *dot = strrchr(bdf, '.');
-    if (dot == NULL || dot == bdf || dot[1] == '\0' || dot[2] != '\0') {
-        errno = EINVAL;
-        return -1;
+    size_t prefix_len;
+    if (dot != NULL && dot != bdf) {
+        prefix_len = (size_t)(dot - bdf);
+    } else {
+        prefix_len = len;
     }
 
-    size_t prefix_len = (size_t)(dot - bdf);
     if (prefix_len + 2 >= VRTD_PCI_BDF_LEN) {
         errno = ENAMETOOLONG;
         return -1;

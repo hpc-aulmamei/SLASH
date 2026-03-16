@@ -97,8 +97,8 @@ Buffer Device::openBuffer(BufferAllocType allocType,
     return fOpenBuffer(*this, allocType, size, allocArg, allocDir);
 }
 
-void Device::hotplugOp(HotplugOp op) const {
-    fHotplugOp(*this, op);
+void Device::hotplugOp(HotplugOp op, uint8_t function) const {
+    fHotplugOp(*this, op, function);
 }
 
 void Device::designWrite(int input_fd) const {

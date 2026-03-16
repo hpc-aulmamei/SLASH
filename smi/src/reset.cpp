@@ -25,10 +25,14 @@
 
 #include <vrtd/session.hpp>
 
+#include "bdf.hpp"
+
 int Reset::run(const Options& options) {
+    std::string bdf = resolveBoardBdf(options.bdf, "reset");
+
     // We use vrtd manually here, since vrt does not implement reset operations.
     vrtd::Session session;
-    auto device = session.getDeviceByBdf(options.bdf);
+    auto device = session.getDeviceByBdf(bdf);
     device.hotplugOp(vrtd::HotplugOp::ResetSequence);
 
     return 0;

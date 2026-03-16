@@ -45,6 +45,8 @@
 
 #include <vrtd/session.hpp>
 
+#include "bdf.hpp"
+
 /// Buffer size for each allocation (64 MB — one allocator subregion).
 static constexpr uint64_t BUFFER_SIZE = 64ULL * 1024 * 1024;
 
@@ -152,20 +154,21 @@ static void testBandwidth(std::vector<vrtd::Buffer>& buffers) {
 }
 
 int Validate::run(const Options& options) {
+    std::string bdf = resolveBoardBdf(options.bdf, "validate");
     unsigned N = options.threads;
 
     // -- Step 1: Reset the device via vrtd --
-    std::cout << "Resetting device " << options.bdf << "..." << std::endl;
+    std::cout << "Resetting device " << bdf << "..." << std::endl;
     {
         vrtd::Session session;
-        auto device = session.getDeviceByBdf(options.bdf);
+        auto device = session.getDeviceByBdf(bdf);
         device.hotplugOp(vrtd::HotplugOp::ResetSequence);
     }
     // Session is torn down; the daemon has re-discovered the device.
 
     // Reconnect after reset.
     vrtd::Session session;
-    auto device = session.getDeviceByBdf(options.bdf);
+    auto device = session.getDeviceByBdf(bdf);
 
     // -- Step 2: HBM — integrity then bandwidth --
     std::cout << "Testing HBM data integrity (" << N << " regions)..." << std::endl;

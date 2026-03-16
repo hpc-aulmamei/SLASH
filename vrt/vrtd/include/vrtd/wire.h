@@ -338,10 +338,18 @@ enum vrtd_device_hotplug_op {
 
 /**
  * @brief Request a PCIe hotplug operation for a device.
+ *
+ * For board-level operations (RESCAN, RESET_SEQUENCE), only dev_number
+ * and op are required; the function field is ignored.
+ *
+ * For PF-level operations (REMOVE, TOGGLE_SBR, HOTPLUG), the function
+ * field selects the PCI physical function (0-7).  These operations are
+ * SLASH-agnostic shortcuts to the kernel hotplug interface.
  */
 struct vrtd_req_device_hotplug_op {
     uint32_t dev_number; ///< Device index (0-based).
     uint8_t op;          ///< One of vrtd_device_hotplug_op.
+    uint8_t function;    ///< PCI function number (0-7) for PF-level ops.
 } __attribute__((packed));
 
 struct vrtd_resp_device_hotplug_op {

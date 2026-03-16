@@ -46,6 +46,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <iostream>
 #include <utility>
 #include <string>
 
@@ -134,7 +135,7 @@ Device Session::getDevice(size_t i) const {
         [&](const Device& device, BufferAllocType type, uint64_t size, uint64_t arg, BufferAllocDir dir) {
             return openBuffer(device, type, size, arg, dir);
         },
-        [&](const Device& device, HotplugOp op) { return hotplugOp(device, op); },
+        [&](const Device& device, HotplugOp op, uint8_t function) { return hotplugOp(device, op, function); },
         [&](const Device& device, int input_fd) { return designWrite(device, input_fd); },
         [&](const Device& device, std::string_view path) { return designWriteFile(device, path); },
         [&](const Device& device, ClockRegion region) { return getClockRate(device, region); },
@@ -148,9 +149,24 @@ Device Session::getDeviceByBdf(std::string_view bdf) const {
     }
     std::lock_guard<std::mutex> lk(*m);
 
-    // Normalize short BDF (e.g. "21:00.2") to full form ("0000:21:00.2") so
-    // the lookup matches what the kernel/daemon stores.
+    // Normalize to board-level BDF (DDDD:BB:DD) to match how the daemon
+    // stores devices.  Strip function digit if present, and prepend domain
+    // 0000: if only one colon (short BDF like "03:00").
     std::string bdf_str(bdf);
+
+    // Strip function digit (.F)
+    auto dot = bdf_str.rfind('.');
+    if (dot != std::string::npos) {
+        std::cerr << "Warning: BDF '" << bdf
+                  << "' contains a PF function number; "
+                  << "stripping " << bdf_str.substr(dot)
+                  << " — use board address (e.g. "
+                  << bdf_str.substr(0, dot) << ") instead"
+                  << std::endl;
+        bdf_str = bdf_str.substr(0, dot);
+    }
+
+    // Prepend default domain if missing
     if (bdf_str.find(':') == bdf_str.rfind(':')) {
         bdf_str = "0000:" + bdf_str;
     }
@@ -180,7 +196,7 @@ Device Session::getDeviceByBdf(std::string_view bdf) const {
         [&](const Device& device, BufferAllocType type, uint64_t size, uint64_t arg, BufferAllocDir dir) {
             return openBuffer(device, type, size, arg, dir);
         },
-        [&](const Device& device, HotplugOp op) { return hotplugOp(device, op); },
+        [&](const Device& device, HotplugOp op, uint8_t function) { return hotplugOp(device, op, function); },
         [&](const Device& device, int input_fd) { return designWrite(device, input_fd); },
         [&](const Device& device, std::string_view path) { return designWriteFile(device, path); },
         [&](const Device& device, ClockRegion region) { return getClockRate(device, region); },
@@ -293,13 +309,15 @@ Buffer Session::openBuffer(
     return Buffer(raw);
 }
 
-void Session::hotplugOp(const Device& device, HotplugOp op) const {
+void Session::hotplugOp(const Device& device, HotplugOp op,
+                        uint8_t function) const {
     if (isClosed()) {
         throw Error(VRTD_RET_BAD_LIB_CALL);
     }
     std::lock_guard<std::mutex> lk(*m);
 
-    auto ret = vrtd_device_hotplug_op(fd, device.getNum(), static_cast<uint8_t>(op));
+    auto ret = vrtd_device_hotplug_op(fd, device.getNum(),
+                                      static_cast<uint8_t>(op), function);
     if (ret != VRTD_RET_OK) {
         throw Error(ret);
     }

@@ -383,6 +383,23 @@ static int device_read_pci_info(struct device *d, struct vrtd_pci_info *out)
     // Copy pci information
     {
         (void) strncpy(out->bdf, info.bdf, VRTD_PCI_BDF_LEN);
+
+        /* Strip the function digit (.F) from the kernel's BDF string.
+         * vrtd identifies devices at the board level (DDDD:BB:DD), not
+         * at the individual physical function level.  PF-specific BDFs
+         * are constructed on the fly when needed (e.g. for hotplug ioctls)
+         * using pci_bdf_set_function(). */
+        {
+            char *dot = strrchr(out->bdf, '.');
+            if (dot != NULL) {
+                LOG(LOG_INFO,
+                    "Stripping PF function %s from kernel BDF %s; "
+                    "device tracked as board %.*s",
+                    dot, info.bdf, (int)(dot - out->bdf), out->bdf);
+                *dot = '\0';
+            }
+        }
+
         out->vendor_id = info.vendor_id;
         out->device_id = info.device_id;
         out->subsystem_vendor_id = info.subsystem_vendor_id;
