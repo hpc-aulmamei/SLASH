@@ -202,10 +202,8 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
      * back to vrtd to drive the full hotplug sequence itself.  We set
      * cap_override from the device handle (populated earlier by
      * ami_dev_request_access) so that the kernel driver's per-ioctl permission
-     * check passes for the unprivileged vrtd user.  CAP_DAC_OVERRIDE granted
-     * via AmbientCapabilities in vrtd.service provides an additional fallback
-     * that satisfies the IS_ROOT_USER() check in the driver independently of
-     * cap_override.
+     * check passes for the unprivileged vrtd user without requiring
+     * CAP_DAC_OVERRIDE or root.
      */
     {
         struct ami_ioc_data_payload boot_payload = { 0 };
