@@ -21,9 +21,6 @@ PrivateDevices=false
 RuntimeDirectory=vrtd
 RuntimeDirectoryMode=0755
 
-AmbientCapabilities=CAP_SYS_RAWIO
-CapabilityBoundingSet=CAP_SYS_RAWIO
-
 # Hardening
 NoNewPrivileges=true
 ProtectSystem=full

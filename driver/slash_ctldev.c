@@ -420,13 +420,10 @@ static long slash_ctldev_fop_ioctl(struct file *file, unsigned int op, unsigned 
         size_t copy_size;
 
         /*
-         * Require CAP_SYS_RAWIO: mapping a PCI BAR gives userspace
-         * direct hardware access, which is a privileged operation.
+         * Access control is enforced by device-node permissions
+         * (udev: slash_ctl* is 0600, owned by vrtd:vrtd).
+         * No capability check is needed here.
          */
-        if (!capable(CAP_SYS_RAWIO)) {
-            dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_BAR_FD capability check failed\n");
-            return -EPERM;
-        }
 
         /* Size-versioning: same pattern as GET_BAR_INFO above. */
         if (copy_from_user(&fd_request_alleged_size, (void __user *)arg, sizeof(fd_request_alleged_size))) {
