@@ -230,8 +230,8 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     /*
      * Step 5: Write a trigger value to BAR0 register at offset 0x1040000
      * to initiate the firmware-level reconfiguration.
-     * /* TODO(vserbu): explain what BAR0 offset 0x1040000 controls -- is this
-     *    an AMC mailbox trigger, a reconfiguration strobe, or something else? */
+     * TODO(vserbu): explain what BAR0 offset 0x1040000 controls -- is this
+     *    an AMC mailbox trigger, a reconfiguration strobe, or something else?
      */
     ret = ami_mem_bar_write(ami_device, 0, 0x1040000, 1);
     if (ret != AMI_STATUS_OK) {
