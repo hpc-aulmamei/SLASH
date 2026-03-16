@@ -190,7 +190,7 @@ static VrtdStatus checkVrtd(const std::string& bdfBase) {
         vrtd::Session session;
         session.getDeviceByBdf(bdfBase);
         return {.ok = true};
-    } catch (const vrtd::Error& e) {
+    } catch (const std::exception& e) {
         return {.ok = false, .reason = e.what()};
     }
 }
