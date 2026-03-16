@@ -33,6 +33,8 @@
 #include <optional>
 #include <vector>
 
+#include <vrtd/session.hpp>
+
 #include "utils.hpp"
 
 /// Root sysfs directory that contains one symlink per PCI device.
@@ -163,6 +165,34 @@ static PfStatus checkPf(const std::string& bdf, int pfNumber,
     }
 
     return {.pfNumber = pfNumber, .bdf = bdf, .ok = true};
+}
+
+// ---------------------------------------------------------------------------
+// VrtdStatus — VRTD daemon readiness check
+// ---------------------------------------------------------------------------
+
+/// @brief Result of checking whether a board is registered with the VRTD daemon.
+struct VrtdStatus {
+    bool        ok{};     ///< True if the board was found in VRTD.
+    std::string reason;   ///< Empty when ok; describes the failure otherwise.
+};
+
+/// Checks whether a board with the given BDF base is registered with VRTD.
+///
+/// Attempts to connect to the VRTD daemon and look up the device by BDF.
+/// Catches all vrtd::Error exceptions so that a missing or unreachable
+/// daemon does not prevent the list command from working.
+///
+/// @param bdfBase Board-level BDF, e.g. "0000:03:00".
+/// @return VrtdStatus with ok=true if found, or ok=false with reason.
+static VrtdStatus checkVrtd(const std::string& bdfBase) {
+    try {
+        vrtd::Session session;
+        session.getDeviceByBdf(bdfBase);
+        return {.ok = true};
+    } catch (const vrtd::Error& e) {
+        return {.ok = false, .reason = e.what()};
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +389,7 @@ struct V80Board {
     PfStatus    pf0;        ///< Status of PF0 (AMI management).
     PfStatus    pf1;        ///< Status of PF1 (QDMA).
     PfStatus    pf2;        ///< Status of PF2 (control).
+    VrtdStatus  vrtd;       ///< Status of VRTD daemon registration.
     bool        longPrinting{};  ///< If true, include detailed sysfs info per PF.
 
     /// Detailed sysfs snapshot for each PF (populated only when longPrinting).
@@ -366,8 +397,8 @@ struct V80Board {
     std::optional<PciDevice> pf1Device;
     std::optional<PciDevice> pf2Device;
 
-    /// True when all three PFs are ready.
-    bool ok() const { return pf0.ok && pf1.ok && pf2.ok; }
+    /// True when all three PFs and VRTD are ready.
+    bool ok() const { return pf0.ok && pf1.ok && pf2.ok && vrtd.ok; }
 };
 
 /// Tries to read a PciDevice from sysfs for the given BDF.
@@ -400,6 +431,7 @@ static std::vector<V80Board> discoverBoards(bool longPrinting) {
             .pf0 = checkPf(pf0Dev.bdf, 0, SLASH_DEVICE_ID, PF0_EXPECTED_DRIVER),
             .pf1 = checkPf(pf1Bdf, 1, SLASH_PF1_DEVICE_ID, PF1_EXPECTED_DRIVER),
             .pf2 = checkPf(pf2Bdf, 2, SLASH_PF2_DEVICE_ID, PF2_EXPECTED_DRIVER),
+            .vrtd = checkVrtd(base),
             .longPrinting = longPrinting,
         };
 
@@ -456,6 +488,17 @@ static void printPfDetail(std::ostream& out, const PfStatus& pf,
     }
 }
 
+/// Writes VRTD status in parenthesized form matching the PF style.
+static void printVrtdStatus(std::ostream& out, const VrtdStatus& vrtd) {
+    out << "(VRTD: ";
+    if (vrtd.ok) {
+        out << "OK";
+    } else {
+        out << "NOT READY: " << vrtd.reason;
+    }
+    out << ")";
+}
+
 /// Human-readable output for one V80 board.
 /// In short mode, prints a single summary line.  In long mode, also
 /// prints detailed sysfs attributes for each PF.
@@ -467,12 +510,21 @@ std::ostream& operator<<(std::ostream& out, const V80Board& board) {
     printPfStatus(out, board.pf1);
     out << " ";
     printPfStatus(out, board.pf2);
+    out << " ";
+    printVrtdStatus(out, board.vrtd);
     out << "\n";
 
     if (board.longPrinting) {
         printPfDetail(out, board.pf0, board.pf0Device);
         printPfDetail(out, board.pf1, board.pf1Device);
         printPfDetail(out, board.pf2, board.pf2Device);
+        out << INDENT1 << "VRTD: ";
+        if (board.vrtd.ok) {
+            out << "OK";
+        } else {
+            out << "NOT READY: " << board.vrtd.reason;
+        }
+        out << "\n";
     }
 
     return out;
@@ -524,6 +576,14 @@ Json::Value toJson(const V80Board& board) {
     j["pf0"] = pfToJson(board.pf0, board.pf0Device);
     j["pf1"] = pfToJson(board.pf1, board.pf1Device);
     j["pf2"] = pfToJson(board.pf2, board.pf2Device);
+
+    Json::Value vrtdJson;
+    vrtdJson["status"] = board.vrtd.ok ? "OK" : "NOT READY";
+    if (!board.vrtd.ok) {
+        vrtdJson["reason"] = board.vrtd.reason;
+    }
+    j["vrtd"] = vrtdJson;
+
     return j;
 }
 
