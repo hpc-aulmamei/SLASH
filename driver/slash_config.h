@@ -59,6 +59,10 @@
 
 /** Short driver name used in log prefixes and sysfs entries. */
 #define SLASH_NAME "slash"
+/** PCI driver name for the PF2 control function. */
+#define SLASH_PCIE_DRV_NAME SLASH_NAME "_ctl"
+/** PCI driver name for the PF1 QDMA function. */
+#define SLASH_QDMA_DRV_NAME SLASH_NAME "_qdma"
 
 /**
  * Name format for control misc devices.

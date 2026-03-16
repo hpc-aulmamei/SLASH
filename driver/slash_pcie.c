@@ -47,7 +47,7 @@ static const struct pci_device_id slash_pcie_ids[] = {
 MODULE_DEVICE_TABLE(pci, slash_pcie_ids);
 
 static struct pci_driver slash_pcie_driver = {
-    .name = SLASH_NAME,
+    .name = SLASH_PCIE_DRV_NAME,
     .id_table = slash_pcie_ids,
     .probe = slash_pcie_probe,
     .remove = slash_pcie_remove,

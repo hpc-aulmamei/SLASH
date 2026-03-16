@@ -620,7 +620,7 @@ MODULE_DEVICE_TABLE(pci, slash_qdma_ids);
  * matching PF1 device discovered during PCI enumeration.
  */
 static struct pci_driver slash_qdma_driver = {
-    .name = SLASH_NAME,
+    .name = SLASH_QDMA_DRV_NAME,
     .id_table = slash_qdma_ids,
     .probe = slash_qdma_probe,
     .remove = slash_qdma_remove,
@@ -2279,10 +2279,7 @@ static int slash_qdma_ioctl_qpair_get_fd_w(struct miscdevice *misc,
     /* Allocate a file descriptor number. */
     fd = get_unused_fd_flags(req.flags & O_CLOEXEC);
     if (fd < 0) {
-        fput(file);
-        slash_qdma_qpair_put(entry);
-        kref_put(&qdma_dev->ref, slash_qdma_dev_release);
-        kfree(ctx);
+        fput(file); /* triggers slash_qdma_qpair_release -> drops entry/dev refs, frees ctx */
         return fd;
     }
 
@@ -2291,10 +2288,7 @@ static int slash_qdma_ioctl_qpair_get_fd_w(struct miscdevice *misc,
     copy_size = min_t(size_t, user_size, sizeof(req));
     if (copy_to_user(uarg, &req, copy_size)) {
         put_unused_fd(fd);
-        fput(file);
-        slash_qdma_qpair_put(entry);
-        kref_put(&qdma_dev->ref, slash_qdma_dev_release);
-        kfree(ctx);
+        fput(file); /* triggers slash_qdma_qpair_release -> drops entry/dev refs, frees ctx */
         return -EFAULT;
     }
 

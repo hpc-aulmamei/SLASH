@@ -57,8 +57,11 @@ constexpr unsigned int SLASH_PF2_DEVICE_ID{0x50B6};
 /// Expected driver for PF0 (AMI management function).
 constexpr char PF0_EXPECTED_DRIVER[] = "ami";
 
-/// Expected driver for PF1 and PF2 (SLASH kernel module).
-constexpr char SLASH_EXPECTED_DRIVER[] = "slash";
+/// Expected driver for PF1 (QDMA function).
+constexpr char PF1_EXPECTED_DRIVER[] = "slash_qdma";
+
+/// Expected driver for PF2 (control function).
+constexpr char PF2_EXPECTED_DRIVER[] = "slash_ctl";
 
 
 // ---------------------------------------------------------------------------
@@ -395,8 +398,8 @@ static std::vector<V80Board> discoverBoards(bool longPrinting) {
         V80Board board{
             .bdfBase = base,
             .pf0 = checkPf(pf0Dev.bdf, 0, SLASH_DEVICE_ID, PF0_EXPECTED_DRIVER),
-            .pf1 = checkPf(pf1Bdf, 1, SLASH_PF1_DEVICE_ID, SLASH_EXPECTED_DRIVER),
-            .pf2 = checkPf(pf2Bdf, 2, SLASH_PF2_DEVICE_ID, SLASH_EXPECTED_DRIVER),
+            .pf1 = checkPf(pf1Bdf, 1, SLASH_PF1_DEVICE_ID, PF1_EXPECTED_DRIVER),
+            .pf2 = checkPf(pf2Bdf, 2, SLASH_PF2_DEVICE_ID, PF2_EXPECTED_DRIVER),
             .longPrinting = longPrinting,
         };
 

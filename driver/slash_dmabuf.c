@@ -116,9 +116,7 @@ static int slash_bar_dmabuf_mmap(struct dma_buf *dmabuf, struct vm_area_struct *
     int err;
     unsigned long size = vma->vm_end - vma->vm_start;
     u64 offset = (u64)vma->vm_pgoff << PAGE_SHIFT;
-
-
-    bool wc = !!(pci_resource_flags(priv->pdev, priv->bar_number) & IORESOURCE_PREFETCH);
+    bool wc;
 
     /* Ensure the requested range lies fully within the BAR. */
     if (offset > priv->len || size > priv->len - offset)

@@ -84,6 +84,7 @@ static int __init slash_init(void)
     err = slash_hotplug_init();
     if (err) {
         pr_err("slash: hotplug init failed: %d\n", err);
+        slash_qdma_exit();
         return err;
     }
 
