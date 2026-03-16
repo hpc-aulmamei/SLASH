@@ -111,6 +111,8 @@ static int parse_file_unique(struct config_parse_state *state, const char *path)
 static int parse_config_callback(void *user, const char *section, const char *name, const char *value);
 static int role_find_and_add_value(struct config *config, const char *objname, const char *name, const char *value);
 static int role_add_value(struct role *role, const char *name, const char *value);
+static int role_device_find_and_add_value(struct config *config, const char *role_name, const char *dev_selector, const char *name, const char *value);
+static int device_policy_add_value(struct device_policy *dp, const char *name, const char *value);
 static int user_find_and_add_value(struct config *config, const char *objname, const char *name, const char *value);
 static int user_add_value(struct user_config *user, const char *name, const char *value);
 static int group_find_and_add_value(struct config *config, const char *objname, const char *name, const char *value);
@@ -121,6 +123,10 @@ static int assign_users_roles(struct config *config);
 static int assign_user_roles(struct config *config, struct user_config *user);
 static int assign_groups_roles(struct config *config);
 static int assign_group_roles(struct config *config, struct group_config *group);
+static struct role *role_find_or_create(struct config *config, const char *role_name);
+static int normalize_bdf(const char *input, char *out, size_t out_len);
+static struct device_policy *find_device_policy(const struct device_policy_ptr_array *policies, const char *bdf);
+static int find_or_create_device_policy(struct device_policy_ptr_array *policies, const char *bdf, struct device_policy **out);
 
 /* ========================================================================
  * Cleanup helpers
@@ -131,9 +137,28 @@ static int assign_group_roles(struct config *config, struct group_config *group)
  * ======================================================================== */
 
 /**
+ * @brief Free all resources owned by a device_policy.
+ *
+ * Releases the BDF string and the struct itself.
+ *
+ * @param dp  Pointer to the device_policy to clean up, or NULL (no-op).
+ */
+void cleanup_device_policy(struct device_policy *dp)
+{
+    if (dp == NULL) {
+        return;
+    }
+
+    free(dp->bdf);
+    dp->bdf = NULL;
+
+    free(dp);
+}
+
+/**
  * @brief Free all resources owned by a role.
  *
- * Releases the role name string, the allowed_devices array, and the role
+ * Releases the role name string, the device_policies array, and the role
  * struct itself.
  *
  * @param role  Pointer to the role to clean up, or NULL (no-op).
@@ -147,7 +172,7 @@ void cleanup_role(struct role *role)
     free(role->name);
     role->name = NULL;
 
-    uint_array_free(&role->allowed_devices);
+    device_policy_ptr_array_free(&role->device_policies);
 
     free(role);
 }
@@ -281,12 +306,13 @@ int role_merge_new(struct role **rolep, const char *name)
  *
  * For each boolean permission field, the destination retains `true` if either
  * the destination or source had it set ("highest privilege wins" via OR).
+ * Per-device policies are merged by BDF: for each source device_policy,
+ * a matching entry in the destination is found (or created), and each
+ * subsystem flag is ORed independently.
  *
  * @param dst  The role accumulating permissions (modified in place).
  * @param src  The role whose permissions are being merged in.
- * @return 0 on success, -1 if either argument is NULL.
- *
- * @note allowed_devices merging is intentionally not yet implemented.
+ * @return 0 on success, -1 if either argument is NULL or on allocation error.
  */
 int role_merge_add_role(struct role *dst, const struct role *src)
 {
@@ -295,13 +321,26 @@ int role_merge_add_role(struct role *dst, const struct role *src)
         return -1;
     }
 
-    /* Highest privilege wins => OR the booleans. */
-    dst->pcie_hotplug    = dst->pcie_hotplug    || src->pcie_hotplug;
-    dst->query           = dst->query           || src->query;
-    dst->allow_any_device= dst->allow_any_device|| src->allow_any_device;
-    dst->bar_policy.any  = dst->bar_policy.any  || src->bar_policy.any;
+    /* Highest privilege wins => OR the global booleans. */
+    dst->query = dst->query || src->query;
 
-    /* TODO: Intentionally skip allowed_devices merging for now. */
+    /* Merge per-device policies: find-or-create in dst, OR each subsystem flag. */
+    for (size_t i = 0; i < src->device_policies.len; i++) {
+        const struct device_policy *src_dp = src->device_policies.d[i];
+        assert(src_dp != NULL);
+
+        struct device_policy *dst_dp = NULL;
+        int ret = find_or_create_device_policy(&dst->device_policies, src_dp->bdf, &dst_dp);
+        PROPAGATE_ERROR(ret);
+
+        dst_dp->bar          = dst_dp->bar          || src_dp->bar;
+        dst_dp->qdma         = dst_dp->qdma         || src_dp->qdma;
+        dst_dp->buffer       = dst_dp->buffer       || src_dp->buffer;
+        dst_dp->design_write = dst_dp->design_write || src_dp->design_write;
+        dst_dp->clock        = dst_dp->clock        || src_dp->clock;
+        dst_dp->pcie_hotplug = dst_dp->pcie_hotplug || src_dp->pcie_hotplug;
+    }
+
     return 0;
 }
 
@@ -614,7 +653,22 @@ static int parse_config_callback(void *user, const char *section, const char *na
     } else if (MATCH("", "enable-mock-device")) {
         state->config->mock_device = string_to_bool(value);
     } else if (MATCH_OBJECT("role", objname)) {
-        ret = role_find_and_add_value(state->config, objname, name, value);
+        /* Check if objname contains a device selector (e.g. "admin:0000:03:00").
+         * Role names must not contain colons, so the first colon in objname
+         * separates the role name from the device selector. */
+        const char *dev_sep = strchr(objname, ':');
+        if (dev_sep != NULL) {
+            char *role_name = strndup(objname, (size_t)(dev_sep - objname));
+            if (role_name == NULL) {
+                LOG(LOG_ERR, "Could not allocate role name");
+                return 0;
+            }
+            const char *dev_selector = dev_sep + 1;
+            ret = role_device_find_and_add_value(state->config, role_name, dev_selector, name, value);
+            free(role_name);
+        } else {
+            ret = role_find_and_add_value(state->config, objname, name, value);
+        }
         if (ret == -1) {
             return 0;
         }
@@ -686,13 +740,15 @@ static int role_find_and_add_value(struct config *config, const char *objname, c
 }
 
 /**
- * @brief Apply a single key/value pair to a role.
+ * @brief Apply a single key/value pair to a role (global section keys).
  *
- * Supported keys:
- *   - "pcie-hotplug": "yes" | "no"  -- controls PCIe hot-plug operations.
- *   - "bar-access":   "full"        -- grants access to all BARs (bar_policy.any = true).
- *   - "device":       "any"         -- grants access to any device (allow_any_device = true).
+ * Handles keys that appear in a plain @c [role:\<name\>] section (without a
+ * device selector).  Supported keys:
  *   - "query-devices":"yes" | "no"  -- controls device enumeration / info queries.
+ *
+ * All other permissions (bar-access, qdma, buffer, design-write, clock,
+ * pcie-hotplug) must be specified in device-scoped sections
+ * @c [role:\<name\>:\<bdf\>].
  *
  * @param role   The role to modify.
  * @param name   Key name.
@@ -701,34 +757,7 @@ static int role_find_and_add_value(struct config *config, const char *objname, c
  */
 static int role_add_value(struct role *role, const char *name, const char *value)
 {
-    if (strcmp(name, "pcie-hotplug") == 0) {
-        if (strcmp(value, "yes") == 0) {
-            role->pcie_hotplug = true;
-            return 0;
-        } else if (strcmp(value, "no") == 0) {
-            role->pcie_hotplug = false;
-            return 0;
-        } else {
-            LOG(LOG_ERR, "Invalid value for role pcie-hotplug: '%s'", value);
-            return -1;
-        }
-    } else if (strcmp(name, "bar-access") == 0) {
-        if (strcmp(value, "full") == 0) {
-            role->bar_policy.any = true;
-            return 0;
-        } else {
-            LOG(LOG_ERR, "Invalid value for role bar-access: '%s'", value);
-            return -1;
-        }
-    } else if (strcmp(name, "device") == 0) {
-        if (strcmp(value, "any") == 0) {
-            role->allow_any_device = true;
-            return 0;
-        } else {
-            LOG(LOG_ERR, "Invalid value for role device: '%s'", value);
-            return -1;
-        }
-    } else if (strcmp(name, "query-devices") == 0) {
+    if (strcmp(name, "query-devices") == 0) {
         if (strcmp(value, "yes") == 0) {
             role->query = true;
             return 0;
@@ -741,6 +770,322 @@ static int role_add_value(struct role *role, const char *name, const char *value
         }
     } else {
         LOG(LOG_ERR, "Unknown role key: '%s'", name);
+        return -1;
+    }
+}
+
+/* ========================================================================
+ * BDF normalization and device policy helpers
+ *
+ * These utilities support the per-device permission model. BDF strings
+ * are normalized to the canonical "DDDD:BB:DD" board-level format.
+ * Device policies are stored in a per-role array and looked up by BDF.
+ * ======================================================================== */
+
+/**
+ * @brief Normalize a BDF string to canonical board-level form "DDDD:BB:DD".
+ *
+ * Handles:
+ *   - "any" is passed through unchanged.
+ *   - Short-form "BB:DD" is expanded to "0000:BB:DD".
+ *   - Full-form "DDDD:BB:DD" is copied as-is.
+ *   - A trailing ".F" function suffix is stripped (board-level only).
+ *
+ * @param input   The raw BDF string from the config file.
+ * @param out     Output buffer for the normalized BDF.
+ * @param out_len Size of the output buffer (must be >= 13 for "DDDD:BB:DD\0").
+ * @return 0 on success, -1 on invalid format or buffer too small.
+ */
+static int normalize_bdf(const char *input, char *out, size_t out_len)
+{
+    assert(input != NULL);
+    assert(out != NULL);
+
+    if (strcmp(input, "any") == 0) {
+        if (out_len < 4) {
+            return -1;
+        }
+        strcpy(out, "any");
+        return 0;
+    }
+
+    /* Work on a mutable copy so we can strip function suffix. */
+    char buf[64];
+    size_t len = strlen(input);
+    if (len >= sizeof(buf)) {
+        LOG(LOG_ERR, "BDF string too long: '%s'", input);
+        return -1;
+    }
+    memcpy(buf, input, len + 1);
+
+    /* Strip ".F" function suffix if present. */
+    char *dot = strrchr(buf, '.');
+    if (dot != NULL) {
+        *dot = '\0';
+    }
+
+    /* Count colons to determine format. */
+    int colons = 0;
+    for (const char *p = buf; *p; p++) {
+        if (*p == ':') {
+            colons++;
+        }
+    }
+
+    if (colons == 1) {
+        /* Short-form "BB:DD" -> "0000:BB:DD" */
+        int ret = snprintf(out, out_len, "0000:%s", buf);
+        if (ret < 0 || (size_t)ret >= out_len) {
+            LOG(LOG_ERR, "BDF buffer too small for '%s'", input);
+            return -1;
+        }
+    } else if (colons == 2) {
+        /* Full-form "DDDD:BB:DD" */
+        if (strlen(buf) >= out_len) {
+            LOG(LOG_ERR, "BDF buffer too small for '%s'", input);
+            return -1;
+        }
+        strcpy(out, buf);
+    } else {
+        LOG(LOG_ERR, "Invalid BDF format: '%s'", input);
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Find an existing device_policy by BDF in the policies array.
+ *
+ * @param policies  The array to search.
+ * @param bdf       The normalized BDF string to match.
+ * @return Pointer to the matching device_policy, or NULL if not found.
+ */
+static struct device_policy *find_device_policy(
+    const struct device_policy_ptr_array *policies,
+    const char *bdf
+)
+{
+    for (size_t i = 0; i < policies->len; i++) {
+        if (strcmp(policies->d[i]->bdf, bdf) == 0) {
+            return policies->d[i];
+        }
+    }
+    return NULL;
+}
+
+/**
+ * @brief Find or create a device_policy entry for the given BDF.
+ *
+ * Searches the policies array for an existing entry with the given BDF.
+ * If not found, allocates a new device_policy with all flags false and
+ * appends it to the array.
+ *
+ * @param      policies  The array to search/modify.
+ * @param      bdf       The normalized BDF string.
+ * @param[out] out       Receives the found or newly created device_policy.
+ * @return 0 on success, -1 on allocation error.
+ */
+static int find_or_create_device_policy(
+    struct device_policy_ptr_array *policies,
+    const char *bdf,
+    struct device_policy **out
+)
+{
+    struct device_policy *dp = find_device_policy(policies, bdf);
+    if (dp != NULL) {
+        *out = dp;
+        return 0;
+    }
+
+    /* Allocate a new device_policy with all flags false. */
+    dp = calloc(1, sizeof(*dp));
+    PROPAGATE_ERROR_NULL_STDC_LOG(dp, LOG_ERR, "Could not allocate device_policy");
+
+    dp->bdf = strdup(bdf);
+    if (dp->bdf == NULL) {
+        free(dp);
+        LOG(LOG_ERR, "Could not allocate BDF string: %s", strerror(errno));
+        return -1;
+    }
+
+    int ret = device_policy_ptr_array_push(policies, dp);
+    if (ret != 0) {
+        free(dp->bdf);
+        free(dp);
+        LOG(LOG_ERR, "Could not store device_policy: %s", strerror(errno));
+        return -1;
+    }
+
+    *out = dp;
+    return 0;
+}
+
+/**
+ * @brief Find or create a role by name in the config.
+ *
+ * Searches config->roles for an existing role with the given name.
+ * If not found, allocates a new role and appends it to the array.
+ *
+ * @param config     The global config being built.
+ * @param role_name  Name of the role to find or create.
+ * @return Pointer to the role, or NULL on allocation error.
+ */
+static struct role *role_find_or_create(struct config *config, const char *role_name)
+{
+    for (size_t i = 0; i < config->roles.len; ++i) {
+        if (strcmp(config->roles.d[i]->name, role_name) == 0) {
+            return config->roles.d[i];
+        }
+    }
+
+    struct role *role = calloc(1, sizeof(*role));
+    if (role == NULL) {
+        LOG(LOG_ERR, "Could not allocate role: %s", strerror(errno));
+        return NULL;
+    }
+
+    role->name = strdup(role_name);
+    if (role->name == NULL) {
+        free(role);
+        LOG(LOG_ERR, "Could not allocate role name: %s", strerror(errno));
+        return NULL;
+    }
+
+    int ret = role_ptr_array_push(&config->roles, role);
+    if (ret != 0) {
+        free(role->name);
+        free(role);
+        LOG(LOG_ERR, "Could not store role %s: %s", role_name, strerror(errno));
+        return NULL;
+    }
+
+    return role;
+}
+
+/**
+ * @brief Handle a key/value from a device-scoped role section [role:name:bdf].
+ *
+ * Finds or creates the role, normalizes the device selector BDF, finds or
+ * creates the device_policy entry, and sets the appropriate flag.
+ *
+ * @param config        The global config being built.
+ * @param role_name     The role name (portion before the device selector).
+ * @param dev_selector  The device selector ("any", "0000:03:00", "03:00", etc.).
+ * @param name          Key name (e.g. "bar-access", "qdma", "buffer").
+ * @param value         Value string (e.g. "full", "yes", "no").
+ * @return 0 on success, -1 on error.
+ */
+static int role_device_find_and_add_value(
+    struct config *config,
+    const char *role_name,
+    const char *dev_selector,
+    const char *name,
+    const char *value
+)
+{
+    struct role *role = role_find_or_create(config, role_name);
+    PROPAGATE_ERROR_NULL_LOG(role, LOG_ERR, "Could not find or create role %s", role_name);
+
+    /* Normalize the device selector to canonical BDF form. */
+    char normalized_bdf[32];
+    int ret = normalize_bdf(dev_selector, normalized_bdf, sizeof(normalized_bdf));
+    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Invalid device selector '%s' for role %s", dev_selector, role_name);
+
+    struct device_policy *dp = NULL;
+    ret = find_or_create_device_policy(&role->device_policies, normalized_bdf, &dp);
+    PROPAGATE_ERROR(ret);
+
+    ret = device_policy_add_value(dp, name, value);
+    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Invalid key/value for role %s device %s: '%s' = '%s'",
+                        role_name, normalized_bdf, name, value);
+
+    return 0;
+}
+
+/**
+ * @brief Apply a single key/value pair to a device_policy.
+ *
+ * Supported keys:
+ *   - "bar-access":    "full"       -- grants BAR mmap access.
+ *   - "qdma":          "yes" | "no" -- controls QDMA queue pair operations.
+ *   - "buffer":        "yes" | "no" -- controls DMA buffer operations.
+ *   - "design-write":  "yes" | "no" -- controls FPGA bitstream programming.
+ *   - "clock":         "yes" | "no" -- controls clock get/set operations.
+ *   - "pcie-hotplug":  "yes" | "no" -- controls per-device hotplug operations.
+ *
+ * @param dp     The device_policy to modify.
+ * @param name   Key name.
+ * @param value  Value string.
+ * @return 0 on success, -1 on unknown key or invalid value.
+ */
+static int device_policy_add_value(struct device_policy *dp, const char *name, const char *value)
+{
+    if (strcmp(name, "bar-access") == 0) {
+        if (strcmp(value, "full") == 0) {
+            dp->bar = true;
+            return 0;
+        } else {
+            LOG(LOG_ERR, "Invalid value for device bar-access: '%s'", value);
+            return -1;
+        }
+    } else if (strcmp(name, "qdma") == 0) {
+        if (strcmp(value, "yes") == 0) {
+            dp->qdma = true;
+            return 0;
+        } else if (strcmp(value, "no") == 0) {
+            dp->qdma = false;
+            return 0;
+        } else {
+            LOG(LOG_ERR, "Invalid value for device qdma: '%s'", value);
+            return -1;
+        }
+    } else if (strcmp(name, "buffer") == 0) {
+        if (strcmp(value, "yes") == 0) {
+            dp->buffer = true;
+            return 0;
+        } else if (strcmp(value, "no") == 0) {
+            dp->buffer = false;
+            return 0;
+        } else {
+            LOG(LOG_ERR, "Invalid value for device buffer: '%s'", value);
+            return -1;
+        }
+    } else if (strcmp(name, "design-write") == 0) {
+        if (strcmp(value, "yes") == 0) {
+            dp->design_write = true;
+            return 0;
+        } else if (strcmp(value, "no") == 0) {
+            dp->design_write = false;
+            return 0;
+        } else {
+            LOG(LOG_ERR, "Invalid value for device design-write: '%s'", value);
+            return -1;
+        }
+    } else if (strcmp(name, "clock") == 0) {
+        if (strcmp(value, "yes") == 0) {
+            dp->clock = true;
+            return 0;
+        } else if (strcmp(value, "no") == 0) {
+            dp->clock = false;
+            return 0;
+        } else {
+            LOG(LOG_ERR, "Invalid value for device clock: '%s'", value);
+            return -1;
+        }
+    } else if (strcmp(name, "pcie-hotplug") == 0) {
+        if (strcmp(value, "yes") == 0) {
+            dp->pcie_hotplug = true;
+            return 0;
+        } else if (strcmp(value, "no") == 0) {
+            dp->pcie_hotplug = false;
+            return 0;
+        } else {
+            LOG(LOG_ERR, "Invalid value for device pcie-hotplug: '%s'", value);
+            return -1;
+        }
+    } else {
+        LOG(LOG_ERR, "Unknown device policy key: '%s'", name);
         return -1;
     }
 }

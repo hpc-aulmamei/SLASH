@@ -113,7 +113,7 @@ int auth_request_get_bar_info(
  * @brief Authorize a GET_BAR_FD request.
  *
  * Checks that the client's role permits mmap access to the requested BAR
- * on the specified device, per the role's bar_policy.
+ * on the specified device, per the role's per-device bar-access policy.
  *
  * @param client   The requesting client.
  * @param req_body The parsed request body containing device and BAR indices.

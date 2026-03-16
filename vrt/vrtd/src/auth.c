@@ -47,10 +47,11 @@
  *     get_num_devices, get_bar_info, qdma_get_info): require only the
  *     `query` permission.
  *   - **Device-access** operations (get_bar_fd, qdma_qpair_add/op/get_fd,
- *     buffer_open/close, design_write, clock_op): require `query` +
- *     `allow_any_device` + `bar_policy.any` (full BAR access).
- *   - **Hotplug** operations (device_hotplug_op): require `query` +
- *     `allow_any_device` + `pcie_hotplug`.
+ *     buffer_open/close, design_write, clock_op): require `query` plus
+ *     the corresponding per-device per-subsystem permission (bar, qdma,
+ *     buffer, design-write, clock) as defined in the role's device_policies.
+ *   - **Hotplug** operations (device_hotplug_op): require `query` plus
+ *     per-device pcie-hotplug permission or the global pcie_hotplug flag.
  *
  * Return convention for auth_request_*() functions:
  *   - 1  = authorized (proceed with the operation)
@@ -62,6 +63,7 @@
 
 #include "auth.h"
 #include "config.h"
+#include "device.h"
 #include "state.h"
 #include "utils.h"
 
@@ -71,6 +73,50 @@
 #include <string.h>
 
 int ensure_role(struct client *client);
+
+/**
+ * @brief Identifies which subsystem permission to check on a device.
+ */
+enum auth_subsystem {
+    AUTH_SUBSYSTEM_BAR,
+    AUTH_SUBSYSTEM_QDMA,
+    AUTH_SUBSYSTEM_BUFFER,
+    AUTH_SUBSYSTEM_DESIGN_WRITE,
+    AUTH_SUBSYSTEM_CLOCK,
+    AUTH_SUBSYSTEM_PCIE_HOTPLUG,
+};
+
+/**
+ * @brief Human-readable names for auth_subsystem values (for log messages).
+ */
+static const char *auth_subsystem_name(enum auth_subsystem subsystem)
+{
+    switch (subsystem) {
+    case AUTH_SUBSYSTEM_BAR:          return "bar-access";
+    case AUTH_SUBSYSTEM_QDMA:         return "qdma";
+    case AUTH_SUBSYSTEM_BUFFER:       return "buffer";
+    case AUTH_SUBSYSTEM_DESIGN_WRITE: return "design-write";
+    case AUTH_SUBSYSTEM_CLOCK:        return "clock";
+    case AUTH_SUBSYSTEM_PCIE_HOTPLUG: return "pcie-hotplug";
+    default:                          return "unknown";
+    }
+}
+
+/**
+ * @brief Check whether a device_policy grants a specific subsystem permission.
+ */
+static bool device_policy_check(const struct device_policy *dp, enum auth_subsystem subsystem)
+{
+    switch (subsystem) {
+    case AUTH_SUBSYSTEM_BAR:          return dp->bar;
+    case AUTH_SUBSYSTEM_QDMA:         return dp->qdma;
+    case AUTH_SUBSYSTEM_BUFFER:       return dp->buffer;
+    case AUTH_SUBSYSTEM_DESIGN_WRITE: return dp->design_write;
+    case AUTH_SUBSYSTEM_CLOCK:        return dp->clock;
+    case AUTH_SUBSYSTEM_PCIE_HOTPLUG: return dp->pcie_hotplug;
+    default:                          return false;
+    }
+}
 
 /**
  * @brief Build a comma-separated string of all role names applicable to a client.
@@ -199,6 +245,102 @@ static void auth_log_denied(
             username
         );
     }
+}
+
+/* ========================================================================
+ * Per-device, per-subsystem authorization check
+ *
+ * This is the core authorization helper for all device-access operations.
+ * It resolves the target device's BDF from the device index, then looks up
+ * the client's role for a matching device_policy entry (exact BDF match
+ * first, then "any" wildcard fallback).
+ * ======================================================================== */
+
+/**
+ * @brief Check whether the client's role grants a specific subsystem
+ *        permission on the device identified by @p dev_number.
+ *
+ * Resolution logic:
+ *   1. Verify the client has the "query" permission (prerequisite for all
+ *      device operations).
+ *   2. Resolve @p dev_number to the device's board-level BDF string.
+ *   3. Search the role's device_policies for an exact BDF match.
+ *   4. If no exact match, search for an "any" wildcard entry.
+ *   5. Check the requested subsystem flag on the matching policy.
+ *   6. For PCIE_HOTPLUG, also check the global role->pcie_hotplug flag.
+ *
+ * @param client     The requesting client (carries the role and device state).
+ * @param dev_number The 0-based device index from the request body.
+ * @param subsystem  Which subsystem permission to check.
+ * @param operation  Human-readable operation name (for denial logging).
+ * @return 1 if authorized, 0 if denied, <0 on internal error.
+ */
+static int auth_check_device_permission(
+    struct client *client,
+    uint32_t dev_number,
+    enum auth_subsystem subsystem,
+    const char *operation
+)
+{
+    assert(client != NULL);
+    assert(client->role != NULL);
+
+    /* All device-access operations require the query permission. */
+    if (!client->role->query) {
+        auth_log_denied(client, operation, "query");
+        return 0;
+    }
+
+    /* Resolve device index to BDF string. */
+    assert(client->state != NULL);
+    if (dev_number >= client->state->devices.len) {
+        /* Invalid device index -- this is a request validation error,
+         * not an auth error, but deny it here for safety. */
+        return 0;
+    }
+
+    const struct device *dev = client->state->devices.d[dev_number];
+    assert(dev != NULL);
+    const char *dev_bdf = dev->pci_info.bdf;
+
+    /* Search for a device_policy matching this device's BDF. */
+    const struct device_policy *dp = NULL;
+    const struct device_policy *any_dp = NULL;
+
+    for (size_t i = 0; i < client->role->device_policies.len; i++) {
+        const struct device_policy *candidate = client->role->device_policies.d[i];
+        if (strcmp(candidate->bdf, dev_bdf) == 0) {
+            dp = candidate;
+            break;
+        }
+        if (strcmp(candidate->bdf, "any") == 0) {
+            any_dp = candidate;
+        }
+    }
+
+    /* Fall back to "any" wildcard if no exact match. */
+    if (dp == NULL) {
+        dp = any_dp;
+    }
+
+    if (dp == NULL) {
+        /* No device policy matches -- denied. */
+        char denied_msg[128];
+        snprintf(denied_msg, sizeof(denied_msg), "%s (device %s)",
+                 auth_subsystem_name(subsystem), dev_bdf);
+        auth_log_denied(client, operation, denied_msg);
+        return 0;
+    }
+
+    if (!device_policy_check(dp, subsystem)) {
+        char denied_msg[128];
+        snprintf(denied_msg, sizeof(denied_msg), "%s (device %s)",
+                 auth_subsystem_name(subsystem), dev_bdf);
+        auth_log_denied(client, operation, denied_msg);
+        return 0;
+    }
+
+    return 1;
 }
 
 /* ========================================================================
@@ -335,22 +477,14 @@ int auth_request_get_bar_info(
  *
  * These operations provide direct access to device resources (BAR file
  * descriptors, QDMA queue pairs, DMA buffers, design programming, clocks).
- * They require the full set of data-plane permissions:
- *   - query:             must be able to identify devices
- *   - allow_any_device:  must have device-level access granted
- *   - bar_policy.any:    must have BAR-level access granted ("full")
- *
- * The bar_policy.any check is currently reused for QDMA, buffer, design,
- * and clock operations as a general "data-plane access" gate. Several
- * functions contain TODOs to introduce more granular per-subsystem policies.
+ * Each operation checks the corresponding per-device per-subsystem permission
+ * via auth_check_device_permission().
  * ======================================================================== */
 
 /**
  * @brief Authorize a get_bar_fd request (memory-mapped BAR access).
  *
- * Requires: query + allow_any_device + bar_policy.any.
- * This returns a file descriptor for direct memory-mapped access to a
- * device BAR, so it requires full data-plane permissions.
+ * Requires: query + bar-access permission on the target device.
  *
  * @param client    The requesting client.
  * @param req_body  The request payload.
@@ -367,24 +501,9 @@ int auth_request_get_bar_fd(
     int ret = ensure_role(client);
     PROPAGATE_ERROR(ret);
 
-    assert(client->role != NULL);
-
-    if (!client->role->query) {
-        auth_log_denied(client, "get_bar_fd", "query");
-        return 0;
-    }
-
-    if (!client->role->allow_any_device) {
-        auth_log_denied(client, "get_bar_fd", "allow_any_device");
-        return 0;
-    }
-
-    if (!client->role->bar_policy.any) {
-        auth_log_denied(client, "get_bar_fd", "bar_policy");
-        return 0;
-    }
-
-    return 1;
+    return auth_check_device_permission(
+        client, req_body->dev_number, AUTH_SUBSYSTEM_BAR, "get_bar_fd"
+    );
 }
 
 /**
@@ -420,9 +539,7 @@ int auth_request_qdma_get_info(
 /**
  * @brief Authorize a qdma_qpair_add request (create a QDMA queue pair).
  *
- * Requires: query + allow_any_device + bar_policy.any.
- * Creating a queue pair grants DMA data transfer capability, so full
- * data-plane permissions are required.
+ * Requires: query + qdma permission on the target device.
  *
  * @param client    The requesting client.
  * @param req_body  The request payload.
@@ -439,31 +556,15 @@ int auth_request_qdma_qpair_add(
     int ret = ensure_role(client);
     PROPAGATE_ERROR(ret);
 
-    assert(client->role != NULL);
-
-    if (!client->role->query) {
-        auth_log_denied(client, "qdma_qpair_add", "query");
-        return 0;
-    }
-
-    if (!client->role->allow_any_device) {
-        auth_log_denied(client, "qdma_qpair_add", "allow_any_device");
-        return 0;
-    }
-
-    if (!client->role->bar_policy.any) {
-        /* TODO: introduce a dedicated QDMA policy instead of reusing bar_policy. */
-        auth_log_denied(client, "qdma_qpair_add", "bar_policy");
-        return 0;
-    }
-
-    return 1;
+    return auth_check_device_permission(
+        client, req_body->dev_number, AUTH_SUBSYSTEM_QDMA, "qdma_qpair_add"
+    );
 }
 
 /**
  * @brief Authorize a qdma_qpair_op request (start/stop a QDMA queue pair).
  *
- * Requires: query + allow_any_device + bar_policy.any.
+ * Requires: query + qdma permission on the target device.
  *
  * @param client    The requesting client.
  * @param req_body  The request payload.
@@ -480,32 +581,15 @@ int auth_request_qdma_qpair_op(
     int ret = ensure_role(client);
     PROPAGATE_ERROR(ret);
 
-    assert(client->role != NULL);
-
-    if (!client->role->query) {
-        auth_log_denied(client, "qdma_qpair_op", "query");
-        return 0;
-    }
-
-    if (!client->role->allow_any_device) {
-        auth_log_denied(client, "qdma_qpair_op", "allow_any_device");
-        return 0;
-    }
-
-    if (!client->role->bar_policy.any) {
-        /* TODO: introduce a dedicated QDMA policy instead of reusing bar_policy. */
-        auth_log_denied(client, "qdma_qpair_op", "bar_policy");
-        return 0;
-    }
-
-    return 1;
+    return auth_check_device_permission(
+        client, req_body->dev_number, AUTH_SUBSYSTEM_QDMA, "qdma_qpair_op"
+    );
 }
 
 /**
- * @brief Authorize a qdma_qpair_get_fd request (get file descriptor for a QDMA queue pair).
+ * @brief Authorize a qdma_qpair_get_fd request (get fd for a QDMA queue pair).
  *
- * Requires: query + allow_any_device + bar_policy.any.
- * Returns an fd for direct DMA operations on the queue pair.
+ * Requires: query + qdma permission on the target device.
  *
  * @param client    The requesting client.
  * @param req_body  The request payload.
@@ -522,33 +606,15 @@ int auth_request_qdma_qpair_get_fd(
     int ret = ensure_role(client);
     PROPAGATE_ERROR(ret);
 
-    assert(client->role != NULL);
-
-    if (!client->role->query) {
-        auth_log_denied(client, "qdma_qpair_get_fd", "query");
-        return 0;
-    }
-
-    if (!client->role->allow_any_device) {
-        auth_log_denied(client, "qdma_qpair_get_fd", "allow_any_device");
-        return 0;
-    }
-
-    if (!client->role->bar_policy.any) {
-        /* TODO: introduce a dedicated QDMA policy instead of reusing bar_policy. */
-        auth_log_denied(client, "qdma_qpair_get_fd", "bar_policy");
-        return 0;
-    }
-
-    return 1;
+    return auth_check_device_permission(
+        client, req_body->dev_number, AUTH_SUBSYSTEM_QDMA, "qdma_qpair_get_fd"
+    );
 }
 
 /**
  * @brief Authorize a buffer_open request (allocate a DMA buffer).
  *
- * Requires: query + allow_any_device + bar_policy.any.
- * Opening a DMA buffer grants the client direct memory access to device-
- * accessible memory.
+ * Requires: query + buffer permission on the target device.
  *
  * @param client    The requesting client.
  * @param req_body  The request payload.
@@ -565,33 +631,15 @@ int auth_request_buffer_open(
     int ret = ensure_role(client);
     PROPAGATE_ERROR(ret);
 
-    assert(client->role != NULL);
-
-    if (!client->role->query) {
-        auth_log_denied(client, "buffer_open", "query");
-        return 0;
-    }
-
-    if (!client->role->allow_any_device) {
-        auth_log_denied(client, "buffer_open", "allow_any_device");
-        return 0;
-    }
-
-    if (!client->role->bar_policy.any) {
-        /* TODO: introduce a dedicated buffer policy instead of reusing bar_policy. */
-        auth_log_denied(client, "buffer_open", "bar_policy");
-        return 0;
-    }
-
-    return 1;
+    return auth_check_device_permission(
+        client, req_body->dev_number, AUTH_SUBSYSTEM_BUFFER, "buffer_open"
+    );
 }
 
 /**
  * @brief Authorize a buffer_close request (release a DMA buffer).
  *
- * Requires: query + allow_any_device + bar_policy.any.
- * Closing a buffer still requires the same permissions as opening, to
- * prevent unprivileged clients from releasing buffers they cannot manage.
+ * Requires: query + buffer permission on the target device.
  *
  * @param client    The requesting client.
  * @param req_body  The request payload.
@@ -608,33 +656,15 @@ int auth_request_buffer_close(
     int ret = ensure_role(client);
     PROPAGATE_ERROR(ret);
 
-    assert(client->role != NULL);
-
-    if (!client->role->query) {
-        auth_log_denied(client, "buffer_close", "query");
-        return 0;
-    }
-
-    if (!client->role->allow_any_device) {
-        auth_log_denied(client, "buffer_close", "allow_any_device");
-        return 0;
-    }
-
-    if (!client->role->bar_policy.any) {
-        /* TODO: introduce a dedicated buffer policy instead of reusing bar_policy. */
-        auth_log_denied(client, "buffer_close", "bar_policy");
-        return 0;
-    }
-
-    return 1;
+    return auth_check_device_permission(
+        client, req_body->dev_number, AUTH_SUBSYSTEM_BUFFER, "buffer_close"
+    );
 }
 
 /**
- * @brief Authorize a design_write request (program an FPGA bitstream/design).
+ * @brief Authorize a design_write request (program an FPGA bitstream).
  *
- * Requires: query + allow_any_device + bar_policy.any.
- * Writing a design reconfigures the FPGA fabric, which is a privileged
- * data-plane operation.
+ * Requires: query + design-write permission on the target device.
  *
  * @param client    The requesting client.
  * @param req_body  The request payload.
@@ -651,41 +681,23 @@ int auth_request_design_write(
     int ret = ensure_role(client);
     PROPAGATE_ERROR(ret);
 
-    assert(client->role != NULL);
-
-    if (!client->role->query) {
-        auth_log_denied(client, "design_write", "query");
-        return 0;
-    }
-
-    if (!client->role->allow_any_device) {
-        auth_log_denied(client, "design_write", "allow_any_device");
-        return 0;
-    }
-
-    if (!client->role->bar_policy.any) {
-        /* TODO: introduce a dedicated policy instead of reusing bar_policy. */
-        auth_log_denied(client, "design_write", "bar_policy");
-        return 0;
-    }
-
-    return 1;
+    return auth_check_device_permission(
+        client, req_body->dev_number, AUTH_SUBSYSTEM_DESIGN_WRITE, "design_write"
+    );
 }
 
 /* ========================================================================
  * Hotplug authorization check
  *
  * PCIe hotplug is a destructive control-plane operation (removing/adding
- * devices from the bus) that requires its own dedicated permission flag
- * (pcie_hotplug) in addition to query and device access.
+ * devices from the bus). It requires a per-device pcie-hotplug flag in a
+ * device_policy (specified via [role:name:bdf] or [role:name:any]).
  * ======================================================================== */
 
 /**
  * @brief Authorize a device_hotplug_op request (PCIe hot-plug/remove).
  *
- * Requires: query + allow_any_device + pcie_hotplug.
- * Note: this checks pcie_hotplug instead of bar_policy, since hotplug is
- * a control-plane operation rather than a data-plane (BAR access) operation.
+ * Requires: query + pcie-hotplug permission on the target device.
  *
  * @param client    The requesting client.
  * @param req_body  The request payload.
@@ -702,32 +714,15 @@ int auth_request_device_hotplug_op(
     int ret = ensure_role(client);
     PROPAGATE_ERROR(ret);
 
-    assert(client->role != NULL);
-
-    if (!client->role->query) {
-        auth_log_denied(client, "device_hotplug_op", "query");
-        return 0;
-    }
-
-    if (!client->role->allow_any_device) {
-        auth_log_denied(client, "device_hotplug_op", "allow_any_device");
-        return 0;
-    }
-
-    if (!client->role->pcie_hotplug) {
-        auth_log_denied(client, "device_hotplug_op", "pcie_hotplug");
-        return 0;
-    }
-
-    return 1;
+    return auth_check_device_permission(
+        client, req_body->dev_number, AUTH_SUBSYSTEM_PCIE_HOTPLUG, "device_hotplug_op"
+    );
 }
 
 /**
  * @brief Authorize a clock_op request (read/modify device clock settings).
  *
- * Requires: query + allow_any_device + bar_policy.any.
- * Clock operations interact with device hardware registers, requiring
- * full data-plane permissions.
+ * Requires: query + clock permission on the target device.
  *
  * @param client    The requesting client.
  * @param req_body  The request payload.
@@ -744,25 +739,9 @@ int auth_request_clock_op(
     int ret = ensure_role(client);
     PROPAGATE_ERROR(ret);
 
-    assert(client->role != NULL);
-
-    if (!client->role->query) {
-        auth_log_denied(client, "clock_op", "query");
-        return 0;
-    }
-
-    if (!client->role->allow_any_device) {
-        auth_log_denied(client, "clock_op", "allow_any_device");
-        return 0;
-    }
-
-    if (!client->role->bar_policy.any) {
-        /* TODO: introduce a dedicated clock policy instead of reusing bar_policy. */
-        auth_log_denied(client, "clock_op", "bar_policy");
-        return 0;
-    }
-
-    return 1;
+    return auth_check_device_permission(
+        client, req_body->dev_number, AUTH_SUBSYSTEM_CLOCK, "clock_op"
+    );
 }
 
 /* ========================================================================

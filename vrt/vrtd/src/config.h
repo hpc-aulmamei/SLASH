@@ -44,16 +44,41 @@
 #include "array.h"
 
 /**
- * @brief Per-BAR access control policy.
+ * @brief Per-device permission flags.
  *
- * Controls which PCI Base Address Registers a role is allowed to mmap.
- * When @c any is true, access to all BARs is granted unconditionally.
- * Future extensions may add an explicit list of allowed BAR indices.
+ * Each device_policy entry maps a device (identified by board-level BDF
+ * string, e.g. "0000:03:00") to a set of subsystem-level permissions.
+ * The special BDF string "any" acts as a wildcard matching all devices.
+ *
+ * During authorization, the auth layer looks up the target device's BDF
+ * in the role's device_policies array: first an exact match, then a
+ * fallback to the "any" entry if present.
  */
-struct bar_policy {
-    /** @brief If true, the role may access any BAR on a permitted device. */
-    bool any;
+struct device_policy {
+    /** @brief Normalized BDF string ("DDDD:BB:DD") or "any" (heap-allocated, owning). */
+    char *bdf; /* owning */
+    /** @brief If true, the client may mmap BAR regions on this device. */
+    bool bar;
+    /** @brief If true, the client may create/operate QDMA queue pairs on this device. */
+    bool qdma;
+    /** @brief If true, the client may allocate/release DMA buffers on this device. */
+    bool buffer;
+    /** @brief If true, the client may program FPGA bitstreams on this device. */
+    bool design_write;
+    /** @brief If true, the client may get/set clock frequencies on this device. */
+    bool clock;
+    /** @brief If true, the client may perform PCIe hotplug operations on this device. */
+    bool pcie_hotplug;
 };
+
+/**
+ * @brief Release all resources owned by a device_policy (bdf string).
+ * @param dp Pointer to the device_policy to clean up.
+ */
+void cleanup_device_policy(struct device_policy *dp);
+
+/** @brief Owning array of device_policy pointers. */
+DECLARE_OWNING_PTR_ARRAY(device_policy_ptr_array, struct device_policy *, cleanup_device_policy)
 
 /**
  * @brief A named permission set that governs what a client may do.
@@ -61,32 +86,28 @@ struct bar_policy {
  * Roles are the central unit of the vrtd access-control model.  Each
  * connecting client is assigned a merged role derived from its UID and GID
  * credentials.  The role determines:
- *   - Which device indices the client may address (@c allowed_devices).
- *   - Which BARs the client may mmap (@c bar_policy).
+ *   - Which devices the client may access and with which subsystem
+ *     permissions, via the @c device_policies array.
  *   - Whether the client may issue informational queries (@c query).
- *   - Whether the client may access any device without an explicit allowlist
- *     (@c allow_any_device).
- *   - Whether the client may perform PCIe hotplug operations (@c pcie_hotplug).
+ *
+ * Per-device permissions (bar-access, qdma, buffer, design-write, clock,
+ * pcie-hotplug) are specified in the config file using sub-sections of the
+ * form @c [role:\<name\>:\<bdf\>], where @c \<bdf\> is a board-level PCI
+ * address or "any".
  */
 struct role {
     /** @brief Human-readable name of this role (heap-allocated, owning). */
     char *name; /* owning */
-    /** @brief Set of device indices this role is allowed to access. */
-    struct uint_array allowed_devices;
 
-    /** @brief BAR-level access control policy for this role. */
-    struct bar_policy bar_policy;
+    /** @brief Per-device permission policies (owning array). */
+    struct device_policy_ptr_array device_policies;
 
     /** @brief If true, the role permits device enumeration and info queries. */
     bool query;
-    /** @brief If true, the role permits access to any device (overrides @c allowed_devices). */
-    bool allow_any_device;
-    /** @brief If true, the role permits PCIe Secondary Bus Reset (SBR) hotplug operations. */
-    bool pcie_hotplug;
 };
 
 /**
- * @brief Release all resources owned by a role (name string, allowed_devices array).
+ * @brief Release all resources owned by a role (name string, device_policies array).
  * @param role Pointer to the role to clean up.
  */
 void cleanup_role(struct role *role);
@@ -270,8 +291,10 @@ int role_merge_new(struct role **rolep, const char *name);
 /**
  * @brief Merge permissions from one role into another (union of permissions).
  *
- * Adds @p src's allowed_devices, bar_policy flags, and boolean permissions
- * into @p dst.  This implements the "most permissive wins" merging semantic.
+ * Adds @p src's device_policies and boolean permissions into @p dst.
+ * This implements the "most permissive wins" merging semantic: boolean
+ * flags are ORed, and per-device policy entries are merged by BDF with
+ * each subsystem flag ORed independently.
  *
  * @param dst Destination role to merge into (modified in place).
  * @param src Source role to merge from (not modified).
