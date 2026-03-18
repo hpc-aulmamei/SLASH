@@ -47,8 +47,8 @@ int main(int argc, char* argv[]) {
         vrt::Kernel dma(device, "dma_0");
         vrt::Kernel offset(device, "offset_0");
 
-        vrt::Buffer<uint32_t> in_buff(device, size, offset.argMemoryConfig("input_r"));
-        vrt::Buffer<uint32_t> out_buff(device, size, dma.argMemoryConfig("out_r"));
+        vrt::Buffer<uint32_t> in_buff(device, size, offset.portMemoryConfig("m_axi_gmem0"));
+        vrt::Buffer<uint32_t> out_buff(device, size, dma.portMemoryConfig("m_axi_gmem0"));
         for(uint32_t i = 0; i < size; i++) {
             in_buff[i] = i;
         }
