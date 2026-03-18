@@ -39,7 +39,7 @@ MemoryConfig parseMemoryTarget(const std::string& target) {
         }
         return {MemoryRangeType::HBM_VNOC, std::nullopt};
     }
-    if (target == "MEM") {
+    if (target.rfind("MEM", 0) == 0) {
         return {MemoryRangeType::HBM_VNOC, std::nullopt};
     }
     throw std::runtime_error("Unknown memory target '" + target + "'");
