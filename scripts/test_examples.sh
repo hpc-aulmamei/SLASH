@@ -50,17 +50,22 @@ if [[ "$PLATFORM" != "hw" && "$PLATFORM" != "sim" && "$PLATFORM" != "emu" ]]; th
     usage
 fi
 
-# Determine BDF
+# Determine BDF (only required for hw)
 if [[ $# -ge 2 ]]; then
     BDF="$2"
 else
     echo "=== Auto-detecting BDF via v80-smi ==="
-    BDF=$(v80-smi list 2>/dev/null | grep -oP 'BDF: \K[0-9a-fA-F:.]+' | head -1)
+    BDF=$(v80-smi list 2>/dev/null | grep -oP 'Board \K[0-9a-fA-F:.]+' | head -1 || true)
     if [[ -z "$BDF" ]]; then
-        echo "ERROR: Could not auto-detect BDF. Please provide it as the second argument."
-        exit 1
+        if [[ "$PLATFORM" == "hw" ]]; then
+            echo "ERROR: Could not auto-detect BDF. Please provide it as the second argument."
+            exit 1
+        fi
+        BDF="0000:00:00.0"
+        echo "No device found, using default BDF: $BDF"
+    else
+        echo "Detected BDF: $BDF"
     fi
-    echo "Detected BDF: $BDF"
 fi
 
 # Examples to build and run: directory name, vbin prefix, executable name
