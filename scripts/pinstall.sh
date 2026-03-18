@@ -46,3 +46,6 @@ chmod 0755 "$1/usr/bin/v80++"
 # Install linker resources
 mkdir -p "$1/usr/share/v80++"
 rsync --delete -a linker/resources/ "$1/usr/share/v80++/"
+
+# Install CMake toolchain modules (SlashTools)
+DESTDIR="$1" cmake --build pbuild/cmake-tools --target install

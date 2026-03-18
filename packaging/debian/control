@@ -93,6 +93,6 @@ Depends: libvrt (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
 Description: V80 System Management Interface
 
 Package: v80++
-Architecture: all
+Architecture: any
 Depends: python3 (>= 3.10), python3-jinja2, ${misc:Depends}
 Description: SLASH Linker

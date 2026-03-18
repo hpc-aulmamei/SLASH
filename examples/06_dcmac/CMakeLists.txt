@@ -1,16 +1,16 @@
 # ##################################################################################################
 #  The MIT License (MIT)
 #  Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
-# 
+#
 #  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
 #  and associated documentation files (the "Software"), to deal in the Software without restriction,
 #  including without limitation the rights to use, copy, modify, merge, publish, distribute,
 #  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
 #  furnished to do so, subject to the following conditions:
-# 
+#
 #  The above copyright notice and this permission notice shall be included in all copies or
 #  substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
 # NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
 # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
@@ -19,11 +19,17 @@
 # ##################################################################################################
 
 cmake_minimum_required(VERSION 3.20)
-project(00_axilite LANGUAGES NONE)
+project(06_dcmac LANGUAGES NONE)
 
-get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${REPO_ROOT}/cmake")
-find_package(Slash REQUIRED)
+option(SLASH_USE_REPO "Build against the local repo tree instead of installed packages" OFF)
+
+if(SLASH_USE_REPO)
+  get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
+  list(APPEND CMAKE_MODULE_PATH "${REPO_ROOT}/cmake")
+  include(SlashTools)
+else()
+  find_package(SlashTools REQUIRED)
+endif()
 
 set(CFG_FILE "${CMAKE_CURRENT_LIST_DIR}/config.cfg")
 
@@ -54,4 +60,3 @@ add_vbin(
   CFG        "${CFG_FILE}"
   KERNELS    ${KERNELS}
 )
-

@@ -159,7 +159,6 @@ V80 System Management Interface
 Summary:        SLASH Linker
 Requires:       python3 >= 3.10
 Requires:       python3-jinja2
-BuildArch:      noarch
 
 %description -n v80++
 SLASH Linker
@@ -272,6 +271,7 @@ EOF
 %files -n v80++
 %{_bindir}/v80++
 %{_prefix}/libexec/v80++/
+%{_libdir}/cmake/SlashTools/
 %{_datadir}/v80++/
 
 # ---- Scriptlets ----

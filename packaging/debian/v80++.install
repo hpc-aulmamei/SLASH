@@ -20,4 +20,5 @@
 
 usr/bin/v80++
 usr/lib/v80++/
+usr/lib/*/cmake/SlashTools/
 usr/share/v80++/
