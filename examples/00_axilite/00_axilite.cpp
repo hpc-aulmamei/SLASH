@@ -47,7 +47,7 @@ int main(int argc, char* argv[]) {
 
         vrt::Kernel accumulate(device, "accumulate_0");
         vrt::Kernel increment(device, "increment_0");
-        vrt::Buffer<float> buffer(device, size, increment.argMemoryConfig("in"));
+        vrt::Buffer<float> buffer(device, size, increment.argMemoryConfig("in_r"));
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_real_distribution<> dis(0.0, 1.0);
