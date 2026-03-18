@@ -31,32 +31,21 @@ else()
   find_package(SlashTools REQUIRED)
 endif()
 
-set(CFG_FILE "${CMAKE_CURRENT_LIST_DIR}/config.cfg")
+# --- HLS kernels ---
+set(DEVICE "xcv80-lsva4737-2MHP-e-S" CACHE STRING "Target device")
 
-set(DEVICE "xcv80-lsva4737-2MHP-e-S")
-set(IP_REPO  "${CMAKE_CURRENT_LIST_DIR}/hls")
-set(KERNELS
-  "${IP_REPO}/build_traffic_producer.${DEVICE}/hls/impl/ip/component.xml"
-  "${IP_REPO}/build_traffic_consumer.${DEVICE}/hls/impl/ip/component.xml"
+build_hls_dir(
+  TARGET      hls
+  ROOT        "${CMAKE_CURRENT_SOURCE_DIR}/hls"
+  DEVICE      "${DEVICE}"
+  KERNELS     traffic_producer traffic_consumer
+  OUT_IP_REPO _IP_REPO
+  OUT_KERNELS _KERNELS
 )
 
-add_vbin(
-  TARGET     "dcmac_hw"
-  PLATFORM   "hw"
-  CFG        "${CFG_FILE}"
-  KERNELS    ${KERNELS}
-)
+# --- VBIN targets ---
+set(CFG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/config.cfg")
 
-add_vbin(
-  TARGET     "dcmac_sim"
-  PLATFORM   "sim"
-  CFG        "${CFG_FILE}"
-  KERNELS    ${KERNELS}
-)
-
-add_vbin(
-  TARGET     "dcmac_emu"
-  PLATFORM   "emu"
-  CFG        "${CFG_FILE}"
-  KERNELS    ${KERNELS}
-)
+add_vbin(TARGET "dcmac_hw"  PLATFORM "hw"  CFG "${CFG_FILE}" KERNELS ${_KERNELS} IP_REPO "${_IP_REPO}")
+add_vbin(TARGET "dcmac_sim" PLATFORM "sim" CFG "${CFG_FILE}" KERNELS ${_KERNELS} IP_REPO "${_IP_REPO}")
+add_vbin(TARGET "dcmac_emu" PLATFORM "emu" CFG "${CFG_FILE}" KERNELS ${_KERNELS} IP_REPO "${_IP_REPO}")
