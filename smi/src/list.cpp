@@ -503,7 +503,7 @@ static void printVrtdStatus(std::ostream& out, const VrtdStatus& vrtd) {
 /// In short mode, prints a single summary line.  In long mode, also
 /// prints detailed sysfs attributes for each PF.
 std::ostream& operator<<(std::ostream& out, const V80Board& board) {
-    out << "Board " << board.bdfBase << ": "
+    out << "Board " << board.bdfBase << " "
         << (board.ok() ? "OK" : "NOT READY") << " ";
     printPfStatus(out, board.pf0);
     out << " ";
