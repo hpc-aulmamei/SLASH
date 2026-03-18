@@ -39,8 +39,8 @@ int main(int argc, char* argv[]) {
 
         vrt::Kernel dma_in(device, "dma_in_0");
         vrt::Kernel dma_out(device, "dma_out_0");
-        vrt::Buffer<uint64_t> buffer_in(device, size, vrt::MemoryRangeType::HBM);
-        vrt::Buffer<uint64_t> buffer_out(device, size, vrt::MemoryRangeType::HBM);
+        vrt::Buffer<uint64_t> buffer_in(device, size, dma_in.argMemoryConfig("in"));
+        vrt::Buffer<uint64_t> buffer_out(device, size, dma_out.argMemoryConfig("out"));
         for(uint32_t i = 0; i < size; i++) {
             buffer_in[i] = static_cast<uint64_t>(i);
         }
@@ -65,6 +65,7 @@ int main(int argc, char* argv[]) {
         device.cleanup();
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
+        return 1;
     }
     return 0;
 }
