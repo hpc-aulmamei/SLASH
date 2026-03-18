@@ -213,10 +213,10 @@ struct slash_bar_file *slash_bar_file_open(struct slash_ctldev *ctldev, int bar_
     /*
      * Map the entire BAR into our address space.  The dma-buf fd
      * backs this mapping — the kernel's slash_bar_dmabuf_mmap()
-     * handler translates this into an io_remap_pfn_range() of the
-     * BAR's physical address range.  Callers must bracket accesses
-     * with the DMA_BUF_IOCTL_SYNC start/end helpers (see the
-     * inline functions in ctldev.h).
+     * installs a fault handler that maps BAR pages via
+     * vmf_insert_pfn() on first access.  Callers must bracket
+     * accesses with the DMA_BUF_IOCTL_SYNC start/end helpers
+     * (see the inline functions in ctldev.h).
      */
     bar_file->map = mmap(NULL, bar_file->len, PROT_READ | PROT_WRITE, MAP_SHARED, bar_file->fd, 0);
     if (bar_file->map == MAP_FAILED) {

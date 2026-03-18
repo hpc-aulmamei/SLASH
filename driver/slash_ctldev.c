@@ -35,7 +35,6 @@
 #include "slash_ctldev.h"
 
 #include <linux/atomic.h>
-#include <linux/capability.h>
 #include <linux/kernel.h>
 #include <linux/minmax.h>
 #include <linux/printk.h>
@@ -420,13 +419,11 @@ static long slash_ctldev_fop_ioctl(struct file *file, unsigned int op, unsigned 
         size_t copy_size;
 
         /*
-         * No explicit capability check here — access control for the
-         * ioctl is enforced by device-node permissions (udev: slash_ctl*
-         * is 0600, owned by vrtd:vrtd).
-         *
-         * Note: the caller still needs CAP_SYS_RAWIO at mmap() time
-         * because the kernel's remap_pfn_range() security path requires
-         * it for I/O memory mappings.
+         * Access control is enforced by device-node permissions
+         * (udev: slash_ctl* is 0600, owned by vrtd:vrtd).
+         * No capability check is needed here or at mmap() time —
+         * the dma-buf mmap handler uses fault-based vmf_insert_pfn()
+         * which does not require CAP_SYS_RAWIO.
          */
 
         /* Size-versioning: same pattern as GET_BAR_INFO above. */

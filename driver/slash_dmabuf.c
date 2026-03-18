@@ -41,6 +41,7 @@
 #include "slash.h"
 
 #include <linux/err.h>
+#include <linux/mm.h>
 #include <linux/pci.h>
 #include <linux/printk.h>
 #include <linux/slab.h>
@@ -90,30 +91,79 @@ static void slash_bar_dmabuf_unmap(struct dma_buf_attachment *attach,
 }
 
 /**
- * slash_bar_dmabuf_mmap() - Map a BAR region into userspace.
+ * slash_bar_dmabuf_fault() - Page-fault handler for BAR mappings.
+ * @vmf: Fault information provided by the kernel.
+ *
+ * Called on the first access to each page in the VMA.  Computes the
+ * physical page frame number (PFN) for the faulting address within
+ * the PCI BAR and inserts it into the page tables via vmf_insert_pfn().
+ *
+ * This avoids io_remap_pfn_range(), whose remap_pfn_range() security
+ * path requires CAP_SYS_RAWIO.  The fault-based approach (VM_PFNMAP +
+ * vmf_insert_pfn) is the standard pattern used by DRM/GPU and VFIO
+ * drivers for mapping device I/O memory to unprivileged userspace.
+ *
+ * Lifetime safety: priv->pdev is held via pci_dev_get() for the lifetime
+ * of the dma-buf.  The VMA holds a file reference on the dma-buf, so priv
+ * and priv->pdev remain valid for any fault during the VMA's lifetime.
+ * After device removal pci_resource_start() returns stale-but-valid cached
+ * values from the pci_dev struct; MMIO reads will return 0xFFFFFFFF (PCIe
+ * completion timeout) which is the expected degraded behavior.
+ *
+ * Return: VM_FAULT_NOPAGE on success, VM_FAULT_SIGBUS on out-of-range
+ *         access or insertion failure.
+ */
+static vm_fault_t slash_bar_dmabuf_fault(struct vm_fault *vmf)
+{
+    struct vm_area_struct *vma = vmf->vma;
+    struct slash_bar_dmabuf_data *priv = vma->vm_private_data;
+    unsigned long page_index;
+    unsigned long obj_pgoff;
+    resource_size_t bar_start;
+    unsigned long pfn;
+
+    /* Page offset within the VMA (0 for the first page of the mapping). */
+    page_index = (vmf->address - vma->vm_start) >> PAGE_SHIFT;
+
+    /* BAR-relative page offset: mmap offset + position within mapping. */
+    obj_pgoff = vma->vm_pgoff + page_index;
+
+    /* Bounds check: do not map beyond the physical BAR. */
+    if ((obj_pgoff << PAGE_SHIFT) >= priv->len)
+        return VM_FAULT_SIGBUS;
+
+    bar_start = pci_resource_start(priv->pdev, priv->bar_number);
+    pfn = (bar_start >> PAGE_SHIFT) + obj_pgoff;
+
+    return vmf_insert_pfn(vma, vmf->address, pfn);
+}
+
+static const struct vm_operations_struct slash_bar_dmabuf_vm_ops = {
+    .fault = slash_bar_dmabuf_fault,
+};
+
+/**
+ * slash_bar_dmabuf_mmap() - Set up a BAR region for fault-based mapping.
  * @dmabuf: The BAR dma-buf being mapped.
  * @vma:    The VMA describing the mapping request.
  *
- * Maps the physical address range of the PCI BAR into the process's
- * address space using io_remap_pfn_range().  The cache attribute is
- * chosen based on whether the BAR is prefetchable:
+ * Configures the VMA with appropriate flags, cache attributes, and a
+ * custom vm_operations_struct whose .fault handler uses vmf_insert_pfn()
+ * to lazily insert PFNs on first access.  This avoids
+ * io_remap_pfn_range() and its CAP_SYS_RAWIO requirement, allowing
+ * unprivileged userspace to mmap BAR regions.
  *
- *   - Prefetchable → write-combine (pgprot_writecombine): allows the
- *     CPU to coalesce writes for better throughput on bulk data BARs.
- *   - Non-prefetchable → device (pgprot_device): strict ordering for
- *     control registers.
- *
- * VM_DONTDUMP prevents the mapping from appearing in core dumps (it's
- * I/O memory, not useful data).  VM_DONTEXPAND prevents mremap from
- * growing the mapping beyond the BAR boundary.
+ * Cache attribute selection:
+ *   - Prefetchable BAR → write-combine (pgprot_writecombine): allows
+ *     the CPU to coalesce writes for better throughput on bulk data BARs.
+ *   - Non-prefetchable BAR → device/uncached (pgprot_device): strict
+ *     ordering for control registers.
  *
  * Return: 0 on success, negative errno on failure.
  */
 static int slash_bar_dmabuf_mmap(struct dma_buf *dmabuf, struct vm_area_struct *vma)
 {
     struct slash_bar_dmabuf_data *priv = dmabuf->priv;
-    unsigned long pfn;
-    int err;
     unsigned long size = vma->vm_end - vma->vm_start;
     u64 offset = (u64)vma->vm_pgoff << PAGE_SHIFT;
     bool wc;
@@ -122,28 +172,27 @@ static int slash_bar_dmabuf_mmap(struct dma_buf *dmabuf, struct vm_area_struct *
     if (offset > priv->len || size > priv->len - offset)
         return -EINVAL;
 
-    vma->vm_flags |= VM_DONTDUMP | VM_DONTEXPAND;
+    /*
+     * VM_PFNMAP    — raw PFN mapping, required for vmf_insert_pfn().
+     * VM_IO        — I/O memory (blocks /proc/pid/mem, core dump).
+     * VM_DONTDUMP  — explicit core-dump exclusion (redundant w/ VM_IO).
+     * VM_DONTEXPAND — prevents mremap beyond BAR boundary.
+     * VM_DONTCOPY  — do not inherit across fork(); BAR register
+     *                mappings should not be silently shared with children.
+     */
+    vma->vm_flags |= VM_PFNMAP | VM_IO | VM_DONTDUMP |
+                     VM_DONTEXPAND | VM_DONTCOPY;
 
     wc = !!(pci_resource_flags(priv->pdev, priv->bar_number) & IORESOURCE_PREFETCH);
     vma->vm_page_prot = wc ? pgprot_writecombine(vma->vm_page_prot)
                            : pgprot_device(vma->vm_page_prot);
 
-    /*
-     * Compute the PFN (page frame number) for the start of the mapping.
-     * The BAR's physical start address is converted to a PFN, then the
-     * user-provided page offset (vm_pgoff) is added to allow mapping
-     * sub-regions of the BAR.
-     */
-    pfn = (pci_resource_start(priv->pdev, priv->bar_number) >> PAGE_SHIFT) + vma->vm_pgoff;
+    vma->vm_ops = &slash_bar_dmabuf_vm_ops;
+    vma->vm_private_data = priv;
 
-    dev_dbg(&priv->pdev->dev, "slash: mmap BAR%d wc=%d start_pfn=0x%lx len=0x%lx\n", priv->bar_number, wc, pfn, vma->vm_end - vma->vm_start);
-
-    err = io_remap_pfn_range(vma, vma->vm_start, pfn,
-                             vma->vm_end - vma->vm_start, vma->vm_page_prot);
-    if (err) {
-        dev_err(&priv->pdev->dev, "slash: io_remap_pfn_range failed: %d\n", err);
-        return err;
-    }
+    dev_dbg(&priv->pdev->dev,
+            "slash: mmap BAR%d wc=%d pgoff=0x%lx len=0x%lx (fault-based)\n",
+            priv->bar_number, wc, vma->vm_pgoff, size);
 
     return 0;
 }
