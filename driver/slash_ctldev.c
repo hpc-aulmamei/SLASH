@@ -420,9 +420,13 @@ static long slash_ctldev_fop_ioctl(struct file *file, unsigned int op, unsigned 
         size_t copy_size;
 
         /*
-         * Access control is enforced by device-node permissions
-         * (udev: slash_ctl* is 0600, owned by vrtd:vrtd).
-         * No capability check is needed here.
+         * No explicit capability check here — access control for the
+         * ioctl is enforced by device-node permissions (udev: slash_ctl*
+         * is 0600, owned by vrtd:vrtd).
+         *
+         * Note: the caller still needs CAP_SYS_RAWIO at mmap() time
+         * because the kernel's remap_pfn_range() security path requires
+         * it for I/O memory mappings.
          */
 
         /* Size-versioning: same pattern as GET_BAR_INFO above. */

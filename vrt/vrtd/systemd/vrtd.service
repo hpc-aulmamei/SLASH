@@ -21,6 +21,11 @@ PrivateDevices=false
 RuntimeDirectory=vrtd
 RuntimeDirectoryMode=0755
 
+# CAP_SYS_RAWIO is required by the kernel's remap_pfn_range() security
+# check when mmap'ing PCI BAR I/O memory (used by the clock driver).
+AmbientCapabilities=CAP_SYS_RAWIO
+CapabilityBoundingSet=CAP_SYS_RAWIO
+
 # Hardening
 NoNewPrivileges=true
 ProtectSystem=full
