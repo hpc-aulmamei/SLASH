@@ -90,12 +90,16 @@ install(
 )
 
 install(
-  TARGETS vrtd libvrtd libvrtdpp
+  TARGETS libvrtd libvrtdpp
   EXPORT  vrtdTargets
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
   INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+)
+
+install(
+  TARGETS vrtd
+  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
 # -------- CMake package configuration --------
