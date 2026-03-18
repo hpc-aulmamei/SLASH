@@ -96,7 +96,7 @@ for entry in "${EXAMPLES[@]}"; do
     BUILD_DIR="$EXAMPLE_DIR/build"
 
     echo "--- Configuring $dir ---"
-    cmake -B "$BUILD_DIR" -S "$EXAMPLE_DIR" -DSLASH_USE_REPO=ON
+    cmake -B "$BUILD_DIR" -S "$EXAMPLE_DIR"
     echo ""
 done
 
@@ -170,6 +170,17 @@ done
 # =========================================================================
 #  Stage 5: Run all examples
 # =========================================================================
+
+# For emu/sim, Vivado libraries are required at runtime
+if [[ "$PLATFORM" == "emu" || "$PLATFORM" == "sim" ]]; then
+    if [[ -z "${XILINX_VIVADO:-}" ]]; then
+        echo "ERROR: XILINX_VIVADO is not set."
+        echo "Please source the settings64.sh (or settings64.csh) file from your Vivado installation directory."
+        exit 1
+    fi
+    export LD_LIBRARY_PATH="${XILINX_VIVADO}/lib/lnx64.o${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
+
 echo ""
 echo "========================================================================"
 echo "  Stage 5: Run examples ($PLATFORM, BDF: $BDF)"
