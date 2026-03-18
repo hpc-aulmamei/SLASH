@@ -28,8 +28,9 @@ option(SLASH_USE_REPO "Build against the local repo tree instead of installed pa
 
 if(SLASH_USE_REPO)
   get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
-  set(_VRT_INCLUDES ${REPO_ROOT}/vrt/include)
-  set(_VRT_LIBS vrt xml2 zmq jsoncpp)
+  add_subdirectory(${REPO_ROOT}/vrt ${CMAKE_CURRENT_BINARY_DIR}/vrt)
+  set(_VRT_INCLUDES "")
+  set(_VRT_LIBS vrt)
 else()
   find_package(vrt REQUIRED CONFIG)
   set(_VRT_INCLUDES "")
