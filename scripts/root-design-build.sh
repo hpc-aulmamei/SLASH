@@ -49,6 +49,11 @@ find_python() {
 
 PYTHON=$(find_python)
 
+# Vendor jinja2 + markupsafe into linker/src/vendor/ (if not already present)
+if [ ! -d linker/src/vendor/jinja2 ]; then
+    "$PYTHON" -m pip install jinja2 markupsafe --target=linker/src/vendor/ --no-deps
+fi
+
 pushd linker/src
 "$PYTHON" main.py install
 popd

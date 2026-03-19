@@ -47,7 +47,7 @@ BuildRequires:  systemd-devel
 BuildRequires:  zeromq-devel
 BuildRequires:  zlib-devel
 BuildRequires:  rsync
-BuildRequires:  ((python3 >= 3.10 and python3-jinja2) or (python3.11 and python3.11-jinja2) or (python3.12 and python3.12-jinja2) or (python3.13 and python3.13-jinja2))
+BuildRequires:  ((python3 >= 3.10 and python3-pip) or (python3.11 and python3.11-pip) or (python3.12 and python3.12-pip) or (python3.13 and python3.13-pip))
 BuildRequires:  systemd-rpm-macros
 
 # ---- Metapackages ----
@@ -158,7 +158,7 @@ V80 System Management Interface
 
 %package -n     v80++
 Summary:        SLASH Linker
-Requires:       ((python3 >= 3.10 and python3-jinja2) or (python3.11 and python3.11-jinja2) or (python3.12 and python3.12-jinja2) or (python3.13 and python3.13-jinja2))
+Requires:       (python3 >= 3.10 or python3.11 or python3.12 or python3.13)
 
 %description -n v80++
 SLASH Linker
