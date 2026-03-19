@@ -27,7 +27,5 @@ cd "$(dirname "$0")/.."
 
 make -C linker/resources/base/iprepo clean
 
-rm -rf linker/src/vendor/jinja2 linker/src/vendor/markupsafe
-
 rm -rf linker/src/install.prj
 rm -rf linker/resources/abstract_shell
