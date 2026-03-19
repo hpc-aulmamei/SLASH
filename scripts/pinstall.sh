@@ -39,7 +39,26 @@ rsync --delete -a --exclude='__pycache__' --exclude='*.pyc' linker/src/ "$1$2/v8
 cat <<EOF >"$1/usr/bin/v80++"
 #!/bin/sh
 
-python3 $2/v80++/main.py "\$@"
+find_python() {
+    if command -v python3 > /dev/null 2>&1; then
+        ver=\$(python3 -c 'import sys; print(sys.version_info.minor)')
+        if [ "\$ver" -ge 10 ] 2>/dev/null; then
+            echo python3
+            return
+        fi
+    fi
+    for minor in 13 12 11 10; do
+        if command -v "python3.\${minor}" > /dev/null 2>&1; then
+            echo "python3.\${minor}"
+            return
+        fi
+    done
+    echo "ERROR: v80++ requires Python >= 3.10" >&2
+    exit 1
+}
+
+PYTHON=\$(find_python)
+exec "\$PYTHON" $2/v80++/main.py "\$@"
 EOF
 chmod 0755 "$1/usr/bin/v80++"
 
