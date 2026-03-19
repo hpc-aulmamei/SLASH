@@ -48,16 +48,15 @@ build_hls_dir(
   ROOT        "${CMAKE_CURRENT_SOURCE_DIR}/hls"
   DEVICE      "${DEVICE}"
   KERNELS     dma offset
-  OUT_IP_REPO _IP_REPO
   OUT_KERNELS _KERNELS
 )
 
 # --- VBIN targets ---
 set(CFG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/config.cfg")
 
-add_vbin(TARGET "aximm_hw"  PLATFORM "hw"  CFG "${CFG_FILE}" KERNELS ${_KERNELS} IP_REPO "${_IP_REPO}")
-add_vbin(TARGET "aximm_sim" PLATFORM "sim" CFG "${CFG_FILE}" KERNELS ${_KERNELS} IP_REPO "${_IP_REPO}")
-add_vbin(TARGET "aximm_emu" PLATFORM "emu" CFG "${CFG_FILE}" KERNELS ${_KERNELS} IP_REPO "${_IP_REPO}")
+add_vbin(TARGET "aximm_hw"  PLATFORM "hw"  CFG "${CFG_FILE}" KERNELS ${_KERNELS})
+add_vbin(TARGET "aximm_sim" PLATFORM "sim" CFG "${CFG_FILE}" KERNELS ${_KERNELS})
+add_vbin(TARGET "aximm_emu" PLATFORM "emu" CFG "${CFG_FILE}" KERNELS ${_KERNELS})
 
 # --- Executable ---
 add_executable(${PROJECT_NAME} 01_aximm.cpp)
