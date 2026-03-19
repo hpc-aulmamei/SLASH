@@ -35,7 +35,7 @@ DESTDIR="$1" cmake --build pbuild/smi --target install
 
 # Install the linker (src only)
 mkdir -p "$1$2/v80++"
-rsync --delete -a --exclude='__pycache__' --exclude='*.pyc' linker/src/ "$1$2/v80++/"
+rsync --delete -a --exclude='__pycache__' --exclude='*.pyc' --exclude='install.prj' linker/src/ "$1$2/v80++/"
 cat <<EOF >"$1/usr/bin/v80++"
 #!/bin/sh
 
