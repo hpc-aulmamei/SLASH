@@ -186,6 +186,11 @@ install -D -m 0644 vrt/vrtd/systemd/vrtd.socket \
 install -D -m 0644 vrt/vrtd/sysusers/vrtd.conf \
     %{buildroot}%{_sysusersdir}/vrtd.conf
 
+# vrtd config and drop-in directory
+install -D -m 0644 vrt/vrtd/conf/vrtd.conf \
+    %{buildroot}%{_sysconfdir}/vrt/vrtd.conf
+install -d %{buildroot}%{_sysconfdir}/vrt/vrtd.conf.d
+
 # udev rules (mirrors debian/vrtd.udev)
 install -D -m 0644 vrt/vrtd/udev/99-vrtd.rules \
     %{buildroot}%{_udevrulesdir}/99-vrtd.rules
@@ -265,6 +270,8 @@ udevadm control --reload-rules && udevadm trigger 2>/dev/null || :
 %{_unitdir}/vrtd.socket
 %{_udevrulesdir}/99-vrtd.rules
 %{_sysusersdir}/vrtd.conf
+%config(noreplace) %{_sysconfdir}/vrt/vrtd.conf
+%dir %{_sysconfdir}/vrt/vrtd.conf.d
 
 %files -n libvrtd
 %{_libdir}/libvrtd.so
