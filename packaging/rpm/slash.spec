@@ -182,6 +182,10 @@ install -D -m 0644 vrt/vrtd/systemd/vrtd.service \
 install -D -m 0644 vrt/vrtd/systemd/vrtd.socket \
     %{buildroot}%{_unitdir}/vrtd.socket
 
+# sysusers (mirrors debian/vrtd.install + vrtd.postinst)
+install -D -m 0644 vrt/vrtd/sysusers/vrtd.conf \
+    %{buildroot}%{_sysusersdir}/vrtd.conf
+
 # udev rules (mirrors debian/vrtd.udev)
 install -D -m 0644 vrt/vrtd/udev/99-vrtd.rules \
     %{buildroot}%{_udevrulesdir}/99-vrtd.rules
@@ -240,12 +244,16 @@ EOF
 %{_includedir}/slash/
 %{_libdir}/cmake/slash/
 
+%pre -n vrtd
+%sysusers_create_package vrtd vrt/vrtd/sysusers/vrtd.conf
+
 %files -n vrtd
 %{_bindir}/vrtd
 %{_bindir}/vrtd-*
 %{_unitdir}/vrtd.service
 %{_unitdir}/vrtd.socket
 %{_udevrulesdir}/99-vrtd.rules
+%{_sysusersdir}/vrtd.conf
 
 %files -n libvrtd
 %{_libdir}/libvrtd.so
@@ -275,6 +283,14 @@ EOF
 %{_datadir}/v80++/
 
 # ---- Scriptlets ----
+
+%post -n slash-dkms
+dkms add -m %{dkms_name} -v %{dkms_version} --rpm_safe_upgrade
+dkms build -m %{dkms_name} -v %{dkms_version}
+dkms install -m %{dkms_name} -v %{dkms_version}
+
+%preun -n slash-dkms
+dkms remove -m %{dkms_name} -v %{dkms_version} --all --rpm_safe_upgrade
 
 %post -n libslash -p /sbin/ldconfig
 %postun -n libslash -p /sbin/ldconfig
