@@ -310,7 +310,25 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     }
 
     /*
-     * Step 11: Verify the device is back on the bus by probing PF0 via AMI.
+     * Step 11: After a rescan the following things need to happen:
+     *
+     * * The kernel needs to detect the device on the PCIe bus.
+     * * The kernel needs to hand that device to the slash and ami drivers.
+     * * The slash and ami drivers need to create device nodes.
+     * * The kernel needs to signal to userspace systemd-udev that the device node was created.
+     * * systemd-udev needs to set permisions on the device node.
+     *
+     * That all takes time, so we wait a generous 5 seconds for all of that to occur.
+     * 
+     * TODO: A much more robust method would be to remove all the code bellow this
+     * and rework how devices are discovered. We could bring in libudev.
+     * This would allow us to get netlink notifications on device events, such as new devices
+     * appearing. Then we could attempt to open these devices only after the userspace has configured them.
+     */
+    usleep(5000000);
+
+    /*
+     * Step 12: Verify the device is back on the bus by probing PF0 via AMI.
      * If ami_dev_find() fails, the device did not come back after the reset,
      * which indicates a hardware or firmware problem.
      */
@@ -324,7 +342,7 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     ami_dev_delete(&ami_device);
 
     /*
-     * Step 12: Run device discovery to re-add the reset device to vrtd's
+     * Step 13: Run device discovery to re-add the reset device to vrtd's
      * tracked device list.  This opens the QDMA function, sets up queues,
      * and makes the device available for user requests again.
      */
