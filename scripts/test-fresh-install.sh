@@ -177,8 +177,10 @@ elif [[ "${PKG_TYPE}" == "rpm" ]]; then
     echo "  Stage 2: Install SLASH packages from ${ARTIFACTS_DIR}"
     echo "========================================================================"
 
-    # Exclude source RPMs
-    dnf install -y "${ARTIFACTS_DIR}"/*.rpm --exclude='*.src.rpm' --exclude='*-debuginfo-*' --exclude='*-debugsource-*'
+    # Exclude source, debuginfo, and debugsource RPMs
+    mapfile -t RPMS < <(find "${ARTIFACTS_DIR}" -maxdepth 1 -name '*.rpm' \
+        ! -name '*.src.rpm' ! -name '*-debuginfo-*' ! -name '*-debugsource-*')
+    dnf install -y "${RPMS[@]}"
 fi
 
 # =========================================================================
