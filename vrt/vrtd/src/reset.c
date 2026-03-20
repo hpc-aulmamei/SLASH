@@ -256,6 +256,11 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
      * ENODEV is tolerated because the firmware reconfiguration triggered in
      * step 5 may have already caused the device to disappear from the bus.
      */
+    if (g_hotplug == NULL) {
+        LOG(LOG_ERR, "reset_with_ami: hotplug handle not available (is slash_hotplug loaded?)");
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
     ret = slash_hotplug_remove(g_hotplug, pf0_bdf);
     if (ret != 0 && errno != ENODEV) {
         LOG(LOG_ERR, "reset_with_ami: hotplug remove(%s) failed: %m", pf0_bdf);

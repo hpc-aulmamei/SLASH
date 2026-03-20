@@ -122,8 +122,11 @@ static int slash_hotplug_copy_request(unsigned long arg, struct slash_hotplug_de
     if (copy_from_user(req, (void __user *)arg, sizeof(*req)))
         return -EFAULT;
 
-    if (req->size && req->size < sizeof(*req))
+    if (req->size && req->size < sizeof(*req)) {
+        pr_err("slash_hotplug: request size %u too small (expected %zu)\n",
+               req->size, sizeof(*req));
         return -EINVAL;
+    }
 
     if (!req->size)
         req->size = sizeof(*req);
@@ -158,23 +161,30 @@ static int slash_hotplug_resolve_request_locked(struct slash_hotplug_device_requ
     struct slash_hotplug_entry *entry;
 
     if (!req->bdf[0]) {
-        if (!allow_default)
+        if (!allow_default) {
+            pr_err("slash_hotplug: empty BDF and default not allowed\n");
             return -EINVAL;
+        }
 
-        if (slash_hotplug_device_count == 0)
+        if (slash_hotplug_device_count == 0) {
+            pr_err("slash_hotplug: no devices tracked for default resolution\n");
             return -ENODEV;
+        }
 
         if (slash_hotplug_device_count > 1)
             return -EOPNOTSUPP;
 
         entry = list_first_entry(&slash_hotplug_devices, struct slash_hotplug_entry, node);
         strscpy(req->bdf, entry->bdf, sizeof(req->bdf));
+        pr_info("slash_hotplug: resolved default device to %s\n", req->bdf);
         return 0;
     }
 
     entry = slash_hotplug_find_entry_locked(req->bdf);
-    if (!entry)
+    if (!entry) {
+        pr_err("slash_hotplug: BDF %s not in tracking list\n", req->bdf);
         return -ENODEV;
+    }
 
     return 0;
 }
@@ -193,12 +203,16 @@ static int slash_hotplug_get_pci_dev(const char *bdf, struct pci_dev **pdev_out)
     int domain, bus, slot, func;
     struct pci_dev *pdev;
 
-    if (sscanf(bdf, "%x:%x:%x.%x", &domain, &bus, &slot, &func) != 4)
+    if (sscanf(bdf, "%x:%x:%x.%x", &domain, &bus, &slot, &func) != 4) {
+        pr_err("slash_hotplug: malformed BDF '%s' (expected DDDD:BB:SS.F)\n", bdf);
         return -EINVAL;
+    }
 
     pdev = pci_get_domain_bus_and_slot(domain, bus, PCI_DEVFN(slot, func));
-    if (!pdev)
+    if (!pdev) {
+        pr_err("slash_hotplug: device %s not present in PCI subsystem\n", bdf);
         return -ENODEV;
+    }
 
     *pdev_out = pdev;
     return 0;
@@ -280,8 +294,10 @@ static int slash_hotplug_handle_toggle_sbr(const char *bdf)
     int ret;
     u16 ctrl;
 
-    if (sscanf(bdf, "%x:%x:%x.%x", &domain, &bus_nr, &slot, &func) != 4)
+    if (sscanf(bdf, "%x:%x:%x.%x", &domain, &bus_nr, &slot, &func) != 4) {
+        pr_err("slash_hotplug: toggle_sbr: malformed BDF '%s'\n", bdf);
         return -EINVAL;
+    }
 
     /*
      * Try to resolve the upstream bridge from the endpoint.  If the
@@ -416,8 +432,10 @@ static long slash_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lo
         break;
     case SLASH_HOTPLUG_IOCTL_REMOVE:
         ret = slash_hotplug_copy_request(arg, &req);
-        if (ret)
+        if (ret) {
+            pr_err("slash_hotplug: remove: copy_request failed (%d)\n", ret);
             break;
+        }
         /*
          * Skip the tracked-device check when an explicit BDF is provided.
          * As a general-purpose hotplug driver, we should be able to remove
@@ -429,15 +447,20 @@ static long slash_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lo
             mutex_lock(&slash_hotplug_devices_lock);
             ret = slash_hotplug_resolve_request_locked(&req, true);
             mutex_unlock(&slash_hotplug_devices_lock);
-            if (ret)
+            if (ret) {
+                pr_err("slash_hotplug: remove: resolve failed (%d)\n", ret);
                 break;
+            }
         }
+        pr_info("slash_hotplug: remove: BDF %s\n", req.bdf);
         ret = slash_hotplug_handle_remove(req.bdf);
         break;
     case SLASH_HOTPLUG_IOCTL_TOGGLE_SBR:
         ret = slash_hotplug_copy_request(arg, &req);
-        if (ret)
+        if (ret) {
+            pr_err("slash_hotplug: toggle_sbr: copy_request failed (%d)\n", ret);
             break;
+        }
         /*
          * Skip the tracked-device check when an explicit BDF is provided.
          * toggle_sbr is normally called after the endpoint has already been
@@ -452,31 +475,43 @@ static long slash_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lo
             mutex_lock(&slash_hotplug_devices_lock);
             ret = slash_hotplug_resolve_request_locked(&req, true);
             mutex_unlock(&slash_hotplug_devices_lock);
-            if (ret)
+            if (ret) {
+                pr_err("slash_hotplug: toggle_sbr: resolve failed (%d)\n", ret);
                 break;
+            }
         }
+        pr_info("slash_hotplug: toggle_sbr: BDF %s\n", req.bdf);
         ret = slash_hotplug_handle_toggle_sbr(req.bdf);
         break;
     case SLASH_HOTPLUG_IOCTL_HOTPLUG:
         ret = slash_hotplug_copy_request(arg, &req);
-        if (ret)
+        if (ret) {
+            pr_err("slash_hotplug: hotplug: copy_request failed (%d)\n", ret);
             break;
+        }
         if (!req.bdf[0]) {
             mutex_lock(&slash_hotplug_devices_lock);
             ret = slash_hotplug_resolve_request_locked(&req, true);
             mutex_unlock(&slash_hotplug_devices_lock);
-            if (ret)
+            if (ret) {
+                pr_err("slash_hotplug: hotplug: resolve failed (%d)\n", ret);
                 break;
+            }
         }
+        pr_info("slash_hotplug: hotplug: BDF %s\n", req.bdf);
         ret = slash_hotplug_handle_hotplug(req.bdf);
         break;
     default:
+        pr_err("slash_hotplug: unknown ioctl cmd 0x%x\n", cmd);
         ret = -ENOTTY;
         break;
     }
 
     if (ret == -EOPNOTSUPP)
         pr_err("slash_hotplug: multiple devices tracked; specify BDF explicitly\n");
+
+    if (ret)
+        pr_err("slash_hotplug: ioctl 0x%x returning %d\n", cmd, ret);
 
     return ret;
 }

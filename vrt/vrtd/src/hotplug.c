@@ -36,6 +36,7 @@
 #define _GNU_SOURCE
 
 #include "hotplug.h"
+#include "utils.h"
 
 #include <errno.h>
 #include <stddef.h>
@@ -53,6 +54,8 @@ struct slash_hotplug *g_hotplug = NULL;
 void hotplug_global_init(void)
 {
     g_hotplug = slash_hotplug_open(NULL);
+    if (g_hotplug == NULL)
+        LOG(LOG_ERR, "Failed to open hotplug device: %m");
 }
 
 /**
