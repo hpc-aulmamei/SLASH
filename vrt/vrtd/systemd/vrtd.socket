@@ -4,7 +4,7 @@ Description=vrtd UNIX SEQPACKET socket
 [Socket]
 ListenSequentialPacket=/run/vrtd.sock
 FileDescriptorName=api
-SocketMode=0660
+SocketMode=0666
 SocketGroup=vrt
 RemoveOnStop=yes
 DirectoryMode=0755
