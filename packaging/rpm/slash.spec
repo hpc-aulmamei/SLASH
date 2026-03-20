@@ -247,6 +247,17 @@ EOF
 %pre -n vrtd
 %sysusers_create_package vrtd vrt/vrtd/sysusers/vrtd.conf
 
+%post -n vrtd
+%systemd_post vrtd.service vrtd.socket
+udevadm control --reload-rules && udevadm trigger 2>/dev/null || :
+
+%preun -n vrtd
+%systemd_preun vrtd.service vrtd.socket
+
+%postun -n vrtd
+%systemd_postun_with_restart vrtd.service vrtd.socket
+udevadm control --reload-rules && udevadm trigger 2>/dev/null || :
+
 %files -n vrtd
 %{_bindir}/vrtd
 %{_bindir}/vrtd-*
