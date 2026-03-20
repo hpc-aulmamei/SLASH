@@ -98,6 +98,8 @@
 #include "hotplug.h"
 #include "utils.h"
 
+#define GPIO_ALLOW_SBR 0x1040000
+
 /**
  * Perform a full device reset using AMI firmware commands and PCIe hotplug.
  *
@@ -207,7 +209,7 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
      */
     {
         struct ami_ioc_data_payload boot_payload = { 0 };
-        boot_payload.partition = 1;
+        boot_payload.partition = 0;
         boot_payload.cap_override = ami_device->cap_override;
 
         if (ami_open_cdev(ami_device) != AMI_STATUS_OK) {
@@ -228,10 +230,12 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     /*
      * Step 5: Write a trigger value to BAR0 register at offset 0x1040000
      * to initiate the firmware-level reconfiguration.
-     * TODO(vserbu): explain what BAR0 offset 0x1040000 controls -- is this
-     *    an AMC mailbox trigger, a reconfiguration strobe, or something else?
+     *
+     * This is a GPIO pin in the programmed logic that forms an AND gate
+     * with the PCIe SBR signal, and needs to be turned on in order to
+     * perform a scondary bus reset.
      */
-    ret = ami_mem_bar_write(ami_device, 0, 0x1040000, 1);
+    ret = ami_mem_bar_write(ami_device, 0, GPIO_ALLOW_SBR, 1);
     if (ret != AMI_STATUS_OK) {
         LOG(LOG_ERR, "reset_with_ami: ami_mem_bar_write(%s) failed: %s", pf0_bdf, ami_get_last_error());
         ami_dev_delete(&ami_device);
@@ -285,7 +289,7 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     /*
      * Step 9: Wait for the FPGA to complete reconfiguration and re-train
      * the PCIe link.  5 seconds is a conservative estimate that accounts for
-     * bitstream loading time and link training.
+     * bitstream loading time and link training, mentioned in a AVED sw comment.
      */
     usleep(5000000);
 
