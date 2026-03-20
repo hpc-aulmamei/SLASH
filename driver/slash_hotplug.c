@@ -418,11 +418,21 @@ static long slash_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lo
         ret = slash_hotplug_copy_request(arg, &req);
         if (ret)
             break;
-        mutex_lock(&slash_hotplug_devices_lock);
-        ret = slash_hotplug_resolve_request_locked(&req, true);
-        mutex_unlock(&slash_hotplug_devices_lock);
-        if (!ret)
-            ret = slash_hotplug_handle_remove(req.bdf);
+        /*
+         * Skip the tracked-device check when an explicit BDF is provided.
+         * As a general-purpose hotplug driver, we should be able to remove
+         * any PCI device, not just ones previously added to the tracking
+         * list.  When no BDF is given, fall back to the resolver to pick
+         * the single tracked device.
+         */
+        if (!req.bdf[0]) {
+            mutex_lock(&slash_hotplug_devices_lock);
+            ret = slash_hotplug_resolve_request_locked(&req, true);
+            mutex_unlock(&slash_hotplug_devices_lock);
+            if (ret)
+                break;
+        }
+        ret = slash_hotplug_handle_remove(req.bdf);
         break;
     case SLASH_HOTPLUG_IOCTL_TOGGLE_SBR:
         ret = slash_hotplug_copy_request(arg, &req);
@@ -451,11 +461,14 @@ static long slash_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lo
         ret = slash_hotplug_copy_request(arg, &req);
         if (ret)
             break;
-        mutex_lock(&slash_hotplug_devices_lock);
-        ret = slash_hotplug_resolve_request_locked(&req, true);
-        mutex_unlock(&slash_hotplug_devices_lock);
-        if (!ret)
-            ret = slash_hotplug_handle_hotplug(req.bdf);
+        if (!req.bdf[0]) {
+            mutex_lock(&slash_hotplug_devices_lock);
+            ret = slash_hotplug_resolve_request_locked(&req, true);
+            mutex_unlock(&slash_hotplug_devices_lock);
+            if (ret)
+                break;
+        }
+        ret = slash_hotplug_handle_hotplug(req.bdf);
         break;
     default:
         ret = -ENOTTY;
