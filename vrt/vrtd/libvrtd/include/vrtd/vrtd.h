@@ -526,6 +526,34 @@ enum vrtd_ret vrtd_buffer_sync_from_device(
     uint64_t size
 );
 
+
+/**
+ * @brief Query sensor information for a device.
+ *
+ * Retrieves all sensor readings (temperature, power, voltage, current) for
+ * the specified device.  The daemon queries sensors on-demand via AMI.
+ *
+ * The response is a variable-length message: a uint32_t sensor count
+ * followed by that many vrtd_sensor_entry structs.  The caller provides
+ * a buffer large enough to hold the expected response.
+ *
+ * @param fd             Connected vrtd socket file descriptor.
+ * @param dev            Device index (0-based).
+ * @param entries_out    Output buffer for sensor entries.
+ * @param max_entries    Maximum number of entries @p entries_out can hold.
+ * @param num_entries_out Output pointer for the actual number of entries returned.
+ *
+ * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
+ * @pre @p entries_out and @p num_entries_out must not be NULL.
+ */
+enum vrtd_ret vrtd_get_sensor_info(
+    int fd,
+    uint32_t dev,
+    struct vrtd_sensor_entry *entries_out,
+    uint32_t max_entries,
+    uint32_t *num_entries_out
+);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

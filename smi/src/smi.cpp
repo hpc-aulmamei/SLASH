@@ -88,6 +88,7 @@ static int smiMain(int argc, char **argv) {
     listCommand->add_flag("-j,--json", listOptions.jsonOutput, "Print information as compact json (default is human-readable)");
     listCommand->add_flag("-J,--pretty-json", listOptions.prettyJsonOutput, "Print information as json with indentation (default is human-readable)");
     listCommand->add_flag("-l,--long", listOptions.longOutput, "Print additional information");
+    listCommand->add_flag("-s,--sensors", listOptions.sensorsOutput, "Include sensor readings (requires VRTD)");
 
     // -- program (load vbin onto device) --
     auto* programCommand = app.add_subcommand("program", "Program a hardware device");

@@ -24,6 +24,7 @@
 #include <string>
 #include <string_view>
 #include <functional>
+#include <vector>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -45,6 +46,17 @@ enum class HotplugOp : uint8_t {
     ToggleSbr = VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR,
     Hotplug = VRTD_DEVICE_HOTPLUG_OP_HOTPLUG,
     ResetSequence = VRTD_DEVICE_HOTPLUG_OP_RESET_SEQUENCE,
+};
+
+/**
+ * @brief A single sensor reading returned by Device::getSensorInfo().
+ */
+struct SensorEntry {
+    std::string name;   ///< Sensor name (e.g., "vccint").
+    uint8_t type;       ///< Sensor type bitmask (1=temp, 2=current, 4=voltage, 8=power).
+    uint8_t status;     ///< Sensor status code (0x01 = OK).
+    int8_t unitMod;     ///< Unit modifier exponent (e.g., -3 for milli-).
+    int32_t value;      ///< Sensor reading (apply 10^unitMod to get base unit value).
 };
 
 /**
@@ -293,6 +305,17 @@ public:
         return setClockRate(ClockRegion::User, rate_hz);
     }
 
+    /**
+     * @brief Query all sensor readings for this device.
+     *
+     * Returns current values and statuses for all sensors (temperature,
+     * power, voltage, current) discovered via the AMI interface.
+     *
+     * @return Vector of sensor entries.
+     * @throws vrtd::Error on error.
+     */
+    std::vector<SensorEntry> getSensorInfo() const;
+
 
     // reconfigureUserRegion()
     // reconfigureServiceRegion()
@@ -317,7 +340,8 @@ private:
            std::function<void(const Device&, int)> fDesignWrite,
            std::function<void(const Device&, std::string_view)> fDesignWriteFile,
            std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate,
-           std::function<uint32_t(const Device&, ClockRegion, uint32_t)> fSetClockRate);
+           std::function<uint32_t(const Device&, ClockRegion, uint32_t)> fSetClockRate,
+           std::function<std::vector<SensorEntry>(const Device&)> fGetSensorInfo);
 
     uint32_t num;
     std::string name;
@@ -335,6 +359,7 @@ private:
     std::function<void(const Device&, std::string_view)> fDesignWriteFile;
     std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate;
     std::function<uint32_t(const Device&, ClockRegion, uint32_t)> fSetClockRate;
+    std::function<std::vector<SensorEntry>(const Device&)> fGetSensorInfo;
 };
 
 }

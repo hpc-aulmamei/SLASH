@@ -711,3 +711,49 @@ void vrtd_close_bar_file(struct slash_bar_file *bar_file)
         bar_file->map = NULL;
     }
 }
+
+enum vrtd_ret vrtd_get_sensor_info(
+    int fd,
+    uint32_t dev,
+    struct vrtd_sensor_entry *entries_out,
+    uint32_t max_entries,
+    uint32_t *num_entries_out
+)
+{
+    if (entries_out == NULL || num_entries_out == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    struct vrtd_req_get_sensor_info req = {
+        .dev_number = dev,
+    };
+
+    /*
+     * The response is variable-length: a uint32_t count followed by
+     * sensor entries.  We receive into a stack buffer sized to the
+     * maximum the protocol can carry.
+     */
+    uint8_t resp_buf[VRTD_MSG_MAX_SIZE - sizeof(struct vrtd_resp_header)];
+    memset(resp_buf, 0, sizeof(resp_buf));
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_GET_SENSOR_INFO,
+                               &req, sizeof(req),
+                               resp_buf, sizeof(resp_buf),
+                               NULL, NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    /* Parse the variable-length response. */
+    struct vrtd_resp_get_sensor_info *resp = (struct vrtd_resp_get_sensor_info *)resp_buf;
+    uint32_t count = resp->num_sensors;
+
+    if (count > max_entries) {
+        count = max_entries;
+    }
+
+    memcpy(entries_out, resp->sensors, count * sizeof(struct vrtd_sensor_entry));
+    *num_entries_out = count;
+
+    return VRTD_RET_OK;
+}

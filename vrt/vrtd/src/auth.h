@@ -260,4 +260,19 @@ int auth_request_clock_op(
     const struct vrtd_req_clock_op *req_body
 );
 
+/**
+ * @brief Authorize a GET_SENSOR_INFO request.
+ *
+ * Checks that the client's role permits querying sensor information
+ * on the specified device.  This is a query-only operation.
+ *
+ * @param client   The requesting client.
+ * @param req_body The parsed request body containing the target device index.
+ * @return 0 if authorized, non-zero if denied.
+ */
+int auth_request_get_sensor_info(
+    struct client *client,
+    const struct vrtd_req_get_sensor_info *req_body
+);
+
 #endif // VRTD_AUTH_H

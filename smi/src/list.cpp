@@ -27,6 +27,7 @@
 
 #include "list.hpp"
 
+#include <iomanip>
 #include <limits>
 #include <filesystem>
 #include <fstream>
@@ -397,6 +398,9 @@ struct V80Board {
     std::optional<PciDevice> pf1Device;
     std::optional<PciDevice> pf2Device;
 
+    /// Sensor readings (populated only when -s/--sensors is given and VRTD is reachable).
+    std::vector<vrtd::SensorEntry> sensors;
+
     /// True when all three PFs and VRTD are ready.
     bool ok() const { return pf0.ok && pf1.ok && pf2.ok && vrtd.ok; }
 };
@@ -414,7 +418,8 @@ static std::optional<PciDevice> tryReadDevice(const std::string& bdf, bool longP
 /// Discovers V80 boards by scanning for PF0 devices, then checking PF1 and PF2.
 ///
 /// @param longPrinting If true, also reads detailed sysfs attributes for each PF.
-static std::vector<V80Board> discoverBoards(bool longPrinting) {
+/// @param sensors      If true, query sensor data from VRTD for each reachable board.
+static std::vector<V80Board> discoverBoards(bool longPrinting, bool sensors) {
     auto pf0Devices = findPciDevices(SLASH_VENDOR_ID, SLASH_DEVICE_ID,
                                       SLASH_PF_NUMBER, /*longPrinting=*/false);
 
@@ -439,6 +444,16 @@ static std::vector<V80Board> discoverBoards(bool longPrinting) {
             board.pf0Device = tryReadDevice(pf0Dev.bdf, true);
             board.pf1Device = tryReadDevice(pf1Bdf, true);
             board.pf2Device = tryReadDevice(pf2Bdf, true);
+        }
+
+        if (sensors && board.vrtd.ok) {
+            try {
+                vrtd::Session session;
+                auto device = session.getDeviceByBdf(base);
+                board.sensors = device.getSensorInfo();
+            } catch (...) {
+                // Sensor query failed — leave sensors empty, don't fail the command.
+            }
         }
 
         boards.push_back(std::move(board));
@@ -499,6 +514,55 @@ static void printVrtdStatus(std::ostream& out, const VrtdStatus& vrtd) {
     out << ")";
 }
 
+/// Returns a human-readable name for a sensor type bitmask.
+static const char *sensorTypeName(uint8_t type) {
+    switch (type) {
+    case 1: return "temp";
+    case 2: return "current";
+    case 4: return "voltage";
+    case 8: return "power";
+    default: return "unknown";
+    }
+}
+
+/// Returns a human-readable name for a sensor status code.
+static const char *sensorStatusName(uint8_t status) {
+    switch (status) {
+    case 0x01: return "OK";
+    case 0x00: return "not present";
+    case 0x02: return "no data";
+    case 0x03: return "cached";
+    case 0x7F: return "N/A";
+    default:   return "unknown";
+    }
+}
+
+/// Returns the base unit string for a sensor type.
+static const char *sensorUnitName(uint8_t type) {
+    switch (type) {
+    case 1: return "C";
+    case 2: return "A";
+    case 4: return "V";
+    case 8: return "W";
+    default: return "?";
+    }
+}
+
+/// Prints sensor readings indented under a board.
+static void printSensors(std::ostream& out,
+                          const std::vector<vrtd::SensorEntry>& sensors) {
+    out << INDENT1 << "Sensors:\n";
+    for (const auto& s : sensors) {
+        out << INDENT2
+            << std::left << std::setw(24) << s.name
+            << std::setw(10) << sensorTypeName(s.type)
+            << std::right << std::setw(8) << s.value
+            << " (x10^" << static_cast<int>(s.unitMod) << " "
+            << sensorUnitName(s.type) << ")  "
+            << sensorStatusName(s.status) << "\n";
+    }
+}
+
 /// Human-readable output for one V80 board.
 /// In short mode, prints a single summary line.  In long mode, also
 /// prints detailed sysfs attributes for each PF.
@@ -525,6 +589,10 @@ std::ostream& operator<<(std::ostream& out, const V80Board& board) {
             out << "NOT READY: " << board.vrtd.reason;
         }
         out << "\n";
+    }
+
+    if (!board.sensors.empty()) {
+        printSensors(out, board.sensors);
     }
 
     return out;
@@ -584,6 +652,20 @@ Json::Value toJson(const V80Board& board) {
     }
     j["vrtd"] = vrtdJson;
 
+    if (!board.sensors.empty()) {
+        Json::Value sensorsJson(Json::arrayValue);
+        for (const auto& s : board.sensors) {
+            Json::Value sj;
+            sj["name"] = s.name;
+            sj["type"] = sensorTypeName(s.type);
+            sj["value"] = s.value;
+            sj["unit_mod"] = static_cast<int>(s.unitMod);
+            sj["status"] = sensorStatusName(s.status);
+            sensorsJson.append(sj);
+        }
+        j["sensors"] = sensorsJson;
+    }
+
     return j;
 }
 
@@ -606,7 +688,7 @@ Json::Value toJson(const std::vector<V80Board>& boards) {
 /// In default mode, prints a one-line summary per board.  In long mode
 /// (`-l`), also prints detailed sysfs attributes for each PF.
 int List::run(const Options& options) {
-    auto boards = discoverBoards(options.longOutput);
+    auto boards = discoverBoards(options.longOutput, options.sensorsOutput);
     print(boards, options.jsonOutput, options.prettyJsonOutput);
 
     return 0;

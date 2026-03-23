@@ -139,7 +139,8 @@ Device Session::getDevice(size_t i) const {
         [&](const Device& device, int input_fd) { return designWrite(device, input_fd); },
         [&](const Device& device, std::string_view path) { return designWriteFile(device, path); },
         [&](const Device& device, ClockRegion region) { return getClockRate(device, region); },
-        [&](const Device& device, ClockRegion region, uint32_t rate_hz) { return setClockRate(device, region, rate_hz); }
+        [&](const Device& device, ClockRegion region, uint32_t rate_hz) { return setClockRate(device, region, rate_hz); },
+        [&](const Device& device) { return getSensorInfo(device); }
     );
 }
 
@@ -200,7 +201,8 @@ Device Session::getDeviceByBdf(std::string_view bdf) const {
         [&](const Device& device, int input_fd) { return designWrite(device, input_fd); },
         [&](const Device& device, std::string_view path) { return designWriteFile(device, path); },
         [&](const Device& device, ClockRegion region) { return getClockRate(device, region); },
-        [&](const Device& device, ClockRegion region, uint32_t rate_hz) { return setClockRate(device, region, rate_hz); }
+        [&](const Device& device, ClockRegion region, uint32_t rate_hz) { return setClockRate(device, region, rate_hz); },
+        [&](const Device& device) { return getSensorInfo(device); }
     );
 }
 
@@ -427,6 +429,36 @@ int Session::openQdmaQpairFd(const Device& device, uint32_t qid, uint32_t flags)
     }
 
     return qfd;
+}
+
+std::vector<SensorEntry> Session::getSensorInfo(const Device& device) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    struct vrtd_sensor_entry entries[VRTD_SENSOR_MAX_ENTRIES];
+    uint32_t count = 0;
+
+    auto ret = vrtd_get_sensor_info(fd, device.getNum(), entries,
+                                    VRTD_SENSOR_MAX_ENTRIES, &count);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    std::vector<SensorEntry> result;
+    result.reserve(count);
+    for (uint32_t i = 0; i < count; i++) {
+        result.push_back(SensorEntry{
+            std::string(entries[i].name, strnlen(entries[i].name, sizeof(entries[i].name))),
+            entries[i].type,
+            entries[i].status,
+            entries[i].unit_mod,
+            entries[i].value
+        });
+    }
+
+    return result;
 }
 
 void Session::close() noexcept {

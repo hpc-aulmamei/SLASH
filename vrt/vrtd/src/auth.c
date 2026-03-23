@@ -744,6 +744,36 @@ int auth_request_clock_op(
     );
 }
 
+/**
+ * @brief Authorize a get_sensor_info request.
+ *
+ * Requires: query permission only (informational, read-only sensor data).
+ *
+ * @param client    The requesting client.
+ * @param req_body  The request payload.
+ * @return 1 if authorized, 0 if denied, <0 on internal error.
+ */
+int auth_request_get_sensor_info(
+    struct client *client,
+    const struct vrtd_req_get_sensor_info *req_body
+)
+{
+    assert(client != NULL);
+    assert(req_body != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    assert(client->role != NULL);
+
+    if (client->role->query) {
+        return 1;
+    } else {
+        auth_log_denied(client, "get_sensor_info", "query");
+        return 0;
+    }
+}
+
 /* ========================================================================
  * Role resolution (lazy, per-client)
  *

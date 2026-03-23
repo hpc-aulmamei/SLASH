@@ -39,6 +39,7 @@ public:
         bool longOutput{};        ///< Show detailed per-device info (vendor, driver, NUMA, etc.).
         bool jsonOutput{};        ///< Emit compact JSON instead of human-readable text.
         bool prettyJsonOutput{};  ///< Emit indented JSON instead of human-readable text.
+        bool sensorsOutput{};     ///< Include sensor readings per device (requires VRTD).
     };
 
     /// @brief Executes the list command.

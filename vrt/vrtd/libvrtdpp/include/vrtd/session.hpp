@@ -277,6 +277,15 @@ private:
      * @throws vrtd::Error on error.
      */
     int openQdmaQpairFd(const Device& device, uint32_t qid, uint32_t flags = 0) const;
+
+    /**
+     * @internal Query sensor information for a device.
+     *
+     * @param device Device to query sensors for.
+     * @return Vector of sensor entries.
+     * @throws vrtd::Error on error.
+     */
+    std::vector<SensorEntry> getSensorInfo(const Device& device) const;
 };
 
 }

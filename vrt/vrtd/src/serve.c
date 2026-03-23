@@ -124,6 +124,10 @@
 #include <slash/hotplug.h>
 #include <slash/qdma.h>
 
+#include <ami.h>
+#include <ami_device.h>
+#include <ami_sensor.h>
+
 #include "array.h"
 #include "auth.h"
 #include "clock.h"
@@ -253,6 +257,13 @@ static uint16_t client_handle_request_clock_op(
     struct vrtd_resp_clock_op *resp_body,
     uint16_t *resp_size
 );
+static uint16_t client_handle_request_get_sensor_info(
+    struct client *client,
+    const struct vrtd_req_get_sensor_info *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_get_sensor_info *resp_body,
+    uint16_t *resp_size
+);
 
 static uint16_t device_refresh_pf2_after_design_write(const struct device *d);
 static void cleanup_client_buffers(struct client *client);
@@ -283,6 +294,7 @@ static const char *vrtd_opcode_to_string(uint16_t opcode)
     case VRTD_REQ_BUFFER_OPEN:       return "BUFFER_OPEN";
     case VRTD_REQ_BUFFER_CLOSE:      return "BUFFER_CLOSE";
     case VRTD_REQ_DEVICE_HOTPLUG_OP: return "DEVICE_HOTPLUG_OP";
+    case VRTD_REQ_GET_SENSOR_INFO:   return "GET_SENSOR_INFO";
     default:                         return "UNKNOWN";
     }
 }
@@ -1034,6 +1046,16 @@ static int client_handle_request(struct client *client)
                 CLIENT_IN_BODY(*client, vrtd_req_device_hotplug_op),
                 req_header->size,
                 CLIENT_OUT_BODY(*client, vrtd_resp_device_hotplug_op),
+                &size
+            );
+        break;
+    case VRTD_REQ_GET_SENSOR_INFO:
+        resp_header->ret =
+            client_handle_request_get_sensor_info(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_get_sensor_info),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_get_sensor_info),
                 &size
             );
         break;
@@ -2477,6 +2499,198 @@ static uint16_t client_handle_request_get_bar_fd(
 
     LOG(LOG_DEBUG, "get_bar_fd: dev=%u bar=%u uid=%u conn_id=%llu",
         (unsigned int)req_body->dev_number, (unsigned int)req_body->bar_number,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
+    return VRTD_RET_OK;
+}
+
+/* ---- GET_SENSOR_INFO ---------------------------------------------------- */
+
+/**
+ * Helper: read one sensor type's value and unit modifier, populate an entry.
+ *
+ * @return true if the entry was populated, false on error (entry is skipped).
+ */
+static bool sensor_read_type(
+    ami_device *ami_dev,
+    const char *sensor_name,
+    enum ami_sensor_type type,
+    struct vrtd_sensor_entry *entry
+)
+{
+    long value = 0;
+    enum ami_sensor_status status = AMI_SENSOR_STATUS_INVALID;
+    enum ami_sensor_unit_mod mod = AMI_SENSOR_UNIT_MOD_NONE;
+    int ret;
+
+    switch (type) {
+    case AMI_SENSOR_TYPE_TEMP:
+        ret = ami_sensor_get_temp_value(ami_dev, sensor_name, &value, &status);
+        if (ret != AMI_STATUS_OK) return false;
+        ami_sensor_get_temp_unit_mod(ami_dev, sensor_name, &mod);
+        break;
+    case AMI_SENSOR_TYPE_CURRENT:
+        ret = ami_sensor_get_current_value(ami_dev, sensor_name, &value, &status);
+        if (ret != AMI_STATUS_OK) return false;
+        ami_sensor_get_current_unit_mod(ami_dev, sensor_name, &mod);
+        break;
+    case AMI_SENSOR_TYPE_VOLTAGE:
+        ret = ami_sensor_get_voltage_value(ami_dev, sensor_name, &value, &status);
+        if (ret != AMI_STATUS_OK) return false;
+        ami_sensor_get_voltage_unit_mod(ami_dev, sensor_name, &mod);
+        break;
+    case AMI_SENSOR_TYPE_POWER:
+        ret = ami_sensor_get_power_value(ami_dev, sensor_name, &value, &status);
+        if (ret != AMI_STATUS_OK) return false;
+        ami_sensor_get_power_unit_mod(ami_dev, sensor_name, &mod);
+        break;
+    default:
+        return false;
+    }
+
+    memset(entry, 0, sizeof(*entry));
+    snprintf(entry->name, sizeof(entry->name), "%s", sensor_name);
+    entry->type = (uint8_t)type;
+    entry->status = (uint8_t)status;
+    entry->unit_mod = (int8_t)mod;
+    entry->value = (int32_t)value;
+
+    return true;
+}
+
+/**
+ * Handles VRTD_REQ_GET_SENSOR_INFO -- queries all sensors for a device via
+ * the AMI (Alveo Management Interface) library and returns their current
+ * values and statuses.
+ *
+ * The AMI device handle is opened on-demand for PF0 (the AVED management
+ * function), sensors are discovered and read, then the handle is closed.
+ *
+ * Auth: auth_request_get_sensor_info (query-only).
+ * FD passing: none.
+ *
+ * Wire format:
+ *   Request body:  vrtd_req_get_sensor_info { uint32_t dev_number }
+ *   Response body: vrtd_resp_get_sensor_info { uint32_t num_sensors,
+ *                    vrtd_sensor_entry sensors[] }
+ *
+ * @return VRTD_RET_OK on success, or an appropriate error code.
+ */
+static uint16_t client_handle_request_get_sensor_info(
+    struct client *client,
+    const struct vrtd_req_get_sensor_info *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_get_sensor_info *resp_body,
+    uint16_t *resp_size
+)
+{
+    int ret = auth_request_get_sensor_info(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "get_sensor_info: malformed request");
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "get_sensor_info: device %u does not exist",
+            (unsigned int)req_body->dev_number);
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+
+    /* Compute PF0 BDF for AMI (AMI runs on PF0, the AVED function). */
+    char pf0_bdf[VRTD_PCI_BDF_LEN] = {0};
+    if (pci_bdf_set_function(d->pci_info.bdf, 0, pf0_bdf) != 0) {
+        LOG(LOG_ERR, "get_sensor_info: failed to compute PF0 BDF from %s",
+            d->pci_info.bdf);
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    /* Open AMI device handle on PF0. */
+    ami_device *ami_dev = NULL;
+    ret = ami_dev_find(pf0_bdf, &ami_dev);
+    if (ret != AMI_STATUS_OK) {
+        LOG(LOG_ERR, "get_sensor_info: ami_dev_find(%s) failed: %s",
+            pf0_bdf, ami_get_last_error());
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    /* Discover sensors on the device. */
+    ret = ami_sensor_discover(ami_dev);
+    if (ret != AMI_STATUS_OK) {
+        LOG(LOG_ERR, "get_sensor_info: ami_sensor_discover(%s) failed: %s",
+            pf0_bdf, ami_get_last_error());
+        ami_dev_delete(&ami_dev);
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    /* Get the list of sensors (grouped by name). */
+    struct ami_sensor *sensors = NULL;
+    int num_sensors = 0;
+    ret = ami_sensor_get_sensors(ami_dev, &sensors, &num_sensors);
+    if (ret != AMI_STATUS_OK) {
+        LOG(LOG_ERR, "get_sensor_info: ami_sensor_get_sensors(%s) failed: %s",
+            pf0_bdf, ami_get_last_error());
+        ami_dev_delete(&ami_dev);
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    /*
+     * Iterate over each sensor name and each sensor type (temp, current,
+     * voltage, power).  For each combination that exists, read the value
+     * and populate an entry in the response.
+     */
+    static const enum ami_sensor_type sensor_types[] = {
+        AMI_SENSOR_TYPE_TEMP,
+        AMI_SENSOR_TYPE_CURRENT,
+        AMI_SENSOR_TYPE_VOLTAGE,
+        AMI_SENSOR_TYPE_POWER,
+    };
+
+    uint32_t count = 0;
+
+    for (struct ami_sensor *s = sensors; s != NULL; s = s->next) {
+        /* Check which types this sensor supports. */
+        uint32_t type_mask = 0;
+        if (ami_sensor_get_type(ami_dev, s->name, &type_mask) != AMI_STATUS_OK) {
+            continue;
+        }
+
+        for (size_t t = 0; t < sizeof(sensor_types) / sizeof(sensor_types[0]); t++) {
+            if (!(type_mask & sensor_types[t])) {
+                continue;
+            }
+
+            if (count >= VRTD_SENSOR_MAX_ENTRIES) {
+                LOG(LOG_WARNING, "get_sensor_info: sensor count exceeds message limit, "
+                    "truncating at %u entries", count);
+                goto done;
+            }
+
+            if (sensor_read_type(ami_dev, s->name, sensor_types[t],
+                                 &resp_body->sensors[count])) {
+                count++;
+            }
+        }
+    }
+
+done:
+    ami_dev_delete(&ami_dev);
+
+    resp_body->num_sensors = count;
+    *resp_size = (uint16_t)(sizeof(resp_body->num_sensors)
+                            + count * sizeof(struct vrtd_sensor_entry));
+
+    LOG(LOG_DEBUG, "get_sensor_info: dev=%u sensors=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number, count,
         (unsigned int)client->uid, (unsigned long long)client->conn_id);
 
     return VRTD_RET_OK;
