@@ -317,47 +317,61 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     usleep(5000000);
 
     /*
-     * Step 10: Rescan the PCI bus to re-enumerate all functions.
-     * This should re-introduce PF0, PF1, and PF2 with the new configuration.
+     * Step 10-12: Rescan the PCI bus and verify the device reappears.
+     * The rescan re-enumerates all functions (PF0, PF1, PF2), then we wait
+     * for the kernel, drivers, and udev to fully initialize device nodes.
+     * If the device has not reappeared, retry the rescan after 3 seconds,
+     * up to 5 attempts total.
      */
-    // Rescan device after reset. This should re-introduce the devices.
-    ret = slash_hotplug_rescan(g_hotplug);
-    if (ret != 0) {
-        LOG(LOG_ERR, "reset_with_ami: hotplug rescan failed: %m");
-        return hotplug_errno_to_vrtd_ret(errno);
-    }
-    LOG(LOG_INFO, "reset_with_ami: rescan complete");
+    #define RESCAN_MAX_RETRIES 5
+    #define RESCAN_RETRY_DELAY_US 3000000
 
-    /*
-     * Step 11: After a rescan the following things need to happen:
-     *
-     * * The kernel needs to detect the device on the PCIe bus.
-     * * The kernel needs to hand that device to the slash and ami drivers.
-     * * The slash and ami drivers need to create device nodes.
-     * * The kernel needs to signal to userspace systemd-udev that the device node was created.
-     * * systemd-udev needs to set permisions on the device node.
-     *
-     * That all takes time, so we wait a generous 5 seconds for all of that to occur.
-     * 
-     * TODO: A much more robust method would be to remove all the code bellow this
-     * and rework how devices are discovered. We could bring in libudev.
-     * This would allow us to get netlink notifications on device events, such as new devices
-     * appearing. Then we could attempt to open these devices only after the userspace has configured them.
-     */
-    usleep(5000000);
+    for (int attempt = 1; attempt <= RESCAN_MAX_RETRIES; attempt++) {
+        ret = slash_hotplug_rescan(g_hotplug);
+        if (ret != 0) {
+            LOG(LOG_ERR, "reset_with_ami: hotplug rescan failed: %m");
+            return hotplug_errno_to_vrtd_ret(errno);
+        }
+        LOG(LOG_INFO, "reset_with_ami: rescan complete (attempt %d/%d)",
+            attempt, RESCAN_MAX_RETRIES);
 
-    /*
-     * Step 12: Verify the device is back on the bus by probing PF0 via AMI.
-     * If ami_dev_find() fails, the device did not come back after the reset,
-     * which indicates a hardware or firmware problem.
-     */
-    // Test that we found the newly added device
-    ret = ami_dev_find(pf0_bdf, &ami_device);
-    if (ret != AMI_STATUS_OK) {
-        LOG(LOG_ERR, "reset_with_ami: post-reset ami_dev_find(%s) failed: %s", pf0_bdf, ami_get_last_error());
-        return VRTD_RET_INTERNAL_ERROR;
+        /*
+         * After a rescan the following things need to happen:
+         *
+         * * The kernel needs to detect the device on the PCIe bus.
+         * * The kernel needs to hand that device to the slash and ami drivers.
+         * * The slash and ami drivers need to create device nodes.
+         * * The kernel needs to signal to userspace systemd-udev that the device node was created.
+         * * systemd-udev needs to set permisions on the device node.
+         *
+         * That all takes time, so we wait a generous 5 seconds for all of that to occur.
+         *
+         * TODO: A much more robust method would be to remove all the code bellow this
+         * and rework how devices are discovered. We could bring in libudev.
+         * This would allow us to get netlink notifications on device events, such as new devices
+         * appearing. Then we could attempt to open these devices only after the userspace has configured them.
+         */
+        usleep(5000000);
+
+        ret = ami_dev_find(pf0_bdf, &ami_device);
+        if (ret == AMI_STATUS_OK) {
+            LOG(LOG_INFO, "reset_with_ami: device %s found after reset", pf0_bdf);
+            break;
+        }
+
+        if (attempt < RESCAN_MAX_RETRIES) {
+            LOG(LOG_WARNING, "reset_with_ami: ami_dev_find(%s) failed (attempt %d/%d): %s, retrying in 3s",
+                pf0_bdf, attempt, RESCAN_MAX_RETRIES, ami_get_last_error());
+            usleep(RESCAN_RETRY_DELAY_US);
+        } else {
+            LOG(LOG_ERR, "reset_with_ami: post-reset ami_dev_find(%s) failed after %d attempts: %s",
+                pf0_bdf, RESCAN_MAX_RETRIES, ami_get_last_error());
+            return VRTD_RET_INTERNAL_ERROR;
+        }
     }
-    LOG(LOG_INFO, "reset_with_ami: device %s found after reset", pf0_bdf);
+
+    #undef RESCAN_MAX_RETRIES
+    #undef RESCAN_RETRY_DELAY_US
 
     ami_dev_delete(&ami_device);
 
