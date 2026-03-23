@@ -248,10 +248,6 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     /* Step 6: Close the AMI device handle -- we are done with firmware commands. */
     ami_dev_delete(&ami_device);
 
-    /* Let the GPIO register write settle before removing PFs.
-     * Mirrors HOT_RESET_GPIO_SET_DELAY_MS from ami_device.c. */
-    usleep(1000);
-
     /*
      * Step 7: Remove ALL three PFs from the Linux PCI subsystem.
      *
@@ -286,6 +282,16 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         LOG(LOG_ERR, "reset_with_ami: hotplug remove(%s) failed: %m", pf2_bdf);
         return hotplug_errno_to_vrtd_ret(errno);
     }
+
+    /*
+     * Step 7a: Brief settle after PF removal, before toggling SBR.
+     *
+     * The AMI library's ami_dev_hot_reset() inserts a 1 ms delay here.
+     * Its comment notes that "on some systems, the device that is being
+     * reset disappears from the host, forcing a system reboot — adding a
+     * delay before setting the SBR seems to mitigate this issue."
+     */
+    usleep(1000);
 
     /*
      * Step 8: Toggle Secondary Bus Reset (SBR) on the upstream PCIe bridge.
