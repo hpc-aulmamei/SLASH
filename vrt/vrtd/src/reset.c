@@ -245,6 +245,10 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     /* Step 6: Close the AMI device handle -- we are done with firmware commands. */
     ami_dev_delete(&ami_device);
 
+    /* Let the GPIO register write settle before removing PFs.
+     * Mirrors HOT_RESET_GPIO_SET_DELAY_MS from ami_device.c. */
+    usleep(1000);
+
     /*
      * Step 7: Remove ALL three PFs from the Linux PCI subsystem.
      *
