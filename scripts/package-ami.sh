@@ -26,8 +26,8 @@ set -euxo pipefail
 cd "$(dirname "$0")/.."
 
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$(pwd)/ami}"
-AMI_DIR="linker/resources/submodules/AVED/sw/AMI"
-AVED_DIR="linker/resources/submodules/AVED"
+AVED_DIR="$(pwd)/linker/resources/submodules/AVED"
+AMI_DIR="${AVED_DIR}/sw/AMI"
 PKG_PY="${AMI_DIR}/scripts/package_data/pkg.py"
 GEN_PKG_PY="${AMI_DIR}/scripts/gen_package.py"
 
