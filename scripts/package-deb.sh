@@ -60,6 +60,9 @@ dpkg-buildpackage \
     --changes-option="-u${ARTIFACTS_DIR}" \
     --changes-file="${ARTIFACTS_DIR}/slash_${DPKG_PARSED_VERSION}_${DPKG_ARCH}.changes"
 
+# Build AMI package into the same artifacts directory
+ARTIFACTS_DIR="${ARTIFACTS_DIR}" "$(dirname "$0")/package-ami.sh"
+
 cd "${ARTIFACTS_DIR:-deb}"
 apt-ftparchive packages . > Packages
 apt-ftparchive release . > Release
