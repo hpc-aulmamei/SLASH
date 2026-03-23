@@ -84,8 +84,7 @@ int slash_hotplug_rescan(struct slash_hotplug *hotplug);
  * slash_hotplug_remove() — Remove a device from the PCI bus.
  *
  * @hotplug: Open hotplug handle.
- * @bdf:     PCI BDF string (e.g. "0000:03:00.0"), or NULL / empty
- *           string to target the only tracked device.
+ * @bdf:     PCI BDF string (e.g. "0000:03:00.0").  Required.
  *
  * Returns 0 on success, -1 on failure.
  */
@@ -95,10 +94,13 @@ int slash_hotplug_remove(struct slash_hotplug *hotplug, const char *bdf);
  * slash_hotplug_toggle_sbr() — Assert and deassert a Secondary Bus Reset.
  *
  * @hotplug: Open hotplug handle.
- * @bdf:     PCI BDF string, or NULL / empty for the default device.
+ * @bdf:     PCI BDF string identifying the device (or its former
+ *           location if already removed).  Required.
  *
- * The kernel performs the full assert -> 2 ms hold -> deassert -> 5 s
- * settle sequence in a single call (see UAPI header for timing details).
+ * Toggles the SBR bit on the device's immediate upstream bridge
+ * (assert, 2 ms hold, deassert) and returns.  The caller is
+ * responsible for waiting for the device to re-initialize before
+ * rescanning the bus.
  *
  * Returns 0 on success, -1 on failure.
  */
@@ -108,7 +110,7 @@ int slash_hotplug_toggle_sbr(struct slash_hotplug *hotplug, const char *bdf);
  * slash_hotplug_hotplug() — Perform a full hot-plug cycle (remove + rescan).
  *
  * @hotplug: Open hotplug handle.
- * @bdf:     PCI BDF string, or NULL / empty for the default device.
+ * @bdf:     PCI BDF string.  Required.
  *
  * Returns 0 on success, -1 on failure.
  */

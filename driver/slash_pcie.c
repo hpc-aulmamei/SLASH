@@ -106,15 +106,6 @@ static int slash_pcie_probe(struct pci_dev *pdev, const struct pci_device_id *id
         goto err_disable_device;
     }
 
-    /*
-     * Hotplug registration is best-effort: the driver can function
-     * without it, so we only warn on failure.
-     */
-    err = slash_hotplug_register_device(pdev);
-    if (err) {
-        dev_warn(&pdev->dev, "slash: hotplug registration failed: %d\n", err);
-    }
-
     dev_info(&pdev->dev, "slash: probe successful\n");
     return 0;
 
@@ -139,7 +130,6 @@ static void slash_pcie_remove(struct pci_dev *pdev)
 {
     dev_info(&pdev->dev, "slash: remove start for %s\n", pci_name(pdev));
 
-    slash_hotplug_unregister_device(pdev);
     slash_ctldev_destroy(pdev);
     pci_clear_master(pdev);
     pci_disable_device(pdev);

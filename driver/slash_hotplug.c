@@ -24,8 +24,8 @@
  *   - **REMOVE**     — remove a specific device from the PCI bus.
  *   - **TOGGLE_SBR** — assert and deassert a Secondary Bus Reset on
  *                      the device's immediate upstream bridge.
- *   - **HOTPLUG**    — atomic remove + rescan cycle on the root port's
- *                      subordinate bus.
+ *   - **HOTPLUG**    — atomic remove + rescan cycle on the device's
+ *                      immediate parent bus.
  *
  * These operations are essential for FPGA reconfiguration workflows.
  * When a new bitstream is loaded, the FPGA's PCI identity and BAR
@@ -35,14 +35,11 @@
  * A typical reconfiguration flow:
  *   1. REMOVE each PCI function (PF0, PF1, PF2 ...)
  *   2. TOGGLE_SBR to reset the device
- *   3. (the 5 s settle in SBR allows the FPGA to re-initialize)
+ *   3. Wait in userspace for the FPGA to re-initialize
  *   4. RESCAN to discover the new configuration
  *
- * Device tracking:
- *   The driver maintains a linked list of tracked devices (registered
- *   during PCI probe, unregistered during PCI remove).  Ioctls can
- *   either specify a BDF explicitly or omit it to target the only
- *   tracked device (a convenience for single-card systems).
+ * All ioctls that operate on a specific device require an explicit
+ * BDF string in the request.
  */
 
 #include "slash_hotplug_driver.h"
@@ -55,58 +52,13 @@
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/kernel.h>
-#include <linux/list.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
-#include <linux/mutex.h>
 #include <linux/pci.h>
-#include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 
 #define SLASH_HOTPLUG_MODE 0600
-
-/**
- * struct slash_hotplug_entry - A tracked SLASH device.
- * @node: Linked list linkage into slash_hotplug_devices.
- * @bdf:  PCI Bus/Device/Function string (e.g. "0000:03:00.2").
- *
- * One entry exists per PCI function that has been probed and
- * registered via slash_hotplug_register_device().
- */
-struct slash_hotplug_entry {
-    struct list_head node;
-    char bdf[SLASH_HOTPLUG_BDF_LEN];
-};
-
-/*
- * Global tracking list.  Protected by slash_hotplug_devices_lock.
- * slash_hotplug_device_count is maintained alongside the list for
- * O(1) checks in the default-device resolution path.
- */
-static DEFINE_MUTEX(slash_hotplug_devices_lock);
-static LIST_HEAD(slash_hotplug_devices);
-static unsigned int slash_hotplug_device_count;
-
-/**
- * slash_hotplug_find_entry_locked() - Look up a tracked device by BDF.
- * @bdf: BDF string to search for.
- *
- * Caller must hold slash_hotplug_devices_lock.
- *
- * Return: Pointer to the matching entry, or NULL if not found.
- */
-static struct slash_hotplug_entry *slash_hotplug_find_entry_locked(const char *bdf)
-{
-    struct slash_hotplug_entry *entry;
-
-    list_for_each_entry(entry, &slash_hotplug_devices, node) {
-        if (!strcmp(entry->bdf, bdf))
-            return entry;
-    }
-
-    return NULL;
-}
 
 /**
  * slash_hotplug_copy_request() - Copy and sanitize a hotplug request from userspace.
@@ -135,55 +87,9 @@ static int slash_hotplug_copy_request(unsigned long arg, struct slash_hotplug_de
     req->bdf[SLASH_HOTPLUG_BDF_LEN - 1] = '\0';
     strim(req->bdf);
 
-    return 0;
-}
-
-/**
- * slash_hotplug_resolve_request_locked() - Fill in the BDF if not provided.
- * @req:           Request whose @bdf may be empty.
- * @allow_default: If true and @bdf is empty, auto-fill from the only
- *                 tracked device.
- *
- * When the caller omits the BDF (empty string), this function provides
- * a "default device" convenience:
- *   - 0 devices tracked → -ENODEV
- *   - 1 device tracked  → auto-fill @bdf from it
- *   - >1 devices tracked → -EOPNOTSUPP (ambiguous; caller must specify)
- *
- * When a BDF is provided, it is validated against the tracking list.
- *
- * Caller must hold slash_hotplug_devices_lock.
- *
- * Return: 0 on success, negative errno on failure.
- */
-static int slash_hotplug_resolve_request_locked(struct slash_hotplug_device_request *req, bool allow_default)
-{
-    struct slash_hotplug_entry *entry;
-
     if (!req->bdf[0]) {
-        if (!allow_default) {
-            pr_err("slash_hotplug: empty BDF and default not allowed\n");
-            return -EINVAL;
-        }
-
-        if (slash_hotplug_device_count == 0) {
-            pr_err("slash_hotplug: no devices tracked for default resolution\n");
-            return -ENODEV;
-        }
-
-        if (slash_hotplug_device_count > 1)
-            return -EOPNOTSUPP;
-
-        entry = list_first_entry(&slash_hotplug_devices, struct slash_hotplug_entry, node);
-        strscpy(req->bdf, entry->bdf, sizeof(req->bdf));
-        pr_info("slash_hotplug: resolved default device to %s\n", req->bdf);
-        return 0;
-    }
-
-    entry = slash_hotplug_find_entry_locked(req->bdf);
-    if (!entry) {
-        pr_err("slash_hotplug: BDF %s not in tracking list\n", req->bdf);
-        return -ENODEV;
+        pr_err("slash_hotplug: empty BDF in request\n");
+        return -EINVAL;
     }
 
     return 0;
@@ -274,24 +180,22 @@ static int slash_hotplug_handle_remove(const char *bdf)
  *   2. Assert SBR (set the BUS_RESET bit).
  *   3. Wait 2 ms — the PCIe spec minimum reset hold time.
  *   4. Deassert SBR (clear the BUS_RESET bit).
- *   5. Wait 5 s — empirically determined settle time for the V80 FPGA
- *      to complete bitstream loading and bring up its PCI endpoints.
  *
- * Bridge resolution strategy:
- *   The endpoint may have already been removed from the PCI hierarchy
- *   (e.g. by a prior REMOVE ioctl).  In that case, the endpoint's
- *   pci_dev no longer exists, but the bus structure and its bridge
- *   device survive.  We try the endpoint first (pdev->bus->self),
- *   then fall back to the bus (pci_find_bus → bus->self).  Both
- *   paths resolve to the immediate parent bridge — never the root
- *   port, which would reset the entire downstream hierarchy.
+ * The caller is responsible for waiting an appropriate settle time
+ * after this ioctl returns before rescanning the bus.
+ *
+ * Bridge resolution:
+ *   The endpoint is typically removed before SBR is toggled, so we
+ *   resolve the bridge via pci_find_bus() using the bus number from
+ *   the BDF.  Bus structures survive endpoint removal.  The bridge
+ *   is always the immediate parent (bus->self), never the root port.
  *
  * Return: 0 on success, negative errno on failure.
  */
 static int slash_hotplug_handle_toggle_sbr(const char *bdf)
 {
-    struct pci_dev *pdev;
-    struct pci_dev *bridge = NULL;
+    struct pci_bus *ep_bus;
+    struct pci_dev *bridge;
     int domain, bus_nr, slot, func;
     int ret;
     u16 ctrl;
@@ -301,36 +205,13 @@ static int slash_hotplug_handle_toggle_sbr(const char *bdf)
         return -EINVAL;
     }
 
-    /*
-     * Try to resolve the immediate upstream bridge from the endpoint.
-     * We must use the direct parent bridge (pdev->bus->self), NOT the
-     * root port (pcie_find_root_port), because asserting SBR on the
-     * root port would reset the entire hierarchy — including any PCIe
-     * switches and sibling devices — rather than just the target device.
-     *
-     * If the endpoint has already been removed (e.g. by a prior REMOVE
-     * ioctl), fall back to locating the bridge via the bus number,
-     * which survives endpoint removal.
-     */
-    pdev = pci_get_domain_bus_and_slot(domain, bus_nr, PCI_DEVFN(slot, func));
-    if (pdev) {
-        if (pdev->bus && pdev->bus->self)
-            bridge = pci_dev_get(pdev->bus->self);
-        pci_dev_put(pdev);
-    }
-
-    /* Fallback: locate bridge via the bus topology directly. */
-    if (!bridge) {
-        struct pci_bus *ep_bus = pci_find_bus(domain, bus_nr);
-
-        if (ep_bus && ep_bus->self)
-            bridge = pci_dev_get(ep_bus->self);
-    }
-
-    if (!bridge) {
+    ep_bus = pci_find_bus(domain, bus_nr);
+    if (!ep_bus || !ep_bus->self) {
         pr_err("slash_hotplug: toggle_sbr: no upstream bridge for %s\n", bdf);
         return -ENODEV;
     }
+
+    bridge = pci_dev_get(ep_bus->self);
 
     /* Read current bridge control state so we can restore it after reset. */
     ret = pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl);
@@ -349,13 +230,10 @@ static int slash_hotplug_handle_toggle_sbr(const char *bdf)
     /* PCIe spec requires at least 1 ms reset hold; we use 2 ms for margin. */
     msleep(2);
 
-    /* Deassert SBR and wait for the FPGA to re-initialize. */
+    /* Deassert SBR. */
     ret = pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl & ~PCI_BRIDGE_CTL_BUS_RESET);
     if (ret)
         pr_err("slash_hotplug: toggle_sbr: deassert SBR failed (%d)\n", ret);
-    else
-        /* 5 s settle: the V80 FPGA needs this long to reload and bring up endpoints. */
-        msleep(5000);
 
 out_put:
     pci_dev_put(bridge);
@@ -366,10 +244,10 @@ out_put:
  * slash_hotplug_handle_hotplug() - Perform a full hot-plug cycle.
  * @bdf: BDF string identifying the device.
  *
- * Removes the device from the bus, then rescans the root port's
- * subordinate bus to re-enumerate it.  This is an atomic
- * remove-then-rescan, useful when the device identity hasn't changed
- * but the kernel needs to rebind drivers.
+ * Removes the device from the bus, then rescans the device's parent
+ * bus to re-enumerate it.  This is an atomic remove-then-rescan,
+ * useful when the device identity hasn't changed but the kernel needs
+ * to rebind drivers.
  *
  * Note: this does **not** include an SBR.  If the FPGA bitstream has
  * changed and a reset is needed, call TOGGLE_SBR separately before
@@ -380,7 +258,6 @@ out_put:
 static int slash_hotplug_handle_hotplug(const char *bdf)
 {
     struct pci_dev *pdev;
-    struct pci_dev *root;
     struct pci_bus *bus;
     int ret;
 
@@ -390,32 +267,21 @@ static int slash_hotplug_handle_hotplug(const char *bdf)
         return ret;
     }
 
-    root = pcie_find_root_port(pdev);
-    if (!root) {
-        pr_err("slash_hotplug: hotplug: no root port for %s\n", pci_name(pdev));
+    bus = pdev->bus;
+    if (!bus) {
+        pr_err("slash_hotplug: hotplug: no parent bus for %s\n", pci_name(pdev));
         pci_dev_put(pdev);
         return -ENODEV;
-    }
-
-    pci_dev_get(root);
-    bus = root->subordinate;
-    if (!bus) {
-        pr_err("slash_hotplug: hotplug: root port has no subordinate bus\n");
-        ret = -ENODEV;
-        goto out_put_root;
     }
 
     dev_info(&pdev->dev, "slash_hotplug: removing device for hotplug cycle\n");
     pci_stop_and_remove_bus_device(pdev);
     pci_dev_put(pdev);
 
-    /* Rescan the same bus subtree to re-discover the device. */
+    /* Rescan the device's bus to re-discover it. */
     pci_rescan_bus(bus);
-    ret = 0;
 
-out_put_root:
-    pci_dev_put(root);
-    return ret;
+    return 0;
 }
 
 /**
@@ -441,22 +307,6 @@ static long slash_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lo
             pr_err("slash_hotplug: remove: copy_request failed (%d)\n", ret);
             break;
         }
-        /*
-         * Skip the tracked-device check when an explicit BDF is provided.
-         * As a general-purpose hotplug driver, we should be able to remove
-         * any PCI device, not just ones previously added to the tracking
-         * list.  When no BDF is given, fall back to the resolver to pick
-         * the single tracked device.
-         */
-        if (!req.bdf[0]) {
-            mutex_lock(&slash_hotplug_devices_lock);
-            ret = slash_hotplug_resolve_request_locked(&req, true);
-            mutex_unlock(&slash_hotplug_devices_lock);
-            if (ret) {
-                pr_err("slash_hotplug: remove: resolve failed (%d)\n", ret);
-                break;
-            }
-        }
         pr_info("slash_hotplug: remove: BDF %s\n", req.bdf);
         ret = slash_hotplug_handle_remove(req.bdf);
         break;
@@ -465,25 +315,6 @@ static long slash_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lo
         if (ret) {
             pr_err("slash_hotplug: toggle_sbr: copy_request failed (%d)\n", ret);
             break;
-        }
-        /*
-         * Skip the tracked-device check when an explicit BDF is provided.
-         * toggle_sbr is normally called after the endpoint has already been
-         * removed, so it will no longer appear in the tracking list.  The
-         * handler itself resolves the upstream bridge from the bus topology,
-         * which survives endpoint removal.
-         *
-         * When no BDF is given, fall back to the resolver to pick the
-         * single tracked device (the usual default-device behaviour).
-         */
-        if (!req.bdf[0]) {
-            mutex_lock(&slash_hotplug_devices_lock);
-            ret = slash_hotplug_resolve_request_locked(&req, true);
-            mutex_unlock(&slash_hotplug_devices_lock);
-            if (ret) {
-                pr_err("slash_hotplug: toggle_sbr: resolve failed (%d)\n", ret);
-                break;
-            }
         }
         pr_info("slash_hotplug: toggle_sbr: BDF %s\n", req.bdf);
         ret = slash_hotplug_handle_toggle_sbr(req.bdf);
@@ -494,15 +325,6 @@ static long slash_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lo
             pr_err("slash_hotplug: hotplug: copy_request failed (%d)\n", ret);
             break;
         }
-        if (!req.bdf[0]) {
-            mutex_lock(&slash_hotplug_devices_lock);
-            ret = slash_hotplug_resolve_request_locked(&req, true);
-            mutex_unlock(&slash_hotplug_devices_lock);
-            if (ret) {
-                pr_err("slash_hotplug: hotplug: resolve failed (%d)\n", ret);
-                break;
-            }
-        }
         pr_info("slash_hotplug: hotplug: BDF %s\n", req.bdf);
         ret = slash_hotplug_handle_hotplug(req.bdf);
         break;
@@ -511,9 +333,6 @@ static long slash_hotplug_ioctl(struct file *file, unsigned int cmd, unsigned lo
         ret = -ENOTTY;
         break;
     }
-
-    if (ret == -EOPNOTSUPP)
-        pr_err("slash_hotplug: multiple devices tracked; specify BDF explicitly\n");
 
     if (ret)
         pr_err("slash_hotplug: ioctl 0x%x returning %d\n", cmd, ret);
@@ -551,64 +370,6 @@ static struct miscdevice slash_hotplug_misc = {
     .mode = SLASH_HOTPLUG_MODE,
 };
 
-int slash_hotplug_register_device(struct pci_dev *pdev)
-{
-    struct slash_hotplug_entry *entry;
-    char bdf[SLASH_HOTPLUG_BDF_LEN];
-
-    snprintf(bdf, sizeof(bdf), "%04x:%02x:%02x.%x",
-             pci_domain_nr(pdev->bus), pdev->bus->number,
-             PCI_SLOT(pdev->devfn), PCI_FUNC(pdev->devfn));
-
-    entry = kzalloc(sizeof(*entry), GFP_KERNEL);
-    if (!entry)
-        return -ENOMEM;
-
-    strscpy(entry->bdf, bdf, sizeof(entry->bdf));
-
-    mutex_lock(&slash_hotplug_devices_lock);
-    if (slash_hotplug_find_entry_locked(entry->bdf)) {
-        /* Already tracked — silently deduplicate. */
-        mutex_unlock(&slash_hotplug_devices_lock);
-        kfree(entry);
-        return 0;
-    }
-
-    list_add_tail(&entry->node, &slash_hotplug_devices);
-    slash_hotplug_device_count++;
-    mutex_unlock(&slash_hotplug_devices_lock);
-
-    dev_info(&pdev->dev, "slash_hotplug: tracking device %s\n", entry->bdf);
-
-    return 0;
-}
-
-void slash_hotplug_unregister_device(struct pci_dev *pdev)
-{
-    struct slash_hotplug_entry *entry;
-    char bdf[SLASH_HOTPLUG_BDF_LEN];
-
-    snprintf(bdf, sizeof(bdf), "%04x:%02x:%02x.%x",
-             pci_domain_nr(pdev->bus), pdev->bus->number,
-             PCI_SLOT(pdev->devfn), PCI_FUNC(pdev->devfn));
-
-    mutex_lock(&slash_hotplug_devices_lock);
-    entry = slash_hotplug_find_entry_locked(bdf);
-    if (entry) {
-        list_del(&entry->node);
-        if (slash_hotplug_device_count)
-            slash_hotplug_device_count--;
-    }
-    mutex_unlock(&slash_hotplug_devices_lock);
-
-    if (entry) {
-        dev_info(&pdev->dev, "slash_hotplug: untracked device %s\n", bdf);
-        kfree(entry);
-    } else {
-        dev_dbg(&pdev->dev, "slash_hotplug: device %s not tracked\n", bdf);
-    }
-}
-
 int slash_hotplug_init(void)
 {
     int ret;
@@ -624,23 +385,8 @@ int slash_hotplug_init(void)
     return 0;
 }
 
-/**
- * slash_hotplug_exit() - Tear down the hotplug subsystem.
- *
- * Frees all tracked device entries and deregisters the misc device.
- */
 void slash_hotplug_exit(void)
 {
-    struct slash_hotplug_entry *entry, *tmp;
-
-    mutex_lock(&slash_hotplug_devices_lock);
-    list_for_each_entry_safe(entry, tmp, &slash_hotplug_devices, node) {
-        list_del(&entry->node);
-        kfree(entry);
-    }
-    slash_hotplug_device_count = 0;
-    mutex_unlock(&slash_hotplug_devices_lock);
-
     misc_deregister(&slash_hotplug_misc);
     pr_info("slash_hotplug: misc device unregistered\n");
 }
