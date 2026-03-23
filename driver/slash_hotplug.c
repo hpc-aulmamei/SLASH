@@ -23,7 +23,7 @@
  *   - **RESCAN**     — rescan all PCI root buses to discover new devices.
  *   - **REMOVE**     — remove a specific device from the PCI bus.
  *   - **TOGGLE_SBR** — assert and deassert a Secondary Bus Reset on
- *                      the device's upstream root port.
+ *                      the device's immediate upstream bridge.
  *   - **HOTPLUG**    — atomic remove + rescan cycle on the root port's
  *                      subordinate bus.
  *
@@ -266,8 +266,8 @@ static int slash_hotplug_handle_remove(const char *bdf)
  * slash_hotplug_handle_toggle_sbr() - Perform a Secondary Bus Reset.
  * @bdf: BDF string identifying the device (or its former location).
  *
- * Locates the upstream root port for the given BDF and toggles the
- * PCI_BRIDGE_CTL_BUS_RESET bit in the bridge's PCI_BRIDGE_CONTROL
+ * Locates the immediate upstream bridge for the given BDF and toggles
+ * the PCI_BRIDGE_CTL_BUS_RESET bit in the bridge's PCI_BRIDGE_CONTROL
  * register.  The sequence is:
  *
  *   1. Read the current bridge control register.
@@ -281,8 +281,10 @@ static int slash_hotplug_handle_remove(const char *bdf)
  *   The endpoint may have already been removed from the PCI hierarchy
  *   (e.g. by a prior REMOVE ioctl).  In that case, the endpoint's
  *   pci_dev no longer exists, but the bus structure and its bridge
- *   device survive.  We try the endpoint first (pcie_find_root_port),
- *   then fall back to the bus (pci_find_bus → bus->self).
+ *   device survive.  We try the endpoint first (pdev->bus->self),
+ *   then fall back to the bus (pci_find_bus → bus->self).  Both
+ *   paths resolve to the immediate parent bridge — never the root
+ *   port, which would reset the entire downstream hierarchy.
  *
  * Return: 0 on success, negative errno on failure.
  */
@@ -300,17 +302,20 @@ static int slash_hotplug_handle_toggle_sbr(const char *bdf)
     }
 
     /*
-     * Try to resolve the upstream bridge from the endpoint.  If the
-     * endpoint has already been removed (e.g. by a prior hotplug remove),
-     * fall back to locating the bridge via the bus number, which survives
-     * endpoint removal.
+     * Try to resolve the immediate upstream bridge from the endpoint.
+     * We must use the direct parent bridge (pdev->bus->self), NOT the
+     * root port (pcie_find_root_port), because asserting SBR on the
+     * root port would reset the entire hierarchy — including any PCIe
+     * switches and sibling devices — rather than just the target device.
+     *
+     * If the endpoint has already been removed (e.g. by a prior REMOVE
+     * ioctl), fall back to locating the bridge via the bus number,
+     * which survives endpoint removal.
      */
     pdev = pci_get_domain_bus_and_slot(domain, bus_nr, PCI_DEVFN(slot, func));
     if (pdev) {
-        struct pci_dev *root = pcie_find_root_port(pdev);
-
-        if (root)
-            bridge = pci_dev_get(root);
+        if (pdev->bus && pdev->bus->self)
+            bridge = pci_dev_get(pdev->bus->self);
         pci_dev_put(pdev);
     }
 

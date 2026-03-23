@@ -339,30 +339,6 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    /*
-     * Step 12a: Clear the SBR GPIO gate.
-     *
-     * In step 5, we set GPIO_ALLOW_SBR to 1 so the SBR could propagate
-     * to the FPGA.  The AMI kernel driver clears this during probe
-     * (write_pcie_configuration in ami_pcie.c), but the firmware's GCQ
-     * Identity event can re-enable it, creating a race that causes a
-     * second unintended reset.  Explicitly clear it here, after the
-     * probe + Identity event race window has passed (~10 s since SBR),
-     * to ensure the gate is closed before we proceed.
-     */
-    ret = ami_dev_request_access(ami_device);
-    if (ret != AMI_STATUS_OK) {
-        LOG(LOG_WARNING, "reset_with_ami: ami_dev_request_access(%s) failed (GPIO clear): %s",
-            pf0_bdf, ami_get_last_error());
-        /* Non-fatal: the AMI driver probe may have already cleared it. */
-    } else {
-        ret = ami_mem_bar_write(ami_device, 0, GPIO_ALLOW_SBR, 0);
-        if (ret != AMI_STATUS_OK) {
-            LOG(LOG_WARNING, "reset_with_ami: failed to clear GPIO_ALLOW_SBR after reset: %s",
-                ami_get_last_error());
-        }
-    }
-
     ami_dev_delete(&ami_device);
 
     /*
