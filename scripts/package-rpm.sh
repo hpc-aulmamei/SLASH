@@ -53,10 +53,11 @@ rpmbuild \
 cp "${TOPDIR}"/RPMS/*/*.rpm "${ARTIFACTS_DIR}/"
 cp "${TOPDIR}"/SRPMS/*.rpm  "${ARTIFACTS_DIR}/"
 
-cd "${ARTIFACTS_DIR}"
-createrepo .
-
 # Build AMI package into the same artifacts directory
 ARTIFACTS_DIR="${ARTIFACTS_DIR}" "$(dirname "$0")/package-ami.sh"
+
+pushd "${ARTIFACTS_DIR}"
+createrepo .
+popd
 
 echo "RPMs available in ${ARTIFACTS_DIR}/"

@@ -26,15 +26,17 @@ set -euxo pipefail
 cd "$(dirname "$0")/.."
 
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-$(pwd)/ami}"
+AMI_BUILD_DIR="$(pwd)/ami-build"
 AVED_DIR="$(pwd)/linker/resources/submodules/AVED"
 AMI_DIR="${AVED_DIR}/sw/AMI"
 PKG_PY="${AMI_DIR}/scripts/package_data/pkg.py"
 GEN_PKG_PY="${AMI_DIR}/scripts/gen_package.py"
 
+rm -rf "${AMI_BUILD_DIR}"
 mkdir -p "${ARTIFACTS_DIR}"
 
-# Restore submodule files on exit
-trap 'git -C "${AVED_DIR}" checkout -- sw/AMI/scripts/package_data/pkg.py sw/AMI/scripts/gen_package.py' EXIT
+# Restore submodule files and clean up build directory on exit
+trap 'git -C "${AVED_DIR}" checkout -- sw/AMI/scripts/package_data/pkg.py sw/AMI/scripts/gen_package.py; rm -rf "${AMI_BUILD_DIR}"' EXIT
 
 # Patch in Rocky Linux support (RHEL-compatible, RPM-based)
 sed -i "/^DIST_ID_RHEL /a DIST_ID_ROCKY   = 'rocky'" "${PKG_PY}"
@@ -43,4 +45,8 @@ sed -i "s/DIST_RPM = \[DIST_ID_CENTOS, DIST_ID_REDHAT, DIST_ID_REDHAT2, DIST_ID_
 sed -i "s/DIST_ID_CENTOS, DIST_ID_REDHAT, DIST_ID_REDHAT2, DIST_ID_RHEL\]/DIST_ID_CENTOS, DIST_ID_REDHAT, DIST_ID_REDHAT2, DIST_ID_RHEL, DIST_ID_ROCKY]/" "${GEN_PKG_PY}"
 
 cd "${AMI_DIR}"
-python3 scripts/gen_package.py -o "${ARTIFACTS_DIR}" -f
+python3 scripts/gen_package.py -o "${AMI_BUILD_DIR}"
+
+# Copy only the package files to the artifacts directory
+cp "${AMI_BUILD_DIR}"/*.rpm "${ARTIFACTS_DIR}/" 2>/dev/null || \
+cp "${AMI_BUILD_DIR}"/*.deb "${ARTIFACTS_DIR}/" 2>/dev/null || true
