@@ -226,6 +226,7 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
             return VRTD_RET_INTERNAL_ERROR;
         }
     }
+    LOG(LOG_INFO, "reset_with_ami: AMI_IOC_DEVICE_BOOT(%s) OK", pf0_bdf);
 
     /*
      * Step 5: Write a trigger value to BAR0 register at offset 0x1040000
@@ -241,6 +242,8 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         ami_dev_delete(&ami_device);
         return VRTD_RET_INTERNAL_ERROR;
     }
+
+    LOG(LOG_INFO, "reset_with_ami: GPIO_ALLOW_SBR set on %s", pf0_bdf);
 
     /* Step 6: Close the AMI device handle -- we are done with firmware commands. */
     ami_dev_delete(&ami_device);
@@ -266,16 +269,19 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     }
 
     ret = slash_hotplug_remove(g_hotplug, pf0_bdf);
+    LOG(LOG_INFO, "reset_with_ami: removed %s (ret=%d, errno=%d)", pf0_bdf, ret, errno);
     if (ret != 0 && errno != ENODEV) {
         LOG(LOG_ERR, "reset_with_ami: hotplug remove(%s) failed: %m", pf0_bdf);
         return hotplug_errno_to_vrtd_ret(errno);
     }
     ret = slash_hotplug_remove(g_hotplug, pf1_bdf);
+    LOG(LOG_INFO, "reset_with_ami: removed %s (ret=%d, errno=%d)", pf1_bdf, ret, errno);
     if (ret != 0 && errno != ENODEV) {
         LOG(LOG_ERR, "reset_with_ami: hotplug remove(%s) failed: %m", pf1_bdf);
         return hotplug_errno_to_vrtd_ret(errno);
     }
     ret = slash_hotplug_remove(g_hotplug, pf2_bdf);
+    LOG(LOG_INFO, "reset_with_ami: removed %s (ret=%d, errno=%d)", pf2_bdf, ret, errno);
     if (ret != 0 && errno != ENODEV) {
         LOG(LOG_ERR, "reset_with_ami: hotplug remove(%s) failed: %m", pf2_bdf);
         return hotplug_errno_to_vrtd_ret(errno);
@@ -289,11 +295,13 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
      * the mechanism that causes the FPGA to load the new configuration from
      * the boot partition selected in step 4.
      */
+    LOG(LOG_INFO, "reset_with_ami: toggling SBR for %s", pf0_bdf);
     ret = slash_hotplug_toggle_sbr(g_hotplug, pf0_bdf);
     if (ret != 0) {
         LOG(LOG_ERR, "reset_with_ami: hotplug toggle_sbr(%s) failed: %m", pf0_bdf);
         return hotplug_errno_to_vrtd_ret(errno);
     }
+    LOG(LOG_INFO, "reset_with_ami: SBR toggle complete for %s", pf0_bdf);
 
     /*
      * Step 9: Wait for the FPGA to complete reconfiguration and re-train
@@ -312,6 +320,7 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         LOG(LOG_ERR, "reset_with_ami: hotplug rescan failed: %m");
         return hotplug_errno_to_vrtd_ret(errno);
     }
+    LOG(LOG_INFO, "reset_with_ami: rescan complete");
 
     /*
      * Step 11: After a rescan the following things need to happen:
@@ -342,6 +351,7 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
         LOG(LOG_ERR, "reset_with_ami: post-reset ami_dev_find(%s) failed: %s", pf0_bdf, ami_get_last_error());
         return VRTD_RET_INTERNAL_ERROR;
     }
+    LOG(LOG_INFO, "reset_with_ami: device %s found after reset", pf0_bdf);
 
     ami_dev_delete(&ami_device);
 

@@ -161,9 +161,17 @@ static int slash_hotplug_handle_remove(const char *bdf)
         return ret;
     }
 
+    if (pdev->bus && pdev->bus->self) {
+        u16 bridge_ctrl;
+        pci_read_config_word(pdev->bus->self, PCI_BRIDGE_CONTROL, &bridge_ctrl);
+        pr_info("slash_hotplug: remove: %s bridge_ctrl=0x%04x before remove\n",
+                pci_name(pdev), bridge_ctrl);
+    }
+
     pr_info("slash_hotplug: removing %s\n", pci_name(pdev));
     pci_stop_and_remove_bus_device(pdev);
     pci_dev_put(pdev);
+    pr_info("slash_hotplug: remove: %s complete\n", bdf);
 
     return 0;
 }
@@ -212,6 +220,8 @@ static int slash_hotplug_handle_toggle_sbr(const char *bdf)
     }
 
     bridge = pci_dev_get(ep_bus->self);
+    pr_info("slash_hotplug: toggle_sbr: bridge=%s bus=%02x\n",
+            pci_name(bridge), bus_nr);
 
     /* Read current bridge control state so we can restore it after reset. */
     ret = pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl);
@@ -219,6 +229,7 @@ static int slash_hotplug_handle_toggle_sbr(const char *bdf)
         pr_err("slash_hotplug: toggle_sbr: read control failed (%d)\n", ret);
         goto out_put;
     }
+    pr_info("slash_hotplug: toggle_sbr: ctrl=0x%04x before assert\n", ctrl);
 
     /* Assert SBR. */
     ret = pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl | PCI_BRIDGE_CTL_BUS_RESET);
@@ -226,6 +237,7 @@ static int slash_hotplug_handle_toggle_sbr(const char *bdf)
         pr_err("slash_hotplug: toggle_sbr: assert SBR failed (%d)\n", ret);
         goto out_put;
     }
+    pr_info("slash_hotplug: toggle_sbr: SBR asserted\n");
 
     /* PCIe spec requires at least 1 ms reset hold; we use 2 ms for margin. */
     msleep(2);
@@ -234,6 +246,13 @@ static int slash_hotplug_handle_toggle_sbr(const char *bdf)
     ret = pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl & ~PCI_BRIDGE_CTL_BUS_RESET);
     if (ret)
         pr_err("slash_hotplug: toggle_sbr: deassert SBR failed (%d)\n", ret);
+
+    /* Re-read bridge control to verify SBR was actually cleared. */
+    {
+        u16 ctrl_after;
+        pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl_after);
+        pr_info("slash_hotplug: toggle_sbr: ctrl=0x%04x after deassert\n", ctrl_after);
+    }
 
 out_put:
     pci_dev_put(bridge);
