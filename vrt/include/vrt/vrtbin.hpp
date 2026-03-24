@@ -121,6 +121,12 @@ class Vrtbin {
     std::string getUtilizationReportPath() const;
 
     /**
+     * @brief Gets the platform type parsed from the system map.
+     * @return The platform type.
+     */
+    Platform getPlatform() const;
+
+    /**
      * @brief Gets the path to the system map last loaded on a bdf.
      * @param bdf The bdf to query.
      * @return The path to the system map.

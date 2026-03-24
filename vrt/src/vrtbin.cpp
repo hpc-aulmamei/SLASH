@@ -473,6 +473,8 @@ std::string Vrtbin::getEmulationManifest() { return emulationManifestPath; }
 
 std::string Vrtbin::getSimulationExec() { return simulationExecPath; }
 
+Platform Vrtbin::getPlatform() const { return platform; }
+
 void Vrtbin::discoverPdiFiles() {
     pdiPaths.clear();
 
