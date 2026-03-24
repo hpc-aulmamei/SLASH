@@ -18,6 +18,11 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file kernel.cpp
+ * @brief Kernel class implementation.
+ */
+
 #include <vrt/kernel.hpp>
 
 #include <vrt/device.hpp>

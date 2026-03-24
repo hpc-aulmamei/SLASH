@@ -18,6 +18,11 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file buffer.hpp
+ * @brief Buffer<T> — typed host-accessible memory with device synchronization.
+ */
+
 #ifndef VRT_BUFFER_HPP
 #define VRT_BUFFER_HPP
 

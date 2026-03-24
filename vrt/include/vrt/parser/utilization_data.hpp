@@ -18,6 +18,11 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file utilization_data.hpp
+ * @brief Data structures for FPGA resource utilization reports.
+ */
+
 #ifndef VRT_UTILIZATION_DATA_HPP
 #define VRT_UTILIZATION_DATA_HPP
 
@@ -28,53 +33,68 @@
 
 namespace vrt {
 
+/**
+ * @brief FPGA resource counts and optional utilization percentages.
+ */
 struct ResourceMetrics {
-    uint32_t totalPplocs = 0;
-    uint32_t totalLuts = 0;
-    uint32_t lutram = 0;
-    uint32_t srl = 0;
-    uint32_t ff = 0;
-    uint32_t ramb36 = 0;
-    uint32_t ramb18 = 0;
-    uint32_t ramb = 0;
-    uint32_t uram = 0;
-    uint32_t dsp = 0;
+    uint32_t totalPplocs = 0;  ///< Total physical placement locations
+    uint32_t totalLuts = 0;    ///< Total look-up tables used
+    uint32_t lutram = 0;       ///< LUTs used as distributed RAM
+    uint32_t srl = 0;          ///< LUTs used as shift registers
+    uint32_t ff = 0;           ///< Flip-flops used
+    uint32_t ramb36 = 0;       ///< 36 Kb block RAMs used
+    uint32_t ramb18 = 0;       ///< 18 Kb block RAMs used
+    uint32_t ramb = 0;         ///< Total block RAMs used
+    uint32_t uram = 0;         ///< UltraRAMs used
+    uint32_t dsp = 0;          ///< DSP slices used
 
-    std::optional<float> totalLutsPct;
-    std::optional<float> lutramPct;
-    std::optional<float> srlPct;
-    std::optional<float> ffPct;
-    std::optional<float> ramb36Pct;
-    std::optional<float> ramb18Pct;
-    std::optional<float> uramPct;
-    std::optional<float> dspPct;
+    std::optional<float> totalLutsPct;  ///< LUT utilization percentage
+    std::optional<float> lutramPct;     ///< LUTRAM utilization percentage
+    std::optional<float> srlPct;        ///< SRL utilization percentage
+    std::optional<float> ffPct;         ///< FF utilization percentage
+    std::optional<float> ramb36Pct;     ///< RAMB36 utilization percentage
+    std::optional<float> ramb18Pct;     ///< RAMB18 utilization percentage
+    std::optional<float> uramPct;       ///< URAM utilization percentage
+    std::optional<float> dspPct;        ///< DSP utilization percentage
 };
 
+/**
+ * @brief Per-instance resource metrics for a single module.
+ */
 struct UtilizationCell {
-    std::string instance;
-    std::string module;
-    std::string pr;
-    ResourceMetrics metrics;
+    std::string instance;       ///< Module instance name
+    std::string module;         ///< Module definition name
+    std::string pr;             ///< Partial reconfiguration region
+    ResourceMetrics metrics;    ///< Resource counts for this instance
 };
 
+/**
+ * @brief Hierarchical grouping of user logic and framework overhead cells.
+ */
 struct Subhierarchy {
-    std::vector<UtilizationCell> cells;
-    std::vector<UtilizationCell> slashLogic;
-    ResourceMetrics subhierarchySum;
-    ResourceMetrics slashLogicSum;
+    std::vector<UtilizationCell> cells;       ///< User logic cells
+    std::vector<UtilizationCell> slashLogic;  ///< SLASH framework overhead cells
+    ResourceMetrics subhierarchySum;          ///< Aggregated metrics for user logic
+    ResourceMetrics slashLogicSum;            ///< Aggregated metrics for framework logic
 };
 
+/**
+ * @brief Top-level utilization block (e.g. SLASH framework or service layer).
+ */
 struct UtilizationBlock {
-    std::string name;
-    std::string instance;
-    std::string pr;
-    ResourceMetrics totals;
-    std::optional<Subhierarchy> subhierarchy;
+    std::string name;                           ///< Block name
+    std::string instance;                       ///< Block instance name
+    std::string pr;                             ///< Partial reconfiguration region
+    ResourceMetrics totals;                     ///< Block-level resource totals
+    std::optional<Subhierarchy> subhierarchy;   ///< Detailed breakdown (if available)
 };
 
+/**
+ * @brief Complete FPGA design utilization report.
+ */
 struct UtilizationReport {
-    UtilizationBlock slash;
-    std::optional<UtilizationBlock> serviceLayer;
+    UtilizationBlock slash;                          ///< SLASH framework block (always present)
+    std::optional<UtilizationBlock> serviceLayer;    ///< Optional service layer block
 };
 
 }  // namespace vrt

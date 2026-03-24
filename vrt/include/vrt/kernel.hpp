@@ -18,6 +18,11 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file kernel.hpp
+ * @brief Kernel class — hardware kernel execution and argument management.
+ */
+
 #ifndef VRT_KERNEL_HPP
 #define VRT_KERNEL_HPP
 
@@ -48,15 +53,18 @@ class Device;
 template <typename T>
 class Buffer;
 
+/**
+ * @brief Kernel argument metadata parsed from system_map.xml.
+ */
 struct FunctionalArg {
-    uint32_t idx = 0;
-    std::string name;
-    std::string type;
-    uint32_t offset = 0;
-    uint32_t range = 32;
-    bool readable = false;
-    bool writable = false;
-    std::string port;
+    uint32_t idx = 0;           ///< Argument index
+    std::string name;           ///< Argument name
+    std::string type;           ///< C type (e.g. "int", "float*")
+    uint32_t offset = 0;        ///< Register offset for this argument
+    uint32_t range = 32;        ///< Bit width (32 or 64; 0 treated as 32)
+    bool readable = false;      ///< Whether the argument register is readable
+    bool writable = false;      ///< Whether the argument register is writable
+    std::string port;           ///< AXI port name (for memory arguments)
 };
 
 /**

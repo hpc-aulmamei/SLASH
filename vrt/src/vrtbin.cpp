@@ -18,6 +18,11 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file vrtbin.cpp
+ * @brief Vrtbin archive extraction and metadata discovery.
+ */
+
 #include <vrt/vrtbin.hpp>
 
 #include <tar.h>

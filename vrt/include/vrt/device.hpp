@@ -18,6 +18,11 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/**
+ * @file device.hpp
+ * @brief Device class — entry point for V80 hardware interaction.
+ */
+
 #ifndef VRT_DEVICE_HPP
 #define VRT_DEVICE_HPP
 
@@ -224,6 +229,12 @@ class Device {
 };
 }  // namespace impl
 
+/**
+ * @brief Public handle to a V80 device with move semantics.
+ *
+ * Thin wrapper around impl::Device providing the user-facing API for
+ * device initialization, kernel retrieval, frequency control, and cleanup.
+ */
 class Device {
     std::shared_ptr<impl::Device> handle;
 
