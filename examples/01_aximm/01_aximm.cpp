@@ -66,10 +66,10 @@ int main(int argc, char* argv[]) {
         out_buff.sync(vrt::SyncType::DEVICE_TO_HOST);
         for(uint32_t i = 0; i < size; i++) {
             if(out_buff[i] != in_buff[i] * m + n) {
-                std::cerr << "Test failed" << std::endl;
+                std::cerr << "Test failed (accuracy)" << std::endl;
                 std::cerr << "Error: " << i << " " << out_buff[i] << " " << in_buff[i] << std::endl;
                 device.cleanup();
-                return 1;
+                return 2;
             }
         }
         std::cout << "Test passed" << std::endl;

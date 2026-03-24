@@ -47,6 +47,7 @@ for name in "${ACTION_NAMES[@]}"; do
     ACTION_PASS[$name]=0
     ACTION_FAIL[$name]=0
 done
+ACCURACY_FAIL=0
 ITERATIONS_DONE=0
 START_TIME=$(date +%s)
 
@@ -81,6 +82,7 @@ print_summary() {
     echo "========================================================================"
     echo "  Iterations completed: $ITERATIONS_DONE"
     echo "  Elapsed time:         ${elapsed}s"
+    echo "  Accuracy failures:    $ACCURACY_FAIL"
     echo "------------------------------------------------------------------------"
     printf "  %-15s  %6s  %6s\n" "Action" "Pass" "Fail"
     echo "------------------------------------------------------------------------"
@@ -236,7 +238,12 @@ for ((i = 1; i <= ITERATIONS; i++)); do
             exec_file="$EXAMPLES_DIR/$dir/build/$executable"
 
             log "Running: $exec_file $BDF $vbin_file"
-            if ! "$exec_file" "$BDF" "$vbin_file"; then
+            rc=0
+            "$exec_file" "$BDF" "$vbin_file" || rc=$?
+            if [[ $rc -eq 2 ]]; then
+                log "ACCURACY FAILURE: $action ($dir) at iteration $i (continuing)"
+                ACCURACY_FAIL=$((ACCURACY_FAIL + 1))
+            elif [[ $rc -ne 0 ]]; then
                 log "FAILED: $action ($dir) at iteration $i"
                 ACTION_FAIL[$action]=$((ACTION_FAIL[$action] + 1))
                 ITERATIONS_DONE=$i

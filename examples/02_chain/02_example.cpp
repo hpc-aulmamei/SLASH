@@ -56,9 +56,9 @@ int main(int argc, char* argv[]) {
         buffer_out.sync(vrt::SyncType::DEVICE_TO_HOST);
         for(uint32_t i = 0; i < size; i++) {
             if(buffer_in[i] != buffer_out[i]) {
-                vrt::utils::Logger::log(vrt::utils::LogLevel::ERROR, __PRETTY_FUNCTION__, "Test failed");
+                vrt::utils::Logger::log(vrt::utils::LogLevel::ERROR, __PRETTY_FUNCTION__, "Test failed (accuracy)");
                 device.cleanup();
-                return 0;
+                return 2;
             }
         }
         vrt::utils::Logger::log(vrt::utils::LogLevel::INFO, __PRETTY_FUNCTION__, "Test passed");
