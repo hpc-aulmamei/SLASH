@@ -27,6 +27,7 @@
 
 #include "list.hpp"
 
+#include <cmath>
 #include <iomanip>
 #include <limits>
 #include <filesystem>
@@ -548,18 +549,52 @@ static const char *sensorUnitName(uint8_t type) {
     }
 }
 
+/// Converts a raw sensor value with a unit modifier exponent into a
+/// human-friendly floating-point value and picks the best SI prefix.
+/// For example, value=850 with unitMod=-3 gives 0.85 V (not "850 x10^-3 V").
+struct FormattedSensor {
+    double  value;   ///< Scaled value ready for display.
+    const char* prefix; ///< SI prefix string (e.g. "m", "k", or "").
+};
+
+static FormattedSensor formatSensorValue(int32_t raw, int8_t unitMod) {
+    // Convert to base unit (e.g. V, A, W, C).
+    double base = raw * std::pow(10.0, static_cast<int>(unitMod));
+    double absBase = std::fabs(base);
+
+    struct { double threshold; double divisor; const char* prefix; } constexpr scales[] = {
+        {1e6,  1e6,  "M"},
+        {1e3,  1e3,  "k"},
+        {1.0,  1.0,  "" },
+        {1e-3, 1e-3, "m"},
+        {1e-6, 1e-6, "u"},
+    };
+
+    for (const auto& sc : scales) {
+        if (absBase >= sc.threshold) {
+            return {base / sc.divisor, sc.prefix};
+        }
+    }
+    // Extremely small or zero — just show base units.
+    return {base, ""};
+}
+
 /// Prints sensor readings indented under a board.
 static void printSensors(std::ostream& out,
                           const std::vector<vrtd::SensorEntry>& sensors) {
     out << INDENT1 << "Sensors:\n";
     for (const auto& s : sensors) {
+        auto [val, prefix] = formatSensorValue(s.value, s.unitMod);
+
+        // Build the unit string, e.g. "mV", "W", "kA".
+        std::string unit = std::string(prefix) + sensorUnitName(s.type);
+
         out << INDENT2
             << std::left << std::setw(24) << s.name
             << std::setw(10) << sensorTypeName(s.type)
-            << std::right << std::setw(8) << s.value
-            << " (x10^" << static_cast<int>(s.unitMod) << " "
-            << sensorUnitName(s.type) << ")  "
-            << sensorStatusName(s.status) << "\n";
+            << std::right << std::fixed << std::setprecision(2)
+            << std::setw(10) << val << " " << std::left << std::setw(4) << unit
+            << "  " << sensorStatusName(s.status) << "\n";
     }
 }
 
