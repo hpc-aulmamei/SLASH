@@ -207,7 +207,6 @@ XMLParser::~XMLParser() {
     if (this->document != nullptr) {
         xmlFreeDoc(this->document);
     }
-    xmlCleanupParser();
 }
 
 }  // namespace vrt
