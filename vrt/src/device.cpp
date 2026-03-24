@@ -285,6 +285,8 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
 
 Device::~Device() {
     cleanup();
+    delete allocator;
+    allocator = nullptr;
 }
 
 void Device::parseSystemMap() {
@@ -326,8 +328,6 @@ void Device::cleanup() {
         exit["command"] = "exit";
         zmqServer->sendCommand(exit);
     }
-    delete allocator;
-    allocator = nullptr;
     if (runtimeThread.joinable()) {
         runtimeThread.join();
     }
