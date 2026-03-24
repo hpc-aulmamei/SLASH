@@ -26,10 +26,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 EXAMPLES_DIR="$REPO_ROOT/examples"
 
+SANITIZE=false
+
 usage() {
-    echo "Usage: $0 <hw|sim|emu> [BDF]"
+    echo "Usage: $0 [--sanitize] <hw|sim|emu> [BDF]"
     echo ""
     echo "  Build and run examples 0, 1, 2, and 4 for the specified platform."
+    echo ""
+    echo "  Options:"
+    echo "    --sanitize   Build with AddressSanitizer and UBSan"
     echo ""
     echo "  Arguments:"
     echo "    hw|sim|emu   Target platform (hardware, simulation, or emulation)"
@@ -38,6 +43,14 @@ usage() {
     echo "  Note: Example 02_chain does not support emulation."
     exit 1
 }
+
+# Parse --sanitize flag
+while [[ $# -gt 0 && "$1" == --* ]]; do
+    case "$1" in
+        --sanitize) SANITIZE=true; shift ;;
+        *) echo "ERROR: Unknown option '$1'"; usage ;;
+    esac
+done
 
 if [[ $# -lt 1 ]]; then
     usage
@@ -48,6 +61,19 @@ PLATFORM="$1"
 if [[ "$PLATFORM" != "hw" && "$PLATFORM" != "sim" && "$PLATFORM" != "emu" ]]; then
     echo "ERROR: Invalid platform '$PLATFORM'. Must be one of: hw, sim, emu"
     usage
+fi
+
+# Sanitizer cmake flags
+CMAKE_EXTRA_ARGS=()
+if [[ "$SANITIZE" == true ]]; then
+    echo "=== AddressSanitizer + UBSan ENABLED ==="
+    CMAKE_EXTRA_ARGS+=(
+        -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+        -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
+        -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+        -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+        -DENABLE_SANITIZERS=ON
+    )
 fi
 
 # Determine BDF (only required for hw)
@@ -96,7 +122,7 @@ for entry in "${EXAMPLES[@]}"; do
     BUILD_DIR="$EXAMPLE_DIR/build"
 
     echo "--- Configuring $dir ---"
-    cmake -B "$BUILD_DIR" -S "$EXAMPLE_DIR"
+    cmake -B "$BUILD_DIR" -S "$EXAMPLE_DIR" "${CMAKE_EXTRA_ARGS[@]+"${CMAKE_EXTRA_ARGS[@]}"}"
     echo ""
 done
 
@@ -170,6 +196,12 @@ done
 # =========================================================================
 #  Stage 5: Run all examples
 # =========================================================================
+
+# ASAN runtime options
+if [[ "$SANITIZE" == true ]]; then
+    export ASAN_OPTIONS="abort_on_error=1:detect_leaks=0"
+    export UBSAN_OPTIONS="print_stacktrace=1"
+fi
 
 # For emu/sim, Vivado libraries are required at runtime
 if [[ "$PLATFORM" == "emu" || "$PLATFORM" == "sim" ]]; then

@@ -49,6 +49,12 @@ include(CMakePackageConfigHelpers)
 
 add_compile_options("-Wunused-result")
 
+option(ENABLE_SANITIZERS "Build with AddressSanitizer and UBSan" OFF)
+if(ENABLE_SANITIZERS)
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+
 # Generate the header
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/vrt_version.hpp.in"

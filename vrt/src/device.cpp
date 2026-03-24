@@ -228,7 +228,7 @@ Device::Device(const std::string& bdf, const std::string& vrtbinPath, bool progr
     this->pdiPaths = this->vrtbin.getPdiPaths();
     this->programType = programType;
     this->zmqServer = std::make_shared<ZmqServer>();
-    findPlatform();
+    this->platform = vrtbin.getPlatform();
     if (platform == Platform::HARDWARE) {
         vrtdSession = std::make_shared<vrtd::Session>();
         vrtdDevice = vrtdSession->getDeviceByBdf(bdfFull);

@@ -97,11 +97,11 @@ class Device {
     std::string pdiPath;                                        ///< Path to the PDI file
     std::vector<std::string> pdiPaths;                          ///< Paths to PDI files discovered in archive
     Vrtbin vrtbin;                                              ///< Vrtbin object for handling VRTBIN operations
-    uint64_t clockFreq;                                         ///< Clock frequency
-    ProgramType programType;                                    ///< Type of programming
+    uint64_t clockFreq = 0;                                     ///< Clock frequency
+    ProgramType programType{};                                  ///< Type of programming
     std::map<std::string, Kernel> kernels;                      ///< Map of kernel names to Kernel objects
-    Allocator* allocator;                                       ///< Allocator object
-    Platform platform;                                          ///< Platform information
+    Allocator* allocator = nullptr;                             ///< Allocator object
+    Platform platform{};                                        ///< Platform information
     std::shared_ptr<ZmqServer> zmqServer;                       ///< ZeroMQ server object
     std::vector<QdmaConnection> qdmaConnections;                ///< Vector of QDMA connections
     std::vector<QdmaIntf*> qdmaIntfs;                           ///< Vector of QDMA interfaces for streaming
