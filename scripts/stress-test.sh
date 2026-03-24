@@ -134,7 +134,7 @@ check_device() {
 }
 
 random_delay() {
-    local delay=$((RANDOM % 31))
+    local delay=$((RANDOM % 11))
     if [[ $delay -gt 0 ]]; then
         log "Sleeping ${delay}s..."
         sleep "$delay"

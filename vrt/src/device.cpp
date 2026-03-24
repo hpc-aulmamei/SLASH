@@ -326,6 +326,8 @@ void Device::cleanup() {
         exit["command"] = "exit";
         zmqServer->sendCommand(exit);
     }
+    delete allocator;
+    allocator = nullptr;
     if (runtimeThread.joinable()) {
         runtimeThread.join();
     }
