@@ -77,58 +77,67 @@ ResourceMetrics parseResourceMetrics(xmlNode* node) {
     return m;
 }
 
-UtilizationCell parseCell(xmlNode* node) {
+/// Parse a <kernel> or <cell> element whose metrics live in a child <totals>.
+UtilizationCell parseCellWithTotals(xmlNode* node) {
     UtilizationCell cell;
     cell.instance = getNodeProp(node, "instance");
     cell.module = getNodeProp(node, "module");
-    cell.pr = getNodeProp(node, "pr");
-    cell.metrics = parseResourceMetrics(node);
+    for (xmlNode* child = node->children; child; child = child->next) {
+        if (child->type == XML_ELEMENT_NODE &&
+            xmlStrcmp(child->name, BAD_CAST "totals") == 0) {
+            cell.metrics = parseResourceMetrics(child);
+            break;
+        }
+    }
     return cell;
 }
 
-Subhierarchy parseSubhierarchy(xmlNode* subNode) {
-    Subhierarchy sub;
-    for (xmlNode* child = subNode->children; child; child = child->next) {
-        if (child->type != XML_ELEMENT_NODE) {
-            continue;
-        }
-        if (xmlStrcmp(child->name, BAD_CAST "cells") == 0) {
-            for (xmlNode* cellNode = child->children; cellNode; cellNode = cellNode->next) {
-                if (cellNode->type == XML_ELEMENT_NODE &&
-                    xmlStrcmp(cellNode->name, BAD_CAST "cell") == 0) {
-                    sub.cells.push_back(parseCell(cellNode));
-                }
-            }
-        } else if (xmlStrcmp(child->name, BAD_CAST "slash_logic") == 0) {
-            for (xmlNode* cellNode = child->children; cellNode; cellNode = cellNode->next) {
-                if (cellNode->type == XML_ELEMENT_NODE &&
-                    xmlStrcmp(cellNode->name, BAD_CAST "cell") == 0) {
-                    sub.slashLogic.push_back(parseCell(cellNode));
-                }
-            }
-        } else if (xmlStrcmp(child->name, BAD_CAST "subhierarchy_sum") == 0) {
-            sub.subhierarchySum = parseResourceMetrics(child);
-        } else if (xmlStrcmp(child->name, BAD_CAST "slash_logic_sum") == 0) {
-            sub.slashLogicSum = parseResourceMetrics(child);
-        }
-    }
-    return sub;
-}
-
-UtilizationBlock parseBlock(xmlNode* blockNode) {
+/// Parse the <slash> element containing <kernels>, <slash_logic>, <totals>, sums.
+UtilizationBlock parseSlashBlock(xmlNode* slashNode) {
     UtilizationBlock block;
-    block.name = getNodeProp(blockNode, "name");
-    block.instance = getNodeProp(blockNode, "instance");
-    block.pr = getNodeProp(blockNode, "pr");
+    block.name = "slash";
+    Subhierarchy sub;
 
-    for (xmlNode* child = blockNode->children; child; child = child->next) {
+    for (xmlNode* child = slashNode->children; child; child = child->next) {
         if (child->type != XML_ELEMENT_NODE) {
             continue;
         }
         if (xmlStrcmp(child->name, BAD_CAST "totals") == 0) {
             block.totals = parseResourceMetrics(child);
-        } else if (xmlStrcmp(child->name, BAD_CAST "subhierarchy") == 0) {
-            block.subhierarchy = parseSubhierarchy(child);
+        } else if (xmlStrcmp(child->name, BAD_CAST "kernels") == 0) {
+            for (xmlNode* k = child->children; k; k = k->next) {
+                if (k->type == XML_ELEMENT_NODE &&
+                    xmlStrcmp(k->name, BAD_CAST "kernel") == 0) {
+                    sub.cells.push_back(parseCellWithTotals(k));
+                }
+            }
+        } else if (xmlStrcmp(child->name, BAD_CAST "slash_logic") == 0) {
+            for (xmlNode* c = child->children; c; c = c->next) {
+                if (c->type == XML_ELEMENT_NODE &&
+                    xmlStrcmp(c->name, BAD_CAST "cell") == 0) {
+                    sub.slashLogic.push_back(parseCellWithTotals(c));
+                }
+            }
+        } else if (xmlStrcmp(child->name, BAD_CAST "kernel_sum") == 0) {
+            sub.subhierarchySum = parseResourceMetrics(child);
+        } else if (xmlStrcmp(child->name, BAD_CAST "slash_logic_sum") == 0) {
+            sub.slashLogicSum = parseResourceMetrics(child);
+        }
+    }
+
+    block.subhierarchy = std::move(sub);
+    return block;
+}
+
+/// Parse a <service_layer> element (totals only, no subhierarchy).
+UtilizationBlock parseServiceLayerBlock(xmlNode* node) {
+    UtilizationBlock block;
+    block.name = "service_layer";
+    for (xmlNode* child = node->children; child; child = child->next) {
+        if (child->type == XML_ELEMENT_NODE &&
+            xmlStrcmp(child->name, BAD_CAST "totals") == 0) {
+            block.totals = parseResourceMetrics(child);
+            break;
         }
     }
     return block;
@@ -151,17 +160,15 @@ void UtilizationParser::parse() {
 
     bool foundSlash = false;
     for (xmlNode* node = root->children; node; node = node->next) {
-        if (node->type != XML_ELEMENT_NODE ||
-            xmlStrcmp(node->name, BAD_CAST "block") != 0) {
+        if (node->type != XML_ELEMENT_NODE) {
             continue;
         }
 
-        UtilizationBlock block = parseBlock(node);
-        if (block.name == "slash") {
-            report.slash = std::move(block);
+        if (xmlStrcmp(node->name, BAD_CAST "slash") == 0) {
+            report.slash = parseSlashBlock(node);
             foundSlash = true;
-        } else if (block.name == "service_layer") {
-            report.serviceLayer = std::move(block);
+        } else if (xmlStrcmp(node->name, BAD_CAST "service_layer") == 0) {
+            report.serviceLayer = parseServiceLayerBlock(node);
         }
     }
 
