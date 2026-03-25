@@ -48,10 +48,9 @@ cp packaging/rpm/slash.spec "${TOPDIR}/SPECS/"
 rpmbuild \
     --define "_topdir ${TOPDIR}" \
     --define "_version ${VERSION}" \
-    -ba "${TOPDIR}/SPECS/slash.spec"
+    -bb "${TOPDIR}/SPECS/slash.spec"
 
 cp "${TOPDIR}"/RPMS/*/*.rpm "${ARTIFACTS_DIR}/"
-cp "${TOPDIR}"/SRPMS/*.rpm  "${ARTIFACTS_DIR}/"
 
 # Build AMI package into the same artifacts directory
 ARTIFACTS_DIR="${ARTIFACTS_DIR}" "$(dirname "$0")/package-ami.sh"
