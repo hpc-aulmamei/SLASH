@@ -1,7 +1,12 @@
 [Unit]
-Description=vrtd daemon
+Description=vrtd daemon for SLASH
+Requires=vrtd.socket
+After=vrtd.socket
 
 [Service]
+LogLevelMax=info
+
+
 Type=notify
 ExecStart=/usr/lib/vrt/vrtd
 User=vrtd
@@ -12,12 +17,9 @@ WatchdogSec=60s
 DevicePolicy=auto
 PrivateDevices=false
 
-# Create a writable runtime dir for any transient files if you want it:
+# Create a writable runtime dir for any transient files
 RuntimeDirectory=vrtd
 RuntimeDirectoryMode=0755
-
-AmbientCapabilities=CAP_SYS_RAWIO
-CapabilityBoundingSet=CAP_SYS_RAWIO
 
 # Hardening
 NoNewPrivileges=true

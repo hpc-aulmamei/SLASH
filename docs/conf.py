@@ -43,8 +43,12 @@ project = 'SLASH'
 copyright = '2025 Advanced Micro Devices, Inc'
 author = 'Advanced Micro Devices Inc'
 
-breathe_projects = {}
-breathe_projects['VRT'] = '../vrt/doc/docs/xml'
+breathe_projects = {
+    'VRT':       '../vrt/doc/docs/xml',
+    'libslash':  '../driver/libslash/doc/docs/xml',
+    'libvrtd':   '../vrt/vrtd/libvrtd/doc/docs/xml',
+    'libvrtdpp': '../vrt/vrtd/libvrtdpp/doc/docs/xml',
+}
 
 # Check if we're running on Read the Docs' servers
 read_the_docs_build = os.environ.get('READTHEDOCS', None) == 'True'
@@ -56,7 +60,7 @@ read_the_docs_build = os.environ.get('READTHEDOCS', None) == 'True'
 # ones.
 #...
 
-extensions = [ "breathe", 'sphinxcontrib.tikz']
+extensions = [ "breathe", 'sphinxcontrib.tikz', 'sphinx.ext.todo']
 
 #...
 
@@ -84,7 +88,16 @@ html_static_path = ['_static']
 # Breathe Configuration
 breathe_default_project = "SLASH"
 
-subprocess.call('doxygen ./Doxyfile', shell=True, cwd='../vrt/doc')
+# -- Doxygen builds (generate XML for Breathe) --------------------------------
 
-# Tikz configuration, as indicated in https://github.com/sphinx-contrib/tikz
+subprocess.call('doxygen ./Doxyfile', shell=True, cwd='../vrt/doc')
+subprocess.call('doxygen ./Doxyfile', shell=True, cwd='../driver/libslash/doc')
+subprocess.call('doxygen ./Doxyfile', shell=True, cwd='../vrt/vrtd/libvrtd/doc')
+subprocess.call('doxygen ./Doxyfile', shell=True, cwd='../vrt/vrtd/libvrtdpp/doc')
+
+# -- Tikz configuration -------------------------------------------------------
+# As indicated in https://github.com/sphinx-contrib/tikz
 tikz_proc_suite = 'GhostScript'
+
+# -- Todo extension ------------------------------------------------------------
+todo_include_todos = True

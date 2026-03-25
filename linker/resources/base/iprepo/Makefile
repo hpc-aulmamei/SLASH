@@ -1,5 +1,5 @@
-# Top-level Makefile that builds 3 subprojects (each has its own Makefile)
-SUBDIRS := hbm_bandwidth hls traffic_producer
+# Top-level Makefile that builds subprojects (each has its own Makefile)
+SUBDIRS := hbm_bandwidth traffic_producer
 SUBTARGET ?= all
 
 .PHONY: all clean rebuild $(SUBDIRS) build-% clean-% rebuild-%

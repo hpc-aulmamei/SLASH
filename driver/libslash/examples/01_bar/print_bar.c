@@ -1,3 +1,8 @@
+/**
+ * @file print_bar.c
+ * @brief Example — enumerate and read/write BARs on a control device.
+ */
+
 #define _GNU_SOURCE
 
 #include <stdio.h>

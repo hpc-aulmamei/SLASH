@@ -1,3 +1,8 @@
+/**
+ * @file some_tb.c
+ * @brief Example — multi-core HBM transfer testbench.
+ */
+
 #include <stdio.h>
 
 #include <slash/ctldev.h>

@@ -1,3 +1,8 @@
+/**
+ * @file slash_mock_tests.c
+ * @brief Unit tests for libslash mock mode.
+ */
+
 #include <slash/ctldev.h>
 #include <slash/hotplug.h>
 
