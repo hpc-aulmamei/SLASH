@@ -246,3 +246,12 @@ Wire Protocol
 - Size limits: request body must not exceed ``VRTD_MSG_MAX_SIZE`` minus headers.
 - Generic escape hatch: ``vrtd_raw_request`` sends arbitrary opcodes; prefer
   typed helpers for normal use.
+
+Troubleshooting
+===============
+
+- **Out-of-range device index** → ``VRTD_RET_NOEXIST`` (C) or ``vrtd::Error`` (C++).
+- **Session closed/moved, then using Device/Bar** → throws (invalid lifetime).
+- **Two concurrent ``getPtr()`` calls on the same BarFile** → throws re-entrancy error.
+- **Transport errors** (socket down, daemon not running) → map to
+  ``VRTD_RET_BAD_CONN`` / ``vrtd::Error`` with "connection" message.
