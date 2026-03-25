@@ -81,6 +81,7 @@ DEB_PACKAGES=(
     libvrt-dev
     v80-smi
     v80++
+    ami
 )
 
 RPM_PACKAGES=(
@@ -98,6 +99,7 @@ RPM_PACKAGES=(
     libvrt-devel
     v80-smi
     v80++
+    ami
 )
 
 # =========================================================================
