@@ -135,8 +135,10 @@ static int slash_hotplug_handle_rescan(void)
 {
     struct pci_bus *bus;
 
+    pci_lock_rescan_remove();
     list_for_each_entry(bus, &pci_root_buses, node)
         pci_rescan_bus(bus);
+    pci_unlock_rescan_remove();
 
     return 0;
 }
@@ -168,8 +170,11 @@ static int slash_hotplug_handle_remove(const char *bdf)
                 pci_name(pdev), bridge_ctrl);
     }
 
+    pci_lock_rescan_remove();
+    pci_clear_master(pdev);
     pr_info("slash_hotplug: removing %s\n", pci_name(pdev));
-    pci_stop_and_remove_bus_device(pdev);
+    pci_stop_and_remove_bus_device_locked(pdev);
+    pci_unlock_rescan_remove();
     pci_dev_put(pdev);
     pr_info("slash_hotplug: remove: %s complete\n", bdf);
 
@@ -223,36 +228,73 @@ static int slash_hotplug_handle_toggle_sbr(const char *bdf)
     pr_info("slash_hotplug: toggle_sbr: bridge=%s bus=%02x\n",
             pci_name(bridge), bus_nr);
 
-    /* Read current bridge control state so we can restore it after reset. */
-    ret = pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl);
-    if (ret) {
-        pr_err("slash_hotplug: toggle_sbr: read control failed (%d)\n", ret);
-        goto out_put;
+    /*
+     * Try the kernel's official SBR API first.  It saves and restores
+     * bridge config space (memory windows, bus numbers, ACS, ARI) and
+     * holds the proper PCI slot lock.  This is critical for root ports
+     * whose memory-window configuration would otherwise be lost after
+     * a manual SBR toggle, causing BAR reads to return garbage.
+     */
+    ret = pci_bridge_secondary_bus_reset(bridge);
+    if (!ret) {
+        pr_info("slash_hotplug: toggle_sbr: pci_bridge_secondary_bus_reset OK\n");
+    } else {
+        /*
+         * Kernel API failed (may not be supported for this bridge type).
+         * Fall back to manual SBR register toggle.
+         */
+        pr_info("slash_hotplug: toggle_sbr: pci_bridge_secondary_bus_reset "
+                "failed (%d), falling back to manual SBR\n", ret);
+
+        /* Read current bridge control state. */
+        ret = pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl);
+        if (ret) {
+            pr_err("slash_hotplug: toggle_sbr: read control failed (%d)\n", ret);
+            goto out_put;
+        }
+        pr_info("slash_hotplug: toggle_sbr: ctrl=0x%04x before assert\n", ctrl);
+
+        /* Assert SBR. */
+        ret = pci_write_config_word(bridge, PCI_BRIDGE_CONTROL,
+                                    ctrl | PCI_BRIDGE_CTL_BUS_RESET);
+        if (ret) {
+            pr_err("slash_hotplug: toggle_sbr: assert SBR failed (%d)\n", ret);
+            goto out_put;
+        }
+        pr_info("slash_hotplug: toggle_sbr: SBR asserted\n");
+
+        /* PCIe spec requires at least 1 ms reset hold; we use 2 ms for margin. */
+        msleep(2);
+
+        /* Deassert SBR. */
+        ret = pci_write_config_word(bridge, PCI_BRIDGE_CONTROL,
+                                    ctrl & ~PCI_BRIDGE_CTL_BUS_RESET);
+        if (ret)
+            pr_err("slash_hotplug: toggle_sbr: deassert SBR failed (%d)\n", ret);
+
+        /* Re-read bridge control to verify SBR was actually cleared. */
+        {
+            u16 ctrl_after;
+
+            pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl_after);
+            pr_info("slash_hotplug: toggle_sbr: ctrl=0x%04x after deassert\n",
+                    ctrl_after);
+        }
     }
-    pr_info("slash_hotplug: toggle_sbr: ctrl=0x%04x before assert\n", ctrl);
 
-    /* Assert SBR. */
-    ret = pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl | PCI_BRIDGE_CTL_BUS_RESET);
-    if (ret) {
-        pr_err("slash_hotplug: toggle_sbr: assert SBR failed (%d)\n", ret);
-        goto out_put;
-    }
-    pr_info("slash_hotplug: toggle_sbr: SBR asserted\n");
-
-    /* PCIe spec requires at least 1 ms reset hold; we use 2 ms for margin. */
-    msleep(2);
-
-    /* Deassert SBR. */
-    ret = pci_write_config_word(bridge, PCI_BRIDGE_CONTROL, ctrl & ~PCI_BRIDGE_CTL_BUS_RESET);
-    if (ret)
-        pr_err("slash_hotplug: toggle_sbr: deassert SBR failed (%d)\n", ret);
-
-    /* Re-read bridge control to verify SBR was actually cleared. */
-    {
-        u16 ctrl_after;
-        pci_read_config_word(bridge, PCI_BRIDGE_CONTROL, &ctrl_after);
-        pr_info("slash_hotplug: toggle_sbr: ctrl=0x%04x after deassert\n", ctrl_after);
-    }
+    /*
+     * Post-SBR link training delay.  The PCIe spec requires at minimum
+     * 100 ms for link training after SBR deassertion; real FPGA hardware
+     * can take longer.  300 ms matches the old driver and provides margin.
+     * Without this delay, config-space reads on root ports return 0xFFFF
+     * because the link is not yet trained.
+     *
+     * Userspace adds its own ~5 s wait for full FPGA re-initialisation;
+     * this 300 ms covers the kernel-internal window between SBR
+     * deassertion and ioctl return.
+     */
+    msleep(300);
+    pr_info("slash_hotplug: toggle_sbr: post-SBR settle complete (300 ms)\n");
 
 out_put:
     pci_dev_put(bridge);
@@ -293,12 +335,15 @@ static int slash_hotplug_handle_hotplug(const char *bdf)
         return -ENODEV;
     }
 
+    pci_lock_rescan_remove();
+    pci_clear_master(pdev);
     dev_info(&pdev->dev, "slash_hotplug: removing device for hotplug cycle\n");
-    pci_stop_and_remove_bus_device(pdev);
+    pci_stop_and_remove_bus_device_locked(pdev);
     pci_dev_put(pdev);
 
     /* Rescan the device's bus to re-discover it. */
     pci_rescan_bus(bus);
+    pci_unlock_rescan_remove();
 
     return 0;
 }

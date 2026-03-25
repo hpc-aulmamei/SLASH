@@ -291,7 +291,7 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
      * reset disappears from the host, forcing a system reboot — adding a
      * delay before setting the SBR seems to mitigate this issue."
      */
-    usleep(1000);
+    usleep(20000);
 
     /*
      * Step 8: Toggle Secondary Bus Reset (SBR) on the upstream PCIe bridge.

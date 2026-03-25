@@ -87,13 +87,13 @@ struct slash_hotplug_device_request {
 /**
  * Toggle a Secondary Bus Reset (SBR) on the device's upstream port.
  *
- * A single ioctl call performs the full assert-then-deassert sequence
- * on the root-port's PCI_BRIDGE_CONTROL register:
- *
- *   1. Set PCI_BRIDGE_CTL_BUS_RESET (assert).
- *   2. Sleep 2 ms.
- *   3. Clear PCI_BRIDGE_CTL_BUS_RESET (deassert).
- *   4. Sleep 5 s to allow the device to re-initialise.
+ * A single ioctl call performs the full SBR sequence on the upstream
+ * bridge.  The kernel first attempts pci_bridge_secondary_bus_reset()
+ * (which saves/restores bridge config space), falling back to a manual
+ * PCI_BRIDGE_CONTROL register toggle if the kernel API is unavailable.
+ * A 300 ms post-SBR link training delay is included before the ioctl
+ * returns.  The caller should wait an additional ~5 s for full FPGA
+ * re-initialisation before rescanning.
  */
 #define SLASH_HOTPLUG_IOCTL_TOGGLE_SBR _IOW(SLASH_HOTPLUG_IOCTL_MAGIC, 0x32, struct slash_hotplug_device_request)
 
