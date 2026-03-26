@@ -40,7 +40,6 @@ usage() {
     echo "    hw|sim|emu   Target platform (hardware, simulation, or emulation)"
     echo "    BDF          Device BDF (optional, auto-detected via v80-smi if omitted)"
     echo ""
-    echo "  Note: Example 02_chain does not support emulation."
     exit 1
 }
 
@@ -113,11 +112,6 @@ echo "========================================================================"
 for entry in "${EXAMPLES[@]}"; do
     IFS=':' read -r dir vbin_prefix executable <<< "$entry"
 
-    if [[ "$dir" == "02_chain" && "$PLATFORM" == "emu" ]]; then
-        echo "SKIP: $dir (emulation not supported)"
-        continue
-    fi
-
     EXAMPLE_DIR="$EXAMPLES_DIR/$dir"
     BUILD_DIR="$EXAMPLE_DIR/build"
 
@@ -137,10 +131,6 @@ echo "========================================================================"
 for entry in "${EXAMPLES[@]}"; do
     IFS=':' read -r dir vbin_prefix executable <<< "$entry"
 
-    if [[ "$dir" == "02_chain" && "$PLATFORM" == "emu" ]]; then
-        continue
-    fi
-
     BUILD_DIR="$EXAMPLES_DIR/$dir/build"
 
     echo "--- Building HLS kernels for $dir ---"
@@ -158,10 +148,6 @@ echo "========================================================================"
 
 for entry in "${EXAMPLES[@]}"; do
     IFS=':' read -r dir vbin_prefix executable <<< "$entry"
-
-    if [[ "$dir" == "02_chain" && "$PLATFORM" == "emu" ]]; then
-        continue
-    fi
 
     BUILD_DIR="$EXAMPLES_DIR/$dir/build"
     VBIN_TARGET="${vbin_prefix}_${PLATFORM}"
@@ -181,10 +167,6 @@ echo "========================================================================"
 
 for entry in "${EXAMPLES[@]}"; do
     IFS=':' read -r dir vbin_prefix executable <<< "$entry"
-
-    if [[ "$dir" == "02_chain" && "$PLATFORM" == "emu" ]]; then
-        continue
-    fi
 
     BUILD_DIR="$EXAMPLES_DIR/$dir/build"
 
@@ -225,12 +207,6 @@ RESULTS=()
 
 for entry in "${EXAMPLES[@]}"; do
     IFS=':' read -r dir vbin_prefix executable <<< "$entry"
-
-    if [[ "$dir" == "02_chain" && "$PLATFORM" == "emu" ]]; then
-        RESULTS+=("$dir: SKIPPED (emulation not supported)")
-        SKIP_COUNT=$((SKIP_COUNT + 1))
-        continue
-    fi
 
     BUILD_DIR="$EXAMPLES_DIR/$dir/build"
     VBIN_TARGET="${vbin_prefix}_${PLATFORM}"
