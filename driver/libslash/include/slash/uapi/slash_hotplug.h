@@ -53,20 +53,20 @@
 #define SLASH_HOTPLUG_BDF_LEN 32
 
 /**
- * struct slash_hotplug_device_request — Identify a device for a hotplug operation.
+ * @brief Identify a device for a hotplug operation.
  *
- * @size: Struct size for ABI versioning.
- * @bdf:  PCI Bus/Device/Function string (e.g. "0000:03:00.0"), NUL-terminated.
- *        If the string is empty, the kernel targets the only currently
- *        tracked device (convenient for single-device systems).
- *
- * If @bdf is empty and multiple devices are tracked, the kernel
+ * If \@bdf is empty and multiple devices are tracked, the kernel
  * returns -EOPNOTSUPP; the caller must specify the BDF explicitly.
  * -ENODEV is returned if no devices are tracked at all.
  */
 struct slash_hotplug_device_request {
-    __u32 size;
-    char bdf[SLASH_HOTPLUG_BDF_LEN]; /* Optional: empty string targets the only tracked device */
+    __u32 size; /**< Struct size for ABI versioning. */
+    /**
+     * PCI Bus/Device/Function string (e.g. "0000:03:00.0"), NUL-terminated.
+     * If the string is empty, the kernel targets the only currently
+     * tracked device (convenient for single-device systems).
+     */
+    char bdf[SLASH_HOTPLUG_BDF_LEN];
 };
 
 /** ioctl magic number for hotplug commands (uses 'w', distinct from 'v'). */
@@ -80,7 +80,7 @@ struct slash_hotplug_device_request {
 
 /**
  * Remove a device from the PCI bus.
- * The device is identified by the @bdf in the request struct.
+ * The device is identified by the \@bdf in the request struct.
  */
 #define SLASH_HOTPLUG_IOCTL_REMOVE     _IOW(SLASH_HOTPLUG_IOCTL_MAGIC, 0x31, struct slash_hotplug_device_request)
 
