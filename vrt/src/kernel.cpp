@@ -90,16 +90,22 @@ Kernel::Kernel(Device device, const std::string& kernelName)
     }
 }
 
+vrtd::BarFile& Kernel::getOrOpenBarFile() {
+    if (!vrtdBar.has_value()) {
+        throw std::runtime_error("vrtd BAR handle not initialized");
+    }
+    if (!vrtdBarFile || vrtdBarFile->isClosed()) {
+        vrtdBarFile = std::make_shared<vrtd::BarFile>(vrtdBar->openBarFile());
+    }
+    return *vrtdBarFile;
+}
+
 void Kernel::write(uint32_t offset, uint32_t value) {
     if (platform == Platform::HARDWARE) {
         utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
                            "Writing to device {} kernel: {} at offset: {x} value: {x}", deviceBdf,
                            name, offset, value);
-        if (!vrtdBar.has_value()) {
-            throw std::runtime_error("vrtd BAR handle not initialized");
-        }
-
-        auto barFile = vrtdBar->openBarFile();
+        auto& barFile = getOrOpenBarFile();
         const uint64_t absoluteAddr = baseAddr + static_cast<uint64_t>(offset);
         uint64_t barOffset = resolveBarOffset(absoluteAddr, sizeof(uint32_t), barFile.getLen());
         auto ptr = barFile.getPtr<uint32_t>(vrtd::BarFile::Direction::Write,
@@ -117,11 +123,7 @@ uint32_t Kernel::read(uint32_t offset) {
             utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
                                "Reading from device {} kernel: {} at offset: {x}", deviceBdf, name,
                                offset);
-        if (!vrtdBar.has_value()) {
-            throw std::runtime_error("vrtd BAR handle not initialized");
-        }
-
-        auto barFile = vrtdBar->openBarFile();
+        auto& barFile = getOrOpenBarFile();
         const uint64_t absoluteAddr = baseAddr + static_cast<uint64_t>(offset);
         uint64_t barOffset = resolveBarOffset(absoluteAddr, sizeof(uint32_t), barFile.getLen());
         auto ptr = barFile.getPtr<uint32_t>(vrtd::BarFile::Direction::Read,
@@ -477,12 +479,14 @@ void Kernel::writeBatch() {
         utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
                            "Kernel {}, reg at offset {x}, value: {x}", name, offset, value);
     }
-    if (!vrtdBar.has_value()) {
+    vrtd::BarFile* barFilePtr = nullptr;
+    try {
+        barFilePtr = &getOrOpenBarFile();
+    } catch (...) {
         free(buf);
-        throw std::runtime_error("vrtd BAR handle not initialized");
+        throw;
     }
-
-    auto barFile = vrtdBar->openBarFile();
+    auto& barFile = *barFilePtr;
     uint64_t byteCount = static_cast<uint64_t>(noOfPhysicalRegisters) * sizeof(uint32_t);
     uint64_t barOffset = 0;
     try {

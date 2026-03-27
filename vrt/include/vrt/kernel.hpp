@@ -47,6 +47,7 @@
 #include <vrt/utils/platform.hpp>
 #include <vrt/utils/zmq_server.hpp>
 #include <vrtd/bar.hpp>
+#include <vrtd/bar_file.hpp>
 
 namespace vrt {
 class Device;
@@ -84,6 +85,12 @@ class Kernel {
     std::map<uint32_t, uint32_t> registerMap;  ///< Map of register offsets to values
     std::map<uint32_t, uint64_t> setArgValues; ///< Values assigned through setArg(idx/name, value)
     std::optional<vrtd::Bar> vrtdBar;          ///< vrtd BAR handle for hardware access
+    /// Cached BAR file mapping. Wrapped in shared_ptr because BarFile is
+    /// non-copyable and Kernel currently uses defaulted copy semantics.
+    /// TODO: Consider making Kernel move-only and using unique_ptr instead.
+    std::shared_ptr<vrtd::BarFile> vrtdBarFile;
+
+    vrtd::BarFile& getOrOpenBarFile();
     std::vector<std::string> emuCallArgKinds;  ///< Optional EMU arg kind metadata from emu_manifest.json
     std::map<uint32_t, std::string> emuFetchScalarArgByOffset;  ///< Optional EMU fetch routing by register offset
     std::map<std::string, std::string> connections;  ///< Port-to-target memory mappings from system_map.xml

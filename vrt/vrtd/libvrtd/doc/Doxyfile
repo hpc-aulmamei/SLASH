@@ -35,6 +35,9 @@ EXTRACT_ALL            = YES
 EXTRACT_STATIC         = YES
 OPTIMIZE_OUTPUT_FOR_C  = YES
 
+MACRO_EXPANSION        = YES
+PREDEFINED             = __attribute__(x)=
+
 GENERATE_HTML          = NO
 GENERATE_LATEX         = NO
 GENERATE_XML           = YES

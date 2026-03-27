@@ -47,7 +47,7 @@ extern "C" {
 
 
 /**
- * @def VRTD_STANADRD_PATH
+ * @def VRTD_STANDARD_PATH
  * @brief Default UNIX domain socket path for the vrtd daemon.
  */
 #define VRTD_STANDARD_PATH "/run/vrtd.sock"
@@ -60,7 +60,7 @@ struct vrtd_buffer;
  *
  * Creates a SOCK_SEQPACKET connection to the vrtd daemon at @p path.
  *
- * @param path Absolute path to the vrtd socket (e.g. ::VRTD_STANADRD_PATH).
+ * @param path Absolute path to the vrtd socket (e.g. ::VRTD_STANDARD_PATH).
  *             Must not be NULL.
  * @return On success, a non‑negative file descriptor to the socket. The caller
  *         owns this descriptor and must close it with @c close().
@@ -76,7 +76,7 @@ int vrtd_connect(const char *path);
  * Most users should prefer higher‑level helpers (e.g., vrtd_get_* functions).
  *
  * @param fd            Connected vrtd socket file descriptor.
- * @param opcode        Protocol opcode to send (see @ref vrtd_req_opcode in wire.h).
+ * @param opcode        Protocol opcode to send (see @ref vrtd_opcode in wire.h).
  * @param body          Pointer to request body buffer (may be NULL if @p body_size == 0).
  * @param body_size     Size of request body in bytes.
  * @param resp_buf      Buffer to receive the response body (may be NULL if no body expected).
@@ -222,9 +222,9 @@ enum vrtd_ret vrtd_open_bar_file(
  * @brief Unmap and close resources acquired by vrtd_open_bar_file().
  *
  * Safe to call with NULL and safe to call multiple times; on first successful
- * call it unmaps, closes the FD, and clears @p bar_file->map.
+ * call it unmaps, closes the FD, and clears @p bar_file_out->map.
  *
- * @param bar_file  Pointer previously filled by vrtd_open_bar_file().
+ * @param bar_file_out  Pointer previously filled by vrtd_open_bar_file().
  */
 void vrtd_close_bar_file(
     struct slash_bar_file *bar_file_out
