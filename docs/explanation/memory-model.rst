@@ -100,8 +100,8 @@ Obtain a ``MemoryConfig`` from the kernel:
    // By port name
    vrt::MemoryConfig config = kernel.portMemoryConfig("m_axi_gmem0");
 
-   // By argument index
-   vrt::MemoryConfig config = kernel.argMemoryConfig(1);
+   // By argument name
+   vrt::MemoryConfig config = kernel.argMemoryConfig("in");
 
 These methods parse the ``system_map.xml`` inside the vrtbin to determine
 which memory type and channel the kernel port is connected to. The returned
@@ -109,7 +109,7 @@ config can be passed directly to the ``Buffer<T>`` constructor:
 
 .. code-block:: cpp
 
-   vrt::Buffer<float> buffer(device, size, kernel.portMemoryConfig("m_axi_gmem0"));
+   vrt::Buffer<float> buffer(device, size, kernel.argMemoryConfig("in"));
 
 This ensures the buffer allocation always matches the linker configuration.
 

@@ -85,7 +85,7 @@ SLASH/VRT System for simulation and emulation (development files)
 
 %package -n     slash-dkms
 Summary:        SLASH kernel module (DKMS)
-Requires:       dkms
+Requires:       dkms, gcc, make
 BuildArch:      noarch
 
 %description -n slash-dkms

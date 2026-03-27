@@ -18,7 +18,17 @@ Prerequisites
 
 - The SLASH stack is installed (at minimum VRT and the CMake modules).
   See :doc:`/howto/build-from-source` if building from source.
-- AMD Vivado **2024.2** and Vitis HLS are installed and on ``PATH``.
+- AMD Vivado **2025.1** and Vitis HLS **2025.1** are installed and sourced in
+  your shell:
+
+  .. code-block:: bash
+
+     source <path-to-vivado>/settings64.sh
+     source <path-to-vitis-hls>/settings64.sh
+
+  For ``csh``/``tcsh`` shells, use ``settings64.csh`` instead. Using versions
+  other than 2025.1 may cause breakage.
+
 - For simulation: a Vivado-supported Verilog simulator licence.
 - No V80 board is required.
 
@@ -34,11 +44,11 @@ When to Use Each Mode
      - Accuracy
      - Best for
    * - **Emulation**
-     - Fast (seconds)
+     - Fast
      - Functional only
      - Rapid iteration on kernel logic
    * - **Simulation**
-     - Slow (minutes–hours)
+     - Slow
      - Cycle-accurate RTL
      - Catching timing and protocol bugs
 
@@ -48,16 +58,18 @@ you need cycle-accurate behaviour.
 Build an Emulation Vrtbin
 =========================
 
+Ensure you have sourced Vivado and Vitis HLS before building (see
+`Prerequisites`_).
+
 Using the ``00_axilite`` example:
 
 .. code-block:: bash
 
    cd examples/00_axilite
-   mkdir build && cd build
-   cmake .. -DSLASH_USE_REPO=ON
-   make              # build the host application
-   make hls          # compile HLS kernels (requires Vitis HLS)
-   make axilite_emu  # link into an emulation vrtbin
+   cmake -B build -S . -G Ninja
+   cmake --build build                              # build the host application
+   cmake --build build --target hls                 # compile HLS kernels (requires Vitis HLS)
+   cmake --build build --target axilite_emu         # link into an emulation vrtbin
 
 The ``axilite_emu`` target invokes the SLASH linker (``v80++``) with
 ``PLATFORM "emu"``. The resulting ``.vbin`` file contains:
@@ -92,7 +104,7 @@ Build and Run in Simulation
 
 .. code-block:: bash
 
-   make axilite_sim  # link into a simulation vrtbin
+   cmake --build build --target axilite_sim  # link into a simulation vrtbin
    ./00_axilite 03:00 axilite_sim.vbin
 
 The simulation vrtbin contains a ``vpp_sim`` executable (a Verilog
@@ -117,7 +129,7 @@ Your application can check the active platform and adjust behaviour:
    }
 
    if (device.getPlatform() == vrt::Platform::SIMULATION) {
-       // Relax floating-point comparison tolerances
+       std::cout << "Running in simulation mode" << std::endl;
    }
 
 See :doc:`/reference/vrt-api/enums` for all ``vrt::Platform`` values.
@@ -143,8 +155,6 @@ Known Limitations
 
 **Emulation:**
 
-- Freerunning streaming kernel chains (e.g. example ``02_chain``) are not
-  supported.
 - Timing is not modelled — performance measurements are not meaningful.
 - HLS kernels must include at least one AXI4-Lite interface.
 

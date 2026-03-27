@@ -7,65 +7,318 @@ Platform Setup
 ###############
 
 This tutorial walks a system administrator through installing the SLASH
-stack on a machine with an AMD Alveo V80 board, from kernel module to
-running ``v80-smi list``.
+stack on a machine with an AMD Alveo V80 board — from package installation
+to a validated, running system.
+
+The recommended installation method is via pre-built packages (Debian or
+RPM). If you need to build from source instead, see
+:doc:`/howto/build-from-source`.
 
 Prerequisites
 =============
 
 **Hardware:**
 
-- AMD Alveo V80 board installed in a PCIe Gen5 x8 (or wider) slot.
+- AMD Alveo V80 board installed in a PCIe x8 (or wider) slot.
 
 **Software:**
 
-- Linux (Ubuntu 22.04 recommended).
-- Kernel headers for the running kernel.
-- CMake 3.20+, GCC 9+ (C++17), a C17 compiler.
-- pkg-config.
+- Linux (Ubuntu LTS 22.04+, RHEL 9+ or compatible recommended).
 
-Install system dependencies (Debian/Ubuntu):
+Target-machine prerequisites
+----------------------------
+
+Every machine that will run the SLASH packages needs kernel headers
+installed so that DKMS can compile the kernel module:
+
+.. tab-set::
+
+   .. tab-item:: Ubuntu
+
+      .. code-block:: bash
+
+         sudo apt install linux-headers-$(uname -r)
+
+   .. tab-item:: RHEL / Rocky Linux / AlmaLinux
+
+      .. code-block:: bash
+
+         sudo dnf install kernel-devel-$(uname -r)
+
+Other install-time dependencies (``dkms``, ``gcc``, libraries, etc.) are
+declared by the packages themselves and will be pulled from the system
+repositories automatically.
+
+Build-machine prerequisites
+---------------------------
+
+The machine used to run the packaging scripts needs a C/C++ toolchain,
+library development headers, and the packaging tools. These are only
+required on the build machine, not on every target:
+
+.. tab-set::
+
+   .. tab-item:: Ubuntu
+
+      .. code-block:: bash
+
+         sudo apt install \
+           build-essential cmake ninja-build pkg-config rsync \
+           debhelper dpkg-dev apt-utils \
+           python3 python3-pip \
+           libcli11-dev libinih-dev libjsoncpp-dev \
+           libsystemd-dev libxml2-dev libzmq3-dev zlib1g-dev
+
+   .. tab-item:: RHEL 9 / Rocky Linux 9 / AlmaLinux 9
+
+      .. code-block:: bash
+
+         sudo dnf install \
+           gcc gcc-c++ cmake make ninja-build pkg-config rsync \
+           rpm-build createrepo_c systemd-rpm-macros \
+           python3.11 python3.11-pip \
+           cli11-devel cppzmq-devel inih-devel jsoncpp-devel \
+           libxml2-devel systemd-devel \
+           zeromq-devel zlib-devel
+
+   .. tab-item:: RHEL 10 / Rocky Linux 10 / AlmaLinux 10
+
+      .. code-block:: bash
+
+         sudo dnf install \
+           gcc gcc-c++ cmake make ninja-build pkg-config rsync \
+           rpm-build createrepo_c systemd-rpm-macros \
+           python3 python3-pip \
+           cli11-devel cppzmq-devel inih-devel jsoncpp-devel \
+           libxml2-devel systemd-devel \
+           zeromq-devel zlib-devel
+
+.. note::
+
+   **How package dependencies work.** Each SLASH package declares its
+   dependencies — both on system packages (e.g. ``slash-dkms`` depends on
+   ``dkms``, ``gcc``, ``make``) and on other SLASH packages (e.g. ``vrtd``
+   depends on ``libslash``). System-repository dependencies are resolved
+   automatically by ``apt`` / ``dnf``.
+
+   However, ``apt`` and ``dnf`` cannot resolve dependencies between local
+   ``.deb`` / ``.rpm`` files unless they are hosted in a repository. When
+   installing from the command line, you must pass **all** required SLASH
+   packages in a single command so the package manager can satisfy them
+   together. The packaging scripts generate repository metadata
+   (``Packages`` / ``repodata/``) so that hosting the output directory as a
+   repository avoids this limitation.
+
+Build the Packages
+==================
+
+All packages — including the AMI driver package — are produced by a single
+script run from the repository root:
+
+.. tab-set::
+
+   .. tab-item:: Ubuntu
+
+      .. code-block:: bash
+
+         ./scripts/package-deb.sh
+
+      Packages are written to ``./deb/``.
+
+   .. tab-item:: RHEL / Rocky Linux / AlmaLinux
+
+      .. code-block:: bash
+
+         ./scripts/package-rpm.sh
+
+      Packages are written to ``./rpm/``.
+
+Both scripts call ``scripts/package-ami.sh`` internally, so the AMI package
+is built and placed in the same output directory automatically.
+
+Install the AMI Driver
+======================
+
+The V80 board's PF0 function (device ID ``0x50B4``) is managed by the
+**AMI** (AVED Management Interface) kernel module. AMI should be installed
+along with the rest of the SLASH stack.
+
+.. tab-set::
+
+   .. tab-item:: Ubuntu
+
+      .. code-block:: bash
+
+         sudo apt install ./deb/ami_<version>_amd64.deb
+
+   .. tab-item:: RHEL / Rocky Linux / AlmaLinux
+
+      .. code-block:: bash
+
+         sudo dnf install ./rpm/ami-<version>-1.<dist>.x86_64.rpm
+
+.. warning::
+
+   If AMI is already installed on this system — for example, built from
+   source or installed from a separate vendor package — the generated AMI
+   package may conflict with the existing installation. Either remove the
+   existing AMI installation before proceeding, or skip this step and
+   ensure your installed AMI version is compatible with this SLASH release.
+
+Verify that the ``ami`` driver is bound to PF0 after installation:
 
 .. code-block:: bash
 
-   sudo apt install cmake pkg-config \
-     libxml2-dev libzmq3-dev libjsoncpp-dev zlib1g-dev \
-     libsystemd-dev libinih-dev \
-     linux-headers-$(uname -r)
+   lspci -d 10ee:50b4 -k
 
-Install the Kernel Module
-=========================
+The output should show ``Kernel driver in use: ami``.
+
+Install SLASH Packages
+======================
+
+Install the full runtime stack in one command by listing all packages:
+
+.. tab-set::
+
+   .. tab-item:: Ubuntu (.deb)
+
+      .. code-block:: bash
+
+         sudo apt install \
+           ./deb/slash-dkms_<version>_all.deb \
+           ./deb/libslash_<version>_amd64.deb \
+           ./deb/vrtd_<version>_amd64.deb \
+           ./deb/libvrtd_<version>_amd64.deb \
+           ./deb/libvrt_<version>_amd64.deb \
+           ./deb/v80-smi_<version>_amd64.deb \
+           ./deb/v80++_<version>_amd64.deb
+
+   .. tab-item:: RHEL / Rocky Linux / AlmaLinux (.rpm)
+
+      .. code-block:: bash
+
+         sudo dnf install \
+           ./rpm/slash-dkms-<version>-1.<dist>.noarch.rpm \
+           ./rpm/libslash-<version>-1.<dist>.x86_64.rpm \
+           ./rpm/vrtd-<version>-1.<dist>.x86_64.rpm \
+           ./rpm/libvrtd-<version>-1.<dist>.x86_64.rpm \
+           ./rpm/libvrt-<version>-1.<dist>.x86_64.rpm \
+           ./rpm/v80-smi-<version>-1.<dist>.x86_64.rpm \
+           ./rpm/v80++-<version>-1.<dist>.x86_64.rpm
+
+.. note::
+
+   If you also need to write or compile kernels (HLS development),
+   install the development packages as well:
+
+   .. tab-set::
+
+      .. tab-item:: Ubuntu
+
+         .. code-block:: bash
+
+            sudo apt install \
+              ./deb/libslash-dev_<version>_amd64.deb \
+              ./deb/libvrtd-dev_<version>_amd64.deb \
+              ./deb/libvrt-dev_<version>_amd64.deb
+
+      .. tab-item:: RHEL / Rocky Linux / AlmaLinux
+
+         .. code-block:: bash
+
+            sudo dnf install \
+              ./rpm/libslash-devel-<version>-1.<dist>.x86_64.rpm \
+              ./rpm/libvrtd-devel-<version>-1.<dist>.x86_64.rpm \
+              ./rpm/libvrt-devel-<version>-1.<dist>.x86_64.rpm
+
+   This installs ``v80++`` (the kernel linker) and development headers.
+
+Package Overview
+----------------
+
+The following table summarises what each package provides:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Package
+     - Contents
+   * - ``slash-dkms``
+     - Kernel module source + DKMS configuration. Compiles and installs
+       ``slash.ko`` for the running kernel automatically.
+   * - ``libslash``
+     - Shared library for interacting with the kernel module.
+   * - ``libslash-dev``
+     - Development headers and CMake modules for ``libslash``.
+   * - ``vrtd``
+     - The ``vrtd`` daemon, systemd units, udev rules, and default
+       configuration. Multiplexes device access and enforces permissions.
+   * - ``libvrtd``
+     - Wire-protocol client libraries (``libvrtd``, ``libvrtdpp``) for
+       communicating with the daemon.
+   * - ``libvrtd-dev``
+     - Development headers and CMake modules for ``libvrtd``.
+   * - ``libvrt``
+     - The VRT C++ runtime library (``libvrt``).
+   * - ``libvrt-dev``
+     - Development headers and CMake modules for ``libvrt``.
+   * - ``v80-smi``
+     - Board management CLI tool.
+   * - ``v80++``
+     - Python-based kernel linker for producing ``.vbin`` artefacts.
+   * - ``slash``
+     - Metapackage: pulls in all runtime packages.
+   * - ``slash-dev``
+     - Metapackage: pulls in all development headers and CMake modules.
+   * - ``slash-sim-emu``
+     - Metapackage: pulls in runtime packages for simulation and emulation
+       (no kernel module or daemon).
+   * - ``slash-sim-emu-dev``
+     - Metapackage: pulls in development packages for simulation and
+       emulation.
+
+Program the Board
+=================
+
+After installing the packages, the board's flash memory must be programmed
+with the abstract shell before the system can be used. This step is required:
+
+- on the **first install** of SLASH, and
+- when **upgrading** to a version that changes the abstract shell (noted in
+  the release notes).
+
+It is **not** required after crashes, daemon restarts, or other normal
+operations — SLASH reads from flash but never writes to it during regular use.
+
+Program the primary flash partition (replace ``<BDF>`` with the bus address
+from ``lspci -d 10ee:``, e.g. ``03:00``):
 
 .. code-block:: bash
 
-   cd driver
-   make
-   sudo insmod slash.ko
+   sudo ami_tool cfgmem_program -d <BDF> -t primary -p 0 \
+       -i /usr/share/v80++/abstract_shell/amd_v80_gen5x8_25.1.pdi
 
-Verify the module loaded:
+After programming completes, reboot the system for the new flash contents
+to take effect:
 
 .. code-block:: bash
 
+   sudo reboot
+
+Verify the Kernel Module
+========================
+
+DKMS compiles and loads ``slash.ko`` automatically on package install.
+To confirm the module is loaded:
+
+.. code-block:: bash
+
+   lsmod | grep slash
    dmesg | grep slash
 
-You should see messages for each V80 PCI function discovered.
-
-Optional module parameters:
-
-- ``qdma_num_threads=N`` — number of libqdma worker threads (default: 8).
-- ``qdma_debugfs_path=/sys/kernel/debug`` — enable QDMA debugfs
-  diagnostics.
-
-To load the module automatically on boot:
-
-.. code-block:: bash
-
-   sudo cp slash.ko /lib/modules/$(uname -r)/extra/
-   sudo depmod
-   echo slash | sudo tee /etc/modules-load.d/slash.conf
-
-Verify PCIe Device Visibility
-==============================
+You should see one line in ``lsmod`` and, in ``dmesg``, messages for each
+V80 PCI function discovered.
 
 Each V80 board exposes three PCI functions:
 
@@ -90,52 +343,17 @@ Each V80 board exposes three PCI functions:
      - ``slash_ctl``
      - BAR MMIO access (register reads/writes)
 
-Check that all three appear:
+Check that all three appear with their drivers bound:
 
 .. code-block:: bash
 
    lspci -d 10ee: -k
 
-All three functions should show their respective driver in the output.
-
-Build and Install the Software Stack
-=====================================
-
-Components must be built in dependency order. See
-:doc:`/howto/build-from-source` for detailed build instructions.
-
-.. code-block:: text
-
-   1. Linux kernel module (slash)   ← already done above
-   2. libslash
-   3. vrtd  (depends on libslash)
-   4. VRT   (depends on vrtd)
-   5. v80-smi (depends on VRT)
-
-For each component:
-
-.. code-block:: bash
-
-   mkdir build && cd build
-   cmake ..
-   make
-   sudo make install
-
-Alternatively, building VRT will automatically pull in vrtd as a
-subdirectory if it is not installed.
-
 Start the vrtd Daemon
 =====================
 
-The vrtd daemon multiplexes access to V80 devices and enforces permissions.
-
-Manual start:
-
-.. code-block:: bash
-
-   sudo vrtd
-
-For production, enable the systemd service:
+The ``vrtd`` package installs a systemd service and socket. Enable it so
+that it starts on boot and is running now:
 
 .. code-block:: bash
 
@@ -159,8 +377,9 @@ Run the built-in memory integrity and bandwidth test:
 
    v80-smi validate -d <BDF>
 
-This tests both HBM and DDR subsystems. A passing result confirms the
-hardware, drivers, and daemon are all working correctly.
+Replace ``<BDF>`` with the bus address shown by ``v80-smi list``
+(e.g. ``03:00``). This tests both HBM and DDR subsystems. A passing result
+confirms the hardware, drivers, and daemon are all working correctly.
 
 User Access
 ===========
@@ -172,9 +391,11 @@ device access. To grant a user access:
 
    sudo usermod -aG vrtadmin <username>
 
+The user must log out and back in for the group change to take effect.
+
 For fine-grained permission control (per-device, per-operation), edit
-``vrtd.conf``. See :doc:`/reference/vrtd/configuration` for the full
-configuration reference.
+``/etc/vrt/vrtd.conf``. See :doc:`/reference/vrtd/configuration` for the
+full configuration reference.
 
 Next Steps
 ==========

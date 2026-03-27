@@ -13,7 +13,7 @@ three areas of functionality:
 ## Building
 
 ```sh
-cmake -B build -S .
+cmake -B build -S . -G Ninja
 cmake --build build
 ```
 
@@ -28,7 +28,7 @@ CMake options:
 ## Installing
 
 ```sh
-cmake --install build --prefix /usr/local
+sudo cmake --install build --prefix /usr/local
 ```
 
 This installs:

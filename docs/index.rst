@@ -6,7 +6,7 @@
 SLASH: An Open-Source Research Shell for Alveo V80
 ###################################################
 
-SLASH is an open-source SmartNIC platform for AMD Alveo V80 FPGA boards. It provides
+SLASH is an open-source platform for AMD Alveo V80 FPGA boards. It provides
 a complete runtime and development ecosystem for FPGA kernel execution, device
 management, and memory operations.
 

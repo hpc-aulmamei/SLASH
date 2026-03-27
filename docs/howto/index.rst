@@ -11,6 +11,7 @@ Task-oriented recipes for common operations.
 .. toctree::
    :maxdepth: 1
 
+   install-from-packages
    use-multiple-boards
    set-clock-frequency
    chain-streaming-kernels

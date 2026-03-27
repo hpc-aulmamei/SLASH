@@ -7,8 +7,8 @@ FindVivado and FindVitis
 ##############################
 
 SLASH provides two CMake find modules for locating AMD Vivado and Vitis HLS
-installations. These are used internally by ``SlashTools.cmake`` and
-``BuildHLS.cmake`` but can also be included directly.
+installations. ``FindVivado`` is used internally by ``SlashTools.cmake``.
+Both modules can also be included directly.
 
 FindVivado
 ==========
@@ -37,6 +37,8 @@ Variables Set
      - Root directory of the Vivado installation.
    * - ``VIVADO_BINARY``
      - Full path to the ``vivado`` executable.
+   * - ``VIVADO_PATH``
+     - Path to the ``bin/`` directory containing the Vivado binary.
 
 Usage
 -----
@@ -44,16 +46,16 @@ Usage
 ``FindVivado`` is included automatically by ``SlashTools.cmake`` — no
 manual ``include()`` is needed in most projects.
 
-To point CMake at a non-standard Vivado installation:
+Source the Vivado environment before running CMake so that ``vivado`` is on
+``PATH``:
 
 .. code-block:: bash
 
-   # Via CMake variable
-   cmake .. -DVIVADO_ROOT_DIR=/tools/Xilinx/Vivado/2024.2
+   source <path-to-vivado>/settings64.sh
 
-   # Or via environment variable
-   export XILINX_VIVADO=/tools/Xilinx/Vivado/2024.2
-   cmake ..
+For ``csh``/``tcsh`` shells, use ``settings64.csh`` instead. SLASH has been
+built and tested against **Vivado 2025.1**; using other versions may cause
+breakage.
 
 Error Behaviour
 ---------------
@@ -97,17 +99,20 @@ Variables Set
 Usage
 -----
 
-``FindVitis`` is included automatically by ``BuildHLS.cmake``. To override
-the detected installation:
+``FindVitis`` can be included manually if your project needs the Vitis root
+or include directories. ``BuildHLS.cmake`` locates the ``v++`` and
+``vitis-run`` executables directly and does not require this module.
+
+Source the Vitis HLS environment before running CMake so that ``vitis`` is
+on ``PATH``:
 
 .. code-block:: bash
 
-   # Via CMake variable
-   cmake .. -DVITIS_ROOT_DIR=/tools/Xilinx/Vitis_HLS/2024.2
+   source <path-to-vitis-hls>/settings64.sh
 
-   # Or via environment variable
-   export XILINX_VITIS=/tools/Xilinx/Vitis_HLS/2024.2
-   cmake ..
+For ``csh``/``tcsh`` shells, use ``settings64.csh`` instead. SLASH has been
+built and tested against **Vitis HLS 2025.1**; using other versions may
+cause breakage.
 
 Error Behaviour
 ---------------

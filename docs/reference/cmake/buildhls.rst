@@ -201,6 +201,6 @@ Build with:
 
 .. code-block:: bash
 
-   make hls            # compile all HLS kernels
-   make my_design_hw   # link into a hardware vrtbin
-   make hls_clean      # remove HLS build artefacts
+   cmake --build build --target hls            # compile all HLS kernels
+   cmake --build build --target my_design_hw   # link into a hardware vrtbin
+   cmake --build build --target hls_clean      # remove HLS build artefacts

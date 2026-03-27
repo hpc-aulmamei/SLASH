@@ -16,7 +16,7 @@ dispatch, and streaming DMA.
 ## Building
 
 ```sh
-cmake -B build -S .
+cmake -B build -S . -G Ninja
 cmake --build build
 ```
 
@@ -30,7 +30,7 @@ CMake options:
 ## Installing
 
 ```sh
-cmake --install build --prefix /usr/local
+sudo cmake --install build --prefix /usr/local
 ```
 
 This installs:
@@ -42,7 +42,7 @@ This installs:
 Downstream projects can then use:
 
 ```cmake
-find_package(vrt REQUIRED)
+find_package(vrt REQUIRED CONFIG)
 target_link_libraries(myapp PRIVATE vrt::vrt)
 ```
 
@@ -73,8 +73,8 @@ vrt::Device device(bdf, vrtbinPath);
 
 vrt::Kernel kernel(device, "my_kernel_0");
 
-/* Allocate a buffer on the memory bank the kernel port is connected to */
-vrt::Buffer<float> buf(device, 1024, kernel.portMemoryConfig("m_axi_gmem0"));
+/* Allocate a buffer on the memory bank the kernel argument is connected to */
+vrt::Buffer<float> buf(device, 1024, kernel.argMemoryConfig("in"));
 
 /* Fill host side, then sync to device */
 for (uint32_t i = 0; i < 1024; i++)
@@ -103,7 +103,7 @@ vrt::Buffer<int> ddr(device, size, vrt::MemoryRangeType::DDR);
 vrt::Buffer<int> hbm(device, size, vrt::MemoryRangeType::HBM_VNOC);
 
 /* HBM on a specific port (kernel metadata) */
-vrt::Buffer<int> hbm(device, size, kernel.portMemoryConfig("m_axi_gmem0"));
+vrt::Buffer<int> hbm(device, size, kernel.argMemoryConfig("in"));
 ```
 
 ### Streaming buffers (QDMA)
@@ -119,15 +119,32 @@ sbuf.sync();   /* direction is inferred from port configuration */
 
 ### Kernel launch styles
 
+#### Argument style
+
+Arguments can be passed inline or staged with `setArg` before the launch call:
+
 ```cpp
-/* Blocking: set args inline, launch, and wait in one call */
+/* Inline: pass arguments directly */
+kernel.call(size, buf);
+kernel.start(size, buf);
+
+/* Staged: set arguments by index or name, then launch */
+kernel.setArg(0, size);
+kernel.setArg("buf", buf);
+kernel.call();   /* or kernel.start() */
+```
+
+#### Call vs. start (blocking vs. non-blocking)
+
+`call` launches and waits; `start` launches and returns immediately so other work can proceed while the kernel runs:
+
+```cpp
+/* Blocking */
 kernel.call(size, buf);
 
-/* Non-blocking: set args separately, start, do other work, then wait */
-kernel.setArg(0, size);
-kernel.setArg(1, buf);
-kernel.start();
-/* ... */
+/* Non-blocking */
+kernel.start(size, buf);
+/* ... do other work ... */
 kernel.wait();
 ```
 
@@ -198,4 +215,4 @@ vrt/
 
 ## License
 
-MIT.  See the license header in `CMakeLists.txt` for the full text.
+MIT — see [LICENSE](../LICENSE).

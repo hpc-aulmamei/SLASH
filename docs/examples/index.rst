@@ -23,7 +23,7 @@ SLASH includes six example projects demonstrating different VRT features.
      - AXI memory-mapped kernel interfaces
    * - 02
      - chain
-     - Freerunning streaming kernel chains (no emulation)
+     - Freerunning streaming kernel chains
    * - 03
      - multiple_boards
      - Multi-device control from a single application
@@ -34,6 +34,6 @@ SLASH includes six example projects demonstrating different VRT features.
      - perf
      - HBM/DDR memory performance benchmarking
 
-Each example includes a ``Makefile`` with targets for hardware (``hw``), emulation (``emu``),
+Each example includes a ``CMakeLists.txt`` with targets for hardware (``hw``), emulation (``emu``),
 and simulation (``sim``) flows. See ``examples/README.md`` in the repository for build
 instructions.

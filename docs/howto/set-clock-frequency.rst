@@ -68,16 +68,22 @@ application:
 Build and Run the Example
 ==========================
 
+Ensure you have sourced Vivado and Vitis HLS before building:
+
+.. code-block:: bash
+
+   source <path-to-vivado>/settings64.sh
+   source <path-to-vitis-hls>/settings64.sh
+
 Example ``04_freq`` demonstrates all three levels:
 
 .. code-block:: bash
 
    cd examples/04_freq
-   mkdir build && cd build
-   cmake .. -DSLASH_USE_REPO=ON
-   make
-   make hls
-   make freq_hw        # or freq_emu / freq_sim
+   cmake -B build -S . -G Ninja -DSLASH_USE_REPO=ON
+   cmake --build build
+   cmake --build build --target hls
+   cmake --build build --target freq_hw    # or freq_emu / freq_sim
 
 Run:
 

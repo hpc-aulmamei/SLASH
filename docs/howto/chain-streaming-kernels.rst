@@ -44,10 +44,10 @@ an AXI-Stream output:
 .. code-block:: cpp
 
    void dma_in(ap_uint<64>* in, hls::stream<ap_uint<64>>& axis_out, ap_uint<32> size) {
-       #pragma HLS INTERFACE m_axi bundle=gmem0 port=in max_widen_bitwidth=64
-       #pragma HLS INTERFACE axis port=axis_out
-       #pragma HLS INTERFACE s_axilite port=size
-       #pragma HLS INTERFACE s_axilite port=return
+       #pragma hls interface mode=s_axilite port=size
+       #pragma hls interface mode=axis port=axis_out
+       #pragma hls interface m_axi bundle=gmem0 port=in max_widen_bitwidth=64
+       #pragma hls interface mode=s_axilite port=return
 
        for (ap_uint<32> i = 0; i < size; i++) {
            #pragma HLS PIPELINE II=1
@@ -97,10 +97,10 @@ memory:
 .. code-block:: cpp
 
    void dma_out(ap_uint<32> size, hls::stream<ap_uint<64>>& axis_in, ap_uint<64>* out) {
-       #pragma HLS INTERFACE s_axilite port=size
-       #pragma HLS INTERFACE axis port=axis_in
-       #pragma HLS INTERFACE m_axi bundle=gmem0 port=out max_widen_bitwidth=64
-       #pragma HLS INTERFACE s_axilite port=return
+       #pragma hls interface mode=s_axilite port=size
+       #pragma hls interface mode=axis port=axis_in
+       #pragma hls interface m_axi bundle=gmem0 port=out max_widen_bitwidth=64
+       #pragma hls interface mode=s_axilite port=return
 
        for (ap_uint<32> i = 0; i < size; i++) {
            #pragma HLS PIPELINE II=1
@@ -145,13 +145,13 @@ freerunning ``passthrough`` kernel is not instantiated:
    vrt::Kernel dma_out(device, "dma_out_0");
    // passthrough_0 is freerunning — no host handle needed
 
-Allocate buffers using ``portMemoryConfig()`` so the VRT runtime automatically
-selects the correct memory bank for each kernel's m_axi port:
+Allocate buffers using ``argMemoryConfig()`` so the VRT runtime automatically
+selects the correct memory bank for each kernel's memory-mapped argument:
 
 .. code-block:: cpp
 
-   vrt::Buffer<uint64_t> buffer_in(device, size, dma_in.portMemoryConfig("m_axi_gmem0"));
-   vrt::Buffer<uint64_t> buffer_out(device, size, dma_out.portMemoryConfig("m_axi_gmem0"));
+   vrt::Buffer<uint64_t> buffer_in(device, size, dma_in.argMemoryConfig("in"));
+   vrt::Buffer<uint64_t> buffer_out(device, size, dma_out.argMemoryConfig("out"));
 
 Set arguments, start both DMA kernels, and verify the output:
 
@@ -179,14 +179,20 @@ Set arguments, start both DMA kernels, and verify the output:
 Build and Run
 ==============
 
+Ensure you have sourced Vivado and Vitis HLS before building:
+
+.. code-block:: bash
+
+   source <path-to-vivado>/settings64.sh
+   source <path-to-vitis-hls>/settings64.sh
+
 .. code-block:: bash
 
    cd examples/02_chain
-   mkdir build && cd build
-   cmake .. -DSLASH_USE_REPO=ON
-   make
-   make hls
-   make chain_hw        # or chain_emu / chain_sim
+   cmake -B build -S . -G Ninja -DSLASH_USE_REPO=ON
+   cmake --build build
+   cmake --build build --target hls
+   cmake --build build --target chain_hw    # or chain_emu / chain_sim
 
 .. code-block:: bash
 
