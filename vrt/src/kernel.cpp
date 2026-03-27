@@ -242,6 +242,23 @@ uint32_t Kernel::functionalArgIdxByName(std::string_view argName) const {
         }
     }
 
+    // Vitis HLS appends _r to m_axi (buffer) register names.
+    // Allow users to use the original HLS parameter name (e.g. "in" -> "in_r").
+    if (!found) {
+        const std::string withSuffix = requestedName + "_r";
+        for (const FunctionalArg& argMeta : functionalArgs) {
+            if (argMeta.name == withSuffix) {
+                if (found) {
+                    throwArgApiMisuse("setArg(name, value) matched multiple args for name '" +
+                                          requestedName + "' (resolved to '" + withSuffix + "').",
+                                      "setArg");
+                }
+                found = true;
+                foundIdx = argMeta.idx;
+            }
+        }
+    }
+
     if (!found) {
         throwArgApiMisuse("setArg(name, value) referenced unknown arg name '" + requestedName +
                               "'.",
