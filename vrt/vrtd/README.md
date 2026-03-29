@@ -1,6 +1,6 @@
 # vrtd — V80 Runtime Daemon
 
-vrtd is a systemd-managed daemon written in C (gnu17) that multiplexes
+vrtd is a systemd-managed daemon written in C (gnu11) that multiplexes
 access to AMD Alveo V80 FPGA devices managed by the SLASH kernel
 module. It communicates with client applications over an AF_UNIX
 socket using a binary request/response protocol, passing device file
@@ -36,7 +36,7 @@ Key responsibilities:
 
 | Path | Contents |
 |------|----------|
-| `src/` | Daemon source code (C17) |
+| `src/` | Daemon source code (C11) |
 | `include/vrtd/` | Public wire-protocol headers shared with libvrtd |
 | `libvrtd/` | C client library for the vrtd wire protocol |
 | `libvrtdpp/` | C++ RAII wrapper around libvrtd |
@@ -59,10 +59,9 @@ sudo apt install cmake pkg-config libsystemd-dev libinih-dev
 
 ```bash
 cd vrt/vrtd
-mkdir build && cd build
-cmake ..
-make
-sudo make install
+cmake -B build -S . -G Ninja
+cmake --build build
+sudo cmake --install build
 ```
 
 ## Running
@@ -75,14 +74,14 @@ sudo vrtd
 sudo systemctl enable --now vrtd
 ```
 
-The daemon reads its configuration from `/etc/vrtd.conf` (see
+The daemon reads its configuration from `/etc/vrt/vrtd.conf` (see
 `conf/vrtd.conf` for the default format). The configuration file uses
 an INI-style format to define roles, user permissions, and per-device
 access rules.
 
 ## Minimum toolchain versions
 
-The baseline is Ubuntu 22.04 LTS. Lower versions may work but are
+The baseline is Ubuntu 22.04 LTS/RHEL 9. Lower versions may work but are
 untested and may break in any update.
 
 | Dependency | Minimum version |
@@ -102,12 +101,12 @@ versions listed above.
 **Read this section before writing C code for this daemon.**
 
 This daemon is not written in standard/POSIX C, but instead leans
-heavily on C17, libsystemd, glibc features, Linux syscall features,
+heavily on C11, libsystemd, glibc features, Linux syscall features,
 and GNU compiler extensions (also supported by Clang). The goal is not
 to write a portable application, but a modern systemd daemon using all
 the tools at our disposal.
 
-The language version is **C17** with GNU extensions (`-std=gnu17`).
+The language version is **C11** with GNU extensions (`-std=gnu11`).
 C23 features should not be used unless they are available as GNU
 extensions.
 

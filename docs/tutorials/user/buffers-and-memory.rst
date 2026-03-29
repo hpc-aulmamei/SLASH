@@ -23,12 +23,16 @@ The AMD Alveo V80 board has two distinct memory subsystems:
    Each channel is accessed independently. There are two ways to use HBM:
 
    - **Port-based** — ``MemoryRangeType::HBM`` with an explicit port number.
-     The buffer is allocated on a specific HBM channel. The kernel's ``sp=``
-     directive in the linker configuration must map the port to the same
-     channel.
+     The buffer is allocated on a specific HBM channel and the kernel accesses
+     that channel directly. This gives the full bandwidth of the channel, but
+     restricts access to that HBM region only — the kernel cannot reach other
+     HBM channels through this port. The kernel's ``sp=`` directive in the
+     linker configuration must map the port to the same channel.
    - **VNOC (Virtual NoC)** — ``MemoryRangeType::HBM_VNOC``. The buffer is
-     allocated across multiple HBM channels, aggregating bandwidth via the
-     on-chip network.
+     allocated across multiple HBM channels and accessed through the on-chip
+     VNOC interconnect. This allows the kernel to reach the entire HBM memory
+     space regardless of which channel holds the data, but is bottlenecked by
+     the lower bandwidth of the VNOC compared to a direct HBM port connection.
 
 The linker configuration determines which memory each kernel port is connected
 to. For example, ``sp=increment_0.m_axi_gmem0:HBM1`` maps the
@@ -45,15 +49,20 @@ From a MemoryConfig (recommended)
 
 .. code-block:: cpp
 
+   // By kernel argument name (recommended)
+   vrt::Buffer<float> buffer(device, size, increment.argMemoryConfig("in"));
+
+   // By AXI port name
    vrt::Buffer<float> buffer(device, size, increment.portMemoryConfig("m_axi_gmem0"));
 
-``Kernel::portMemoryConfig()`` reads the vrtbin metadata and returns a
-``MemoryConfig`` struct with the correct memory type and HBM port (if
-applicable). This is the safest approach — the buffer automatically matches the
-kernel's linker configuration.
+Both methods read the vrtbin metadata and return a ``MemoryConfig`` struct with
+the correct memory type and HBM port (if applicable), ensuring the buffer
+automatically matches the kernel's linker configuration.
 
-``Kernel::argMemoryConfig()`` does the same thing by argument index instead of
-port name.
+``Kernel::argMemoryConfig()`` is recommended because argument names are part of
+the kernel's public interface.
+``Kernel::portMemoryConfig()`` requires knowing the internal AXI port name (e.g.
+``m_axi_gmem0``), which is an implementation detail of the HLS pragma.
 
 With explicit HBM port
 -----------------------
@@ -143,7 +152,7 @@ Putting it all together — the typical buffer workflow:
 
    // Allocate using the kernel's port configuration
    uint32_t size = 1024;
-   vrt::Buffer<float> buffer(device, size, increment.portMemoryConfig("m_axi_gmem0"));
+   vrt::Buffer<float> buffer(device, size, increment.argMemoryConfig("in"));
 
    // Fill data
    for (uint32_t i = 0; i < size; i++) {

@@ -7,14 +7,14 @@ consistency, clarity, and correctness.
 
 ## Language and toolchain
 
-vrtd is **not** written in portable POSIX C. It intentionally uses C17,
+vrtd is **not** written in portable POSIX C. It intentionally uses C11,
 GNU compiler extensions (supported by both GCC and Clang), glibc
 features, libsystemd, and Linux-specific syscalls. The goal is a modern
 systemd daemon that leverages all the tools at our disposal.
 
-The language standard is **C17** with GNU extensions (`-std=gnu17`).
+The language standard is **C11** with GNU extensions (`-std=gnu11`).
 C23 features should not be used unless they are available as GNU
-extensions under `-std=gnu17`.
+extensions under `-std=gnu11`.
 
 The minimum required versions are those shipped by Ubuntu 22.04 LTS:
 

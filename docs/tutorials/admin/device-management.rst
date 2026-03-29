@@ -79,7 +79,7 @@ Load a vrtbin onto a board:
 This extracts the PDI bitstream from the vrtbin and programs the FPGA.
 The device BDF (``03:00``) can be found from ``v80-smi list``.
 
-Programming can also be done programmatically:
+Programming can also be done using VRT:
 
 .. code-block:: cpp
 
@@ -88,7 +88,7 @@ Programming can also be done programmatically:
 Querying the Active Design
 ==========================
 
-To see what is currently loaded on a device:
+To see what was last programmed on a device:
 
 .. code-block:: bash
 
@@ -96,6 +96,13 @@ To see what is currently loaded on a device:
 
 This shows the same metadata as ``inspect`` but reads it from the device
 rather than from a file on disk.
+
+.. warning::
+
+   ``query`` only reports what **you** (the current user) last wrote to the
+   board at the given BDF — not what is physically loaded on the device right
+   now. Querying the actual on-board design is not currently possible. Treat
+   the output as a guide, not absolute truth.
 
 Resetting a Device
 ==================

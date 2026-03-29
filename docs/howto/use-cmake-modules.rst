@@ -19,7 +19,7 @@ If SLASH is installed system-wide (via ``sudo make install``), use
 
    cmake_minimum_required(VERSION 3.20)
    project(my_project LANGUAGES CXX)
-   set(CMAKE_CXX_STANDARD 17)
+   set(CMAKE_CXX_STANDARD 20)
 
    find_package(vrt REQUIRED CONFIG)
    find_package(SlashTools REQUIRED)
@@ -60,7 +60,7 @@ Configure with:
 
 .. code-block:: bash
 
-   cmake .. -DSLASH_USE_REPO=ON
+   cmake -B build -S . -G Ninja -DSLASH_USE_REPO=ON
 
 HLS Kernel Directory
 ====================
@@ -124,32 +124,31 @@ reference.
 Locating Vivado and Vitis
 =========================
 
-The SLASH CMake modules automatically search for Vivado and Vitis. If they
-are not on your ``PATH``, set the installation location:
+Before configuring or building, source the Vivado and Vitis HLS environment in
+your shell:
 
 .. code-block:: bash
 
-   # Environment variables (recommended)
-   export XILINX_VIVADO=/tools/Xilinx/Vivado/2024.2
-   export XILINX_VITIS=/tools/Xilinx/Vitis_HLS/2024.2
+   source <path-to-vivado>/settings64.sh
+   source <path-to-vitis-hls>/settings64.sh
 
-   # Or CMake variables
-   cmake .. -DVIVADO_ROOT_DIR=/tools/Xilinx/Vivado/2024.2 \
-            -DVITIS_ROOT_DIR=/tools/Xilinx/Vitis_HLS/2024.2
+For ``csh``/``tcsh`` shells, use ``settings64.csh`` instead. SLASH has been
+built and tested against **Vivado/Vitis 2025.1**; using other versions may
+cause breakage.
 
-See :doc:`/reference/cmake/findtools` for full search-order details.
+The SLASH CMake modules will then automatically find Vivado and Vitis on
+``PATH``.
 
 Build Sequence
 ==============
 
 .. code-block:: bash
 
-   mkdir build && cd build
-   cmake .. -DSLASH_USE_REPO=ON      # or without flag if SLASH is installed
-   make                               # build the host application
-   make hls                           # compile HLS kernels (requires Vitis HLS)
-   make design_hw                     # link hardware vrtbin
-   make design_emu                    # link emulation vrtbin
+   cmake -B build -S . -G Ninja -DSLASH_USE_REPO=ON   # or without flag if SLASH is installed
+   cmake --build build                                 # build the host application
+   cmake --build build --target hls                    # compile HLS kernels (requires Vitis HLS)
+   cmake --build build --target design_hw              # link hardware vrtbin
+   cmake --build build --target design_emu             # link emulation vrtbin
 
 The host application and HLS compilation are independent — you can build
 them in either order. The vrtbin targets depend on the HLS kernels.

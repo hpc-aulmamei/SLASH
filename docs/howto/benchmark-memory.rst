@@ -24,18 +24,18 @@ The fastest way to benchmark memory is with the built-in validate command:
 
 .. code-block:: bash
 
-   v80-smi validate <BDF> [threads]
+   v80-smi validate -d <BDF> [-j <threads>]
 
 - ``<BDF>`` — board address from ``v80-smi list`` (e.g. ``0000:03:00``).
-- ``[threads]`` — number of parallel buffers (default: 2). Each buffer is
+- ``[threads]`` — number of parallel buffers (default: 8). Each buffer is
   64 MB (one allocator sub-region).
 
 Example:
 
 .. code-block:: bash
 
-   v80-smi validate 0000:03:00
-   v80-smi validate 0000:03:00 4    # 4 parallel buffers
+   v80-smi validate -d 0000:03:00
+   v80-smi validate -d 0000:03:00 -j 4    # 4 parallel buffers
 
 What validate Measures
 ========================
@@ -51,8 +51,8 @@ The command runs three phases:
      (``data[i] = i ^ seed``), syncs host-to-device, clears the host copy,
      syncs device-to-host, and verifies every word matches.
    - **Bandwidth measurement**: launches *N* threads in parallel. Each thread
-     performs a full-buffer ``syncToDevice`` (H2C) transfer, then a
-     ``syncFromDevice`` (C2H) transfer. Wall-clock time is recorded for each
+     performs a full-buffer host-to-device (H2C) transfer, then a
+     device-to-host (C2H) transfer. Wall-clock time is recorded for each
      direction.
 
 3. **DDR test** — repeats the same integrity and bandwidth measurements using
@@ -70,11 +70,10 @@ inside your own application. Build it against the repository:
 .. code-block:: bash
 
    cd examples/05_perf
-   mkdir build && cd build
-   cmake .. -DSLASH_USE_REPO=ON
-   make
-   make hls
-   make perf_hw              # or perf_emu / perf_sim
+   cmake -B build -S . -G Ninja -DSLASH_USE_REPO=ON
+   cmake --build build
+   cmake --build build --target hls
+   cmake --build build --target perf_hw    # or perf_emu / perf_sim
 
 Run:
 
@@ -96,10 +95,10 @@ Interpreting Results
      - Direction
      - Description
    * - Write bandwidth
-     - H2C (host-to-card)
+     - H2C (host-to-device)
      - Rate at which data is DMA'd from host memory to the device.
    * - Read bandwidth
-     - C2H (card-to-host)
+     - C2H (device-to-host)
      - Rate at which data is DMA'd from the device back to host memory.
    * - Data integrity
      - Both
@@ -121,8 +120,7 @@ Tuning Parameters
 =================
 
 - **Thread count** — more parallel buffers can saturate more HBM channels,
-  but returns diminish once the PCIe link is the bottleneck. Start with 2
-  and increase to 4 or 8 to find the saturation point.
+  but returns diminish once the PCIe link is the bottleneck.
 - **Buffer size** — each buffer is 64 MB by default (one allocator
   sub-region). The validate command does not expose a size parameter; use
   the VRT API directly if you need different sizes.

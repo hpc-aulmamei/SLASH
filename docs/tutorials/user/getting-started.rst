@@ -15,10 +15,22 @@ Prerequisites
 Before you begin, ensure:
 
 - The SLASH stack is installed (kernel module, libslash, vrtd, VRT, v80-smi).
-  See :doc:`/howto/build-from-source` if building from source.
+  The recommended way is to install pre-built packages — see
+  :doc:`/tutorials/admin/platform-setup`. To build from source instead, see
+  :doc:`/howto/build-from-source`.
 - A V80 board is installed and visible (run ``v80-smi list`` to check).
-- The ``vrtd`` daemon is running.
-- AMD Vivado and Vitis HLS are installed (for building FPGA artefacts).
+- The ``vrtd`` daemon is running (``sudo systemctl enable --now vrtd``).
+- AMD Vivado **2025.1** and Vitis HLS **2025.1** are installed and sourced in
+  your shell (for building FPGA artefacts). Source the environment before
+  building:
+
+  .. code-block:: bash
+
+     source <path-to-vivado>/settings64.sh
+     source <path-to-vitis-hls>/settings64.sh
+
+  For ``csh``/``tcsh`` shells, use ``settings64.csh`` instead. Using versions
+  other than 2025.1 may cause breakage.
 
 What the Example Does
 =====================
@@ -40,23 +52,23 @@ Build the Example
 .. code-block:: bash
 
    cd examples/00_axilite
-   mkdir build && cd build
-   cmake .. -DSLASH_USE_REPO=ON
-   make
+   cmake -B build -S . -G Ninja
+   cmake --build build
 
 This builds the host application. To also build the FPGA artefacts (HLS kernels
-and hardware vrtbin):
+and hardware vrtbin), ensure you have sourced Vivado and Vitis HLS first (see
+`Prerequisites`_):
 
 .. code-block:: bash
 
-   make hls          # compile HLS kernels
-   make axilite_hw   # link into a hardware vrtbin
+   cmake --build build --target hls          # compile HLS kernels
+   cmake --build build --target axilite_hw   # link into a hardware vrtbin
 
 For emulation (no FPGA required):
 
 .. code-block:: bash
 
-   make axilite_emu  # link into an emulation vrtbin
+   cmake --build build --target axilite_emu  # link into an emulation vrtbin
 
 Run the Example
 ===============
@@ -77,7 +89,7 @@ For example:
 
 .. code-block:: bash
 
-   ./00_axilite 03:00 axilite_hw.vrtbin
+   ./00_axilite 03:00 axilite_hw.vbin
 
 Expected output:
 
@@ -119,10 +131,10 @@ Each kernel is looked up by name from the loaded design.
 
 .. code-block:: cpp
 
-   vrt::Buffer<float> buffer(device, size, increment.portMemoryConfig("m_axi_gmem0"));
+   vrt::Buffer<float> buffer(device, size, increment.argMemoryConfig("in"));
 
 This allocates ``size`` floats in device memory. The memory configuration
-(DDR vs HBM, address range) is taken from the kernel's port configuration.
+(DDR vs HBM, address range) is taken from the kernel argument named ``"in"``.
 
 **4. Transfer data to the device:**
 

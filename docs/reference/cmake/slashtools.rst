@@ -114,6 +114,6 @@ Build with:
 
 .. code-block:: bash
 
-   make hls           # compile HLS kernels
-   make axilite_hw    # link hardware vrtbin
-   make axilite_emu   # link emulation vrtbin
+   cmake --build build --target hls           # compile HLS kernels
+   cmake --build build --target axilite_hw    # link hardware vrtbin
+   cmake --build build --target axilite_emu   # link emulation vrtbin

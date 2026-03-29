@@ -53,94 +53,100 @@ extern "C" {
 #endif /* __cplusplus */
 
 /**
- * struct slash_qdma — Handle to an open QDMA device.
- * @fd:   File descriptor for the QDMA character device.
- * @mock: Reserved for mock support.
+ * @brief Handle to an open QDMA device.
  *
- * @mock is reserved for future use and is always set to false.
+ * \@mock is reserved for future use and is always set to false.
  */
 struct slash_qdma {
-    int fd;
-    bool mock;
+    int fd;    /**< File descriptor for the QDMA character device. */
+    bool mock; /**< Reserved for mock support. */
 };
 
 /**
- * slash_qdma_open() — Open a QDMA device.
- * @path: Path to the character device node. NULL returns NULL/EINVAL.
+ * @brief Open a QDMA device.
  *
- * Return: Heap-allocated handle on success, NULL on failure.
+ * @param path Path to the character device node. NULL returns NULL/EINVAL.
+ *
+ * @return Heap-allocated handle on success, NULL on failure.
  */
 struct slash_qdma *slash_qdma_open(const char *path);
 
 /**
- * slash_qdma_close() — Close a QDMA device and free the handle.
- * @qdma: Handle from slash_qdma_open(), or NULL (returns -1/EINVAL).
+ * @brief Close a QDMA device and free the handle.
  *
- * Return: 0 on success, -1 on failure.
+ * @param qdma Handle from slash_qdma_open(), or NULL (returns -1/EINVAL).
+ *
+ * @return 0 on success, -1 on failure.
  */
 int slash_qdma_close(struct slash_qdma *qdma);
 
 /**
- * slash_qdma_info_read() — Read QDMA device capabilities.
- * @qdma: Open QDMA handle.
- * @info: Caller-allocated struct, filled in on success.
+ * @brief Read QDMA device capabilities.
  *
- * Return: 0 on success, -1 on failure.
+ * @param qdma Open QDMA handle.
+ * @param info Caller-allocated struct, filled in on success.
+ *
+ * @return 0 on success, -1 on failure.
  */
 int slash_qdma_info_read(struct slash_qdma *qdma, struct slash_qdma_info *info);
 
 /**
- * slash_qdma_qpair_add() — Create a new queue pair.
- * @qdma: Open QDMA handle.
- * @req:  In/out — caller sets configuration fields, kernel fills in
- *        the assigned queue id (and possibly other output fields).
+ * @brief Create a new queue pair.
  *
- * Return: 0 on success, -1 on failure.
+ * @param qdma Open QDMA handle.
+ * @param req  In/out — caller sets configuration fields, kernel fills in
+ *             the assigned queue id (and possibly other output fields).
+ *
+ * @return 0 on success, -1 on failure.
  */
 int slash_qdma_qpair_add(struct slash_qdma *qdma,
                          struct slash_qdma_qpair_add *req);
 
 /**
- * slash_qdma_qpair_start() — Activate a queue pair for transfers.
- * @qdma: Open QDMA handle.
- * @qid:  Queue pair id from slash_qdma_qpair_add().
+ * @brief Activate a queue pair for transfers.
  *
- * Return: 0 on success, -1 on failure.
+ * @param qdma Open QDMA handle.
+ * @param qid  Queue pair id from slash_qdma_qpair_add().
+ *
+ * @return 0 on success, -1 on failure.
  */
 int slash_qdma_qpair_start(struct slash_qdma *qdma, uint32_t qid);
 
 /**
- * slash_qdma_qpair_stop() — Deactivate a queue pair.
- * @qdma: Open QDMA handle.
- * @qid:  Queue pair id.
+ * @brief Deactivate a queue pair.
  *
- * Return: 0 on success, -1 on failure.
+ * @param qdma Open QDMA handle.
+ * @param qid  Queue pair id.
+ *
+ * @return 0 on success, -1 on failure.
  */
 int slash_qdma_qpair_stop(struct slash_qdma *qdma, uint32_t qid);
 
 /**
- * slash_qdma_qpair_del() — Destroy a queue pair.
- * @qdma: Open QDMA handle.
- * @qid:  Queue pair id.
+ * @brief Destroy a queue pair.
+ *
+ * @param qdma Open QDMA handle.
+ * @param qid  Queue pair id.
  *
  * The kernel implicitly stops the queue if it is still running, so a
  * separate stop call is not required before del.
  *
- * Return: 0 on success, -1 on failure.
+ * @return 0 on success, -1 on failure.
  */
 int slash_qdma_qpair_del(struct slash_qdma *qdma, uint32_t qid);
 
 /**
- * slash_qdma_qpair_get_fd() — Obtain a file descriptor for data transfer.
- * @qdma:  Open QDMA handle.
- * @qid:   Queue pair id (must be started).
- * @flags: Only O_CLOEXEC is accepted; the kernel returns -EINVAL for
- *         any other bits.
+ * @brief Obtain a file descriptor for data transfer.
+ *
+ * @param qdma  Open QDMA handle.
+ * @param qid   Queue pair id (must be started).
+ * @param flags Only O_CLOEXEC is accepted; the kernel returns -EINVAL for
+ *              any other bits.
  *
  * The returned fd supports read() (C2H) and write() (H2C).  Positional
  * I/O via lseek()/pread()/pwrite() is also available.
  *
- * Return: Non-negative fd on success, -1 on failure.
+ * @return Non-negative fd on success, -1 on failure.
  */
 int slash_qdma_qpair_get_fd(struct slash_qdma *qdma, uint32_t qid, int flags);
 

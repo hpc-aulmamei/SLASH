@@ -64,86 +64,67 @@
  * ───────────────────────────────────────────────────────────────────── */
 
 /**
- * struct slash_ioctl_bar_info — Query information about a single PCIe BAR.
- *
- * @size:          Struct size for ABI versioning.  Caller must set to
- *                 sizeof(struct slash_ioctl_bar_info).
- * @bar_number:    [in]  Which BAR to query (0–5).
- * @usable:        [out] Non-zero if the BAR is present and usable.
- * @in_use:        [out] Non-zero if the BAR is currently mapped / claimed.
- * @pad0:          Padding for natural alignment.
- * @start_address: [out] Physical / bus start address of the BAR.
- * @length:        [out] Size of the BAR region in bytes.
+ * @brief Query information about a single PCIe BAR.
  */
 struct slash_ioctl_bar_info {
+    /**
+     * Struct size for ABI versioning.  Caller must set to
+     * sizeof(struct slash_ioctl_bar_info).
+     */
     __u32 size;
 
     /* Userspace to kernel */
-    __u8 bar_number;
+    __u8 bar_number;    /**< [in]  Which BAR to query (0–5). */
 
     /* Kernel to userspace */
-    __u8 usable;
-    __u8 in_use;
-    __u8 pad0;
+    __u8 usable;        /**< [out] Non-zero if the BAR is present and usable. */
+    __u8 in_use;        /**< [out] Non-zero if the BAR is currently mapped / claimed. */
+    __u8 pad0;          /**< Padding for natural alignment. */
 
-    __u64 start_address;
-    __u64 length;
+    __u64 start_address; /**< [out] Physical / bus start address of the BAR. */
+    __u64 length;        /**< [out] Size of the BAR region in bytes. */
 };
 
 /**
- * struct slash_ioctl_bar_fd_request — Obtain a file descriptor for a BAR.
+ * @brief Obtain a file descriptor for a BAR.
  *
- * Userspace sends the desired @bar_number and @flags; the kernel returns
- * a new fd (via ioctl return convention) and fills in @length.
- *
- * @size:       Struct size for ABI versioning.
- * @bar_number: [in]  Which BAR to open.
- * @pad0:       Padding.
- * @pad1:       Padding.
- * @flags:      [in]  File descriptor flags.  Only O_CLOEXEC is honoured.
- * @length:     [out] Size of the BAR region backing the returned fd.
+ * Userspace sends the desired \@bar_number and \@flags; the kernel returns
+ * a new fd (via ioctl return convention) and fills in \@length.
  *
  * The actual fd is returned as the return value to the ioctl.
  */
 struct slash_ioctl_bar_fd_request {
-    __u32 size;
+    __u32 size;          /**< Struct size for ABI versioning. */
 
     /* Userspace to kernel */
-    __u8  bar_number;
-    __u8  pad0;
-    __u16 pad1;
+    __u8  bar_number;    /**< [in]  Which BAR to open. */
+    __u8  pad0;          /**< Padding. */
+    __u16 pad1;          /**< Padding. */
 
-    __u32 flags; /* Only O_CLOEXEC */
+    __u32 flags;         /**< [in]  File descriptor flags.  Only O_CLOEXEC is honoured. */
 
     /* Kernel to userspace */
-    __u64 length;
+    __u64 length;        /**< [out] Size of the BAR region backing the returned fd. */
 };
 
 /** Maximum length (including NUL) of a PCI BDF string ("DDDD:BB:DD.F"). */
 #define SLASH_PCI_BDF_LEN 32
 
 /**
- * struct slash_ioctl_device_info — Retrieve PCI identity of the device.
- *
- * @size:                Struct size for ABI versioning.
- * @bdf:                 [out] PCI Bus/Device/Function string, NUL-terminated.
- * @vendor_id:           [out] PCI vendor ID.
- * @device_id:           [out] PCI device ID.
- * @subsystem_vendor_id: [out] PCI subsystem vendor ID.
- * @subsystem_device_id: [out] PCI subsystem device ID.
+ * @brief Retrieve PCI identity of the device.
  */
 struct slash_ioctl_device_info {
-    __u32 size;
+    __u32 size;                       /**< Struct size for ABI versioning. */
 
     /* Kernel to userspace */
-    char bdf[SLASH_PCI_BDF_LEN];
-    __u16 vendor_id;
-    __u16 device_id;
-    __u16 subsystem_vendor_id;
-    __u16 subsystem_device_id;
+    char bdf[SLASH_PCI_BDF_LEN];      /**< [out] PCI Bus/Device/Function string, NUL-terminated. */
+    __u16 vendor_id;                  /**< [out] PCI vendor ID. */
+    __u16 device_id;                  /**< [out] PCI device ID. */
+    __u16 subsystem_vendor_id;        /**< [out] PCI subsystem vendor ID. */
+    __u16 subsystem_device_id;        /**< [out] PCI subsystem device ID. */
 };
 
-/** Query BAR properties.  Fills the kernel-to-userspace fields of @slash_ioctl_bar_info. */
+/** Query BAR properties.  Fills the kernel-to-userspace fields of slash_ioctl_bar_info. */
 #define SLASH_CTLDEV_IOCTL_GET_BAR_INFO _IOWR('v', 0x30, struct slash_ioctl_bar_info)
 
 /** Obtain a mappable fd for a BAR region. */
@@ -158,43 +139,28 @@ struct slash_ioctl_device_info {
  * ───────────────────────────────────────────────────────────────────── */
 
 /**
- * struct slash_qdma_info — Query QDMA subsystem capabilities.
+ * @brief Query QDMA subsystem capabilities.
  *
- * @size:        Struct size for ABI versioning.
- * @qsets_max:   [out] Maximum number of queue sets the hardware supports.
- * @msix_qvecs:  [out] Number of MSI-X vectors available for queues.
- * @vf_max:      [out] Maximum number of virtual functions.
- * @caps:        [out] Capability bitmask.
- *
- * @caps is reserved for future use; the kernel currently sets it to 0.
+ * \@caps is reserved for future use; the kernel currently sets it to 0.
  */
-
 struct slash_qdma_info {
-    __u32 size;
+    __u32 size;          /**< Struct size for ABI versioning. */
 
     /* Kernel to userspace */
-    __u32 qsets_max;
-    __u32 msix_qvecs;
-    __u32 vf_max;
-    __u32 caps;
+    __u32 qsets_max;     /**< [out] Maximum number of queue sets the hardware supports. */
+    __u32 msix_qvecs;    /**< [out] Number of MSI-X vectors available for queues. */
+    __u32 vf_max;        /**< [out] Maximum number of virtual functions. */
+    __u32 caps;          /**< [out] Capability bitmask. */
 };
 
 /**
- * struct slash_qdma_qpair_add — Add (allocate) a new QDMA queue pair.
+ * @brief Add (allocate) a new QDMA queue pair.
  *
- * @size:         Struct size for ABI versioning.
- * @mode:         [in]  Queue operating mode.
- * @dir_mask:     [in]  Direction bitmask — which directions to enable.
- * @h2c_ring_sz:  [in]  Host-to-card descriptor ring size.
- * @c2h_ring_sz:  [in]  Card-to-host descriptor ring size.
- * @cmpt_ring_sz: [in]  Completion ring size.
- * @qid:          [out] Kernel-assigned queue pair ID.
- *
- * @mode must be one of:
+ * \@mode must be one of:
  *   - QDMA_Q_MODE_MM (0) — AXI Memory Mapped mode.
  *   - QDMA_Q_MODE_ST (1) — AXI Streaming mode.
  *
- * @dir_mask selects which directions to enable:
+ * \@dir_mask selects which directions to enable:
  *   - bit 0 (0x1) — H2C  (Host-to-Card).
  *   - bit 1 (0x2) — C2H  (Card-to-Host).
  *   - bit 2 (0x4) — CMPT (Completion queue).
@@ -205,22 +171,22 @@ struct slash_qdma_info {
  * table (e.g. index 0 → 2049 descriptors, index 15 → 16385).
  */
 struct slash_qdma_qpair_add {
-    __u32 size;
+    __u32 size;          /**< Struct size for ABI versioning. */
 
     /* Userspace to kernel */
-    __u32 mode;
-    __u32 dir_mask;
+    __u32 mode;          /**< [in]  Queue operating mode. */
+    __u32 dir_mask;      /**< [in]  Direction bitmask — which directions to enable. */
 
-    __u32 h2c_ring_sz;
-    __u32 c2h_ring_sz;
-    __u32 cmpt_ring_sz;
+    __u32 h2c_ring_sz;   /**< [in]  Host-to-card descriptor ring size. */
+    __u32 c2h_ring_sz;   /**< [in]  Card-to-host descriptor ring size. */
+    __u32 cmpt_ring_sz;  /**< [in]  Completion ring size. */
 
     /* Kernel to userspace */
-    __u32 qid;
+    __u32 qid;           /**< [out] Kernel-assigned queue pair ID. */
 };
 
 /**
- * Queue pair lifecycle operations, used in @slash_qdma_qpair_op.op.
+ * Queue pair lifecycle operations, used in slash_qdma_qpair_op::op.
  *
  * The expected lifecycle of a queue pair is:
  *   ADD → START → (I/O) → STOP → DEL
@@ -232,48 +198,40 @@ enum {
 };
 
 /**
- * struct slash_qdma_qpair_op — Perform a lifecycle operation on a queue pair.
- *
- * @size: Struct size for ABI versioning.
- * @qid:  [in] Queue pair ID (as returned by slash_qdma_qpair_add).
- * @op:   [in] One of the SLASH_QDMA_QUEUE_OP_* constants.
+ * @brief Perform a lifecycle operation on a queue pair.
  */
 struct slash_qdma_qpair_op {
-    __u32 size;
+    __u32 size; /**< Struct size for ABI versioning. */
 
     /* Userspace to kernel */
-    __u32 qid;
-    __u32 op;
+    __u32 qid;  /**< [in] Queue pair ID (as returned by slash_qdma_qpair_add). */
+    __u32 op;   /**< [in] One of the SLASH_QDMA_QUEUE_OP_* constants. */
 };
 
 /**
- * struct slash_qdma_qpair_fd_request — Obtain a file descriptor for queue I/O.
+ * @brief Obtain a file descriptor for queue I/O.
  *
  * The returned fd can be used for read/write (or mmap) to transfer data
  * through the queue pair.
  *
- * @size:  Struct size for ABI versioning.
- * @qid:   [in] Queue pair ID.
- * @flags: [in] File descriptor flags.  Only O_CLOEXEC is honoured.
- *
  * The fd is returned as the ioctl return value (same convention as
  * the BAR fd ioctl).  A single fd is returned per queue pair;
  * read() on the fd performs C2H transfers and write() performs H2C
- * transfers, using whichever directions were enabled in @dir_mask
+ * transfers, using whichever directions were enabled in \@dir_mask
  * when the queue pair was added.
  */
 struct slash_qdma_qpair_fd_request {
-    __u32 size;
+    __u32 size;  /**< Struct size for ABI versioning. */
 
     /* Userspace to kernel */
-    __u32 qid;
-    __u32 flags; /* Only O_CLOEXEC */
+    __u32 qid;   /**< [in] Queue pair ID. */
+    __u32 flags; /**< [in] File descriptor flags.  Only O_CLOEXEC is honoured. */
 };
 
 /** Query QDMA subsystem capabilities. */
 #define SLASH_QDMA_IOCTL_INFO          _IOWR('v', 0x50, struct slash_qdma_info)
 
-/** Allocate a new queue pair; returns assigned @qid. */
+/** Allocate a new queue pair; returns assigned qid. */
 #define SLASH_QDMA_IOCTL_QPAIR_ADD     _IOWR('v', 0x51, struct slash_qdma_qpair_add)
 
 /** Start, stop, or delete an existing queue pair. */

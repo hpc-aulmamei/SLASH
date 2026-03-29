@@ -39,80 +39,79 @@ extern "C" {
 #define SLASH_HOTPLUG_DEFAULT_PATH "/dev/" SLASH_HOTPLUG_DEVICE_NAME
 
 /**
- * struct slash_hotplug — Opaque handle to the hotplug control device.
- *
- * @fd: File descriptor for the opened hotplug character device.
+ * @brief Opaque handle to the hotplug control device.
  */
 struct slash_hotplug {
-    int fd;
+    int fd; /**< File descriptor for the opened hotplug character device. */
 };
 
 /**
- * slash_hotplug_open() — Open the hotplug control device.
+ * @brief Open the hotplug control device.
  *
- * @path: Path to the character device, or NULL to use
- *        SLASH_HOTPLUG_DEFAULT_PATH ("/dev/slash_hotplug").
+ * @param path Path to the character device, or NULL to use
+ *             SLASH_HOTPLUG_DEFAULT_PATH ("/dev/slash_hotplug").
  *
- * Returns a heap-allocated handle on success, or NULL on failure
- * (errno is set by open() or calloc()).
+ * @return A heap-allocated handle on success, or NULL on failure
+ *         (errno is set by open() or calloc()).
  */
 struct slash_hotplug *slash_hotplug_open(const char *path); /* NULL means SLASH_HOTPLUG_DEFAULT_PATH */
 
 /**
- * slash_hotplug_close() — Close the hotplug device and free the handle.
+ * @brief Close the hotplug device and free the handle.
  *
- * @hotplug: Handle returned by slash_hotplug_open().  Must not be used
- *           after this call.  Passing NULL sets errno to EINVAL and
- *           returns -1.
+ * @param hotplug Handle returned by slash_hotplug_open().  Must not be used
+ *                after this call.  Passing NULL sets errno to EINVAL and
+ *                returns -1.
  *
- * Returns 0 on success, -1 if close() fails (errno is preserved).
- * The handle is freed regardless of whether close() succeeds.
+ * @return 0 on success, -1 if close() fails (errno is preserved).
+ *         The handle is freed regardless of whether close() succeeds.
  */
 int slash_hotplug_close(struct slash_hotplug *hotplug);
 
 /**
- * slash_hotplug_rescan() — Trigger a PCI bus rescan.
+ * @brief Trigger a PCI bus rescan.
  *
- * @hotplug: Open hotplug handle.
+ * @param hotplug Open hotplug handle.
  *
  * No device BDF is required; the kernel rescans the entire bus.
- * Returns 0 on success, -1 on failure.
+ *
+ * @return 0 on success, -1 on failure.
  */
 int slash_hotplug_rescan(struct slash_hotplug *hotplug);
 
 /**
- * slash_hotplug_remove() — Remove a device from the PCI bus.
+ * @brief Remove a device from the PCI bus.
  *
- * @hotplug: Open hotplug handle.
- * @bdf:     PCI BDF string (e.g. "0000:03:00.0").  Required.
+ * @param hotplug Open hotplug handle.
+ * @param bdf     PCI BDF string (e.g. "0000:03:00.0").  Required.
  *
- * Returns 0 on success, -1 on failure.
+ * @return 0 on success, -1 on failure.
  */
 int slash_hotplug_remove(struct slash_hotplug *hotplug, const char *bdf);
 
 /**
- * slash_hotplug_toggle_sbr() — Assert and deassert a Secondary Bus Reset.
+ * @brief Assert and deassert a Secondary Bus Reset.
  *
- * @hotplug: Open hotplug handle.
- * @bdf:     PCI BDF string identifying the device (or its former
- *           location if already removed).  Required.
+ * @param hotplug Open hotplug handle.
+ * @param bdf     PCI BDF string identifying the device (or its former
+ *                location if already removed).  Required.
  *
  * Toggles the SBR bit on the device's immediate upstream bridge
  * (assert, 2 ms hold, deassert) and returns.  The caller is
  * responsible for waiting for the device to re-initialize before
  * rescanning the bus.
  *
- * Returns 0 on success, -1 on failure.
+ * @return 0 on success, -1 on failure.
  */
 int slash_hotplug_toggle_sbr(struct slash_hotplug *hotplug, const char *bdf);
 
 /**
- * slash_hotplug_hotplug() — Perform a full hot-plug cycle (remove + rescan).
+ * @brief Perform a full hot-plug cycle (remove + rescan).
  *
- * @hotplug: Open hotplug handle.
- * @bdf:     PCI BDF string.  Required.
+ * @param hotplug Open hotplug handle.
+ * @param bdf     PCI BDF string.  Required.
  *
- * Returns 0 on success, -1 on failure.
+ * @return 0 on success, -1 on failure.
  */
 int slash_hotplug_hotplug(struct slash_hotplug *hotplug, const char *bdf);
 

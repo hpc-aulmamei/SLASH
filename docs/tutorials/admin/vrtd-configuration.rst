@@ -33,7 +33,7 @@ Configuration File
 ===================
 
 ``vrtd`` reads its configuration at startup from ``vrtd.conf``, located
-alongside the ``vrtd`` binary (typically ``/usr/lib/vrt/vrtd.conf``). The file
+alongside the ``vrtd`` binary (typically ``/etc/vrt/vrtd.conf``). The file
 uses an INI-style format.
 
 The first line enables drop-in fragments:

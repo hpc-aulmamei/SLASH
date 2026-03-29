@@ -31,7 +31,7 @@
  * bracket MMIO accesses with the start/end sync helpers for cache
  * coherency.
  *
- * Mock mode: passing "@mock" as the path to slash_ctldev_open() creates
+ * Mock mode: passing "\@mock" as the path to slash_ctldev_open() creates
  * a device backed by files on disk for testing without hardware.
  *
  * All functions follow POSIX conventions: pointer-returning functions
@@ -54,115 +54,114 @@ extern "C" {
 #endif /* __cplusplus */
 
 /**
- * struct slash_ctldev — Handle to an open slash control device.
- *
- * @fd:   File descriptor for the control character device.
- * @mock: True if this is a mock device (no real hardware).
+ * @brief Handle to an open slash control device.
  */
 struct slash_ctldev {
-    int fd;
-    bool mock;
+    int fd;    /**< File descriptor for the control character device. */
+    bool mock; /**< True if this is a mock device (no real hardware). */
 };
 
 /**
- * struct slash_bar_file — A memory-mapped BAR region.
+ * @brief A memory-mapped BAR region.
  *
  * Obtained via slash_bar_file_open(). Callers access MMIO registers
- * through @map, bracketing accesses with the start/end sync helpers.
- *
- * @map:       Pointer to the mmap'd BAR region.
- * @len:       Size of the mapping in bytes.
- * @fd:        The dma-buf file descriptor backing the mapping.
- * @mock:      True if backed by a mock file instead of real hardware.
- * @mock_path: Path to the backing file (mock mode only); NULL otherwise.
- *             Allocated by slash_bar_file_open() (mock path) and freed
- *             by slash_bar_file_close().  NULL in non-mock mode.
+ * through \@map, bracketing accesses with the start/end sync helpers.
  */
 struct slash_bar_file {
-    void *map;
-    size_t len;
-    int fd;
-    bool mock;
+    void *map;    /**< Pointer to the mmap'd BAR region. */
+    size_t len;   /**< Size of the mapping in bytes. */
+    int fd;       /**< The dma-buf file descriptor backing the mapping. */
+    bool mock;    /**< True if backed by a mock file instead of real hardware. */
+    /**
+     * Path to the backing file (mock mode only); NULL otherwise.
+     * Allocated by slash_bar_file_open() (mock path) and freed
+     * by slash_bar_file_close().  NULL in non-mock mode.
+     */
     char *mock_path;
 };
 
 /**
- * slash_ctldev_open() — Open a slash control device.
+ * @brief Open a slash control device.
  *
- * @path: Path to the character device node, or "@mock" for mock mode.
+ * @param path Path to the character device node, or "\@mock" for mock mode.
  *
- * Returns a heap-allocated handle on success, NULL on failure.
+ * @return A heap-allocated handle on success, NULL on failure.
  */
 struct slash_ctldev *slash_ctldev_open(const char *path);
 
 /**
- * slash_ctldev_close() — Close the control device and free the handle.
+ * @brief Close the control device and free the handle.
  *
- * @ctldev: Handle from slash_ctldev_open(). NULL returns -1 / EINVAL.
- *          Must not be used after this call.
+ * @param ctldev Handle from slash_ctldev_open(). NULL returns -1 / EINVAL.
+ *               Must not be used after this call.
  *
- * Returns 0 on success, -1 on failure.
+ * @return 0 on success, -1 on failure.
  */
 int slash_ctldev_close(struct slash_ctldev *ctldev);
 
 
 /**
- * slash_device_info_read() — Read PCI identity information.
+ * @brief Read PCI identity information.
  *
- * @ctldev: Open control device handle.
+ * @param ctldev Open control device handle.
  *
- * Returns a heap-allocated slash_ioctl_device_info on success (caller
- * frees with slash_device_info_free()), or NULL on failure.
+ * @return A heap-allocated slash_ioctl_device_info on success (caller
+ *         frees with slash_device_info_free()), or NULL on failure.
  */
 struct slash_ioctl_device_info *slash_device_info_read(struct slash_ctldev *ctldev);
+
+/** @brief Free a device info struct returned by slash_device_info_read(). */
 void slash_device_info_free(struct slash_ioctl_device_info *info);
 
 /**
- * slash_device_info_read() — Read PCI identity information.
+ * @brief Read BAR information for a specific BAR.
  *
- * @ctldev: Open control device handle.
+ * @param ctldev     Open control device handle.
+ * @param bar_number Which BAR to query (0–5).
  *
- * Returns a heap-allocated slash_ioctl_device_info on success (caller
- * frees with slash_device_info_free()), or NULL on failure.
+ * @return A heap-allocated slash_ioctl_bar_info on success (caller
+ *         frees with slash_bar_info_free()), or NULL on failure.
  */
 struct slash_ioctl_bar_info *slash_bar_info_read(struct slash_ctldev *ctldev, int bar_number);
 
-/** Free a device info struct returned by slash_device_info_read(). */
+/** @brief Free a BAR info struct returned by slash_bar_info_read(). */
 void slash_bar_info_free(struct slash_ioctl_bar_info *ctldev);
 
 /**
- * slash_bar_file_open() — Open and mmap a BAR region.
+ * @brief Open and mmap a BAR region.
  *
- * @ctldev:     Open control device handle.
- * @bar_number: Which BAR to map (0–5).
- * @flags:      Only O_CLOEXEC is accepted.
+ * @param ctldev     Open control device handle.
+ * @param bar_number Which BAR to map (0–5).
+ * @param flags      Only O_CLOEXEC is accepted.
  *
- * On success returns a handle whose @map field points to the BAR
+ * On success returns a handle whose \@map field points to the BAR
  * (PROT_READ|PROT_WRITE, MAP_SHARED). The underlying fd is a dma-buf;
  * callers must use the sync helpers to bracket accesses.
  *
- * Returns NULL on failure.
+ * @return NULL on failure.
  */
 struct slash_bar_file *slash_bar_file_open(struct slash_ctldev *ctldev, int bar_number, int flags);
 
 /**
- * slash_bar_file_close() — Unmap and close a BAR file.
+ * @brief Unmap and close a BAR file.
  *
- * @bar_file: Handle from slash_bar_file_open(). NULL returns -1 / EINVAL.
+ * @param bar_file Handle from slash_bar_file_open(). NULL returns -1 / EINVAL.
  *
- * Returns 0 on success, -1 if munmap or close fails.
- * The handle is freed regardless.
+ * @return 0 on success, -1 if munmap or close fails.
+ *         The handle is freed regardless.
  */
 int slash_bar_file_close(struct slash_bar_file *bar_file);
 
 /**
- * slash_bar_file_sync() — Issue a DMA_BUF_IOCTL_SYNC on the BAR fd.
+ * @brief Issue a DMA_BUF_IOCTL_SYNC on the BAR fd.
  *
- * @bar_file: Open BAR file handle.
- * @flags:    DMA_BUF_SYNC_* flags (START/END combined with READ/WRITE).
+ * @param bar_file Open BAR file handle.
+ * @param flags    DMA_BUF_SYNC_* flags (START/END combined with READ/WRITE).
  *
  * Must be called to bracket MMIO accesses for cache coherency.
- * No-op in mock mode. Returns 0 on success, -1 on failure.
+ * No-op in mock mode.
+ *
+ * @return 0 on success, -1 on failure.
  */
 static __inline__ int slash_bar_file_sync(struct slash_bar_file *bar_file, unsigned int flags)
 {

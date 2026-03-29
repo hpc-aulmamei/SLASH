@@ -39,8 +39,8 @@ int main(int argc, char* argv[]) {
 
         vrt::Kernel dma_in(device, "dma_in_0");
         vrt::Kernel dma_out(device, "dma_out_0");
-        vrt::Buffer<uint64_t> buffer_in(device, size, dma_in.portMemoryConfig("m_axi_gmem0"));
-        vrt::Buffer<uint64_t> buffer_out(device, size, dma_out.portMemoryConfig("m_axi_gmem0"));
+        vrt::Buffer<uint64_t> buffer_in(device, size, dma_in.argMemoryConfig("in"));
+        vrt::Buffer<uint64_t> buffer_out(device, size, dma_out.argMemoryConfig("out"));
         for(uint32_t i = 0; i < size; i++) {
             buffer_in[i] = static_cast<uint64_t>(i);
         }

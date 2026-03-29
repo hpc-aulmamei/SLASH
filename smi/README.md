@@ -17,7 +17,7 @@ hardware, and validate memory integrity and bandwidth.
 ## Building
 
 ```sh
-cmake -B build -S .
+cmake -B build -S . -G Ninja
 cmake --build build
 ```
 
@@ -32,7 +32,7 @@ Requires a C++20 compiler.
 ## Installing
 
 ```sh
-cmake --install build --prefix /usr/local
+sudo cmake --install build --prefix /usr/local
 ```
 
 This installs the `v80-smi` binary to `<prefix>/bin/`.
@@ -110,7 +110,7 @@ Vbin design.vbin:
     Platform: HARDWARE
     Clock frequency: 300000000
     Utilization:
-        Slash: LUTs: 45032 (5.2%), FFs: 62001 (3.6%), RAMB36: 48, URAM: 0, DSP: 12
+        Slash: LUTs: 45032 (5.2%), FFs: 62001 (3.6%), LUTRAM: 3200 (0.7%), SRL: 1100 (0.3%), RAMB36: 48, RAMB18: 12, URAM: 0, DSP: 12
     Kernel:
         Name: increment_0
         Physical address: 0x20100000000
@@ -128,7 +128,7 @@ No hardware or VRTD required.
 ### query
 
 Same output as `inspect`, but reads metadata from the vbin last
-programmed on a device (via sysfs).
+programmed by the user on a device.
 
 ```
 v80-smi query -d <BDF> [-j | -J]
@@ -147,7 +147,7 @@ Requires the device to have been programmed at least once.
 Load a vbin file onto a V80 device.
 
 ```
-v80-smi program -d <BDF> <vbin>
+v80-smi program <vbin> -d <BDF>
 ```
 
 | Flag              | Description                                          |
@@ -155,7 +155,7 @@ v80-smi program -d <BDF> <vbin>
 | `-d,--device`     | Board address (required), e.g. `03:00` or `0000:03:00` |
 
 ```console
-$ v80-smi program -d 03:00 design.vbin
+$ v80-smi program design.vbin -d 03:00
 ```
 
 ### reset
@@ -221,10 +221,10 @@ All commands that accept a `-d,--device` option support four BDF
 
 | Format          | Example         | Notes                       |
 |-----------------|-----------------|-----------------------------|
-| `DDDD:BB:DD.F`  | `0000:03:00.0`  | Full with PCI function      |
-| `BB:DD.F`       | `03:00.0`       | Domain defaults to `0000`   |
 | `DDDD:BB:DD`    | `0000:03:00`    | Board-level, no function    |
 | `BB:DD`         | `03:00`         | Short form                  |
+| `DDDD:BB:DD.F`  | `0000:03:00.0`  | Full with PCI function (not recommended)     |
+| `BB:DD.F`       | `03:00.0`       | Domain defaults to `0000` (not recommended)   |
 
 All forms are normalised to board-level `DDDD:BB:DD`.  If a PCI
 function digit is supplied it is accepted but ignored with a warning,
@@ -254,4 +254,4 @@ smi/
 
 ## License
 
-MIT.  See the license header in `CMakeLists.txt` for the full text.
+MIT — see [LICENSE](../LICENSE).

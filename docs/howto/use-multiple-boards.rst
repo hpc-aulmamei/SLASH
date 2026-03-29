@@ -66,8 +66,8 @@ separate instances for each board:
    vrt::Kernel accumulate1(fpga1, "accumulate_0");
 
    // Buffers — one per device
-   vrt::Buffer<float> buffer0(fpga0, size, vrt::MemoryRangeType::HBM);
-   vrt::Buffer<float> buffer1(fpga1, size, vrt::MemoryRangeType::HBM);
+   vrt::Buffer<float> buffer0(fpga0, size, increment0.argMemoryConfig("in"));
+   vrt::Buffer<float> buffer1(fpga1, size, increment1.argMemoryConfig("in"));
 
 You cannot pass a buffer allocated on one device to a kernel on another.
 
@@ -130,9 +130,8 @@ Example ``03_multiple_boards`` demonstrates this pattern using the
 .. code-block:: bash
 
    cd examples/03_multiple_boards
-   mkdir build && cd build
-   cmake .. -DSLASH_USE_REPO=ON
-   make
+   cmake -B build -S . -G Ninja -DSLASH_USE_REPO=ON
+   cmake --build build
 
 .. note::
 

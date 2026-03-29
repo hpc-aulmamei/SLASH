@@ -23,6 +23,8 @@ Several commands accept a ``-d/--device`` option that takes a **BDF**
      - Example
    * - ``BB:DD`` (short)
      - ``03:00``
+   * - ``BB:DD.F`` (short with function)
+     - ``03:00.0``
    * - ``DDDD:BB:DD`` (domain:bus:device)
      - ``0000:03:00``
    * - ``DDDD:BB:DD.F`` (full)

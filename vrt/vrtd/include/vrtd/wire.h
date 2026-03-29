@@ -229,7 +229,7 @@ struct vrtd_resp_get_bar_fd {
 /**
  * @brief Request QDMA capability information for a device.
  *
- * Complementary to @ref slash_qdma_info; this wraps the libslash QDMA
+ * Complementary to @c slash_qdma_info; this wraps the libslash QDMA
  * info query and exposes it over the vrtd protocol.
  */
 struct vrtd_req_qdma_get_info {
@@ -243,7 +243,7 @@ struct vrtd_resp_qdma_get_info {
 /**
  * @brief Request creation of a QDMA qpair.
  *
- * The @ref slash_qdma_qpair_add payload is passed through to the kernel
+ * The @c slash_qdma_qpair_add payload is passed through to the kernel
  * and the resulting qid is returned in the response.
  */
 struct vrtd_req_qdma_qpair_add {
@@ -258,7 +258,7 @@ struct vrtd_resp_qdma_qpair_add {
 /**
  * @brief Request an operation on an existing QDMA qpair.
  *
- * @ref op uses the same numeric values as @ref SLASH_QDMA_QUEUE_OP_START and friends.
+ * @ref op uses the same numeric values as @c SLASH_QDMA_QUEUE_OP_START and friends.
  */
 struct vrtd_req_qdma_qpair_op {
     uint32_t dev_number; ///< Device index (0-based).

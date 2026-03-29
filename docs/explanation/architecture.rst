@@ -19,11 +19,11 @@ Stack Overview
    ├─────────────────────────────────────────────┤
    │            VRT  (libvrt)                    │  C++17  ─ MIT
    ├─────────────────────────────────────────────┤
-   │          libvrtd++  (C++ RAII wrapper)      │  C++17  ─ MIT
+   │          libvrtd++  (C++ RAII wrapper)      │  C++20  ─ MIT
    ├─────────────────────────────────────────────┤
-   │          libvrtd    (C wire-protocol)       │  C17    ─ MIT
+   │          libvrtd    (C wire-protocol)       │  C11    ─ MIT
    ├──────────────── AF_UNIX ────────────────────┤
-   │          vrtd       (daemon)                │  C17    ─ MIT
+   │          vrtd       (daemon)                │  C11    ─ MIT
    ├─────────────────────────────────────────────┤
    │          libslash   (driver wrapper)        │  C      ─ MIT
    ├─────────────────────────────────────────────┤
@@ -47,7 +47,7 @@ User Application
 
 Your C++ program. It uses the VRT API to open a device, load a vrtbin, allocate
 buffers, launch kernels, and read results. The same source code runs unchanged
-on hardware, emulation, and simulation platforms (see :doc:`platform-modes`).
+on hardware, emulation, and simulation platforms (see :doc:`/explanation/platform-modes`).
 
 VRT (libvrt)
 ------------
@@ -99,11 +99,12 @@ three modules:
 Linux Kernel Module
 -------------------
 
-The ``slash`` kernel module manages three PCI functions on each V80 board:
+The ``slash`` kernel module manages two PCI functions on each V80 board:
 
-- **PF0** (``ami``) — AVED management interface.
 - **PF1** (``slash_qdma``) — queue-based DMA subsystem.
 - **PF2** (``slash_ctl``) — BAR MMIO access for register reads and writes.
+
+PF0 (``ami``) is the AVED management interface, managed by a separate driver.
 
 Initialisation order: QDMA → Hotplug → PCIe. Teardown is reversed.
 
@@ -124,7 +125,7 @@ The following sequence shows a minimal hardware run using VRT:
    2.  vrt::Kernel kernel(device, "kernel_name");
        └─ Look up kernel in the loaded design
 
-   3.  vrt::Buffer<float> buf(device, size, kernel.portMemoryConfig("m_axi_gmem0"));
+   3.  vrt::Buffer<float> buf(device, size, kernel.argMemoryConfig("in"));
        └─ Allocate device memory (DDR or HBM) via QDMA
 
    4.  buf.sync(vrt::SyncType::HOST_TO_DEVICE);

@@ -60,7 +60,7 @@ read_the_docs_build = os.environ.get('READTHEDOCS', None) == 'True'
 # ones.
 #...
 
-extensions = [ "breathe", 'sphinxcontrib.tikz', 'sphinx.ext.todo']
+extensions = [ "breathe", 'sphinxcontrib.tikz', 'sphinx.ext.todo', 'sphinx_design']
 
 #...
 
@@ -87,6 +87,7 @@ html_static_path = ['_static']
 
 # Breathe Configuration
 breathe_default_project = "SLASH"
+breathe_domain_by_extension = {"h": "c"}
 
 # -- Doxygen builds (generate XML for Breathe) --------------------------------
 

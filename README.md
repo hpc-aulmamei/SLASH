@@ -22,11 +22,11 @@ and communicates with adjacent layers through well-defined interfaces.
 ├─────────────────────────────────────────────┤
 │            VRT  (libvrt)                    │  C++17  ─ MIT
 ├─────────────────────────────────────────────┤
-│          libvrtd++  (C++ RAII wrapper)      │  C++17  ─ MIT
+│          libvrtd++  (C++ RAII wrapper)      │  C++20  ─ MIT
 ├─────────────────────────────────────────────┤
-│          libvrtd    (C wire-protocol)       │  C17    ─ MIT
+│          libvrtd    (C wire-protocol)       │  C11    ─ MIT
 ├──────────────── AF_UNIX ────────────────────┤
-│          vrtd       (daemon)                │  C17    ─ MIT
+│          vrtd       (daemon)                │  C11    ─ MIT
 ├─────────────────────────────────────────────┤
 │          libslash   (driver wrapper)        │  C      ─ MIT
 ├─────────────────────────────────────────────┤
@@ -79,18 +79,24 @@ add_vbin(TARGET "axilite_sim" PLATFORM "sim" CFG "${CFG_FILE}" KERNELS ${_KERNEL
 
 **System requirements:**
 
-- Ubuntu 22.04, kernel 5.15
-- AMD Vivado & Vitis HLS 2024.2
-- CMake 3.20+
-- GCC 9+ (C++17); v80-smi requires C++20
-- Linux kernel headers
+- Ubuntu LTS 22.04+; RHEL 9+ or compatible (other distributions may work as well but have not been tested)
+- AMD Vivado & Vitis HLS 2025.1 — source the environment before building or
+  running against emulation/simulation:
+
+  ```bash
+  source <path-to-vivado>/settings64.sh
+  source <path-to-vitis-hls>/settings64.sh
+  ```
+
+  For `csh`/`tcsh` shells, use `settings64.csh` instead. Using versions other
+  than 2025.1 may cause breakage.
 
 **Library dependencies:**
 
 ```bash
-sudo apt install cmake pkg-config \
+sudo apt install cmake pkg-config ninja-build \
   libxml2-dev libzmq3-dev libjsoncpp-dev zlib1g-dev \
-  libsystemd-dev libinih-dev \
+  libsystemd-dev libinih-dev libcli11-dev \
   linux-headers-$(uname -r)
 ```
 
@@ -112,14 +118,17 @@ Components must be built in dependency order:
 # Kernel module
 cd driver && make && sudo insmod slash.ko && cd ..
 
+# libslash (kernel module client library)
+cd driver/libslash && cmake -S . -B build -G Ninja && cmake --build build && sudo cmake --install build && cd ../..
+
 # vrtd (daemon + client libraries)
-cd vrt/vrtd && mkdir build && cd build && cmake .. && make && sudo make install && cd ../../..
+cd vrt/vrtd && cmake -S . -B build -G Ninja && cmake --build build && sudo cmake --install build && cd ../..
 
 # VRT (runtime library)
-cd vrt && mkdir build && cd build && cmake .. && make && sudo make install && cd ../..
+cd vrt && cmake -S . -B build -G Ninja && cmake --build build && sudo cmake --install build && cd ..
 
 # v80-smi (CLI tool)
-cd smi && mkdir build && cd build && cmake .. && make && sudo make install && cd ../..
+cd smi && cmake -S . -B build -G Ninja && cmake --build build && sudo cmake --install build && cd ..
 ```
 
 ### 2. Start the daemon
@@ -141,23 +150,20 @@ All four readiness checks (PF0, PF1, PF2, VRTD) should pass for each board.
 
 ```bash
 cd examples/00_axilite
-mkdir build && cd build
-cmake .. -DSLASH_USE_REPO=ON
-make
+cmake -B build -S . -G Ninja -DSLASH_USE_REPO=ON
+cmake --build build
 
 # Build FPGA artefacts (requires Vivado/Vitis)
-make hls              # compile HLS kernels
-make axilite_hw       # link into a hardware vrtbin
+cmake --build build --target hls              # compile HLS kernels
+cmake --build build --target axilite_hw       # link into a hardware vrtbin
 
 # Run
-./00_axilite <BDF> axilite_hw.vrtbin
+./build/00_axilite <BDF> build/axilite_hw.vbin
 ```
 
 Set these environment variables before running:
 
 ```bash
-mkdir -p ~/.ami
-export AMI_HOME="$HOME/.ami"
 source <path-to-vivado>/settings64.sh
 source <path-to-vitis>/settings64.sh
 ```
@@ -167,9 +173,9 @@ source <path-to-vitis>/settings64.sh
 A minimal VRT application:
 
 ```cpp
-#include <vrt/device.h>
-#include <vrt/kernel.h>
-#include <vrt/buffer.h>
+#include <vrt/device.hpp>
+#include <vrt/kernel.hpp>
+#include <vrt/buffer.hpp>
 
 int main() {
     // Open device and program FPGA
@@ -179,7 +185,7 @@ int main() {
     vrt::Kernel increment(device, "increment_0");
 
     // Allocate device buffer using the kernel's port configuration
-    vrt::Buffer<float> buffer(device, 1024, increment.portMemoryConfig("m_axi_gmem0"));
+    vrt::Buffer<float> buffer(device, 1024, increment.argMemoryConfig("in"));
 
     // Fill host-side data
     for (size_t i = 0; i < 1024; ++i)
@@ -233,7 +239,7 @@ The recommended approach is to derive memory configuration from the kernel metad
 rather than hardcoding types:
 
 ```cpp
-vrt::Buffer<float> buf(device, size, kernel.portMemoryConfig("m_axi_gmem0"));
+vrt::Buffer<float> buf(device, size, kernel.argMemoryConfig("in"));
 ```
 
 This ensures the buffer allocation always matches the linker configuration.
@@ -244,7 +250,7 @@ This ensures the buffer allocation always matches the linker configuration.
 |----|---------|-------|
 | 00 | Linking, AXI-Lite control | |
 | 01 | Kernels with AXI-MM interfaces | |
-| 02 | Freerunning streaming kernels | Emulation not possible |
+| 02 | Freerunning streaming kernels | |
 | 03 | Controlling multiple V80s | Uses vrtbin from example 00 |
 | 04 | Frequency targets | |
 | 05 | Memory performance test | Instantiates maximum number of kernels |

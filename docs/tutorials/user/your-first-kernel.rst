@@ -15,9 +15,19 @@ Prerequisites
 
 - The SLASH stack is installed (kernel module, libslash, vrtd, VRT, v80-smi).
   See :doc:`/howto/build-from-source` if building from source.
-- AMD Vivado **2024.2** and Vitis HLS are installed and on ``PATH``.
+- AMD Vivado **2025.1** and Vitis HLS **2025.1** are installed and sourced in
+  your shell:
+
+  .. code-block:: bash
+
+     source <path-to-vivado>/settings64.sh
+     source <path-to-vitis-hls>/settings64.sh
+
+  For ``csh``/``tcsh`` shells, use ``settings64.csh`` instead. Using versions
+  other than 2025.1 may cause breakage.
+
 - A V80 board is installed and visible (``v80-smi list``), or you plan to use
-  emulation.
+  simulation/emulation.
 
 Anatomy of an HLS Kernel
 =========================
@@ -132,34 +142,23 @@ instantiated, connected, and mapped to memory. Here is
 
 ``sp``
    Maps an AXI memory-mapped port to a physical memory resource. Format:
-   ``<instance>.<port>:<memory>``. Valid memories include ``HBM0``–``HBM63``
-   and ``DDR0``.
+   ``<instance>.<port>:<memory>``. Valid memories include ``HBM0``–``HBM63``,
+   ``DDR0``–``DDR3``, and ``MEM``.
 
 CMake Build Setup
 =================
 
 SLASH provides CMake modules for compiling HLS kernels and linking vrtbins.
-Here is the pattern from ``examples/00_axilite/CMakeLists.txt``:
+With SLASH installed, use ``find_package`` to import them:
 
 .. code-block:: cmake
 
    cmake_minimum_required(VERSION 3.20)
-   project(00_axilite LANGUAGES CXX)
+   project(my_project LANGUAGES CXX)
    set(CMAKE_CXX_STANDARD 20)
 
-   option(SLASH_USE_REPO "Build against local repo tree" OFF)
-
-   if(SLASH_USE_REPO)
-     get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." REALPATH)
-     list(APPEND CMAKE_MODULE_PATH "${REPO_ROOT}/cmake")
-     include(SlashTools)
-     add_subdirectory(${REPO_ROOT}/vrt ${CMAKE_CURRENT_BINARY_DIR}/vrt)
-     set(_VRT_LIBS vrt)
-   else()
-     find_package(vrt REQUIRED CONFIG)
-     find_package(SlashTools REQUIRED)
-     set(_VRT_LIBS vrt::vrt)
-   endif()
+   find_package(vrt REQUIRED CONFIG)
+   find_package(SlashTools REQUIRED)
 
    # --- HLS kernels ---
    set(DEVICE "xcv80-lsva4737-2MHP-e-S" CACHE STRING "Target device")
@@ -174,12 +173,16 @@ Here is the pattern from ``examples/00_axilite/CMakeLists.txt``:
 
    # --- VBIN targets ---
    set(CFG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/config.cfg")
-   add_vbin(TARGET "axilite_hw"  PLATFORM "hw"  CFG "${CFG_FILE}" KERNELS ${_KERNELS})
-   add_vbin(TARGET "axilite_emu" PLATFORM "emu" CFG "${CFG_FILE}" KERNELS ${_KERNELS})
+   add_vbin(TARGET "my_design_hw"  PLATFORM "hw"  CFG "${CFG_FILE}" KERNELS ${_KERNELS})
+   add_vbin(TARGET "my_design_emu" PLATFORM "emu" CFG "${CFG_FILE}" KERNELS ${_KERNELS})
+   add_vbin(TARGET "my_design_sim" PLATFORM "sim" CFG "${CFG_FILE}" KERNELS ${_KERNELS})
 
    # --- Executable ---
-   add_executable(${PROJECT_NAME} 00_axilite.cpp)
-   target_link_libraries(${PROJECT_NAME} PRIVATE ${_VRT_LIBS})
+   add_executable(my_app main.cpp)
+   target_link_libraries(my_app PRIVATE vrt::vrt)
+
+``find_package(SlashTools)`` makes ``build_hls_dir()`` and ``add_vbin()``
+available, and also locates Vivado and Vitis automatically.
 
 ``build_hls_dir()`` compiles every kernel in the ``hls/`` directory. It
 expects ``<name>.cpp`` and ``<name>.cfg`` file pairs for each kernel listed in
@@ -189,38 +192,101 @@ expects ``<name>.cpp`` and ``<name>.cfg`` file pairs for each kernel listed in
 archive from the compiled kernels and the connectivity configuration. One
 target is created per platform (``hw``, ``emu``, ``sim``).
 
-When building from the SLASH source tree, pass ``-DSLASH_USE_REPO=ON`` so CMake
-finds the modules and VRT library locally. When SLASH is installed system-wide,
-``find_package`` handles everything automatically.
-
 See :doc:`/reference/cmake/slashtools` and :doc:`/reference/cmake/buildhls`
 for full function reference.
 
 Build and Run
 =============
 
+Ensure you have sourced Vivado and Vitis HLS before building (see
+`Prerequisites`_).
+
 .. code-block:: bash
 
-   cd examples/00_axilite
-   mkdir build && cd build
-   cmake .. -DSLASH_USE_REPO=ON
-   make              # build the host application
-   make hls          # compile HLS kernels (requires Vitis HLS)
-   make axilite_hw   # link into a hardware vrtbin
+   cmake -B build -S . -G Ninja
+   cmake --build build                              # build the host application
+   cmake --build build --target hls                 # compile HLS kernels (requires Vitis HLS)
+   cmake --build build --target my_design_hw        # link into a hardware vrtbin
 
 Run the application:
 
 .. code-block:: bash
 
-   v80-smi list                            # find your board's BDF
-   ./00_axilite 03:00 axilite_hw.vbin      # run with BDF and vrtbin
+   v80-smi list                               # find your board's BDF
+   ./my_app 03:00 my_design_hw.vbin           # run with BDF and vrtbin
 
 For emulation (no FPGA required):
 
 .. code-block:: bash
 
-   make axilite_emu
-   ./00_axilite 03:00 axilite_emu.vbin
+   cmake --build build --target my_design_emu
+   ./my_app 03:00 my_design_emu.vbin
+
+Creating Your Own Project
+=========================
+
+To start a project outside the SLASH repository, create a directory with the
+following layout:
+
+.. code-block:: text
+
+   my_project/
+   ├── CMakeLists.txt
+   ├── config.cfg
+   ├── main.cpp
+   └── hls/
+       ├── my_kernel.cpp
+       └── my_kernel.cfg
+
+**CMakeLists.txt** — use ``find_package`` to locate the installed SLASH modules:
+
+.. code-block:: cmake
+
+   cmake_minimum_required(VERSION 3.20)
+   project(my_project LANGUAGES CXX)
+   set(CMAKE_CXX_STANDARD 20)
+
+   find_package(vrt REQUIRED CONFIG)
+   find_package(SlashTools REQUIRED)
+
+   set(DEVICE "xcv80-lsva4737-2MHP-e-S" CACHE STRING "Target device")
+
+   build_hls_dir(
+     TARGET      hls
+     ROOT        "${CMAKE_CURRENT_SOURCE_DIR}/hls"
+     DEVICE      "${DEVICE}"
+     KERNELS     my_kernel
+     OUT_KERNELS _KERNELS
+   )
+
+   set(CFG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/config.cfg")
+   add_vbin(TARGET "my_design_hw"  PLATFORM "hw"  CFG "${CFG_FILE}" KERNELS ${_KERNELS})
+   add_vbin(TARGET "my_design_emu" PLATFORM "emu" CFG "${CFG_FILE}" KERNELS ${_KERNELS})
+   add_vbin(TARGET "my_design_sim" PLATFORM "sim" CFG "${CFG_FILE}" KERNELS ${_KERNELS})
+
+   add_executable(my_app main.cpp)
+   target_link_libraries(my_app PRIVATE vrt::vrt)
+
+**config.cfg** — a minimal connectivity configuration:
+
+.. code-block:: ini
+
+   [connectivity]
+   nk=my_kernel:1:my_kernel_0
+   sp=my_kernel_0.m_axi_gmem0:HBM1
+
+**Build sequence:**
+
+.. code-block:: bash
+
+   cmake -B build -S . -G Ninja
+   cmake --build build                              # build the host application
+   cmake --build build --target hls                 # compile HLS kernels
+   cmake --build build --target my_design_hw        # hardware vrtbin
+   cmake --build build --target my_design_emu       # emulation vrtbin
+   cmake --build build --target my_design_sim       # simulation vrtbin
+
+See :doc:`/howto/use-cmake-modules` for the full CMake setup reference.
 
 Next Steps
 ==========
