@@ -55,3 +55,21 @@ Thumbs.db
 !build_all.sh
 
 .clang-format
+.cache
+**/linker_results/
+**/linker_results_*/
+
+__pycache__/
+*.pyc
+
+# Build files for package
+/pbuild/
+/rpmbuild/
+/debian/
+
+# Output files for package
+/deb/
+/rpm/
+
+# VBIN build directories
+*.prj

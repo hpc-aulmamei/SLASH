@@ -1,0 +1,96 @@
+#/**
+# * Copyright (C) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
+# * This program is free software; you can redistribute it and/or modify it under the terms of the
+# * GNU General Public License as published by the Free Software Foundation; version 2.
+# *
+# * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# * even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# * General Public License for more details.
+# *
+# * You should have received a copy of the GNU General Public License along with this program; if
+# * not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# * 02110-1301, USA.
+# */
+
+
+MODULE      := slash
+
+KDIR        ?= /lib/modules/$(shell uname -r)/build
+PWD         := $(shell pwd)
+
+# This exists when installed for dkms
+LIBQDMA_LOCAL_DIR := ./libqdma
+# This exists when building from tree
+LIBQDMA_FALLBACK  := ../submodules/qdma_drv/QDMA/linux-kernel/driver/libqdma
+
+ifneq (,$(wildcard $(src)/$(LIBQDMA_LOCAL_DIR)/.))
+  LIBQDMA_PATH := $(LIBQDMA_LOCAL_DIR)
+else
+  LIBQDMA_PATH := $(LIBQDMA_FALLBACK)
+endif
+
+SLASH_QDMA_OP_DEBUG ?= 0
+
+obj-m          := $(MODULE).o
+$(MODULE)-objs := $(MODULE)_main.o $(MODULE)_ctldev.o $(MODULE)_pcie.o $(MODULE)_dmabuf.o $(MODULE)_hotplug.o $(MODULE)_qdma.o
+ccflags-y += \
+	-I$(src)/libslash/include \
+	-I$(src)/libslash/include/slash/uapi \
+	-I$(src)/$(LIBQDMA_PATH) \
+	-I$(src)/$(LIBQDMA_PATH)/qdma_access \
+	-I$(src)/$(LIBQDMA_PATH)/qdma_access/eqdma_cpm5_access \
+	-I$(src)/$(LIBQDMA_PATH)/qdma_access/eqdma_soft_access \
+	-I$(src)/$(LIBQDMA_PATH)/qdma_access/qdma_cpm4_access \
+	-I$(src)/$(LIBQDMA_PATH)/qdma_access/qdma_soft_access \
+	\
+	-DTANDEM_BOOT_SUPPORTED=1 \
+	-DSLASH_QDMA_OP_DEBUG=$(SLASH_QDMA_OP_DEBUG)
+
+
+LIBQDMA_OBJS := \
+	$(LIBQDMA_PATH)/qdma_mbox.o \
+	$(LIBQDMA_PATH)/qdma_intr.o \
+	$(LIBQDMA_PATH)/qdma_st_c2h.o \
+	$(LIBQDMA_PATH)/qdma_thread.o \
+	$(LIBQDMA_PATH)/libqdma_export.o \
+	$(LIBQDMA_PATH)/qdma_context.o \
+	$(LIBQDMA_PATH)/qdma_sriov.o \
+	$(LIBQDMA_PATH)/qdma_platform.o \
+	$(LIBQDMA_PATH)/qdma_descq.o \
+	$(LIBQDMA_PATH)/qdma_regs.o \
+	$(LIBQDMA_PATH)/qdma_debugfs.o \
+	$(LIBQDMA_PATH)/qdma_debugfs_dev.o \
+	$(LIBQDMA_PATH)/qdma_debugfs_queue.o \
+	$(LIBQDMA_PATH)/libqdma_config.o \
+	$(LIBQDMA_PATH)/qdma_device.o \
+	$(LIBQDMA_PATH)/xdev.o \
+	$(LIBQDMA_PATH)/thread.o
+
+QDMA_ACCESS_OBJS := \
+	$(LIBQDMA_PATH)/qdma_access/qdma_mbox_protocol.o \
+	$(LIBQDMA_PATH)/qdma_access/qdma_list.o \
+	$(LIBQDMA_PATH)/qdma_access/qdma_access_common.o \
+	$(LIBQDMA_PATH)/qdma_access/qdma_resource_mgmt.o \
+	$(LIBQDMA_PATH)/qdma_access/qdma_cpm4_access/qdma_cpm4_access.o \
+	$(LIBQDMA_PATH)/qdma_access/qdma_cpm4_access/qdma_cpm4_reg_dump.o \
+	$(LIBQDMA_PATH)/qdma_access/qdma_soft_access/qdma_soft_access.o \
+	$(LIBQDMA_PATH)/qdma_access/eqdma_soft_access/eqdma_soft_access.o \
+	$(LIBQDMA_PATH)/qdma_access/eqdma_soft_access/eqdma_soft_reg_dump.o \
+	$(LIBQDMA_PATH)/qdma_access/eqdma_cpm5_access/eqdma_cpm5_access.o \
+	$(LIBQDMA_PATH)/qdma_access/eqdma_cpm5_access/eqdma_cpm5_reg_dump.o
+
+$(MODULE)-objs += $(LIBQDMA_OBJS) $(QDMA_ACCESS_OBJS)
+
+
+all:
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
+
+clean:
+	$(MAKE) -C $(KDIR) M=$(PWD) clean
+
+install: all
+	sudo install -d -m 755 /lib/modules/$(shell uname -r)/extra
+	sudo install -m 644 $(MODULE).ko /lib/modules/$(shell uname -r)/extra
+	sudo depmod -a
+
+.PHONY: all clean install

@@ -1,6 +1,6 @@
 /**
  * The MIT License (MIT)
- * Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -18,7 +18,10 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include "utils/zmq_server.hpp"
+#include <vrt/utils/zmq_server.hpp>
+
+#include <limits>
+#include <stdexcept>
 
 namespace vrt {
 
@@ -53,14 +56,24 @@ void ZmqServer::sendCommand(const Json::Value& command) {
     zmq::message_t reply;
     socket.recv(reply);
     std::string replyStr(static_cast<char*>(reply.data()), reply.size());
+    if (replyStr != "OK") {
+        throw std::runtime_error("ZMQ command failed: " + replyStr);
+    }
 }
 
 uint32_t ZmqServer::fetchScalar(const std::string& function, const std::string& argIdx) {
+    return fetchScalar(function, argIdx, std::numeric_limits<uint32_t>::max());
+}
+
+uint32_t ZmqServer::fetchScalar(const std::string& function, const std::string& argIdx, uint32_t offset) {
     Json::Value command;
     command["command"] = "fetch";
     command["type"] = "scalar";
     command["function"] = function;
     command["arg"] = argIdx;
+    if (offset != std::numeric_limits<uint32_t>::max()) {
+        command["offset"] = offset;
+    }
 
     Json::StreamWriterBuilder writer;
     std::string commandStr = Json::writeString(writer, command);
@@ -75,8 +88,53 @@ uint32_t ZmqServer::fetchScalar(const std::string& function, const std::string& 
 
     Json::Value response;
     Json::Reader reader;
-    reader.parse(replyStr, response);
+    if (!reader.parse(replyStr, response)) {
+        throw std::runtime_error("Invalid scalar fetch reply (not JSON): " + replyStr);
+    }
+    if (response.isObject() && response.isMember("error")) {
+        throw std::runtime_error("Scalar fetch failed: " + response["error"].asString());
+    }
+    if (!response.isUInt() && !response.isInt()) {
+        throw std::runtime_error("Invalid scalar fetch reply type");
+    }
+    return response.asUInt();
+}
 
+uint32_t ZmqServer::readRegister(const std::string& function, uint32_t offset) {
+    Json::Value command;
+    command["command"] = "read_register";
+    command["function"] = function;
+    command["offset"] = offset;
+
+    Json::StreamWriterBuilder writer;
+    std::string commandStr = Json::writeString(writer, command);
+
+    zmq::message_t request(commandStr.size());
+    memcpy(request.data(), commandStr.c_str(), commandStr.size());
+    socket.send(request, zmq::send_flags::none);
+
+    zmq::message_t reply;
+    socket.recv(reply);
+    std::string replyStr(static_cast<char*>(reply.data()), reply.size());
+
+    Json::Value response;
+    Json::Reader reader;
+    if (!reader.parse(replyStr, response)) {
+        throw std::runtime_error("Invalid read_register reply (not JSON): " + replyStr);
+    }
+    if (response.isObject() && response.isMember("error")) {
+        std::string err = response["error"].asString();
+        if (response.isMember("function")) {
+            err += " function=" + response["function"].asString();
+        }
+        if (response.isMember("offset")) {
+            err += " offset=" + std::to_string(response["offset"].asUInt());
+        }
+        throw std::runtime_error("read_register failed: " + err);
+    }
+    if (!response.isUInt() && !response.isInt()) {
+        throw std::runtime_error("Invalid read_register reply type");
+    }
     return response.asUInt();
 }
 
