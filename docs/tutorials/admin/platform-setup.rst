@@ -66,7 +66,7 @@ required on the build machine, not on every target:
            build-essential cmake ninja-build pkg-config rsync \
            debhelper dpkg-dev apt-utils \
            python3 python3-pip \
-           libcli11-dev libinih-dev libjsoncpp-dev \
+           libinih-dev libjsoncpp-dev \
            libsystemd-dev libxml2-dev libzmq3-dev zlib1g-dev
 
    .. tab-item:: RHEL 9 / Rocky Linux 9 / AlmaLinux 9
@@ -77,7 +77,7 @@ required on the build machine, not on every target:
            gcc gcc-c++ cmake make ninja-build pkg-config rsync \
            rpm-build createrepo_c systemd-rpm-macros \
            python3.11 python3.11-pip \
-           cli11-devel cppzmq-devel inih-devel jsoncpp-devel \
+           cppzmq-devel inih-devel jsoncpp-devel \
            libxml2-devel systemd-devel \
            zeromq-devel zlib-devel
 
@@ -89,7 +89,7 @@ required on the build machine, not on every target:
            gcc gcc-c++ cmake make ninja-build pkg-config rsync \
            rpm-build createrepo_c systemd-rpm-macros \
            python3 python3-pip \
-           cli11-devel cppzmq-devel inih-devel jsoncpp-devel \
+           cppzmq-devel inih-devel jsoncpp-devel \
            libxml2-devel systemd-devel \
            zeromq-devel zlib-devel
 

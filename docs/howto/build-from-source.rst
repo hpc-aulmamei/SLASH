@@ -33,7 +33,7 @@ On Debian/Ubuntu:
 
    sudo apt install cmake pkg-config ninja-build \
      libxml2-dev libzmq3-dev libjsoncpp-dev zlib1g-dev \
-     libsystemd-dev libinih-dev libcli11-dev \
+     libsystemd-dev libinih-dev \
      linux-headers-$(uname -r) \
      python3
 

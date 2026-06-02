@@ -55,7 +55,13 @@ if(NOT TARGET vrt::vrt)
     "Build and install vrt first (cmake --install), then configure smi again.")
 endif()
 
-find_package(CLI11 CONFIG REQUIRED)
+Include(FetchContent)
+FetchContent_Declare(
+  CLI11
+  GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
+  GIT_TAG        v2.6.2
+)
+FetchContent_MakeAvailable(CLI11)
 
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.hpp.in"

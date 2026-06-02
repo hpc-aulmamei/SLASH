@@ -96,7 +96,7 @@ add_vbin(TARGET "axilite_sim" PLATFORM "sim" CFG "${CFG_FILE}" KERNELS ${_KERNEL
 ```bash
 sudo apt install cmake pkg-config ninja-build \
   libxml2-dev libzmq3-dev libjsoncpp-dev zlib1g-dev \
-  libsystemd-dev libinih-dev libcli11-dev \
+  libsystemd-dev libinih-dev \
   linux-headers-$(uname -r)
 ```
 
