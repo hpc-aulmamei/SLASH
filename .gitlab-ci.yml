@@ -35,11 +35,11 @@ package_linker:
   variables:
     SCHEDULER_PARAMETERS: "-A $SLURM_ACCOUNT -q fpgasynthesis -p normal -c 16 --mem 120G -t 12:00:00"
     BASE_DESIGN_REF: feature/hardware_ci
-  #needs:
-  #  - project: $CI_PROJECT_PATH
-  #    job: package_linker
-  #    ref: $BASE_DESIGN_REF
-  #    artifacts: true
+  needs:
+    - project: $CI_PROJECT_PATH
+      job: package_linker
+      ref: $BASE_DESIGN_REF
+      artifacts: true
   script:
     - cd linker
     # Unzipping the SMBus IP
