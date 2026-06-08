@@ -516,6 +516,8 @@ struct vrtd_buffer {
     uint64_t phys_addr;
     int qpair_fd;
     void *buf;
+    /* Internal DMA granule for the local host mapping: 4096 or 2 MiB. */
+    uint64_t transfer_step_size;
 };
 
 enum vrtd_ret vrtd_buffer_create_raw(
@@ -531,6 +533,21 @@ enum vrtd_ret vrtd_buffer_create_raw(
 );
 
 /**
+ * @brief Synchronize a range from the local host buffer to the device.
+ *
+ * The requested range may be smaller than the QDMA transfer granule. libvrtd
+ * handles any required internal alignment. Bidirectional buffers preserve
+ * device bytes outside the requested range with an internal read-modify-write;
+ * host-to-device-only buffers keep the historical behavior of expanding the
+ * transfer to the backing DMA granule.
+ */
+enum vrtd_ret vrtd_buffer_sync_to_device(
+    struct vrtd_buffer *buffer,
+    uint64_t offset,
+    uint64_t size
+);
+
+/**
  * @brief Destroy a local buffer handle.
  *
  * This does not notify the daemon. Use @c vrtd_buffer_close() to release
@@ -540,12 +557,13 @@ enum vrtd_ret vrtd_buffer_destroy(
     struct vrtd_buffer *buffer
 );
 
-enum vrtd_ret vrtd_buffer_sync_to_device(
-    struct vrtd_buffer *buffer,
-    uint64_t offset,
-    uint64_t size
-);
-
+/**
+ * @brief Synchronize a range from the device into the local host buffer.
+ *
+ * The requested range may be smaller than the QDMA transfer granule. libvrtd
+ * handles any required internal alignment and preserves bytes outside the
+ * requested host range.
+ */
 enum vrtd_ret vrtd_buffer_sync_from_device(
     struct vrtd_buffer *buffer,
     uint64_t offset,

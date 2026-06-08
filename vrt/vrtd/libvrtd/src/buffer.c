@@ -29,9 +29,10 @@
  * regular pages) and associated with a QDMA queue pair fd for
  * performing the actual H2C / C2H transfers.
  *
- * Sync operations (sync_to_device / sync_from_device) transfer data
- * between the host buffer and FPGA memory in TRANSFER_STEP_SIZE (4 KB)
- * chunks using positional I/O on the QDMA qpair fd.
+ * Sync operations (sync_to_device / sync_from_device) accept arbitrary
+ * in-buffer ranges. Internally, the QDMA fd requires page-aligned transfer
+ * ranges, so libvrtd expands partial requests to the mapping granule and uses
+ * a staging buffer when needed to preserve host-side partial-range semantics.
  *
  * Buffer lifecycle:
  *   1. vrtd_buffer_open()          -- daemon allocates, returns qpair fd
@@ -46,9 +47,14 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
+#include <syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 
@@ -62,7 +68,127 @@
 #define MAP_HUGE_2MB (21UL << MAP_HUGE_SHIFT)
 #endif
 
-#define TRANSFER_STEP_SIZE (4ULL * 1024ULL) // 4K
+#define BASE_TRANSFER_STEP_SIZE (4ULL * 1024ULL)              // 4K
+#define HUGE_TRANSFER_STEP_SIZE (2ULL * 1024ULL * 1024ULL)    // 2M
+
+/*
+ * Per-sync timing instrumentation.
+ *
+ * When SLASH_QDMA_TIMING is non-zero (compile-time flag, e.g. built with
+ * -DSLASH_QDMA_TIMING=1), the sync_to/from_device paths log the wall-clock
+ * cost of each pwrite/pread syscall plus the aggregate per-sync time and
+ * effective bandwidth.  This is the userspace counterpart to the kernel's
+ * SLASH_QDMA_TIMING and libqdma's QDMA_TIMING breakdowns.
+ */
+#ifndef SLASH_QDMA_TIMING
+#define SLASH_QDMA_TIMING 0
+#endif
+
+#if SLASH_QDMA_TIMING
+static inline uint64_t vrtd_now_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t) ts.tv_sec * 1000000000ULL + (uint64_t) ts.tv_nsec;
+}
+#endif
+
+static void vrtd_prefault_mapping(void *addr, uint64_t size) {
+    volatile uint8_t *touch = (volatile uint8_t *) addr;
+
+    for (uint64_t off = 0; off < size; off += BASE_TRANSFER_STEP_SIZE) {
+        touch[off] = 0;
+    }
+}
+
+static int vrtd_mmap_regular_base_pages(uint64_t size, void **addr_out) {
+    void *addr;
+
+    if (addr_out == NULL || size == 0) {
+        return -EINVAL;
+    }
+
+    addr = mmap(
+        NULL,
+        size,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0
+    );
+    if (addr == MAP_FAILED) {
+        return -errno;
+    }
+
+    if (madvise(addr, size, MADV_NOHUGEPAGE) != 0) {
+        int saved_errno = errno;
+        (void) munmap(addr, size);
+        return -saved_errno;
+    }
+
+    vrtd_prefault_mapping(addr, size);
+    *addr_out = addr;
+    return 0;
+}
+
+static int vrtd_transfer_pages(
+    int fd,
+    void *buf,
+    uint64_t phys_addr,
+    uint64_t offset,
+    uint64_t size,
+    uint64_t step,
+    bool to_device
+) {
+    uint64_t max_chunk;
+    uint64_t transferred = 0;
+
+    if (size == 0) {
+        return 0;
+    }
+
+    if (step == 0 || (offset % step) != 0 || (size % step) != 0) {
+        return -EINVAL;
+    }
+
+    max_chunk = (uint64_t)SSIZE_MAX - ((uint64_t)SSIZE_MAX % step);
+    if (max_chunk == 0) {
+        return -EINVAL;
+    }
+
+    while (transferred < size) {
+        uint64_t chunk = size - transferred;
+        uint64_t done = 0;
+
+        if (chunk > max_chunk) {
+            chunk = max_chunk;
+        }
+
+        while (done < chunk) {
+            size_t remaining = (size_t)(chunk - done);
+            off_t dev_offset = (off_t)(phys_addr + offset + transferred + done);
+            uint8_t *ptr = (uint8_t *)buf + offset + transferred + done;
+            ssize_t ret;
+
+            if (to_device) {
+                ret = pwrite(fd, ptr, remaining, dev_offset);
+            } else {
+                ret = pread(fd, ptr, remaining, dev_offset);
+            }
+
+            if (ret < 0 && errno == EINTR) {
+                continue;
+            }
+            if (ret <= 0) {
+                return -EIO;
+            }
+            done += (uint64_t)ret;
+        }
+
+        transferred += chunk;
+    }
+
+    return 0;
+}
 
 enum vrtd_ret vrtd_buffer_create_raw(
     int sock_fd,
@@ -84,29 +210,57 @@ enum vrtd_ret vrtd_buffer_create_raw(
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    buffer->buf = mmap(
-        NULL, /* address (let the kernel choose) */
-        size,
-        PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB | MAP_POPULATE,
-        -1, /* fd */
-        0   /* offset */
-    );
-    if (buffer->buf == MAP_FAILED) {
-        // Huge pages are an optimization, not a hard requirement.
-        // Fall back to normal anonymous mapping when hugepage mmap fails.
+    buffer->buf = MAP_FAILED;
+    buffer->transfer_step_size = BASE_TRANSFER_STEP_SIZE;
+
+    if ((size % HUGE_TRANSFER_STEP_SIZE) == 0 &&
+        (phys_addr % HUGE_TRANSFER_STEP_SIZE) == 0) {
         buffer->buf = mmap(
             NULL, /* address (let the kernel choose) */
             size,
             PROT_READ | PROT_WRITE,
-            MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE,
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB | MAP_POPULATE,
             -1, /* fd */
             0   /* offset */
         );
-        if (buffer->buf == MAP_FAILED) {
+        if (buffer->buf != MAP_FAILED) {
+            buffer->transfer_step_size = HUGE_TRANSFER_STEP_SIZE;
+        }
+    }
+
+    if (buffer->buf == MAP_FAILED) {
+        int huge_errno = errno;
+        // Huge pages are an optimization, not a hard requirement.
+        // Fall back to normal anonymous mapping when hugepage mmap fails. Do
+        // not use MAP_POPULATE before MADV_NOHUGEPAGE: THP=always can fault
+        // compound pages before the advice takes effect, and the kernel QDMA
+        // base-page path intentionally rejects those pages.
+        int mmap_ret = vrtd_mmap_regular_base_pages(size, &buffer->buf);
+        if (mmap_ret != 0) {
             free(buffer);
             return VRTD_RET_INTERNAL_ERROR;
         }
+        buffer->transfer_step_size = BASE_TRANSFER_STEP_SIZE;
+#if SLASH_QDMA_TIMING
+        syslog(
+            LOG_INFO,
+            "libvrtd: buffer host mapping path=regular-4k size=%llu phys_addr=0x%llx step=%llu huge_errno=%d",
+            (unsigned long long)size,
+            (unsigned long long)phys_addr,
+            (unsigned long long)buffer->transfer_step_size,
+            huge_errno
+        );
+#endif
+    } else {
+#if SLASH_QDMA_TIMING
+        syslog(
+            LOG_INFO,
+            "libvrtd: buffer host mapping path=hugetlb-2m size=%llu phys_addr=0x%llx step=%llu",
+            (unsigned long long)size,
+            (unsigned long long)phys_addr,
+            (unsigned long long)buffer->transfer_step_size
+        );
+#endif
     }
 
     buffer->sock_fd    = sock_fd;
@@ -119,6 +273,61 @@ enum vrtd_ret vrtd_buffer_create_raw(
     buffer->qpair_fd   = qpair_fd;
 
     *buffer_out = buffer;
+
+    return VRTD_RET_OK;
+}
+
+static enum vrtd_ret vrtd_buffer_prepare_sync_range(
+    const struct vrtd_buffer *buffer,
+    uint64_t offset,
+    uint64_t size,
+    uint64_t *aligned_offset_out,
+    uint64_t *aligned_size_out,
+    bool *needs_bounce_out
+) {
+    uint64_t step;
+    uint64_t end;
+    uint64_t aligned_offset;
+    uint64_t aligned_end;
+
+    if (buffer == NULL || aligned_offset_out == NULL ||
+        aligned_size_out == NULL || needs_bounce_out == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    step = buffer->transfer_step_size;
+    if (step == 0) {
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    if (offset > buffer->size || size > buffer->size - offset) {
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    if (size == 0) {
+        *aligned_offset_out = offset;
+        *aligned_size_out = 0;
+        *needs_bounce_out = false;
+        return VRTD_RET_OK;
+    }
+
+    if ((buffer->size % step) != 0 || (buffer->phys_addr % step) != 0) {
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    end = offset + size;
+    aligned_offset = offset - (offset % step);
+    if (end > UINT64_MAX - (step - 1)) {
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+    aligned_end = ((end + step - 1) / step) * step;
+    if (aligned_end > buffer->size) {
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    *aligned_offset_out = aligned_offset;
+    *aligned_size_out = aligned_end - aligned_offset;
+    *needs_bounce_out = (aligned_offset != offset || aligned_end != end);
 
     return VRTD_RET_OK;
 }
@@ -191,29 +400,72 @@ enum vrtd_ret vrtd_buffer_sync_to_device(
 
     assert(buffer->qpair_fd >= 0);
     assert(buffer->buf != NULL);
-    assert(buffer->size % TRANSFER_STEP_SIZE == 0);
-    assert(buffer->phys_addr % TRANSFER_STEP_SIZE == 0);
+    uint64_t aligned_offset = 0;
+    uint64_t aligned_size = 0;
+    bool needs_bounce = false;
+    enum vrtd_ret range_ret = vrtd_buffer_prepare_sync_range(
+        buffer, offset, size, &aligned_offset, &aligned_size, &needs_bounce);
+    if (range_ret != VRTD_RET_OK) {
+        return range_ret;
+    }
+    if (aligned_size == 0) {
+        return VRTD_RET_OK;
+    }
 
-    uint64_t effective_offset = offset - (offset % TRANSFER_STEP_SIZE);
-    uint64_t end_offset = offset + size;
+    uint64_t step = buffer->transfer_step_size;
+#if SLASH_QDMA_TIMING
+    uint64_t sync_start_ns = vrtd_now_ns();
+#endif
 
-    off_t ret = lseek(buffer->qpair_fd, buffer->phys_addr + effective_offset, SEEK_SET);
-    if (ret == -1) {
+    int transfer_ret;
+    if (needs_bounce && buffer->alloc_dir == VRTD_ALLOC_DIR_BIDIRECTIONAL) {
+        void *bounce = NULL;
+        int mmap_ret = vrtd_mmap_regular_base_pages(aligned_size, &bounce);
+        if (mmap_ret != 0) {
+            return VRTD_RET_INTERNAL_ERROR;
+        }
+
+        transfer_ret = vrtd_transfer_pages(
+            buffer->qpair_fd, bounce, buffer->phys_addr + aligned_offset,
+            0, aligned_size, BASE_TRANSFER_STEP_SIZE, false);
+        if (transfer_ret == 0) {
+            memcpy(
+                (uint8_t *)bounce + (offset - aligned_offset),
+                (uint8_t *)buffer->buf + offset,
+                size
+            );
+            transfer_ret = vrtd_transfer_pages(
+                buffer->qpair_fd, bounce, buffer->phys_addr + aligned_offset,
+                0, aligned_size, BASE_TRANSFER_STEP_SIZE, true);
+        }
+        (void) munmap(bounce, aligned_size);
+    } else {
+        /*
+         * Host-to-device-only buffers cannot read the surrounding device
+         * granule for a read-modify-write, so keep the historical behavior:
+         * expand partial syncs to the backing DMA granule.
+         */
+        transfer_ret = vrtd_transfer_pages(
+            buffer->qpair_fd, buffer->buf, buffer->phys_addr,
+            aligned_offset, aligned_size, step, true);
+    }
+    if (transfer_ret != 0) {
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    for (uint64_t curr_offset = effective_offset; curr_offset < end_offset; curr_offset += TRANSFER_STEP_SIZE) {
-        ssize_t bytes_written = 0;
-        while (bytes_written < TRANSFER_STEP_SIZE) {
-            ssize_t bw = write(buffer->qpair_fd,
-                               (uint8_t *) buffer->buf + curr_offset + bytes_written,
-                               TRANSFER_STEP_SIZE - bytes_written);
-            if (bw == -1) {
-                return VRTD_RET_INTERNAL_ERROR;
-            }
-            bytes_written += bw;
-        }
+#if SLASH_QDMA_TIMING
+    {
+        uint64_t total_ns = vrtd_now_ns() - sync_start_ns;
+        double mb = (double) size / (1024.0 * 1024.0);
+        double sec = (double) total_ns / 1e9;
+        syslog(LOG_INFO,
+               "libvrtd: timing H2C sync offset=%llu size=%llu aligned_offset=%llu aligned_size=%llu step=%llu total=%llu ns (%.1f MB/s)",
+               (unsigned long long) offset, (unsigned long long) size,
+               (unsigned long long) aligned_offset, (unsigned long long) aligned_size,
+               (unsigned long long) step, (unsigned long long) total_ns,
+               sec > 0.0 ? mb / sec : 0.0);
     }
+#endif
 
     return VRTD_RET_OK;
 }
@@ -233,29 +485,64 @@ enum vrtd_ret vrtd_buffer_sync_from_device(
 
     assert(buffer->qpair_fd >= 0);
     assert(buffer->buf != NULL);
-    assert(buffer->size % TRANSFER_STEP_SIZE == 0);
-    assert(buffer->phys_addr % TRANSFER_STEP_SIZE == 0);
+    uint64_t aligned_offset = 0;
+    uint64_t aligned_size = 0;
+    bool needs_bounce = false;
+    enum vrtd_ret range_ret = vrtd_buffer_prepare_sync_range(
+        buffer, offset, size, &aligned_offset, &aligned_size, &needs_bounce);
+    if (range_ret != VRTD_RET_OK) {
+        return range_ret;
+    }
+    if (aligned_size == 0) {
+        return VRTD_RET_OK;
+    }
 
-    uint64_t effective_offset = offset - (offset % TRANSFER_STEP_SIZE);
-    uint64_t end_offset = offset + size;
+    uint64_t step = buffer->transfer_step_size;
+#if SLASH_QDMA_TIMING
+    uint64_t sync_start_ns = vrtd_now_ns();
+#endif
 
-    off_t ret = lseek(buffer->qpair_fd, buffer->phys_addr + effective_offset, SEEK_SET);
-    if (ret == -1) {
+    int transfer_ret;
+    if (needs_bounce) {
+        void *bounce = NULL;
+        int mmap_ret = vrtd_mmap_regular_base_pages(aligned_size, &bounce);
+        if (mmap_ret != 0) {
+            return VRTD_RET_INTERNAL_ERROR;
+        }
+
+        transfer_ret = vrtd_transfer_pages(
+            buffer->qpair_fd, bounce, buffer->phys_addr + aligned_offset,
+            0, aligned_size, BASE_TRANSFER_STEP_SIZE, false);
+        if (transfer_ret == 0) {
+            memcpy(
+                (uint8_t *)buffer->buf + offset,
+                (uint8_t *)bounce + (offset - aligned_offset),
+                size
+            );
+        }
+        (void) munmap(bounce, aligned_size);
+    } else {
+        transfer_ret = vrtd_transfer_pages(
+            buffer->qpair_fd, buffer->buf, buffer->phys_addr,
+            aligned_offset, aligned_size, step, false);
+    }
+    if (transfer_ret != 0) {
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    for (uint64_t curr_offset = effective_offset; curr_offset < end_offset; curr_offset += TRANSFER_STEP_SIZE) {
-        ssize_t bytes_read = 0;
-        while (bytes_read < TRANSFER_STEP_SIZE) {
-            ssize_t br = read(buffer->qpair_fd,
-                              (uint8_t *) buffer->buf + curr_offset + bytes_read,
-                              TRANSFER_STEP_SIZE - bytes_read);
-            if (br == -1) {
-                return VRTD_RET_INTERNAL_ERROR;
-            }
-            bytes_read += br;
-        }
+#if SLASH_QDMA_TIMING
+    {
+        uint64_t total_ns = vrtd_now_ns() - sync_start_ns;
+        double mb = (double) size / (1024.0 * 1024.0);
+        double sec = (double) total_ns / 1e9;
+        syslog(LOG_INFO,
+               "libvrtd: timing C2H sync offset=%llu size=%llu aligned_offset=%llu aligned_size=%llu step=%llu total=%llu ns (%.1f MB/s)",
+               (unsigned long long) offset, (unsigned long long) size,
+               (unsigned long long) aligned_offset, (unsigned long long) aligned_size,
+               (unsigned long long) step, (unsigned long long) total_ns,
+               sec > 0.0 ? mb / sec : 0.0);
     }
+#endif
 
     return VRTD_RET_OK;
 }
