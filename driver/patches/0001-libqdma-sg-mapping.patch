@@ -1,0 +1,172 @@
+SLASH local modification to the pinned QDMA submodule (libqdma).
+
+libqdma: length/offset-aware SG mapping + optional submit timing
+
+The stock libqdma sgl_map()/sgl_unmap() always DMA-map a fixed PAGE_SIZE per
+scatter-gather entry and ignore sg->len / sg->offset. The SLASH driver
+(driver/slash_qdma.c) builds SG lists with variable-length entries (a single
+base page or one 2 MiB hugetlb page per entry), so the mapping must honour
+sg->offset and sg->len. This also documents sg->len in libqdma_export.h and
+adds the optional, compile-time gated (QDMA_TIMING) per-request submit timing
+that pairs with SLASH_QDMA_TIMING in the SLASH driver.
+
+Generated against qdma_drv @ 03ac7f3 (pinned submodule commit).
+Applied automatically by driver/Makefile (libqdma-patches target, patch -p1).
+diff --git a/libqdma_export.c b/libqdma_export.c
+index f0524d8..bff6161 100755
+--- a/libqdma_export.c
++++ b/libqdma_export.c
+@@ -39,6 +39,8 @@
+ #include "qdma_mbox.h"
+ #include "qdma_platform.h"
+ 
++#include <linux/ktime.h>
++
+ #ifdef DEBUGFS
+ #include "qdma_debugfs_queue.h"
+ 
+@@ -50,6 +52,27 @@ static bool qdma_debufs_cleanup = true;
+ 
+ #define QDMA_Q_PEND_LIST_COMPLETION_TIMEOUT 1000 /* msec */
+ 
++/*
++ * Per-request timing instrumentation for the synchronous MM submit path.
++ *
++ * When QDMA_TIMING is non-zero (compile-time flag, e.g. built with
++ * -DQDMA_TIMING=1), qdma_request_submit() emits one line per request that
++ * splits the submit cost into:
++ *
++ *   - sgl_map:  DMA-mapping the scatter-gather list (dma_map_page per entry;
++ *               this is where IOMMU programming/IOTLB flushes show up).
++ *   - proc:     qdma_descq_proc_sgt_request() -- descriptor-ring fill plus
++ *               the PIDX doorbell MMIO write that kicks the hardware.
++ *   - wait:     qdma_request_wait_for_cmpl() -- the blocking wait covering
++ *               the actual HW data movement and poll-mode completion spin.
++ *
++ * Pairs with SLASH_QDMA_TIMING in the SLASH driver, whose "submit" phase is
++ * exactly the sum of these three.
++ */
++#ifndef QDMA_TIMING
++#define QDMA_TIMING 0
++#endif
++
+ struct drv_mode_name mode_name_list[] = {
+ 	{ AUTO_MODE,			"auto"},
+ 	{ POLL_MODE,			"poll"},
+@@ -2324,8 +2347,8 @@ void sgl_unmap(struct pci_dev *pdev, struct qdma_sw_sg *sg, unsigned int sgcnt,
+ 		if (!sg->pg)
+ 			break;
+ 		if (sg->dma_addr) {
+-			dma_unmap_page(&pdev->dev, sg->dma_addr - sg->offset,
+-							PAGE_SIZE, dir);
++			dma_unmap_page(&pdev->dev, sg->dma_addr, sg->len,
++							dir);
+ 			sg->dma_addr = 0UL;
+ 		}
+ 	}
+@@ -2351,20 +2374,21 @@ int sgl_map(struct pci_dev *pdev, struct qdma_sw_sg *sgl, unsigned int sgcnt,
+ 	int i;
+ 	struct qdma_sw_sg *sg = sgl;
+ 
+-	/** Map the sg list onto a dma pages where
+-	 *  each page has max of PAGE_SIZE i.e 4K
+-	 */
+ 	for (i = 0; i < sgcnt; i++, sg++) {
+-		/* !! TODO  page size !! */
+-		sg->dma_addr = dma_map_page(&pdev->dev, sg->pg, 0, PAGE_SIZE,
+-				dir);
++		if (!sg->len) {
++			pr_err("map sgl failed, sg %d has zero length.\n", i);
++			if (i)
++				sgl_unmap(pdev, sgl, i, dir);
++			return -EINVAL;
++		}
++		sg->dma_addr = dma_map_page(&pdev->dev, sg->pg, sg->offset,
++				sg->len, dir);
+ 		if (unlikely(dma_mapping_error(&pdev->dev, sg->dma_addr))) {
+ 			pr_err("map sgl failed, sg %d, %u.\n", i, sg->len);
+ 			if (i)
+ 				sgl_unmap(pdev, sgl, i, dir);
+ 			return -EIO;
+ 		}
+-		sg->dma_addr += sg->offset;
+ 	}
+ 
+ 	return 0;
+@@ -2393,6 +2417,9 @@ ssize_t qdma_request_submit(unsigned long dev_hndl, unsigned long id,
+ 	enum dma_data_direction dir;
+ 	int wait = 0;
+ 	int rv = 0;
++#if QDMA_TIMING
++	ktime_t t_start, t_mapped, t_proc, t_wait;
++#endif
+ 
+ 	/** make sure that the dev_hndl passed is Valid */
+ 	if (!xdev) {
+@@ -2459,6 +2486,9 @@ ssize_t qdma_request_submit(unsigned long dev_hndl, unsigned long id,
+ 	if (descq->conf.st && (descq->conf.q_type == Q_C2H))
+ 		return qdma_request_submit_st_c2h(xdev, descq, req);
+ 
++#if QDMA_TIMING
++	t_start = ktime_get();
++#endif
+ 	if (!req->dma_mapped) {
+ 		rv = sgl_map(xdev->conf.pdev,  req->sgl, req->sgcnt, dir);
+ 		if (rv < 0) {
+@@ -2468,6 +2498,9 @@ ssize_t qdma_request_submit(unsigned long dev_hndl, unsigned long id,
+ 		}
+ 		cb->unmap_needed = 1;
+ 	}
++#if QDMA_TIMING
++	t_mapped = ktime_get();
++#endif
+ 
+ 	lock_descq(descq);
+ 	/**  if the descq is already in online state*/
+@@ -2484,6 +2517,9 @@ ssize_t qdma_request_submit(unsigned long dev_hndl, unsigned long id,
+ 	pr_debug("%s: cb 0x%p submitted.\n", descq->conf.name, cb);
+ 
+ 	qdma_descq_proc_sgt_request(descq);
++#if QDMA_TIMING
++	t_proc = ktime_get();
++#endif
+ 
+ 	if (!wait)
+ 		return 0;
+@@ -2492,6 +2528,18 @@ ssize_t qdma_request_submit(unsigned long dev_hndl, unsigned long id,
+ 	if (rv < 0)
+ 		goto unmap_sgl;
+ 
++#if QDMA_TIMING
++	t_wait = ktime_get();
++	pr_info("qdma: timing %s %s count=%u sgcnt=%u ep=0x%llx off=%u | sgl_map=%lld proc=%lld wait=%lld total=%lld ns\n",
++		descq->conf.name, req->write ? "H2C" : "C2H",
++		req->count, req->sgcnt,
++		(unsigned long long)req->ep_addr, cb->offset,
++		ktime_to_ns(ktime_sub(t_mapped, t_start)),
++		ktime_to_ns(ktime_sub(t_proc, t_mapped)),
++		ktime_to_ns(ktime_sub(t_wait, t_proc)),
++		ktime_to_ns(ktime_sub(t_wait, t_start)));
++#endif
++
+ 	return cb->offset;
+ 
+ unmap_sgl:
+diff --git a/libqdma_export.h b/libqdma_export.h
+index baeb78e..9bd60ee 100755
+--- a/libqdma_export.h
++++ b/libqdma_export.h
+@@ -558,7 +558,12 @@ struct qdma_sw_sg {
+ 	struct page *pg;
+ 	/** offset in current page */
+ 	unsigned int offset;
+-	/** length of the page */
++	/**
++	 * Length of this scatter-gather entry.  The DMA mapping helpers map
++	 * exactly this many bytes starting at @offset, so callers must set this
++	 * to the full backing granule they intend to expose (for example 4 KiB
++	 * for base pages or 2 MiB for huge pages).
++	 */
+ 	unsigned int len;
+ 	/** dma address of the allocated page */
+ 	dma_addr_t dma_addr;

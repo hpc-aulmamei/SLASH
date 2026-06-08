@@ -15,6 +15,16 @@
 #include <sys/mman.h>
 
 #define TRANSFER_SIZE 4096
+#define HUGE_PAGE_SIZE (2 * 1024 * 1024)
+#define HUGE_TRANSFER_SIZE (2 * HUGE_PAGE_SIZE)
+
+#ifndef MAP_HUGE_SHIFT
+#define MAP_HUGE_SHIFT 26
+#endif
+
+#ifndef MAP_HUGE_2MB
+#define MAP_HUGE_2MB (21 << MAP_HUGE_SHIFT)
+#endif
 
 /* ---------- helpers ---------- */
 
@@ -303,17 +313,8 @@ TEST_F(qdma, io_write_on_c2h_only_returns_enodev)
 	free(buf);
 }
 
-/*
- * TODO: spec at docs/reference/kernel-abi/index.rst:417 documents zero-length
- * transfers as returning -EINVAL, but the kernel's map_user_buf_to_sgl path
- * (slash_qdma.c:2033-2034) explicitly patches around the len==0 case
- * (`if (len == 0) pages_nr = 1;`), making the -EINVAL branch unreachable.
- * The observed behaviour is ret == 0.  Desired behaviour is under
- * investigation — keep this test as-is so the discrepancy is visible.
- */
 TEST_F(qdma, io_zero_length_returns_einval)
 {
-	SKIP(return, "Test is disabled since the desired behavior is under investigation");
 	uint8_t *buf;
 	ssize_t ret;
 
@@ -705,6 +706,121 @@ TEST_F(qdma, qpair_get_fd_oversized_struct_zeros_tail)
 	if (fd >= 0)
 		close(fd);
 	free(buf);
+}
+
+TEST_F(qdma, reject_unaligned_4k_transfer)
+{
+	uint8_t *write_buf;
+	uint64_t dma_addr = get_dma_addr();
+	ssize_t ret;
+
+	bring_up_qpair(_metadata, self, 0x3);
+
+	write_buf = aligned_alloc(4096, TRANSFER_SIZE * 2);
+	ASSERT_NE(NULL, write_buf);
+	fill_pattern(write_buf, TRANSFER_SIZE * 2);
+
+	errno = 0;
+	ret = pwrite(self->io_fd, write_buf + 1, TRANSFER_SIZE, (off_t)dma_addr);
+	ASSERT_EQ(-1, ret);
+	ASSERT_EQ(EINVAL, errno);
+
+	free(write_buf);
+}
+
+TEST_F(qdma, reject_partial_4k_transfer)
+{
+	uint8_t *write_buf;
+	uint64_t dma_addr = get_dma_addr();
+	ssize_t ret;
+
+	bring_up_qpair(_metadata, self, 0x3);
+
+	write_buf = aligned_alloc(4096, TRANSFER_SIZE);
+	ASSERT_NE(NULL, write_buf);
+	fill_pattern(write_buf, TRANSFER_SIZE);
+
+	errno = 0;
+	ret = pwrite(self->io_fd, write_buf, TRANSFER_SIZE / 2, (off_t)dma_addr);
+	ASSERT_EQ(-1, ret);
+	ASSERT_EQ(EINVAL, errno);
+
+	free(write_buf);
+}
+
+TEST_F(qdma, multipage_4k_write_read_verify)
+{
+	const size_t xfer_size = TRANSFER_SIZE * 8; /* 8 base pages, one request */
+	uint8_t *write_buf, *read_buf;
+	uint64_t dma_addr = get_dma_addr();
+	ssize_t ret;
+
+	bring_up_qpair(_metadata, self, 0x3);
+
+	/*
+	 * A multi-page base-page buffer is mapped as one SGL entry (one DMA
+	 * descriptor) per 4 KiB page and submitted as a single libqdma request.
+	 * The size is deliberately not a 2 MiB multiple, so this always takes the
+	 * base-page path regardless of transparent-hugepage state; a sub-2-MiB
+	 * anonymous mmap is always backed by 4 KiB base pages.
+	 */
+	write_buf = mmap(NULL, xfer_size, PROT_READ | PROT_WRITE,
+			 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	ASSERT_NE(MAP_FAILED, write_buf);
+	read_buf = mmap(NULL, xfer_size, PROT_READ | PROT_WRITE,
+			MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	ASSERT_NE(MAP_FAILED, read_buf);
+
+	fill_pattern(write_buf, xfer_size);
+	memset(read_buf, 0, xfer_size);
+
+	ret = pwrite(self->io_fd, write_buf, xfer_size, (off_t)dma_addr);
+	ASSERT_EQ((ssize_t)xfer_size, ret);
+
+	ret = pread(self->io_fd, read_buf, xfer_size, (off_t)dma_addr);
+	ASSERT_EQ((ssize_t)xfer_size, ret);
+
+	EXPECT_EQ(0, memcmp(write_buf, read_buf, xfer_size));
+
+	munmap(write_buf, xfer_size);
+	munmap(read_buf, xfer_size);
+}
+
+TEST_F(qdma, hugepage_write_read_verify)
+{
+	uint8_t *write_buf, *read_buf;
+	uint64_t dma_addr = get_dma_addr();
+	ssize_t ret;
+
+	bring_up_qpair(_metadata, self, 0x3);
+
+	write_buf = mmap(NULL, HUGE_TRANSFER_SIZE, PROT_READ | PROT_WRITE,
+			 MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB,
+			 -1, 0);
+	if (write_buf == MAP_FAILED)
+		SKIP(return, "2 MiB hugepage write mmap failed (errno=%d)", errno);
+
+	read_buf = mmap(NULL, HUGE_TRANSFER_SIZE, PROT_READ | PROT_WRITE,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB,
+			-1, 0);
+	if (read_buf == MAP_FAILED) {
+		munmap(write_buf, HUGE_TRANSFER_SIZE);
+		SKIP(return, "2 MiB hugepage read mmap failed (errno=%d)", errno);
+	}
+
+	fill_pattern(write_buf, HUGE_TRANSFER_SIZE);
+	memset(read_buf, 0, HUGE_TRANSFER_SIZE);
+
+	ret = pwrite(self->io_fd, write_buf, HUGE_TRANSFER_SIZE, (off_t)dma_addr);
+	ASSERT_EQ(HUGE_TRANSFER_SIZE, ret);
+
+	ret = pread(self->io_fd, read_buf, HUGE_TRANSFER_SIZE, (off_t)dma_addr);
+	ASSERT_EQ(HUGE_TRANSFER_SIZE, ret);
+
+	EXPECT_EQ(0, memcmp(write_buf, read_buf, HUGE_TRANSFER_SIZE));
+
+	munmap(write_buf, HUGE_TRANSFER_SIZE);
+	munmap(read_buf, HUGE_TRANSFER_SIZE);
 }
 
 TEST_HARNESS_MAIN

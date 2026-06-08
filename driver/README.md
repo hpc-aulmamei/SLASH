@@ -1,9 +1,56 @@
 # SLASH kernel module
 
+## Module parameters
+
+Exposed under `/sys/module/slash/parameters/` (all writable at runtime; see
+`modinfo slash.ko`):
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `qdma_num_threads` | uint | 8 | Number of libqdma worker threads. |
+| `qdma_debugfs_path` | charp | disabled | debugfs mount path for libqdma. |
+| `qdma_force_mm_channel` | int | -1 | Force the QDMA AXI-MM / NoC channel for newly-added queues: `<0` = auto (stripe by `qid & 1`), `0` or `1` = pin every new queue to that channel. |
+
+### A/B testing NoC channel bandwidth
+
+`qdma_force_mm_channel` is read when each queue pair is added, so it can be
+changed between test runs to check whether both PCIe NMUs (NoC channels)
+actually contribute bandwidth. Each value pins all new queues to one NoC
+channel; the default (`-1`) splits them across both:
+
+```sh
+# All queues on NoC channel 0 (NMU S00)
+echo 0  | sudo tee /sys/module/slash/parameters/qdma_force_mm_channel
+sudo v80-smi validate -d <BDF> --raw-transfer-test --no-reset
+
+# All queues on NoC channel 1 (NMU S01)
+echo 1  | sudo tee /sys/module/slash/parameters/qdma_force_mm_channel
+sudo v80-smi validate -d <BDF> --raw-transfer-test --no-reset
+
+# Default: split across both channels (qid & 1)
+echo -1 | sudo tee /sys/module/slash/parameters/qdma_force_mm_channel
+sudo v80-smi validate -d <BDF> --raw-transfer-test --no-reset
+```
+
+Debug builds with `SLASH_QDMA_OP_DEBUG=1` log each queue's selected
+`mm_channel` when it is added. If the split run is no faster than a single
+forced channel, traffic is not being spread across both NMUs. The parameter
+affects every queue created through this driver (both the VRTD buffer path and
+`--raw-transfer-test`), but not the off-the-shelf Xilinx QDMA driver path
+(`--use-qdma-driver`).
+
 ## Testing
 
 The test suite requires a physical V80 to be present and the module to be
 loaded into a running kernel.
+
+## Local libqdma patches
+
+SLASH carries small patches for the pinned `libqdma` submodule under
+`driver/patches/`. The driver `Makefile` applies them before building, and
+`make clean` attempts to revert them so the submodule working copy returns to
+its pristine pinned state. DKMS packages include the same patch directory and
+depend on `patch(1)`.
 
 ### Prerequisites
 

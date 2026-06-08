@@ -23,8 +23,9 @@
  * to provide queue-pair-based DMA transfers between host memory and the
  * FPGA fabric.
  *
- * The QDMA subsystem binds to PF1 (PCI device ID 0x50B5), while the
- * control device (slash_ctldev) binds to PF2 (device ID 0x50B6).
+ * The QDMA subsystem binds to PF1 (PCI device ID 0x50B5, or 0x50BD on
+ * AVED/V80P designs), while the control device (slash_ctldev) binds to
+ * PF2 (device ID 0x50B6).
  *
  * Queue pair lifecycle:
  *   add -> start -> I/O (via anon_inode fd) -> stop -> del
@@ -50,10 +51,15 @@
 
 #include <asm/cacheflush.h>
 #include <linux/bitops.h>
+#include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/hugetlb.h>
+#include <linux/kernel.h>
 #include <linux/kref.h>
+#include <linux/ktime.h>
+#include <linux/limits.h>
 #include <linux/miscdevice.h>
 #include <linux/minmax.h>
 #include <linux/mutex.h>
@@ -101,6 +107,80 @@
 #define SLASH_QDMA_QPAIR_GET_FD_MIN_SIZE \
     offsetofend(struct slash_qdma_qpair_fd_request, flags)
 
+/*
+ * CPM5 Host Profile indirect-context programming.
+ *
+ * The Host Profile context tells the CPM5 QDMA how to route AXI4-MM
+ * traffic onto the Versal NoC.  It is programmed via the same indirect
+ * context command interface libqdma uses for queue contexts, but with
+ * the host-profile selector (0xA).  Register offsets and the command
+ * word layout mirror eqdma_cpm5_reg.h:
+ *
+ *   IND_CTXT_DATA  base 0x804 (8 x u32 context words)
+ *   IND_CTXT_MASK  base 0x824 (8 x u32 write masks)
+ *   IND_CTXT_CMD   0x844      (busy[0], sel[4:1], op[6:5], qid[18:7])
+ *
+ * We program two profiles so the per-queue SW-context host_id selects
+ * the NoC channel: Host ID 0 -> NoC Channel 0, Host ID 1 -> NoC Channel 1.
+ */
+#define SLASH_QDMA_HP_DATA_ADDR  0x804u
+#define SLASH_QDMA_HP_MASK_ADDR  0x824u
+#define SLASH_QDMA_HP_CMD_ADDR   0x844u
+#define SLASH_QDMA_HP_CMD_BUSY   BIT(0)
+#define SLASH_QDMA_HP_NUM_WORDS  8
+#define SLASH_QDMA_HP_SEL        0xAu   /* QDMA_CTXT_SELC_HOST_PROFILE */
+#define SLASH_QDMA_HP_OP_WR      0x1u   /* indirect context WR opcode */
+#define SLASH_QDMA_HP_SMID_BASE  0x100u /* bit 8 set; base AXI-MM master ID */
+#define SLASH_QDMA_HP_POLL_US    1000   /* busy-wait budget in microseconds */
+
+/*
+ * qdma_force_mm_channel - Debug/experiment override for AXI-MM/NoC channel
+ * assignment of newly-added queue pairs.
+ *
+ *   < 0 : automatic - stripe across channels by (qid & 1)  [default]
+ *     0 : pin every new queue to MM channel 0 (Host Profile 0 / NoC Channel 0)
+ *     1 : pin every new queue to MM channel 1 (Host Profile 1 / NoC Channel 1)
+ *
+ * The value is read when a queue pair is added, so it can be changed at
+ * runtime via /sys/module/slash/parameters/qdma_force_mm_channel to A/B test
+ * whether both PCIe NMUs (NoC channels) actually contribute bandwidth:
+ *
+ *   echo 0  > .../qdma_force_mm_channel   # all traffic on NoC channel 0 (S00)
+ *   echo 1  > .../qdma_force_mm_channel   # all traffic on NoC channel 1 (S01)
+ *   echo -1 > .../qdma_force_mm_channel   # default split (qid & 1)
+ *
+ * Affects both the VRTD buffer path and the raw-transfer path (any queue
+ * created through this driver). It does not affect the off-the-shelf Xilinx
+ * QDMA driver path.
+ */
+static int qdma_force_mm_channel = -1;
+
+static int slash_qdma_force_mm_channel_set(const char *val,
+                                           const struct kernel_param *kp)
+{
+    int parsed;
+    int err;
+
+    err = kstrtoint(val, 0, &parsed);
+    if (err)
+        return err;
+
+    if (parsed < -1 || parsed > 1)
+        return -EINVAL;
+
+    return param_set_int(val, kp);
+}
+
+static const struct kernel_param_ops slash_qdma_force_mm_channel_ops = {
+    .set = slash_qdma_force_mm_channel_set,
+    .get = param_get_int,
+};
+
+module_param_cb(qdma_force_mm_channel, &slash_qdma_force_mm_channel_ops,
+                &qdma_force_mm_channel, 0644);
+MODULE_PARM_DESC(qdma_force_mm_channel,
+    "Force QDMA AXI-MM/NoC channel for new queues: <0=auto(qid&1), 0 or 1 to pin (default -1)");
+
 /**
  * SLASH_QDMA_QTYPE_COUNT - Number of queue types tracked per queue pair.
  *
@@ -117,6 +197,25 @@
  * HW queue-set limit in sync.
  */
 #define SLASH_QDMA_MAX_QPAIRS 256
+
+/*
+ * The qpair fd data path accepts either a span of 4 KiB base pages or a span
+ * of 2 MiB hugetlb pages.  Every scatter-gather entry within one request uses
+ * the same granule, which keeps the DMA mapping semantics unambiguous; the two
+ * granules are never mixed in a single request.  A whole transfer (of either
+ * granule) is submitted to libqdma as a single multi-descriptor request, and
+ * libqdma refills the descriptor ring as needed -- so the transfer size is not
+ * bounded by the ring depth.
+ */
+#define SLASH_QDMA_HUGEPAGE_SIZE (2UL * 1024UL * 1024UL)
+
+/*
+ * Upper bound on the number of pages pinned per get_user_pages_fast() call when
+ * mapping a multi-page base-page transfer.  Bounds the work done in a single
+ * GUP call (and keeps the per-call page count within int range) while still
+ * pinning large buffers in only a handful of iterations.
+ */
+#define SLASH_QDMA_GUP_BATCH 8192u
 
 /**
  * SLASH_QDMA_QPAIR_ID_RANGE - XArray allocation range for qpair IDs.
@@ -150,6 +249,30 @@
 #define SLASH_QDMA_OP_DEV_LOG(dev, fmt, ...) \
     do {                                      \
     } while (0)
+#endif
+
+/*
+ * Per-transfer timing instrumentation.
+ *
+ * When SLASH_QDMA_TIMING is non-zero (compile-time flag, e.g. built with
+ * -DSLASH_QDMA_TIMING=1), slash_qdma_qpair_read_write() emits one dev_info
+ * line per transfer breaking down the wall-clock cost of the kernel-side
+ * phases:
+ *
+ *   - map:    pin user pages, validate page shape, build the SGL
+ *             (slash_qdma_map_user_buf_to_sgl()).
+ *   - submit: the whole libqdma qdma_request_submit() call, which covers
+ *             SGL DMA-mapping (IOMMU), descriptor-ring fill, the PIDX
+ *             doorbell, and the synchronous completion wait (HW transfer +
+ *             poll-mode spin).  libqdma can be built with QDMA_TIMING=1 for
+ *             a finer breakdown of this phase.
+ *   - unmap:  unpin pages (mark dirty for C2H) and free the SGL.
+ *
+ * Timestamps use ktime_get() (CLOCK_MONOTONIC); the reads are cheap, but
+ * the whole block compiles out entirely when the flag is 0.
+ */
+#ifndef SLASH_QDMA_TIMING
+#define SLASH_QDMA_TIMING 0
 #endif
 
 /* Forward declaration; full definition follows. */
@@ -625,10 +748,12 @@ static void slash_qdma_ioctl_info(struct miscdevice *misc, struct slash_qdma_dev
 /**
  * slash_qdma_ids - PCI device ID table for the QDMA PF.
  *
- * Matches only PF1 (device ID 0x50B5) on AMD/Xilinx V80 cards.
+ * Matches PF1 QDMA functions on AMD/Xilinx V80 cards, including the
+ * AVED/V80P device ID.
  */
 static const struct pci_device_id slash_qdma_ids[] = {
     {PCI_DEVICE(SLASH_QDMA_PCI_VENDOR_ID, SLASH_QDMA_PCI_DEVICE_ID)},
+    {PCI_DEVICE(SLASH_QDMA_PCI_VENDOR_ID, SLASH_AVED_QDMA_PCI_DEVICE_ID)},
     {0,}
 };
 MODULE_DEVICE_TABLE(pci, slash_qdma_ids);
@@ -851,6 +976,157 @@ void slash_qdma_exit(void)
 }
 
 /* ─────────────────────────────────────────────────────────────────────
+ * CPM5 Host Profile context programming
+ * ───────────────────────────────────────────────────────────────────── */
+
+/**
+ * slash_qdma_hp_set_field() - Set a bit field in the host profile context.
+ * @words: Array of SLASH_QDMA_HP_NUM_WORDS u32s holding the 256-bit context
+ *         (word i covers bits [32*i+31 : 32*i]).
+ * @hi:    Most-significant bit index of the field (inclusive).
+ * @lo:    Least-significant bit index of the field (inclusive).
+ * @val:   Value to place in [hi:lo]; bits outside the field width are masked.
+ *
+ * Handles fields that straddle a 32-bit word boundary (e.g. the C2H
+ * AXI4-MM steering field at bits [97:94], which spans words 2 and 3).
+ */
+static void slash_qdma_hp_set_field(u32 *words, unsigned int hi,
+                                    unsigned int lo, u32 val)
+{
+    unsigned int width = hi - lo + 1;
+    u32 fmask = (width >= 32) ? ~0u : ((1u << width) - 1u);
+    unsigned int word = lo >> 5;
+    unsigned int off = lo & 31;
+    u64 wmask = (u64)fmask << off;
+    u64 wval = (u64)(val & fmask) << off;
+
+    words[word] = (words[word] & ~(u32)(wmask & 0xFFFFFFFFu)) |
+                  (u32)(wval & 0xFFFFFFFFu);
+
+    if ((off + width) > 32 && (word + 1) < SLASH_QDMA_HP_NUM_WORDS)
+        words[word + 1] = (words[word + 1] & ~(u32)(wmask >> 32)) |
+                          (u32)(wval >> 32);
+}
+
+/**
+ * slash_qdma_write_host_profile() - Program one CPM5 Host Profile entry.
+ * @device:  QDMA device (provides the libqdma handle for register access).
+ * @host_id: Host Profile index to program (also the AXI4-MM steering value,
+ *           i.e. the target NoC channel).
+ *
+ * Builds the 256-bit host profile context with the SMID and H2C/C2H
+ * AXI4-MM steering fields, writes it through the indirect-context
+ * registers via the libqdma-exported config register accessors, and
+ * polls the command BUSY bit until the controller completes the write.
+ *
+ * Only the SMID and the two steering fields are non-zero; the AXI
+ * prot/cache attributes are left at 0.
+ *
+ * Return: 0 on success, negative errno on register-access error or
+ *         -ETIMEDOUT if the BUSY bit never clears.
+ */
+static int slash_qdma_write_host_profile(struct slash_qdma_dev *device,
+                                         u32 host_id)
+{
+    u32 data[SLASH_QDMA_HP_NUM_WORDS] = {0};
+    unsigned int waited_us = 0;
+    u32 smid = SLASH_QDMA_HP_SMID_BASE + host_id;
+    u32 cmd;
+    u32 val = 0;
+    int err;
+    int i;
+
+    /* SMID [201:192]; H2C steering [181:178]; C2H steering [97:94]. */
+    slash_qdma_hp_set_field(data, 201, 192, smid);
+    slash_qdma_hp_set_field(data, 181, 178, host_id);
+    slash_qdma_hp_set_field(data, 97, 94, host_id);
+
+    /* Context data words. */
+    for (i = 0; i < SLASH_QDMA_HP_NUM_WORDS; i++) {
+        err = qdma_device_write_config_register(device->qdma_handle,
+                SLASH_QDMA_HP_DATA_ADDR + (i * sizeof(u32)), data[i]);
+        if (err)
+            goto err_reg;
+    }
+
+    /* Context masks: write every bit. */
+    for (i = 0; i < SLASH_QDMA_HP_NUM_WORDS; i++) {
+        err = qdma_device_write_config_register(device->qdma_handle,
+                SLASH_QDMA_HP_MASK_ADDR + (i * sizeof(u32)), 0xFFFFFFFFu);
+        if (err)
+            goto err_reg;
+    }
+
+    /* Command: qid=host_id, op=WR, sel=HOST_PROFILE (0x34 for id 0, 0xB4 for id 1). */
+    cmd = (host_id << 7) | (SLASH_QDMA_HP_OP_WR << 5) | (SLASH_QDMA_HP_SEL << 1);
+    err = qdma_device_write_config_register(device->qdma_handle,
+            SLASH_QDMA_HP_CMD_ADDR, cmd);
+    if (err)
+        goto err_reg;
+
+    /* Wait for the controller to consume the command. */
+    do {
+        err = qdma_device_read_config_register(device->qdma_handle,
+                SLASH_QDMA_HP_CMD_ADDR, &val);
+        if (err)
+            goto err_reg;
+        if (!(val & SLASH_QDMA_HP_CMD_BUSY))
+            break;
+        udelay(1);
+    } while (++waited_us < SLASH_QDMA_HP_POLL_US);
+
+    if (val & SLASH_QDMA_HP_CMD_BUSY) {
+        dev_err(&device->pdev->dev,
+                "qdma: host profile %u programming timed out (cmd=0x%x)\n",
+                host_id, val);
+        return -ETIMEDOUT;
+    }
+
+    dev_info(&device->pdev->dev,
+             "slash: qdma: host profile %u applied: H2C/C2H AXI-MM steering=%u (NoC channel %u), smid=0x%03x (cmd=0x%02x)\n",
+             host_id, host_id, host_id, smid, cmd);
+    return 0;
+
+err_reg:
+    dev_err(&device->pdev->dev,
+            "qdma: host profile %u register access failed: %d\n",
+            host_id, err);
+    return err;
+}
+
+/**
+ * slash_qdma_program_host_profiles() - Program the CPM5 Host Profiles.
+ * @device: QDMA device.
+ *
+ * Programs Host Profile 0 (steer to NoC Channel 0) and Host Profile 1
+ * (steer to NoC Channel 1).  Must run after qdma_device_open() (which
+ * clears all contexts) and before any queue context is programmed, per
+ * the CPM5 requirement that the host profile exist before AXI4-MM
+ * queues are set up.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+static int slash_qdma_program_host_profiles(struct slash_qdma_dev *device)
+{
+    u32 host_id;
+    int err;
+
+    dev_info(&device->pdev->dev,
+             "slash: qdma: programming CPM5 host profiles (host_id 0 -> NoC channel 0, host_id 1 -> NoC channel 1)\n");
+
+    for (host_id = 0; host_id <= 1; host_id++) {
+        err = slash_qdma_write_host_profile(device, host_id);
+        if (err)
+            return err;
+    }
+
+    dev_info(&device->pdev->dev,
+             "slash: qdma: CPM5 host profiles programmed\n");
+
+    return 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
  * PCI probe / remove
  * ───────────────────────────────────────────────────────────────────── */
 
@@ -911,6 +1187,20 @@ static int slash_qdma_probe(struct pci_dev *pdev, const struct pci_device_id *id
                           "qdma_device_open done: handle=%lu\n",
                           device->qdma_handle);
     device->have_qdma_handle = true;
+
+    /*
+     * Program the CPM5 Host Profiles before exposing the miscdevice, so
+     * they exist before userspace can add any queue.  Host ID 0 steers
+     * AXI4-MM traffic to NoC Channel 0 and Host ID 1 to NoC Channel 1;
+     * the per-queue SW-context host_id (mirrored from mm_channel = qid & 1)
+     * selects between them.
+     */
+    err = slash_qdma_program_host_profiles(device);
+    if (err) {
+        dev_err(&pdev->dev,
+                "slash: qdma: could not program host profiles: %d", err);
+        goto err_free;
+    }
 
     /* Register the management miscdevice so userspace can issue ioctls. */
     err = misc_register(&device->misc);
@@ -1619,8 +1909,9 @@ rollback:
  *     (required for poll-mode operation per the reference driver).
  *   - qconf.cmpl_stat_en = 1: enable completion status generation
  *     (required for poll-mode operation per the reference driver).
- *   - qconf.aperture_size = 4096: page-granularity (4 KB) for descriptor
- *     addressing.  Each descriptor addresses one page-sized chunk.
+ *   - qconf.aperture_size = 0: disables libqdma keyhole mode so MM
+ *     transfers advance linearly through endpoint memory.  Non-zero
+ *     values are keyhole apertures and wrap addresses within that window.
  *   - qconf.desc_rng_sz_idx: CSR table index (0-15) selecting the
  *     descriptor ring depth.  Not a raw descriptor count — the actual
  *     count is looked up from the global CSR ring-size table.
@@ -1664,7 +1955,21 @@ static int slash_qdma_ioctl_qpair_add_q(struct miscdevice *misc,
     qconf.cmpl_status_pend_chk = 1;                 /* Check pending completions (poll-mode req) */
     qconf.cmpl_stat_en = 1;                         /* Enable completion status generation */
 
-    qconf.aperture_size = 4096;                     /* Page-granularity descriptor addressing */
+    qconf.aperture_size = 0;                        /* Linear MM addressing; non-zero enables keyhole mode */
+    /*
+     * CPM5 exposes two MM channels; by default stripe queue pairs across
+     * them via (qid & 1).  libqdma also mirrors mm_channel into the SW-context
+     * host_id, so this selects the programmed Host Profile too: even queues ->
+     * Host Profile 0 (NoC Channel 0), odd queues -> Host Profile 1 (NoC
+     * Channel 1).  See slash_qdma_program_host_profiles().
+     *
+     * The qdma_force_mm_channel module parameter overrides the split and pins
+     * every new queue to a single channel, for NoC-bandwidth A/B testing.
+     */
+    if (qdma_force_mm_channel >= 0)
+        qconf.mm_channel = (u32)qdma_force_mm_channel;
+    else
+        qconf.mm_channel = req->qid & 1;
 
     /* --- Per-direction ring configuration --- */
     switch (qtype) {
@@ -1688,8 +1993,9 @@ static int slash_qdma_ioctl_qpair_add_q(struct miscdevice *misc,
     }
 
     SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
-                          "qdma_queue_add start: qid=%u type=%u mode=%u\n",
-                          req->qid, qtype, req->mode);
+                          "queue add qid=%u type=%u mode=%u mm_channel=%u%s\n",
+                          req->qid, qtype, req->mode, qconf.mm_channel,
+                          qdma_force_mm_channel >= 0 ? " (forced)" : "");
     err = qdma_queue_add(qdma_dev->qdma_handle, &qconf, &qhndl,
                             errbuf, sizeof(errbuf));
     if (err) {
@@ -1989,7 +2295,7 @@ static inline void slash_qdma_iocb_release(struct slash_qdma_io_cb *iocb)
     if (iocb->pages)
         iocb->pages = NULL;
 
-    kfree(iocb->sgl);
+    kvfree(iocb->sgl);
     iocb->sgl = NULL;
     iocb->buf = NULL;
 }
@@ -2033,122 +2339,240 @@ static void slash_qdma_unmap_user_buf(struct slash_qdma_io_cb *iocb, bool write)
     iocb->pages_nr = 0;
 }
 
-/**
- * slash_qdma_map_user_buf_to_sgl() - Pin user pages and build a scatter-gather list.
- * @iocb:  I/O control block.  @iocb->buf and @iocb->len must be set
- *         before calling.  On success, @iocb->sgl, @iocb->pages, and
- *         @iocb->pages_nr are populated.
- * @write: Transfer direction (true = H2C write, false = C2H read).
- *
- * Steps:
- *   1. Compute the number of pages spanned by the user buffer (accounting
- *      for the offset within the first page).
- *   2. Allocate a single contiguous block for the SGL entries and the
- *      page pointer array (avoids two allocations).
- *   3. Pin user pages via get_user_pages_fast() with write=1 (even for
- *      H2C, because libqdma may write status back).
- *   4. Build the qdma_sw_sg linked list: one entry per page, with the
- *      first entry's offset reflecting the sub-page position of the
- *      user buffer, and the last entry's length truncated to the
- *      remaining byte count.
- *   5. Flush the data cache for each page to ensure coherency between
- *      the CPU cache and the DMA engine's view of memory.
- *
- * Return: 0 on success, negative errno on failure (pages are unpinned
- *         and the SGL is freed on error).
- */
-static int slash_qdma_map_user_buf_to_sgl(struct slash_qdma_io_cb *iocb,
-                                          bool write)
+static int slash_qdma_iocb_alloc_sgl(struct slash_qdma_io_cb *iocb,
+                                     unsigned int entries)
 {
-    unsigned long len = iocb->len;
-    char *buf = (char *)iocb->buf;
+    size_t entry_size = sizeof(struct qdma_sw_sg) + sizeof(struct page *);
     struct qdma_sw_sg *sg;
-    unsigned int pg_off = offset_in_page(buf);
-    unsigned int pages_nr = (len + pg_off + PAGE_SIZE - 1) >> PAGE_SHIFT;
-    int i;
-    int rv;
 
-    if (len == 0)
-        pages_nr = 1;
-    if (pages_nr == 0)
+    if (!entries || entries > SIZE_MAX / entry_size)
         return -EINVAL;
 
-    iocb->pages_nr = 0;
-
     /*
-     * Single allocation for both the SGL array and the page pointer
-     * array.  The page pointers are placed immediately after the SGL
-     * entries in memory.
+     * A large base-page transfer needs one entry per 4 KiB page (e.g. ~5 MiB
+     * of SGL for a 512 MiB transfer), which exceeds kmalloc's limit, so use
+     * kvcalloc().  The SGL is only ever touched by the CPU (libqdma DMA-maps
+     * the pages it references), so a vmalloc-backed allocation is fine.
      */
-    sg = kmalloc(pages_nr * (sizeof(struct qdma_sw_sg) +
-                             sizeof(struct page *)), GFP_KERNEL);
+    sg = kvcalloc(entries, entry_size, GFP_KERNEL);
     if (!sg) {
-        pr_err("slash: qdma: sgl allocation failed for %u pages\n",
-               pages_nr);
+        pr_err("slash: qdma: sgl allocation failed for %u entries\n",
+               entries);
         return -ENOMEM;
     }
-    memset(sg, 0, pages_nr * (sizeof(struct qdma_sw_sg) +
-                              sizeof(struct page *)));
+
     iocb->sgl = sg;
+    iocb->pages = (struct page **)(sg + entries);
+    return 0;
+}
 
-    /* Page pointer array lives right after the SGL entries. */
-    iocb->pages = (struct page **)(sg + pages_nr);
+static bool slash_qdma_page_is_base_page(struct page *page)
+{
+    return !PageCompound(page);
+}
+
+static bool slash_qdma_page_is_2m_hugetlb_head(struct page *page)
+{
+#ifdef CONFIG_HUGETLB_PAGE
+    struct page *head = compound_head(page);
+
+    return page == head &&
+           PageHuge(head) &&
+           compound_order(head) == get_order(SLASH_QDMA_HUGEPAGE_SIZE);
+#else
+    return false;
+#endif
+}
+
+static int slash_qdma_map_user_base_pages_to_sgl(struct slash_qdma_io_cb *iocb,
+                                                 bool write)
+{
+    unsigned long addr = (unsigned long)iocb->buf;
+    size_t entries = iocb->len / PAGE_SIZE;
+    unsigned int pinned = 0;
+    unsigned int i;
+    int rv;
+
+    if ((iocb->len % PAGE_SIZE) != 0 || entries == 0 || entries > UINT_MAX)
+        return -EINVAL;
+
+    rv = slash_qdma_iocb_alloc_sgl(iocb, (unsigned int)entries);
+    if (rv)
+        return rv;
 
     /*
-     * Pin the user pages into physical memory.  The write=1 flag tells
-     * the kernel these pages may be written to (needed for C2H, but we
-     * always request write permission for simplicity).
+     * Pin every base page in the span.  get_user_pages_fast() may return
+     * fewer pages than requested, so loop (in bounded batches) until the
+     * whole buffer is pinned.
      */
-    rv = get_user_pages_fast((unsigned long)buf, pages_nr,
-                             1 /* write */, iocb->pages);
-    if (rv < 0) {
-        pr_err("slash: qdma: unable to pin down %u user pages, %d\n",
-               pages_nr, rv);
-        goto err_out;
+    while (pinned < entries) {
+        unsigned int want = min_t(unsigned int,
+                                  (unsigned int)entries - pinned,
+                                  SLASH_QDMA_GUP_BATCH);
+        int got = get_user_pages_fast(addr + (size_t)pinned * PAGE_SIZE,
+                                      (int)want, 1 /* write */,
+                                      iocb->pages + pinned);
+
+        if (got <= 0) {
+            pr_err("slash: qdma: unable to pin 4 KiB user pages %u/%zu, %d\n",
+                   pinned, entries, got);
+            rv = (got < 0) ? got : -EFAULT;
+            goto err_out;
+        }
+
+        pinned += (unsigned int)got;
+        iocb->pages_nr = pinned;
     }
-    if (rv != pages_nr) {
-        pr_err("slash: qdma: unable to pin down all %u user pages, %d\n",
-               pages_nr, rv);
-        iocb->pages_nr = rv;
-        rv = -EFAULT;
-        goto err_out;
-    }
 
-    /*
-     * Build the scatter-gather list.  Each entry describes one page's
-     * worth of data.  The first page may have a non-zero offset, and
-     * the last page may have fewer than PAGE_SIZE bytes.
-     */
-    sg = iocb->sgl;
-    for (i = 0; i < pages_nr; i++, sg++) {
-        unsigned int offset = offset_in_page(buf);
-        unsigned int nbytes = min_t(unsigned int,
-                                    PAGE_SIZE - offset, len);
-        struct page *pg = iocb->pages[i];
+    for (i = 0; i < entries; i++) {
+        struct qdma_sw_sg *sg = &iocb->sgl[i];
 
-        /* Ensure CPU cache is flushed so the DMA engine sees fresh data. */
-        flush_dcache_page(pg);
+        if (!slash_qdma_page_is_base_page(iocb->pages[i])) {
+            pr_err("slash: qdma: 4 KiB transfer page %u/%zu is not backed by a base page\n",
+                   i, entries);
+            rv = -EINVAL;
+            goto err_out;
+        }
 
-        sg->next = sg + 1;
-        sg->pg = pg;
-        sg->offset = offset;
-        sg->len = nbytes;
+        flush_dcache_page(iocb->pages[i]);
+
+        sg->next = (i + 1 < entries) ? &iocb->sgl[i + 1] : NULL;
+        sg->pg = iocb->pages[i];
+        sg->offset = 0;
+        sg->len = PAGE_SIZE;
         sg->dma_addr = 0UL;
-
-        buf += nbytes;
-        len -= nbytes;
     }
 
-    /* Terminate the linked list. */
-    iocb->sgl[pages_nr - 1].next = NULL;
-    iocb->pages_nr = pages_nr;
+    SLASH_QDMA_OP_LOG("user transfer path=base-4k addr=0x%lx len=%zu pages=%zu write=%d\n",
+                      addr, iocb->len, entries, write);
+
     return 0;
 
 err_out:
     slash_qdma_unmap_user_buf(iocb, write);
     slash_qdma_iocb_release(iocb);
-
     return rv;
+}
+
+static int slash_qdma_map_user_huge_page_to_sgl(struct slash_qdma_io_cb *iocb,
+                                                bool write)
+{
+    unsigned long addr = (unsigned long)iocb->buf;
+    size_t entries = iocb->len / SLASH_QDMA_HUGEPAGE_SIZE;
+    unsigned int i;
+    int rv;
+
+    if ((iocb->len % SLASH_QDMA_HUGEPAGE_SIZE) != 0 ||
+        entries == 0 || entries > UINT_MAX)
+        return -EINVAL;
+
+    rv = slash_qdma_iocb_alloc_sgl(iocb, (unsigned int)entries);
+    if (rv)
+        return rv;
+
+    for (i = 0; i < entries; i++) {
+        unsigned long curr_addr = addr + (i * SLASH_QDMA_HUGEPAGE_SIZE);
+        struct qdma_sw_sg *sg = &iocb->sgl[i];
+
+        rv = get_user_pages_fast(curr_addr, 1, 1 /* write */, &iocb->pages[i]);
+        if (rv != 1) {
+            pr_err("slash: qdma: unable to pin 2 MiB user page %u/%zu, %d\n",
+                   i, entries, rv);
+            rv = rv < 0 ? rv : -EFAULT;
+            goto err_out;
+        }
+        iocb->pages_nr = i + 1;
+
+        if (!slash_qdma_page_is_2m_hugetlb_head(iocb->pages[i])) {
+            pr_err("slash: qdma: 2 MiB transfer page %u/%zu is not backed by a 2 MiB hugetlb head page\n",
+                   i, entries);
+            rv = -EINVAL;
+            goto err_out;
+        }
+
+        flush_dcache_page(iocb->pages[i]);
+
+        sg->next = (i + 1 < entries) ? &iocb->sgl[i + 1] : NULL;
+        sg->pg = iocb->pages[i];
+        sg->offset = 0;
+        sg->len = SLASH_QDMA_HUGEPAGE_SIZE;
+        sg->dma_addr = 0UL;
+    }
+
+    SLASH_QDMA_OP_LOG("user transfer path=hugetlb-2m addr=0x%lx len=%zu pages=%zu write=%d\n",
+                      addr, iocb->len, entries, write);
+
+    return 0;
+
+err_out:
+    slash_qdma_unmap_user_buf(iocb, write);
+    slash_qdma_iocb_release(iocb);
+    return rv;
+}
+
+/**
+ * slash_qdma_map_user_buf_to_sgl() - Pin a user buffer and build its SGL.
+ * @iocb:  I/O control block.  @iocb->buf and @iocb->len must be set.
+ * @write: Transfer direction (true = H2C write, false = C2H read).
+ *
+ * The buffer must be page-aligned and a whole number of 4 KiB pages.  It is
+ * mapped as either:
+ *   - a span of 2 MiB hugetlb pages (when it is 2 MiB-aligned, a multiple of
+ *     2 MiB, and actually backed by hugetlb pages), or
+ *   - a span of 4 KiB base pages (every other accepted case).
+ *
+ * Each page becomes one SGL entry / one DMA descriptor, and the whole span is
+ * submitted to libqdma as a single request.
+ *
+ * The hugetlb-vs-base decision is made by probing the first page rather than by
+ * length/alignment alone: a large anonymous (base-page) mapping can happen to
+ * be 2 MiB-aligned, and must not be mistaken for a hugetlb buffer.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+static int slash_qdma_map_user_buf_to_sgl(struct slash_qdma_io_cb *iocb,
+                                          bool write)
+{
+    unsigned long addr = (unsigned long)iocb->buf;
+    size_t len = iocb->len;
+    bool huge = false;
+
+    iocb->pages_nr = 0;
+
+    if (!addr || !len || addr > ULONG_MAX - len)
+        return -EINVAL;
+
+    if (!IS_ALIGNED(addr, PAGE_SIZE) || (len % PAGE_SIZE) != 0) {
+        pr_err("slash: qdma: unsupported user transfer addr=0x%lx len=%zu (must be page-aligned and a multiple of 4 KiB)\n",
+               addr, len);
+        return -EINVAL;
+    }
+
+    /*
+     * Only a 2 MiB-aligned, 2 MiB-multiple span can be hugetlb-backed.  Probe
+     * the first page to confirm it actually is a hugetlb page before committing
+     * to the huge path; otherwise fall through to the base-page path.
+     */
+    if (IS_ALIGNED(addr, SLASH_QDMA_HUGEPAGE_SIZE) &&
+        (len % SLASH_QDMA_HUGEPAGE_SIZE) == 0) {
+        struct page *probe = NULL;
+        int probe_ret;
+
+        probe_ret = get_user_pages_fast(addr, 1, 1 /* write */, &probe);
+        if (probe_ret < 0)
+            return probe_ret;
+        if (probe_ret == 0)
+            return -EFAULT;
+        if (probe_ret == 1) {
+            huge = slash_qdma_page_is_2m_hugetlb_head(probe);
+            put_page(probe);
+        }
+    }
+
+    if (huge)
+        return slash_qdma_map_user_huge_page_to_sgl(iocb, write);
+
+    return slash_qdma_map_user_base_pages_to_sgl(iocb, write);
 }
 
 /**
@@ -2193,6 +2617,9 @@ static ssize_t slash_qdma_qpair_read_write(struct file *file, char __user *buf,
     unsigned long qhndl;
     ssize_t res;
     int rv;
+#if SLASH_QDMA_TIMING
+    ktime_t t_start, t_mapped, t_submitted, t_done;
+#endif
 
     if (!ctx)
         return -EINVAL;
@@ -2230,12 +2657,18 @@ static ssize_t slash_qdma_qpair_read_write(struct file *file, char __user *buf,
     mutex_unlock(&qdma_dev->lock);
 
     /* Pin user pages and build the scatter-gather list. */
+#if SLASH_QDMA_TIMING
+    t_start = ktime_get();
+#endif
     memset(&iocb, 0, sizeof(iocb));
     iocb.buf = buf;
     iocb.len = count;
     rv = slash_qdma_map_user_buf_to_sgl(&iocb, write);
     if (rv < 0)
         return rv;
+#if SLASH_QDMA_TIMING
+    t_mapped = ktime_get();
+#endif
 
     /* Populate the libqdma request structure. */
     req = &iocb.req;
@@ -2258,6 +2691,9 @@ static ssize_t slash_qdma_qpair_read_write(struct file *file, char __user *buf,
     SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
                           "qdma_request_submit done: qid=%u qhndl=%lu res=%zd\n",
                           ctx->qid, qhndl, res);
+#if SLASH_QDMA_TIMING
+    t_submitted = ktime_get();
+#endif
 
     /* Advance the file position by the number of bytes transferred. */
     if (res > 0)
@@ -2266,6 +2702,18 @@ static ssize_t slash_qdma_qpair_read_write(struct file *file, char __user *buf,
     /* Unpin pages (marking dirty for C2H reads) and free the SGL. */
     slash_qdma_unmap_user_buf(&iocb, write);
     slash_qdma_iocb_release(&iocb);
+
+#if SLASH_QDMA_TIMING
+    t_done = ktime_get();
+    dev_info(&qdma_dev->pdev->dev,
+             "slash: qdma: timing qid=%u %s count=%zu sgcnt=%u ep=0x%llx res=%zd | map=%lld submit=%lld unmap=%lld total=%lld ns\n",
+             ctx->qid, write ? "H2C" : "C2H", count, req->sgcnt,
+             (unsigned long long)req->ep_addr, res,
+             ktime_to_ns(ktime_sub(t_mapped, t_start)),
+             ktime_to_ns(ktime_sub(t_submitted, t_mapped)),
+             ktime_to_ns(ktime_sub(t_done, t_submitted)),
+             ktime_to_ns(ktime_sub(t_done, t_start)));
+#endif
 
     return res;
 }

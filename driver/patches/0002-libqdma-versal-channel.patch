@@ -1,0 +1,32 @@
+SLASH local modification to the pinned QDMA submodule (libqdma).
+
+libqdma: set descq->channel on the initial queue-add path (Versal)
+
+qdma_descq_config() only mirrored qconf->mm_channel into descq->channel on the
+reconfig path. qdma_queue_add() calls it with reconfig=0, so on Versal hard IP
+(QDMA_VERSAL_HARD_IP) the SW-context mm_chn/host_id stayed 0. Mirror mm_channel
+into descq->channel on the initial add path too.
+
+Generated against qdma_drv @ 03ac7f3 (pinned submodule commit).
+Applied automatically by driver/Makefile (libqdma-patches target, patch -p1).
+diff --git a/qdma_descq.c b/qdma_descq.c
+index c2f19d1..b432737 100755
+--- a/qdma_descq.c
++++ b/qdma_descq.c
+@@ -1261,6 +1261,16 @@ void qdma_descq_config(struct qdma_descq *descq, struct qdma_queue_conf *qconf,
+ 		descq->conf.st = qconf->st;
+ 		descq->conf.q_type = qconf->q_type;
+ 
++		/* Below check is applicable only for Versal family.
++		 * Mirror mm_channel into descq->channel on the initial add path
++		 * too; qdma_queue_add() only calls this with reconfig=0, so
++		 * without this the SW-context mm_chn/host_id would always be 0
++		 * (the reconfig-only assignment below is reached solely via
++		 * qdma_queue_config()).
++		 */
++		if (descq->xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP)
++			descq->channel = qconf->mm_channel;
++
+ 	} else {
+ 		descq->conf.desc_rng_sz_idx = qconf->desc_rng_sz_idx;
+ 		descq->conf.cmpl_rng_sz_idx = qconf->cmpl_rng_sz_idx;
