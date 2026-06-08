@@ -178,42 +178,90 @@ programmed with the static SLASH design.
 
 ### validate
 
-Reset a board, then test HBM and DDR memory for data integrity and
-bandwidth.
+Optionally reset a board, then test HBM and DDR memory for data integrity and
+bandwidth. Raw transfer modes skip reset and bypass the default VRTD buffer
+path for data movement.
 
 ```
-v80-smi validate -d <BDF> [-j <threads>]
+v80-smi validate -d <BDF> [-j <threads>] [-R] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only]
 ```
 
 | Flag              | Description                                          |
 |-------------------|------------------------------------------------------|
 | `-d,--device`     | Board address (required), e.g. `03:00` or `0000:03:00` |
-| `-j,--threads`    | Parallel buffers/threads, 1-64 (default 8)           |
+| `-j,--threads`    | Parallel buffers/threads, 1-64 (default 8). Bidirectional HBM needs `2 * threads` HBM regions, so values above 32 require `--ddr-only`. |
+| `-R,--no-reset`   | Skip the device reset step before running memory tests |
+| `--raw-transfer-test` | Use libslash raw QDMA transfers instead of VRTD buffers; implies `--no-reset` |
+| `--use-qdma-driver` | Run the raw transfer test over the off-the-shelf Xilinx QDMA driver instead of SLASH; implies `--no-reset`; mutually exclusive with `--raw-transfer-test` |
+| `--ddr-only`      | Run only DDR memory tests (skip HBM); mutually exclusive with `--hbm-only` |
+| `--hbm-only`      | Run only HBM memory tests (skip DDR); mutually exclusive with `--ddr-only` |
 
-Each buffer is 64 MB.  The integrity test writes a pattern, syncs to
-device, clears host memory, syncs back, and verifies.  The bandwidth
-test runs parallel H2C writes and C2H reads.
+Each buffer is 512 MB (one HBM/DDR allocator region).  The integrity test
+writes a pattern, syncs to device, clears host memory, syncs back, and
+verifies.  Each bandwidth
+phase reports single-direction C2H reads, single-direction H2C writes,
+and simultaneous bidirectional throughput (read, write, and total).  After
+the per-memory phases, a final parallel phase drives HBM and DDR together
+using `2 x <threads>` buffers for single-direction tests and `4 x <threads>`
+threads for bidirectional tests; it is skipped when `--ddr-only` or
+`--hbm-only` is given.  With `--raw-transfer-test`, the command bypasses
+VRTD for transfers and opens the board's SLASH QDMA device directly, so
+the SLASH QDMA driver node must be present.
+
+Each buffer is 512 MB. The largest phase maps up to
+`4 x <threads> x 512 MB` of host buffers when HBM and DDR are both enabled,
+or `2 x <threads> x 512 MB` with `--ddr-only` or `--hbm-only`; `validate`
+fails early if that footprint exceeds currently available host memory.
+
+With `--use-qdma-driver`, the command runs the same raw test over the
+off-the-shelf Xilinx QDMA driver (`submodules/qdma_drv`) instead of SLASH.
+smi provisions the queues itself: it raises the function's `qmax` via sysfs
+if needed, creates and starts bidirectional AXI-MM queue pairs over generic
+netlink (the same `xnl_pf` interface `dma-ctl` uses), then transfers over the
+per-queue char devices `/dev/qdma<idx>-MM-<qid>`.  This requires the stock
+`qdma-pf` driver to be bound to the board's PF (it cannot be bound at the same
+time as the SLASH driver), and typically needs root to raise `qmax` and open
+the queue devices.  The device memory addresses tested (HBM/DDR) are the same
+AXI addresses used by the SLASH path.
+
+Requirements depend on the selected mode: the default path needs VRTD and root
+for reset unless `--no-reset` is used; `--raw-transfer-test` needs the SLASH
+QDMA driver node; `--use-qdma-driver` needs a build with
+`SMI_ENABLE_QDMA_DRIVER_BACKEND=ON` and the stock QDMA driver bound to the
+board.
 
 ```console
 $ v80-smi validate -d 03:00
 Resetting device 0000:03:00...
 Testing HBM data integrity (8 regions)...
-    HBM0: OK
-    HBM1: OK
-    ...
-Testing HBM bandwidth (8 threads)...
+    8/8 OK
+Testing HBM read bandwidth (8 threads)...
+    Read: 9547.22 MB/s
+Testing HBM write bandwidth (8 threads)...
     Write: 9832.10 MB/s
-    Read:  9547.22 MB/s
+Testing HBM bidirectional bandwidth (16 threads)...
+    Read:  9210.15 MB/s
+    Write: 9475.81 MB/s
+    Total: 18685.96 MB/s
 Testing DDR data integrity (8 buffers)...
-    DDR0: OK
-    DDR1: OK
-    ...
-Testing DDR bandwidth (8 threads)...
+    8/8 OK
+Testing DDR read bandwidth (8 threads)...
+    Read: 4980.33 MB/s
+Testing DDR write bandwidth (8 threads)...
     Write: 5120.45 MB/s
-    Read:  4980.33 MB/s
+Testing DDR bidirectional bandwidth (16 threads)...
+    Read:  4860.12 MB/s
+    Write: 5012.34 MB/s
+    Total: 9872.46 MB/s
+Testing HBM+DDR read bandwidth (16 threads)...
+    Read: 11890.55 MB/s
+Testing HBM+DDR write bandwidth (16 threads)...
+    Write: 12450.78 MB/s
+Testing HBM+DDR bidirectional bandwidth (32 threads)...
+    Read:  11340.12 MB/s
+    Write: 12020.34 MB/s
+    Total: 23360.46 MB/s
 ```
-
-Requires root access and a running VRTD daemon.
 
 ### debug bar-poke
 
@@ -364,6 +412,8 @@ since v80-smi always operates at board granularity.
 |------------|--------------------------------------------------|
 | libvrt     | VRT runtime library (device, kernel, vrtbin APIs) |
 | vrtd       | Runtime daemon (sensors, reset, validate, query)  |
+| libslash   | Raw SLASH QDMA backend for `validate --raw-transfer-test` |
+| qdma_nl.h  | Optional stock QDMA-driver backend (`SMI_ENABLE_QDMA_DRIVER_BACKEND=ON`) |
 
 ## Project layout
 
@@ -376,6 +426,8 @@ smi/
     program.cpp/hpp   Device programming
     reset.cpp/hpp     Hardware reset via VRTD
     validate.cpp/hpp  Memory integrity and bandwidth testing
+    raw_transfer.hpp  Shared raw QDMA host mapping and transfer helpers
+    qdma_driver_backend.cpp/hpp  Optional stock QDMA-driver validate backend
     debug/bar_poke.cpp/hpp  BAR read/write debug command
     debug/mem_poke.cpp/hpp  Raw device memory read/write command
     debug/clockwiz.cpp/hpp  Clock read/set debug command

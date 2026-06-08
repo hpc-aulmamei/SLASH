@@ -113,6 +113,20 @@ static int smiMain(int argc, char **argv) {
         "Number of parallel buffers/threads (1-64)")->default_val(8)->check(CLI::Range(1u, 64u));
     validateCommand->add_flag("-R,--no-reset", validateOptions.noReset,
         "Skip the device reset step before running memory tests");
+    auto* rawTransferFlag = validateCommand->add_flag("--raw-transfer-test", validateOptions.rawTransferTest,
+        "Use libslash raw QDMA transfers instead of VRTD buffers (implies --no-reset)");
+    auto* useQdmaDriverFlag = validateCommand->add_flag("--use-qdma-driver", validateOptions.useQdmaDriver,
+        "Run the raw transfer test over the off-the-shelf Xilinx QDMA driver "
+        "(/dev/qdma<idx>-MM-<qid>) instead of SLASH; requires the stock qdma driver "
+        "bound to the board. Implies --no-reset; mutually exclusive with --raw-transfer-test");
+    rawTransferFlag->excludes(useQdmaDriverFlag);
+    useQdmaDriverFlag->excludes(rawTransferFlag);
+    auto* ddrOnlyFlag = validateCommand->add_flag("--ddr-only", validateOptions.ddrOnly,
+        "Run only DDR memory tests (skip HBM)");
+    auto* hbmOnlyFlag = validateCommand->add_flag("--hbm-only", validateOptions.hbmOnly,
+        "Run only HBM memory tests (skip DDR)");
+    ddrOnlyFlag->excludes(hbmOnlyFlag);
+    hbmOnlyFlag->excludes(ddrOnlyFlag);
 
     // -- debug (low-level debug utilities) --
     auto* debugCommand = app.add_subcommand("debug", "Low-level debug utilities");

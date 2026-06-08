@@ -24,9 +24,10 @@
 /// @file validate.hpp
 /// @brief Declaration of the Validate command.
 ///
-/// The Validate command resets a V80 board and then exercises DDR and HBM
-/// memory via PCIe by running data integrity checks followed by parallel
-/// bandwidth measurements.
+/// The Validate command optionally resets a V80 board and then exercises DDR
+/// and HBM memory via PCIe by running data integrity checks followed by
+/// parallel bandwidth measurements. Raw transfer modes skip reset and bypass
+/// the default VRTD buffer path.
 
 #include <string>
 
@@ -42,6 +43,10 @@ public:
         std::string bdf;           ///< BDF (Bus:Device.Function) address of the target device.
         unsigned threads = 8;      ///< Number of parallel buffers/threads (1-64).
         bool noReset = false;      ///< Skip the device reset step before running memory tests.
+        bool ddrOnly = false;      ///< Skip HBM phase (mutually exclusive with hbmOnly).
+        bool hbmOnly = false;      ///< Skip DDR phase (mutually exclusive with ddrOnly).
+        bool rawTransferTest = false; ///< Use libslash raw QDMA transfers instead of VRTD buffers.
+        bool useQdmaDriver = false;   ///< Run the raw test over the off-the-shelf Xilinx QDMA driver.
     };
 
     /// @brief Executes the validate command.
