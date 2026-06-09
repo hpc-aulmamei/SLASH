@@ -366,9 +366,13 @@ class InstallerConfiguration(CommandConfiguration):
         ap.add_argument("--out-dir", required=True, type=Path,
                         help="The resource directory to install the artifacts to. "
                         + "If you have checked out the SLASH repository, this would be linker/slashkit/resources")
+        ap.add_argument("--ignore-timing-failure", action="store_true",
+                        help="Install static shell artifacts even when timing failed (WNS < 0 or WHS < 0).")
 
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)
+
+        self._ignore_timing_failure: bool = args.ignore_timing_failure
 
         self._build_dir: Path = args.build_dir.expanduser().resolve()
         if self._build_dir.is_dir():
@@ -401,3 +405,12 @@ class InstallerConfiguration(CommandConfiguration):
     @property
     def out_dir(self) -> Path:
         return self._out_dir
+
+    @property
+    def ignore_timing_failure(self) -> bool:
+        return self._ignore_timing_failure
+
+    @property
+    def noninteractive(self) -> bool:
+        value = os.getenv("SLASH_NONINTERACTIVE", "")
+        return value not in ("", "0", "false", "False", "no", "No")

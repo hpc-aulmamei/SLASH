@@ -42,6 +42,10 @@ proc build_project {{proj_name "user"}} {
   launch_runs impl_1 -to_step write_bitstream -jobs 14
   wait_on_run impl_1
   open_run impl_1
+
+  set timing_report_file [file join [file normalize [pwd]] "report_timing_${proj_name}.txt"]
+  report_timing_summary -delay_type min_max -check_timing_verbose -max_paths 1 -input_pins -routable_nets -file $timing_report_file
+  puts "TIMING REPORT: $timing_report_file"
   
   set impl_output_dir [get_property DIRECTORY [current_run]]
   write_abstract_shell -cell top_i/slash -force [file join $impl_output_dir "static_shell_slash.dcp"]
