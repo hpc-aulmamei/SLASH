@@ -142,9 +142,11 @@ def require_static_shell_timing_or_confirm(
         )
 
     if sys.stdin.isatty():
-        answer = input("Proceed with install/packaging anyway? [y/N] ").strip().lower()
+        answer = input(
+            "Proceed with install/packaging anyway? [y/N] ").strip().lower()
         if answer in ("y", "yes"):
-            logger.warning("User confirmed install despite static shell timing failure")
+            logger.warning(
+                "User confirmed install despite static shell timing failure")
             return
         raise SystemExit(1)
 
