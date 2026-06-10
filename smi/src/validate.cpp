@@ -94,6 +94,31 @@ static constexpr uint32_t QDMA_DIR_H2C = 0x1;
 static constexpr uint32_t QDMA_DIR_C2H = 0x2;
 static constexpr uint32_t QDMA_RING_SZ_IDX = 0;
 
+static constexpr uint64_t HUGE_PAGE_SIZE = 2ULL * 1024ULL * 1024ULL;
+
+/// Map the validate page-size option to the raw-transfer host mapping mode.
+static smi::raw::PageSize rawPageSize(const Validate::Options& options) {
+    return options.pageSize == Validate::Options::PageSize::Huge2M
+               ? smi::raw::PageSize::Huge2M
+               : smi::raw::PageSize::Base4K;
+}
+
+/// Map the validate page-size option to the vrtd host page mode.
+static vrtd::HostPageSize vrtdPageSize(const Validate::Options& options) {
+    return options.pageSize == Validate::Options::PageSize::Huge2M
+               ? vrtd::HostPageSize::Huge2M
+               : vrtd::HostPageSize::Base4K;
+}
+
+/// Required alignment for placement sizes/offsets given the selected page
+/// granule: 2 MiB when hugepages are requested, otherwise the QDMA transfer
+/// alignment (4 KiB).
+static uint64_t requiredAlignment(const Validate::Options& options) {
+    return options.pageSize == Validate::Options::PageSize::Huge2M
+               ? HUGE_PAGE_SIZE
+               : TRANSFER_ALIGNMENT;
+}
+
 static std::string trim(std::string_view text) {
     size_t first = 0;
     while (first < text.size() &&
@@ -161,9 +186,9 @@ static bool isAligned(uint64_t value, uint64_t alignment) {
     return (value % alignment) == 0;
 }
 
-static bool checkAligned(const char* name, uint64_t value) {
-    if (!isAligned(value, TRANSFER_ALIGNMENT)) {
-        std::cerr << "validate: " << name << " must be " << TRANSFER_ALIGNMENT
+static bool checkAligned(const char* name, uint64_t value, uint64_t alignment) {
+    if (!isAligned(value, alignment)) {
+        std::cerr << "validate: " << name << " must be " << alignment
                   << "-byte aligned" << std::endl;
         return false;
     }
@@ -215,9 +240,10 @@ static bool checkMemoryPlacementRangePaired(const char* memoryName,
     }
 
     const uint64_t stride = pairedRegionStride(options);
-    if (stride == 0 || (stride % TRANSFER_ALIGNMENT) != 0) {
+    const uint64_t alignment = requiredAlignment(options);
+    if (stride == 0 || (stride % alignment) != 0) {
         std::cerr << "validate: --channel-region-stride must be a non-zero multiple of "
-                  << TRANSFER_ALIGNMENT << " bytes" << std::endl;
+                  << alignment << " bytes" << std::endl;
         return false;
     }
     if (stride > MEMORY_SPACE_SIZE) {
@@ -266,9 +292,10 @@ static bool validatePlacement(const Validate::Options& options) {
         std::cerr << "validate: --offset must be greater than zero" << std::endl;
         return false;
     }
-    if (!checkAligned("--buffer-size", options.bufferSize) ||
-        !checkAligned("--offset", options.offset) ||
-        !checkAligned("--starting-offset", options.startingOffset)) {
+    const uint64_t alignment = requiredAlignment(options);
+    if (!checkAligned("--buffer-size", options.bufferSize, alignment) ||
+        !checkAligned("--offset", options.offset, alignment) ||
+        !checkAligned("--starting-offset", options.startingOffset, alignment)) {
         return false;
     }
     if (options.offset < options.bufferSize) {
@@ -343,11 +370,44 @@ static void printChannelAllocation(const Validate::Options& options) {
     }
 }
 
+/// Print which host staging-buffer page granule is in effect.
+static void printPageSize(const Validate::Options& options) {
+    std::cout << "Host page size: "
+              << (options.pageSize == Validate::Options::PageSize::Huge2M
+                      ? "2 MiB hugepages"
+                      : "4 KiB base pages")
+              << std::endl;
+}
+
 static bool checkHostMemoryBudget(const Validate::Options& options) {
     const uint64_t maxConcurrentBuffers = (!options.ddrOnly && !options.hbmOnly)
         ? 4ULL * options.threads
         : 2ULL * options.threads;
     const uint64_t requiredBytes = maxConcurrentBuffers * options.bufferSize;
+
+    if (options.pageSize == Validate::Options::PageSize::Huge2M) {
+        // 2 MiB hugepages are reserved separately from general RAM, so check
+        // the hugetlb pool rather than _SC_AVPHYS_PAGES.
+        const uint64_t needed = (requiredBytes + HUGE_PAGE_SIZE - 1) / HUGE_PAGE_SIZE;
+        std::ifstream freeFile("/sys/kernel/mm/hugepages/hugepages-2048kB/free_hugepages");
+        uint64_t freePages = 0;
+        if (!freeFile.is_open() || !(freeFile >> freePages)) {
+            std::cerr << "Warning: unable to read 2 MiB hugepage availability; "
+                      << "validate needs about " << needed << " free 2 MiB hugepages."
+                      << std::endl;
+            return true;
+        }
+        if (freePages < needed) {
+            std::cerr << "validate: --page-size 2m needs about " << needed
+                      << " free 2 MiB hugepages, but only " << freePages
+                      << " are free. Reserve more (e.g. 'echo " << needed
+                      << " | sudo tee /proc/sys/vm/nr_hugepages') or reduce --threads/--buffer-size."
+                      << std::endl;
+            return false;
+        }
+        return true;
+    }
+
     const long pageSize = sysconf(_SC_PAGESIZE);
     const long availablePages = sysconf(_SC_AVPHYS_PAGES);
 
@@ -481,8 +541,9 @@ private:
 
 class RawTransferBuffer {
 public:
-    RawTransferBuffer(slash_qdma* qdma, uint64_t physAddr, uint64_t size)
-        : qdma_{qdma}, physAddr_{physAddr}, size_{size} {
+    RawTransferBuffer(slash_qdma* qdma, uint64_t physAddr, uint64_t size,
+                      smi::raw::PageSize pageSize)
+        : qdma_{qdma}, physAddr_{physAddr}, size_{size}, pageSize_{pageSize} {
         try {
             createHostMapping();
             createQpair();
@@ -540,6 +601,7 @@ private:
         physAddr_ = other.physAddr_;
         size_ = other.size_;
         transferStepSize_ = other.transferStepSize_;
+        pageSize_ = other.pageSize_;
 
         other.qdma_ = nullptr;
         other.fd_ = -1;
@@ -553,7 +615,7 @@ private:
     }
 
     void createHostMapping() {
-        smi::raw::HostMapping mapping = smi::raw::createHostMapping(size_, physAddr_);
+        smi::raw::HostMapping mapping = smi::raw::createHostMapping(size_, physAddr_, pageSize_);
         data_ = mapping.data;
         transferStepSize_ = mapping.step;
     }
@@ -624,6 +686,7 @@ private:
     uint64_t physAddr_ = 0;
     uint64_t size_ = 0;
     uint64_t transferStepSize_ = 0;
+    smi::raw::PageSize pageSize_ = smi::raw::PageSize::Base4K;
 };
 
 /// Fill @p buf with a deterministic pattern seeded by @p seed.
@@ -997,10 +1060,12 @@ static vrtd::Buffer openValidateHbmBuffer(const vrtd::Device& device,
                                           uint64_t position) {
     if (options.placementExplicit) {
         return device.openRawBuffer(addressFor(HBM_BASE, options, position),
-                                    options.bufferSize);
+                                    options.bufferSize, vrtd::BufferAllocDir::Bidirectional,
+                                    vrtdPageSize(options));
     }
 
-    return device.openHbmBuffer(static_cast<uint32_t>(position), options.bufferSize);
+    return device.openHbmBuffer(static_cast<uint32_t>(position), options.bufferSize,
+                                vrtd::BufferAllocDir::Bidirectional, vrtdPageSize(options));
 }
 
 static vrtd::Buffer openValidateDdrBuffer(const vrtd::Device& device,
@@ -1008,11 +1073,13 @@ static vrtd::Buffer openValidateDdrBuffer(const vrtd::Device& device,
                                           uint64_t position) {
     if (options.placementExplicit) {
         return device.openRawBuffer(addressFor(DDR_BASE, options, position),
-                                    options.bufferSize);
+                                    options.bufferSize, vrtd::BufferAllocDir::Bidirectional,
+                                    vrtdPageSize(options));
     }
 
     (void)position;
-    return device.openDdrBuffer(options.bufferSize);
+    return device.openDdrBuffer(options.bufferSize, vrtd::BufferAllocDir::Bidirectional,
+                                vrtdPageSize(options));
 }
 
 static int runRawTransferTest(const std::string& bdf, const Validate::Options& options) {
@@ -1027,6 +1094,7 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
     const std::string qdmaPath = resolveQdmaDevicePath(bdf);
     std::cout << "Using raw QDMA device " << qdmaPath << "..." << std::endl;
     printChannelAllocation(options);
+    printPageSize(options);
     printBandwidthRepeatMode(repeat);
 
     RawQdmaDevice qdma(qdmaPath);
@@ -1038,7 +1106,7 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             hbmBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
                 hbmBuffers.emplace_back(qdma.get(), rawAddressFor(HBM_BASE, options, i),
-                                        options.bufferSize);
+                                        options.bufferSize, rawPageSize(options));
             }
 
             if (!testDataIntegrity(hbmBuffers, "HBM")) {
@@ -1058,10 +1126,10 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             for (unsigned i = 0; i < N; ++i) {
                 hbmReadBuffers.emplace_back(qdma.get(),
                                             rawAddressFor(HBM_BASE, options, 2 * i),
-                                            options.bufferSize);
+                                            options.bufferSize, rawPageSize(options));
                 hbmWriteBuffers.emplace_back(qdma.get(),
                                              rawAddressFor(HBM_BASE, options, 2 * i + 1),
-                                             options.bufferSize);
+                                             options.bufferSize, rawPageSize(options));
             }
 
             testBidirectionalBandwidthSuite(hbmWriteBuffers, hbmReadBuffers, "HBM", ", raw QDMA", repeat);
@@ -1075,7 +1143,7 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             ddrBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
                 ddrBuffers.emplace_back(qdma.get(), rawAddressFor(DDR_BASE, options, i),
-                                        options.bufferSize);
+                                        options.bufferSize, rawPageSize(options));
             }
 
             if (!testDataIntegrity(ddrBuffers, "DDR")) {
@@ -1095,10 +1163,10 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             for (unsigned i = 0; i < N; ++i) {
                 ddrReadBuffers.emplace_back(qdma.get(),
                                             rawAddressFor(DDR_BASE, options, 2 * i),
-                                            options.bufferSize);
+                                            options.bufferSize, rawPageSize(options));
                 ddrWriteBuffers.emplace_back(qdma.get(),
                                              rawAddressFor(DDR_BASE, options, 2 * i + 1),
-                                             options.bufferSize);
+                                             options.bufferSize, rawPageSize(options));
             }
 
             testBidirectionalBandwidthSuite(ddrWriteBuffers, ddrReadBuffers, "DDR", ", raw QDMA", repeat);
@@ -1111,11 +1179,11 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             parBuffers.reserve(2 * N);
             for (unsigned i = 0; i < N; ++i) {
                 parBuffers.emplace_back(qdma.get(), rawAddressFor(HBM_BASE, options, i),
-                                        options.bufferSize);
+                                        options.bufferSize, rawPageSize(options));
             }
             for (unsigned i = 0; i < N; ++i) {
                 parBuffers.emplace_back(qdma.get(), rawAddressFor(DDR_BASE, options, i),
-                                        options.bufferSize);
+                                        options.bufferSize, rawPageSize(options));
             }
 
             testBandwidthSuite(parBuffers, "HBM+DDR", ", raw QDMA", repeat);
@@ -1132,18 +1200,18 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             for (unsigned i = 0; i < N; ++i) {
                 parReadBuffers.emplace_back(qdma.get(),
                                             rawAddressFor(HBM_BASE, options, 2 * i),
-                                            options.bufferSize);
+                                            options.bufferSize, rawPageSize(options));
                 parWriteBuffers.emplace_back(qdma.get(),
                                              rawAddressFor(HBM_BASE, options, 2 * i + 1),
-                                             options.bufferSize);
+                                             options.bufferSize, rawPageSize(options));
             }
             for (unsigned i = 0; i < N; ++i) {
                 parReadBuffers.emplace_back(qdma.get(),
                                             rawAddressFor(DDR_BASE, options, 2 * i),
-                                            options.bufferSize);
+                                            options.bufferSize, rawPageSize(options));
                 parWriteBuffers.emplace_back(qdma.get(),
                                              rawAddressFor(DDR_BASE, options, 2 * i + 1),
-                                             options.bufferSize);
+                                             options.bufferSize, rawPageSize(options));
             }
 
             testBidirectionalBandwidthSuite(parWriteBuffers, parReadBuffers, "HBM+DDR", ", raw QDMA", repeat);
@@ -1177,6 +1245,7 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
 
     std::cout << "Using off-the-shelf Xilinx QDMA driver for board " << bdf << "..." << std::endl;
     printChannelAllocation(options);
+    printPageSize(options);
     printBandwidthRepeatMode(repeat);
     smi::qdma_driver::QdmaDriverDevice qdma(bdf);
     std::cout << "Resolved QDMA function " << qdma.functionBdf() << std::endl;
@@ -1197,7 +1266,7 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             hbmBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
                 hbmBuffers.emplace_back(qdma, i, rawAddressFor(HBM_BASE, options, i),
-                                        options.bufferSize);
+                                        options.bufferSize, rawPageSize(options));
             }
 
             if (!testDataIntegrity(hbmBuffers, "HBM")) {
@@ -1215,10 +1284,10 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             for (unsigned i = 0; i < N; ++i) {
                 hbmReadBuffers.emplace_back(qdma, i,
                                             rawAddressFor(HBM_BASE, options, 2 * i),
-                                            options.bufferSize);
+                                            options.bufferSize, rawPageSize(options));
                 hbmWriteBuffers.emplace_back(qdma, N + i,
                                              rawAddressFor(HBM_BASE, options, 2 * i + 1),
-                                             options.bufferSize);
+                                             options.bufferSize, rawPageSize(options));
             }
 
             testBidirectionalBandwidthSuite(hbmWriteBuffers, hbmReadBuffers, "HBM", ", QDMA driver", repeat);
@@ -1232,7 +1301,7 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             ddrBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
                 ddrBuffers.emplace_back(qdma, i, rawAddressFor(DDR_BASE, options, i),
-                                        options.bufferSize);
+                                        options.bufferSize, rawPageSize(options));
             }
 
             if (!testDataIntegrity(ddrBuffers, "DDR")) {
@@ -1250,10 +1319,10 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             for (unsigned i = 0; i < N; ++i) {
                 ddrReadBuffers.emplace_back(qdma, i,
                                             rawAddressFor(DDR_BASE, options, 2 * i),
-                                            options.bufferSize);
+                                            options.bufferSize, rawPageSize(options));
                 ddrWriteBuffers.emplace_back(qdma, N + i,
                                              rawAddressFor(DDR_BASE, options, 2 * i + 1),
-                                             options.bufferSize);
+                                             options.bufferSize, rawPageSize(options));
             }
 
             testBidirectionalBandwidthSuite(ddrWriteBuffers, ddrReadBuffers, "DDR", ", QDMA driver", repeat);
@@ -1266,11 +1335,11 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             parBuffers.reserve(2 * N);
             for (unsigned i = 0; i < N; ++i) {
                 parBuffers.emplace_back(qdma, i, rawAddressFor(HBM_BASE, options, i),
-                                        options.bufferSize);
+                                        options.bufferSize, rawPageSize(options));
             }
             for (unsigned i = 0; i < N; ++i) {
                 parBuffers.emplace_back(qdma, N + i, rawAddressFor(DDR_BASE, options, i),
-                                        options.bufferSize);
+                                        options.bufferSize, rawPageSize(options));
             }
 
             testBandwidthSuite(parBuffers, "HBM+DDR", ", QDMA driver", repeat);
@@ -1283,18 +1352,18 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             for (unsigned i = 0; i < N; ++i) {
                 parReadBuffers.emplace_back(qdma, i,
                                             rawAddressFor(HBM_BASE, options, 2 * i),
-                                            options.bufferSize);
+                                            options.bufferSize, rawPageSize(options));
                 parWriteBuffers.emplace_back(qdma, 2 * N + i,
                                              rawAddressFor(HBM_BASE, options, 2 * i + 1),
-                                             options.bufferSize);
+                                             options.bufferSize, rawPageSize(options));
             }
             for (unsigned i = 0; i < N; ++i) {
                 parReadBuffers.emplace_back(qdma, N + i,
                                             rawAddressFor(DDR_BASE, options, 2 * i),
-                                            options.bufferSize);
+                                            options.bufferSize, rawPageSize(options));
                 parWriteBuffers.emplace_back(qdma, 3 * N + i,
                                              rawAddressFor(DDR_BASE, options, 2 * i + 1),
-                                             options.bufferSize);
+                                             options.bufferSize, rawPageSize(options));
             }
 
             testBidirectionalBandwidthSuite(parWriteBuffers, parReadBuffers, "HBM+DDR", ", QDMA driver", repeat);
@@ -1344,6 +1413,8 @@ int Validate::run(const Options& options) {
 
     vrtd::Session session;
     auto device = session.getDeviceByBdf(bdf);
+
+    printPageSize(options);
 
     // -- Step 2: HBM — integrity then bandwidth --
     if (!options.ddrOnly) {

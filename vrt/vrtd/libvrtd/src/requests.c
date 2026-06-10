@@ -468,6 +468,7 @@ enum vrtd_ret vrtd_buffer_open(
     uint32_t alloc_dir,
     uint64_t alloc_arg,
     uint64_t size_in,
+    enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 )
 {
@@ -507,6 +508,7 @@ enum vrtd_ret vrtd_buffer_open(
         resp.size,
         resp.phys_addr,
         qpair_fd,
+        page_mode,
         buffer_out
     );
     if (ret != VRTD_RET_OK) {
@@ -523,6 +525,7 @@ enum vrtd_ret vrtd_buffer_open_raw(
     uint64_t phys_addr,
     uint64_t size,
     uint32_t alloc_dir,
+    enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 )
 {
@@ -561,6 +564,7 @@ enum vrtd_ret vrtd_buffer_open_raw(
         size,
         phys_addr,
         qpair_fd,
+        page_mode,
         buffer_out
     );
     if (ret != VRTD_RET_OK) {

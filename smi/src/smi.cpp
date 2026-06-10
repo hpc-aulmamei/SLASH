@@ -129,6 +129,16 @@ static int smiMain(int argc, char **argv) {
         "Number of parallel buffers/threads (1-64)")->default_val(8)->check(CLI::Range(1u, 64u));
     validateCommand->add_flag("-R,--no-reset", validateOptions.noReset,
         "Skip the device reset step before running memory tests");
+    const std::map<std::string, Validate::Options::PageSize> pageSizeMap{
+        {"4k", Validate::Options::PageSize::Base4K},
+        {"2m", Validate::Options::PageSize::Huge2M},
+    };
+    validateCommand->add_option("--page-size", validateOptions.pageSize,
+        "Host staging-buffer page granule for all backends: 4k (4 KiB base pages; default) "
+        "or 2m (2 MiB hugepages). 2m requires reserved 2 MiB hugepages and 2 MiB-aligned "
+        "buffer-size/offsets; the allocation fails with no fallback otherwise.")
+        ->transform(CLI::CheckedTransformer(pageSizeMap, CLI::ignore_case))
+        ->default_str("4k");
     addValidateSizeOption("--buffer-size", &validateOptions.bufferSize,
         "Size of each validate buffer; accepts bytes or k/K/m/M suffixes (max 512M)")
         ->default_str("512M");

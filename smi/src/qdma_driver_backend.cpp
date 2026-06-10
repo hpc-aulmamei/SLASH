@@ -480,10 +480,11 @@ std::string QdmaDriverDevice::charDevPath(uint32_t qid) const {
 }
 
 QdmaDriverBuffer::QdmaDriverBuffer(QdmaDriverDevice& device, uint32_t qid,
-                                   uint64_t physAddr, uint64_t size)
+                                   uint64_t physAddr, uint64_t size,
+                                   raw::PageSize pageSize)
     : device_(&device), qid_(qid), physAddr_(physAddr) {
     try {
-        mapping_ = raw::createHostMapping(size, physAddr);
+        mapping_ = raw::createHostMapping(size, physAddr, pageSize);
 
         device_->queueAdd(qid_);
         queueAdded_ = true;

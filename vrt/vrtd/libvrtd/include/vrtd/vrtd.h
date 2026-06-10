@@ -54,6 +54,19 @@ extern "C" {
 
 struct vrtd_buffer;
 
+/**
+ * @brief Host staging-buffer page granule for DMA buffers.
+ *
+ * Selects how the client-side host buffer backing a DMA transfer is mapped.
+ * libvrtd mmaps the host buffer locally, so this is a client-local concept and
+ * is never sent to the daemon. There is no automatic fallback: requesting
+ * #VRTD_HOST_PAGE_2M fails the allocation when 2 MiB hugepages are unavailable.
+ */
+enum vrtd_host_page_mode {
+    VRTD_HOST_PAGE_4K = 0, ///< Regular 4 KiB base pages (transparent hugepages disabled).
+    VRTD_HOST_PAGE_2M = 1, ///< 2 MiB hugetlb pages; allocation fails if they cannot be mapped.
+};
+
 
 /**
  * @brief Connect to the vrtd UNIX domain socket.
@@ -325,6 +338,7 @@ enum vrtd_ret vrtd_qdma_qpair_get_fd(
  * @param alloc_dir  QDMA direction (one of enum vrtd_alloc_dir).
  * @param alloc_arg  Allocation argument (HBM region index for HBM).
  * @param size_in     Requested size in bytes.
+ * @param page_mode   Host staging-buffer page granule (one of enum vrtd_host_page_mode).
  * @param buffer_out  Output pointer to receive the allocated buffer handle.
  *
  * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
@@ -338,6 +352,7 @@ enum vrtd_ret vrtd_buffer_open(
     uint32_t alloc_dir,
     uint64_t alloc_arg,
     uint64_t size_in,
+    enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 );
 
@@ -352,6 +367,7 @@ enum vrtd_ret vrtd_buffer_open(
  * @param phys_addr   Caller-specified device physical address.
  * @param size        Size in bytes.
  * @param alloc_dir   One of #vrtd_alloc_dir.
+ * @param page_mode   Host staging-buffer page granule (one of enum vrtd_host_page_mode).
  * @param buffer_out  Output parameter set to the new buffer handle on success.
  *
  * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
@@ -364,6 +380,7 @@ enum vrtd_ret vrtd_buffer_open_raw(
     uint64_t phys_addr,
     uint64_t size,
     uint32_t alloc_dir,
+    enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 );
 
@@ -529,6 +546,7 @@ enum vrtd_ret vrtd_buffer_create_raw(
     uint64_t size,
     uint64_t phys_addr,
     int qpair_fd,
+    enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 );
 

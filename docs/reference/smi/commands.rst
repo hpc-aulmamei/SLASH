@@ -160,7 +160,7 @@ phase is skipped when ``--ddr-only`` or ``--hbm-only`` is given.
 
 .. code-block:: text
 
-   v80-smi validate -d <BDF> [-j|--threads <N>] [-R|--no-reset] [--buffer-size <size>] [--offset <size>] [--starting-offset <size>] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only] [--channel-allocation <auto|paired>] [--channel-region-stride <size>] [--bandwidth-iterations <N>] [--bandwidth-duration <seconds>]
+   v80-smi validate -d <BDF> [-j|--threads <N>] [-R|--no-reset] [--page-size <4k|2m>] [--buffer-size <size>] [--offset <size>] [--starting-offset <size>] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only] [--channel-allocation <auto|paired>] [--channel-region-stride <size>] [--bandwidth-iterations <N>] [--bandwidth-duration <seconds>]
 
 Requirements by mode:
 
@@ -213,11 +213,23 @@ permission.
 The largest phase maps up to ``4 * N * buffer-size`` of host buffers when both
 HBM and DDR are enabled, or ``2 * N * buffer-size`` with ``--ddr-only`` or
 ``--hbm-only``; the command fails early if that exceeds currently available
-host memory.
+host memory. With ``--page-size 2m`` that footprint is checked against the free
+2 MiB hugepage pool instead of general RAM.
 
 .. option:: -R, --no-reset
 
    Skip the device reset step before running memory tests.
+
+.. option:: --page-size <4k|2m>
+
+   Host staging-buffer page granule used for DMA transfers in every mode
+   (default VRTD, ``--raw-transfer-test`` and ``--use-qdma-driver``). ``4k``
+   (the default) maps the host buffers with regular 4 KiB base pages; ``2m``
+   maps them with 2 MiB hugepages. There is no fallback: ``2m`` requires
+   reserved 2 MiB hugepages and that ``--buffer-size``, ``--offset``,
+   ``--starting-offset`` (and ``--channel-region-stride`` in paired mode) all be
+   2 MiB-aligned, otherwise ``validate`` fails early. Reserve hugepages with,
+   e.g., ``echo <N> | sudo tee /proc/sys/vm/nr_hugepages``.
 
 .. option:: --raw-transfer-test
 

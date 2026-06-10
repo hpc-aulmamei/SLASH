@@ -105,7 +105,8 @@ private:
 /// testBandwidth() templates.
 class QdmaDriverBuffer {
 public:
-    QdmaDriverBuffer(QdmaDriverDevice& device, uint32_t qid, uint64_t physAddr, uint64_t size);
+    QdmaDriverBuffer(QdmaDriverDevice& device, uint32_t qid, uint64_t physAddr, uint64_t size,
+                     raw::PageSize pageSize);
 
     QdmaDriverBuffer(const QdmaDriverBuffer&) = delete;
     QdmaDriverBuffer& operator=(const QdmaDriverBuffer&) = delete;

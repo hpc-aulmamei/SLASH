@@ -49,6 +49,17 @@ enum class BufferAllocDir : uint32_t {
 };
 
 /**
+ * @brief Host staging-buffer page granule for a buffer's DMA mapping.
+ *
+ * Mirrors @c vrtd_host_page_mode (values must stay in sync). @c Huge2M fails
+ * the allocation, with no fallback, when 2 MiB hugepages cannot be mapped.
+ */
+enum class HostPageSize : uint32_t {
+    Base4K = 0, ///< Regular 4 KiB base pages.
+    Huge2M = 1, ///< 2 MiB hugetlb pages; allocation fails if unavailable.
+};
+
+/**
  * @brief RAII wrapper for a vrtd buffer allocation.
  *
  * A @c Buffer owns the underlying @c vrtd_buffer, including its qpair FD and

@@ -74,6 +74,12 @@ namespace smi::raw {
 static constexpr uint64_t BASE_TRANSFER_STEP_SIZE = 4ULL * 1024ULL;
 static constexpr uint64_t HUGE_TRANSFER_STEP_SIZE = 2ULL * 1024ULL * 1024ULL;
 
+/// Host staging-buffer page granule selection for raw transfers.
+enum class PageSize {
+    Base4K, ///< Regular 4 KiB base pages.
+    Huge2M, ///< 2 MiB hugetlb pages; a mapping failure is fatal (no fallback).
+};
+
 [[noreturn]] inline void throwSystemError(const std::string& message) {
     throw std::runtime_error(message + ": " + std::strerror(errno));
 }
@@ -90,33 +96,46 @@ struct HostMapping {
     uint64_t step = 0;
 };
 
-/// Create a host staging buffer for raw transfers, preferring a 2 MiB hugetlb
-/// mapping and falling back to a regular (THP-disabled) mapping with 4 KiB
-/// transfers.  @p physAddrForWarn is only used to make the fallback warning
-/// actionable.
-inline HostMapping createHostMapping(uint64_t size, uint64_t physAddrForWarn) {
+/// Create a host staging buffer for raw transfers using the requested page
+/// granule.  @p pageSize selects 4 KiB base pages or 2 MiB hugetlb pages; there
+/// is no fallback, so a 2 MiB request fails (throws) when hugepages cannot be
+/// mapped.  @p physAddr is the device address this buffer backs and is only used
+/// to make error messages actionable.
+inline HostMapping createHostMapping(uint64_t size, uint64_t physAddr, PageSize pageSize) {
     HostMapping mapping;
     mapping.size = size;
 
-    mapping.data = mmap(nullptr,
-                        size,
-                        PROT_READ | PROT_WRITE,
-                        MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB | MAP_POPULATE,
-                        -1,
-                        0);
-    mapping.step = HUGE_TRANSFER_STEP_SIZE;
-    if (mapping.data != MAP_FAILED) {
+    if (pageSize == PageSize::Huge2M) {
+        if ((size % HUGE_TRANSFER_STEP_SIZE) != 0) {
+            throw std::invalid_argument(
+                "Raw transfer buffer size must be a multiple of 2 MiB to use 2 MiB pages");
+        }
+
+        mapping.data = mmap(nullptr,
+                            size,
+                            PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB | MAP_POPULATE,
+                            -1,
+                            0);
+        if (mapping.data == MAP_FAILED) {
+            char where[64];
+            std::snprintf(where, sizeof(where), " at device 0x%llx",
+                          static_cast<unsigned long long>(physAddr));
+            throwSystemError(std::string("Failed to map 2 MiB hugetlb raw transfer host buffer") +
+                             where + " (reserve 2 MiB hugepages or use --page-size 4k)");
+        }
+        mapping.step = HUGE_TRANSFER_STEP_SIZE;
         return mapping;
     }
 
-    const int hugeErrno = errno;
-    // MAP_POPULATE is deliberately omitted here. It would pre-fault the whole
-    // buffer during mmap(), i.e. before the MADV_NOHUGEPAGE below can take
-    // effect. On hosts with transparent hugepages set to "always", those early
-    // faults hand back 2 MiB THP compound pages, and MADV_NOHUGEPAGE does not
-    // split pages that are already faulted in. The driver's strict 4 KiB
-    // base-page path (slash_qdma_map_user_base_page_to_sgl) then rejects every
-    // transfer with -EINVAL ("4 KiB transfer is not backed by a base page").
+    // PageSize::Base4K: map regular base pages.  MAP_POPULATE is deliberately
+    // omitted: it would pre-fault the whole buffer during mmap(), i.e. before
+    // the MADV_NOHUGEPAGE below can take effect. On hosts with transparent
+    // hugepages set to "always", those early faults hand back 2 MiB THP compound
+    // pages, and MADV_NOHUGEPAGE does not split pages that are already faulted
+    // in. The driver's strict 4 KiB base-page path
+    // (slash_qdma_map_user_base_page_to_sgl) then rejects every transfer with
+    // -EINVAL ("4 KiB transfer is not backed by a base page").
     mapping.data = mmap(nullptr,
                         size,
                         PROT_READ | PROT_WRITE,
@@ -149,9 +168,6 @@ inline HostMapping createHostMapping(uint64_t size, uint64_t physAddrForWarn) {
     }
 
     mapping.step = BASE_TRANSFER_STEP_SIZE;
-    std::cerr << "Warning: 2 MiB hugetlb mmap failed for raw transfer buffer at 0x"
-              << std::hex << physAddrForWarn << std::dec
-              << " (errno=" << hugeErrno << "); using 4 KiB transfers" << std::endl;
     return mapping;
 }
 

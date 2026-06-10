@@ -55,6 +55,17 @@ public:
             Paired,  ///< Couple mm-channel to a distinct memory region: even positions -> region 0, odd -> region 1.
         };
 
+        /// @brief Host staging-buffer page granule used for DMA transfers.
+        ///
+        /// Selects how the host-side buffer is mapped for every backend (VRTD,
+        /// raw SLASH, and the off-the-shelf QDMA driver).  2 MiB requires
+        /// reserved hugepages plus 2 MiB-aligned sizes/addresses; the allocation
+        /// fails with no fallback otherwise.
+        enum class PageSize {
+            Base4K, ///< 4 KiB base pages (default).
+            Huge2M, ///< 2 MiB hugepages.
+        };
+
         std::string bdf;           ///< BDF (Bus:Device.Function) address of the target device.
         unsigned threads = 8;      ///< Number of parallel buffers/threads (1-64).
         bool noReset = false;      ///< Skip the device reset step before running memory tests.
@@ -62,6 +73,7 @@ public:
         bool hbmOnly = false;      ///< Skip DDR phase (mutually exclusive with ddrOnly).
         bool rawTransferTest = false; ///< Use libslash raw QDMA transfers instead of VRTD buffers.
         bool useQdmaDriver = false;   ///< Run the raw test over the off-the-shelf Xilinx QDMA driver.
+        PageSize pageSize = PageSize::Base4K; ///< Host staging-buffer page granule (4 KiB or 2 MiB).
         uint64_t bufferSize = 512ULL * 1024ULL * 1024ULL; ///< Size of each test buffer.
         uint64_t offset = 512ULL * 1024ULL * 1024ULL; ///< Distance between logical buffer positions.
         uint64_t startingOffset = 0; ///< Offset from memory-space base for position 0.
