@@ -41,6 +41,8 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cctype>
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <cstdint>
@@ -55,6 +57,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <fcntl.h>
@@ -78,24 +81,273 @@ namespace {
 
 using smi::raw::throwSystemError;
 
-/// Buffer size for each allocation (512 MB — one allocator region).
-static constexpr uint64_t BUFFER_SIZE = 512ULL * 1024 * 1024;
-
 /// Region constants mirror vrt/vrtd/src/allocator.h, which is private.
 static constexpr uint64_t HBM_BASE = 0x4000000000ULL;
 static constexpr uint64_t DDR_BASE = 0x60000000000ULL;
 static constexpr uint64_t MEM_REGION_SIZE = 512ULL * 1024 * 1024;
+static constexpr uint64_t MEMORY_SPACE_SIZE = 64ULL * MEM_REGION_SIZE;
+static constexpr uint64_t MAX_BUFFER_SIZE = MEM_REGION_SIZE;
+static constexpr uint64_t TRANSFER_ALIGNMENT = 4096ULL;
 
 static constexpr uint32_t QDMA_Q_MODE_MM = 0;
 static constexpr uint32_t QDMA_DIR_H2C = 0x1;
 static constexpr uint32_t QDMA_DIR_C2H = 0x2;
 static constexpr uint32_t QDMA_RING_SZ_IDX = 0;
 
+static std::string trim(std::string_view text) {
+    size_t first = 0;
+    while (first < text.size() &&
+           std::isspace(static_cast<unsigned char>(text[first]))) {
+        ++first;
+    }
+
+    size_t last = text.size();
+    while (last > first &&
+           std::isspace(static_cast<unsigned char>(text[last - 1]))) {
+        --last;
+    }
+
+    return std::string{text.substr(first, last - first)};
+}
+
+static uint64_t parseByteSizeText(std::string_view text) {
+    std::string value = trim(text);
+    if (value.empty()) {
+        throw std::invalid_argument("value must not be empty");
+    }
+
+    uint64_t multiplier = 1;
+    if (!value.empty() && (value.back() == 'b' || value.back() == 'B')) {
+        value.pop_back();
+    }
+    if (!value.empty()) {
+        const char suffix = value.back();
+        if (suffix == 'k' || suffix == 'K') {
+            multiplier = 1024ULL;
+            value.pop_back();
+        } else if (suffix == 'm' || suffix == 'M') {
+            multiplier = 1024ULL * 1024ULL;
+            value.pop_back();
+        } else if (suffix == 'g' || suffix == 'G') {
+            multiplier = 1024ULL * 1024ULL * 1024ULL;
+            value.pop_back();
+        }
+    }
+
+    value = trim(value);
+    if (value.empty() || value.front() == '-' || value.front() == '+') {
+        throw std::invalid_argument("value must be an unsigned byte count");
+    }
+
+    size_t parsed = 0;
+    uint64_t bytes = 0;
+    try {
+        bytes = std::stoull(value, &parsed, 0);
+    } catch (const std::exception&) {
+        throw std::invalid_argument("value must be an unsigned byte count");
+    }
+
+    if (parsed != value.size()) {
+        throw std::invalid_argument("unrecognized byte-size suffix");
+    }
+    if (bytes > std::numeric_limits<uint64_t>::max() / multiplier) {
+        throw std::invalid_argument("byte-size value is too large");
+    }
+
+    return bytes * multiplier;
+}
+
+static bool isAligned(uint64_t value, uint64_t alignment) {
+    return (value % alignment) == 0;
+}
+
+static bool checkAligned(const char* name, uint64_t value) {
+    if (!isAligned(value, TRANSFER_ALIGNMENT)) {
+        std::cerr << "validate: " << name << " must be " << TRANSFER_ALIGNMENT
+                  << "-byte aligned" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+static bool checkMemoryPlacementRange(const char* memoryName,
+                                      const Validate::Options& options,
+                                      uint64_t positions) {
+    if (positions == 0) {
+        return true;
+    }
+
+    const uint64_t lastPosition = positions - 1;
+    if (lastPosition != 0 &&
+        options.offset > (std::numeric_limits<uint64_t>::max() - options.startingOffset) /
+                             lastPosition) {
+        std::cerr << "validate: " << memoryName
+                  << " placement overflows 64-bit address arithmetic" << std::endl;
+        return false;
+    }
+
+    const uint64_t lastStart = options.startingOffset + lastPosition * options.offset;
+    if (lastStart > MEMORY_SPACE_SIZE || options.bufferSize > MEMORY_SPACE_SIZE - lastStart) {
+        std::cerr << "validate: " << memoryName << " placement exceeds available "
+                  << (MEMORY_SPACE_SIZE / (1024ULL * 1024ULL)) << " MiB address space"
+                  << std::endl;
+        return false;
+    }
+
+    return true;
+}
+
+/// Paired-mode per-channel region stride (NSU / pseudo-channel spacing),
+/// resolving 0 to half the per-memory address space.
+static uint64_t pairedRegionStride(const Validate::Options& options) {
+    return options.channelRegionStride != 0 ? options.channelRegionStride
+                                            : (MEMORY_SPACE_SIZE / 2);
+}
+
+/// Placement check for Paired channel allocation: even/odd positions occupy two
+/// regions `pairedRegionStride()` bytes apart, each packed by in-region index.
+/// Verifies neither region overflows into the next nor past the memory space.
+static bool checkMemoryPlacementRangePaired(const char* memoryName,
+                                            const Validate::Options& options,
+                                            uint64_t positions) {
+    if (positions == 0) {
+        return true;
+    }
+
+    const uint64_t stride = pairedRegionStride(options);
+    if (stride == 0 || (stride % TRANSFER_ALIGNMENT) != 0) {
+        std::cerr << "validate: --channel-region-stride must be a non-zero multiple of "
+                  << TRANSFER_ALIGNMENT << " bytes" << std::endl;
+        return false;
+    }
+    if (stride > MEMORY_SPACE_SIZE) {
+        std::cerr << "validate: --channel-region-stride exceeds the "
+                  << (MEMORY_SPACE_SIZE / (1024ULL * 1024ULL)) << " MiB per-memory address space"
+                  << std::endl;
+        return false;
+    }
+
+    // Highest in-region index used across both regions (positions 0..positions-1,
+    // split even/odd, each using index = position >> 1).
+    const uint64_t maxIndex = (positions - 1) >> 1;
+    if (maxIndex != 0 &&
+        options.offset > (std::numeric_limits<uint64_t>::max() - options.startingOffset) / maxIndex) {
+        std::cerr << "validate: " << memoryName
+                  << " paired placement overflows 64-bit address arithmetic" << std::endl;
+        return false;
+    }
+    const uint64_t lastStart = options.startingOffset + maxIndex * options.offset;
+
+    // Each region must hold its last buffer without spilling into the next region.
+    if (lastStart > stride || options.bufferSize > stride - lastStart) {
+        std::cerr << "validate: " << memoryName
+                  << " paired placement overflows the per-channel region (stride " << stride
+                  << " bytes); reduce --threads/--buffer-size/--offset or raise"
+                     " --channel-region-stride" << std::endl;
+        return false;
+    }
+    // Region 1 sits one stride higher and must still fit the memory space.
+    if (lastStart + options.bufferSize > MEMORY_SPACE_SIZE - stride) {
+        std::cerr << "validate: " << memoryName
+                  << " paired placement exceeds available "
+                  << (MEMORY_SPACE_SIZE / (1024ULL * 1024ULL)) << " MiB address space"
+                  << std::endl;
+        return false;
+    }
+    return true;
+}
+
+static bool validatePlacement(const Validate::Options& options) {
+    if (options.bufferSize == 0 || options.bufferSize > MAX_BUFFER_SIZE) {
+        std::cerr << "validate: --buffer-size must be in the range 1..512M" << std::endl;
+        return false;
+    }
+    if (options.offset == 0) {
+        std::cerr << "validate: --offset must be greater than zero" << std::endl;
+        return false;
+    }
+    if (!checkAligned("--buffer-size", options.bufferSize) ||
+        !checkAligned("--offset", options.offset) ||
+        !checkAligned("--starting-offset", options.startingOffset)) {
+        return false;
+    }
+    if (options.offset < options.bufferSize) {
+        std::cerr << "validate: --offset must be at least --buffer-size so buffers do not overlap"
+                  << std::endl;
+        return false;
+    }
+
+    const bool paired =
+        options.channelAllocation == Validate::Options::ChannelAllocation::Paired;
+    if (paired && !options.rawTransferTest && !options.useQdmaDriver) {
+        std::cerr << "validate: --channel-allocation paired only applies to the raw transfer"
+                     " tests (--raw-transfer-test or --use-qdma-driver)" << std::endl;
+        return false;
+    }
+    if ((options.bandwidthIterations > 1 || options.bandwidthDuration > 0.0) &&
+        !options.rawTransferTest && !options.useQdmaDriver) {
+        std::cerr << "validate: --bandwidth-iterations/--bandwidth-duration only apply to the raw transfer"
+                     " tests (--raw-transfer-test or --use-qdma-driver)" << std::endl;
+        return false;
+    }
+    if (options.bandwidthDuration < 0.0) {
+        std::cerr << "validate: --bandwidth-duration must be non-negative" << std::endl;
+        return false;
+    }
+
+    const uint64_t positions = 2ULL * options.threads;
+    const auto checkRange = paired ? checkMemoryPlacementRangePaired : checkMemoryPlacementRange;
+    if (!options.ddrOnly && !checkRange("HBM", options, positions)) {
+        return false;
+    }
+    if (!options.hbmOnly && !checkRange("DDR", options, positions)) {
+        return false;
+    }
+
+    return true;
+}
+
+static uint64_t addressFor(uint64_t memoryBase,
+                           const Validate::Options& options,
+                           uint64_t position) {
+    return memoryBase + options.startingOffset + position * options.offset;
+}
+
+/// Device address for a raw-transfer buffer, honouring the channel-allocation
+/// strategy.  In Paired mode the mm-channel (position&1 -- which SLASH maps to
+/// the SW-context host_id and hence the CPM5 NoC NMU) is coupled to a distinct
+/// memory region (NSU): even positions land in region 0, odd positions in
+/// region 1, pairedRegionStride() bytes higher, each packed by its in-region
+/// index.  This mirrors dma-perf's offset_ch0/offset_ch1 so the two NMUs drive
+/// independent memory endpoints instead of converging on one.
+static uint64_t rawAddressFor(uint64_t memoryBase,
+                              const Validate::Options& options,
+                              uint64_t position) {
+    if (options.channelAllocation == Validate::Options::ChannelAllocation::Paired) {
+        const uint64_t channel = position & 1ULL;
+        const uint64_t inRegionIndex = position >> 1;
+        return memoryBase + channel * pairedRegionStride(options) +
+               options.startingOffset + inRegionIndex * options.offset;
+    }
+    return addressFor(memoryBase, options, position);
+}
+
+/// Print which raw-transfer channel-allocation strategy is in effect.
+static void printChannelAllocation(const Validate::Options& options) {
+    if (options.channelAllocation == Validate::Options::ChannelAllocation::Paired) {
+        std::cout << "Channel allocation: paired (even positions -> mm-channel 0 / region 0, "
+                     "odd -> mm-channel 1 / region 1; region stride 0x"
+                  << std::hex << pairedRegionStride(options) << std::dec << " bytes)" << std::endl;
+    } else {
+        std::cout << "Channel allocation: auto (mm-channel = qid&1, linear addressing)" << std::endl;
+    }
+}
+
 static bool checkHostMemoryBudget(const Validate::Options& options) {
     const uint64_t maxConcurrentBuffers = (!options.ddrOnly && !options.hbmOnly)
         ? 4ULL * options.threads
         : 2ULL * options.threads;
-    const uint64_t requiredBytes = maxConcurrentBuffers * BUFFER_SIZE;
+    const uint64_t requiredBytes = maxConcurrentBuffers * options.bufferSize;
     const long pageSize = sysconf(_SC_PAGESIZE);
     const long availablePages = sysconf(_SC_AVPHYS_PAGES);
 
@@ -448,6 +700,35 @@ static void printBandwidthMetric(const char* label, double mbps) {
               << mbps << " MB/s" << std::endl;
 }
 
+struct BandwidthRepeatOptions {
+    uint64_t iterations = 1;
+    std::chrono::duration<double> duration{0.0};
+
+    bool durationMode() const {
+        return duration.count() > 0.0;
+    }
+
+    bool isRepeated() const {
+        return durationMode() || iterations > 1;
+    }
+};
+
+static BandwidthRepeatOptions repeatOptionsFromValidate(const Validate::Options& options) {
+    BandwidthRepeatOptions repeat;
+    repeat.iterations = std::max<uint64_t>(1, options.bandwidthIterations);
+    repeat.duration = std::chrono::duration<double>(options.bandwidthDuration);
+    return repeat;
+}
+
+static void printBandwidthRepeatMode(const BandwidthRepeatOptions& repeat) {
+    if (repeat.durationMode()) {
+        std::cout << "Bandwidth mode: duration " << std::fixed << std::setprecision(3)
+                  << repeat.duration.count() << " s" << std::endl;
+    } else if (repeat.iterations > 1) {
+        std::cout << "Bandwidth mode: " << repeat.iterations << " iterations" << std::endl;
+    }
+}
+
 template<typename Buffer>
 static uint64_t fillBuffers(std::vector<Buffer>& buffers, int value) {
     uint64_t totalBytes = 0;
@@ -497,9 +778,81 @@ static void runTransfers(std::vector<Buffer>& buffers, bool toDevice) {
     }
 }
 
+static uint64_t joinRepeatedTransferThreads(std::vector<std::thread>& threads,
+                                            std::vector<std::exception_ptr>& errors,
+                                            const std::vector<uint64_t>& bytes) {
+    for (auto& t : threads) {
+        t.join();
+    }
+    for (auto& error : errors) {
+        if (error) {
+            std::rethrow_exception(error);
+        }
+    }
+
+    uint64_t totalBytes = 0;
+    for (uint64_t value : bytes) {
+        totalBytes += value;
+    }
+    return totalBytes;
+}
+
 template<typename Buffer>
-static double testSingleDirectionBandwidth(std::vector<Buffer>& buffers, bool toDevice) {
-    const uint64_t totalBytes = fillBuffers(buffers, toDevice ? 0xAB : 0xCD);
+static std::pair<uint64_t, std::chrono::duration<double>>
+runRepeatedTransfers(std::vector<Buffer>& buffers,
+                     bool toDevice,
+                     const BandwidthRepeatOptions& repeat) {
+    std::vector<std::thread> threads;
+    std::vector<std::exception_ptr> errors(buffers.size());
+    std::vector<uint64_t> bytes(buffers.size(), 0);
+    threads.reserve(buffers.size());
+
+    const auto start = std::chrono::steady_clock::now();
+    const auto deadline = start + repeat.duration;
+
+    for (size_t i = 0; i < buffers.size(); ++i) {
+        threads.emplace_back([&buffers, &errors, &bytes, i, toDevice, repeat, deadline] {
+            try {
+                const uint64_t size = buffers[i].getSize();
+                uint64_t completed = 0;
+
+                if (repeat.durationMode()) {
+                    while (std::chrono::steady_clock::now() < deadline) {
+                        if (toDevice) {
+                            buffers[i].syncToDevice(0, size);
+                        } else {
+                            buffers[i].syncFromDevice(0, size);
+                        }
+                        ++completed;
+                    }
+                } else {
+                    for (uint64_t iter = 0; iter < repeat.iterations; ++iter) {
+                        if (toDevice) {
+                            buffers[i].syncToDevice(0, size);
+                        } else {
+                            buffers[i].syncFromDevice(0, size);
+                        }
+                        ++completed;
+                    }
+                }
+
+                bytes[i] = completed * size;
+            } catch (...) {
+                errors[i] = std::current_exception();
+            }
+        });
+    }
+
+    const uint64_t totalBytes = joinRepeatedTransferThreads(threads, errors, bytes);
+    const auto end = std::chrono::steady_clock::now();
+    return {totalBytes, end - start};
+}
+
+template<typename Buffer>
+static double testSingleDirectionBandwidth(std::vector<Buffer>& buffers,
+                                           bool toDevice,
+                                           const BandwidthRepeatOptions& repeat = {}) {
+    (void)fillBuffers(buffers, toDevice ? 0xAB : 0xCD);
 
     if (!toDevice) {
         runTransfers(buffers, /*toDevice=*/true);
@@ -508,18 +861,17 @@ static double testSingleDirectionBandwidth(std::vector<Buffer>& buffers, bool to
         }
     }
 
-    const auto start = std::chrono::steady_clock::now();
-    runTransfers(buffers, toDevice);
-    const auto end = std::chrono::steady_clock::now();
+    const auto [totalBytes, elapsed] = runRepeatedTransfers(buffers, toDevice, repeat);
 
-    return mbPerSecond(totalBytes, end - start);
+    return mbPerSecond(totalBytes, elapsed);
 }
 
 template<typename Buffer>
 static void testBidirectionalBandwidth(std::vector<Buffer>& writeBuffers,
-                                       std::vector<Buffer>& readBuffers) {
-    const uint64_t writeBytes = fillBuffers(writeBuffers, 0xAB);
-    const uint64_t readBytes = fillBuffers(readBuffers, 0xCD);
+                                       std::vector<Buffer>& readBuffers,
+                                       const BandwidthRepeatOptions& repeat = {}) {
+    (void)fillBuffers(writeBuffers, 0xAB);
+    (void)fillBuffers(readBuffers, 0xCD);
 
     // Prime device memory before timing so the C2H side reads initialized data.
     runTransfers(readBuffers, /*toDevice=*/true);
@@ -529,11 +881,62 @@ static void testBidirectionalBandwidth(std::vector<Buffer>& writeBuffers,
 
     std::vector<std::thread> threads;
     std::vector<std::exception_ptr> errors(writeBuffers.size() + readBuffers.size());
+    std::vector<uint64_t> writeThreadBytes(writeBuffers.size(), 0);
+    std::vector<uint64_t> readThreadBytes(readBuffers.size(), 0);
     threads.reserve(errors.size());
 
     const auto start = std::chrono::steady_clock::now();
-    launchTransferThreads(writeBuffers, /*toDevice=*/true, threads, errors, 0);
-    launchTransferThreads(readBuffers, /*toDevice=*/false, threads, errors, writeBuffers.size());
+    const auto deadline = start + repeat.duration;
+
+    for (size_t i = 0; i < writeBuffers.size(); ++i) {
+        threads.emplace_back([&writeBuffers, &errors, &writeThreadBytes, i, repeat, deadline] {
+            try {
+                const uint64_t size = writeBuffers[i].getSize();
+                uint64_t completed = 0;
+
+                if (repeat.durationMode()) {
+                    while (std::chrono::steady_clock::now() < deadline) {
+                        writeBuffers[i].syncToDevice(0, size);
+                        ++completed;
+                    }
+                } else {
+                    for (uint64_t iter = 0; iter < repeat.iterations; ++iter) {
+                        writeBuffers[i].syncToDevice(0, size);
+                        ++completed;
+                    }
+                }
+
+                writeThreadBytes[i] = completed * size;
+            } catch (...) {
+                errors[i] = std::current_exception();
+            }
+        });
+    }
+    for (size_t i = 0; i < readBuffers.size(); ++i) {
+        threads.emplace_back([&readBuffers, &errors, &readThreadBytes, i,
+                              repeat, deadline, errorOffset = writeBuffers.size()] {
+            try {
+                const uint64_t size = readBuffers[i].getSize();
+                uint64_t completed = 0;
+
+                if (repeat.durationMode()) {
+                    while (std::chrono::steady_clock::now() < deadline) {
+                        readBuffers[i].syncFromDevice(0, size);
+                        ++completed;
+                    }
+                } else {
+                    for (uint64_t iter = 0; iter < repeat.iterations; ++iter) {
+                        readBuffers[i].syncFromDevice(0, size);
+                        ++completed;
+                    }
+                }
+
+                readThreadBytes[i] = completed * size;
+            } catch (...) {
+                errors[errorOffset + i] = std::current_exception();
+            }
+        });
+    }
 
     for (auto& t : threads) {
         t.join();
@@ -547,6 +950,14 @@ static void testBidirectionalBandwidth(std::vector<Buffer>& writeBuffers,
     }
 
     const auto elapsed = end - start;
+    uint64_t writeBytes = 0;
+    uint64_t readBytes = 0;
+    for (uint64_t value : writeThreadBytes) {
+        writeBytes += value;
+    }
+    for (uint64_t value : readThreadBytes) {
+        readBytes += value;
+    }
     const double writeMBps = mbPerSecond(writeBytes, elapsed);
     const double readMBps = mbPerSecond(readBytes, elapsed);
 
@@ -558,29 +969,55 @@ static void testBidirectionalBandwidth(std::vector<Buffer>& writeBuffers,
 template<typename Buffer>
 static void testBandwidthSuite(std::vector<Buffer>& singleDirectionBuffers,
                                const std::string& label,
-                               const std::string& backendSuffix) {
+                               const std::string& backendSuffix,
+                               const BandwidthRepeatOptions& repeat = {}) {
     std::cout << "Testing " << label << " read bandwidth ("
               << singleDirectionBuffers.size() << " threads" << backendSuffix << ")..." << std::endl;
-    printBandwidthMetric("Read", testSingleDirectionBandwidth(singleDirectionBuffers, /*toDevice=*/false));
+    printBandwidthMetric("Read", testSingleDirectionBandwidth(singleDirectionBuffers, /*toDevice=*/false, repeat));
 
     std::cout << "Testing " << label << " write bandwidth ("
               << singleDirectionBuffers.size() << " threads" << backendSuffix << ")..." << std::endl;
-    printBandwidthMetric("Write", testSingleDirectionBandwidth(singleDirectionBuffers, /*toDevice=*/true));
+    printBandwidthMetric("Write", testSingleDirectionBandwidth(singleDirectionBuffers, /*toDevice=*/true, repeat));
 }
 
 template<typename Buffer>
 static void testBidirectionalBandwidthSuite(std::vector<Buffer>& bidirectionalWriteBuffers,
                                             std::vector<Buffer>& bidirectionalReadBuffers,
                                             const std::string& label,
-                                            const std::string& backendSuffix) {
+                                            const std::string& backendSuffix,
+                                            const BandwidthRepeatOptions& repeat = {}) {
     std::cout << "Testing " << label << " bidirectional bandwidth ("
               << (bidirectionalWriteBuffers.size() + bidirectionalReadBuffers.size())
               << " threads" << backendSuffix << ")..." << std::endl;
-    testBidirectionalBandwidth(bidirectionalWriteBuffers, bidirectionalReadBuffers);
+    testBidirectionalBandwidth(bidirectionalWriteBuffers, bidirectionalReadBuffers, repeat);
+}
+
+static vrtd::Buffer openValidateHbmBuffer(const vrtd::Device& device,
+                                          const Validate::Options& options,
+                                          uint64_t position) {
+    if (options.placementExplicit) {
+        return device.openRawBuffer(addressFor(HBM_BASE, options, position),
+                                    options.bufferSize);
+    }
+
+    return device.openHbmBuffer(static_cast<uint32_t>(position), options.bufferSize);
+}
+
+static vrtd::Buffer openValidateDdrBuffer(const vrtd::Device& device,
+                                          const Validate::Options& options,
+                                          uint64_t position) {
+    if (options.placementExplicit) {
+        return device.openRawBuffer(addressFor(DDR_BASE, options, position),
+                                    options.bufferSize);
+    }
+
+    (void)position;
+    return device.openDdrBuffer(options.bufferSize);
 }
 
 static int runRawTransferTest(const std::string& bdf, const Validate::Options& options) {
     const unsigned N = options.threads;
+    const BandwidthRepeatOptions repeat = repeatOptionsFromValidate(options);
 
     if (!options.noReset) {
         std::cout << "Raw transfer mode skips reset; continuing without VRTD reset." << std::endl;
@@ -589,6 +1026,8 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
 
     const std::string qdmaPath = resolveQdmaDevicePath(bdf);
     std::cout << "Using raw QDMA device " << qdmaPath << "..." << std::endl;
+    printChannelAllocation(options);
+    printBandwidthRepeatMode(repeat);
 
     RawQdmaDevice qdma(qdmaPath);
 
@@ -598,8 +1037,8 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             std::vector<RawTransferBuffer> hbmBuffers;
             hbmBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
-                hbmBuffers.emplace_back(qdma.get(), HBM_BASE + i * MEM_REGION_SIZE,
-                                        BUFFER_SIZE);
+                hbmBuffers.emplace_back(qdma.get(), rawAddressFor(HBM_BASE, options, i),
+                                        options.bufferSize);
             }
 
             if (!testDataIntegrity(hbmBuffers, "HBM")) {
@@ -607,7 +1046,7 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
                 return 1;
             }
 
-            testBandwidthSuite(hbmBuffers, "HBM", ", raw QDMA");
+            testBandwidthSuite(hbmBuffers, "HBM", ", raw QDMA", repeat);
         }
         {
             // Bidirectional HBM: positions interleave R/W across regions
@@ -618,14 +1057,14 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             hbmReadBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
                 hbmReadBuffers.emplace_back(qdma.get(),
-                                            HBM_BASE + (2 * i) * MEM_REGION_SIZE,
-                                            BUFFER_SIZE);
+                                            rawAddressFor(HBM_BASE, options, 2 * i),
+                                            options.bufferSize);
                 hbmWriteBuffers.emplace_back(qdma.get(),
-                                             HBM_BASE + (2 * i + 1) * MEM_REGION_SIZE,
-                                             BUFFER_SIZE);
+                                             rawAddressFor(HBM_BASE, options, 2 * i + 1),
+                                             options.bufferSize);
             }
 
-            testBidirectionalBandwidthSuite(hbmWriteBuffers, hbmReadBuffers, "HBM", ", raw QDMA");
+            testBidirectionalBandwidthSuite(hbmWriteBuffers, hbmReadBuffers, "HBM", ", raw QDMA", repeat);
         }
     }
 
@@ -635,8 +1074,8 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             std::vector<RawTransferBuffer> ddrBuffers;
             ddrBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
-                ddrBuffers.emplace_back(qdma.get(), DDR_BASE + i * BUFFER_SIZE,
-                                        BUFFER_SIZE);
+                ddrBuffers.emplace_back(qdma.get(), rawAddressFor(DDR_BASE, options, i),
+                                        options.bufferSize);
             }
 
             if (!testDataIntegrity(ddrBuffers, "DDR")) {
@@ -644,7 +1083,7 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
                 return 1;
             }
 
-            testBandwidthSuite(ddrBuffers, "DDR", ", raw QDMA");
+            testBandwidthSuite(ddrBuffers, "DDR", ", raw QDMA", repeat);
         }
         {
             // Bidirectional DDR: positions interleave R/W across slot indices
@@ -655,14 +1094,14 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             ddrReadBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
                 ddrReadBuffers.emplace_back(qdma.get(),
-                                            DDR_BASE + (2 * i) * BUFFER_SIZE,
-                                            BUFFER_SIZE);
+                                            rawAddressFor(DDR_BASE, options, 2 * i),
+                                            options.bufferSize);
                 ddrWriteBuffers.emplace_back(qdma.get(),
-                                             DDR_BASE + (2 * i + 1) * BUFFER_SIZE,
-                                             BUFFER_SIZE);
+                                             rawAddressFor(DDR_BASE, options, 2 * i + 1),
+                                             options.bufferSize);
             }
 
-            testBidirectionalBandwidthSuite(ddrWriteBuffers, ddrReadBuffers, "DDR", ", raw QDMA");
+            testBidirectionalBandwidthSuite(ddrWriteBuffers, ddrReadBuffers, "DDR", ", raw QDMA", repeat);
         }
     }
 
@@ -671,15 +1110,15 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             std::vector<RawTransferBuffer> parBuffers;
             parBuffers.reserve(2 * N);
             for (unsigned i = 0; i < N; ++i) {
-                parBuffers.emplace_back(qdma.get(), HBM_BASE + i * MEM_REGION_SIZE,
-                                        BUFFER_SIZE);
+                parBuffers.emplace_back(qdma.get(), rawAddressFor(HBM_BASE, options, i),
+                                        options.bufferSize);
             }
             for (unsigned i = 0; i < N; ++i) {
-                parBuffers.emplace_back(qdma.get(), DDR_BASE + i * BUFFER_SIZE,
-                                        BUFFER_SIZE);
+                parBuffers.emplace_back(qdma.get(), rawAddressFor(DDR_BASE, options, i),
+                                        options.bufferSize);
             }
 
-            testBandwidthSuite(parBuffers, "HBM+DDR", ", raw QDMA");
+            testBandwidthSuite(parBuffers, "HBM+DDR", ", raw QDMA", repeat);
         }
         {
             // Bidirectional HBM+DDR: 4N positions total.  Positions 0..2N-1
@@ -692,22 +1131,22 @@ static int runRawTransferTest(const std::string& bdf, const Validate::Options& o
             parReadBuffers.reserve(2 * N);
             for (unsigned i = 0; i < N; ++i) {
                 parReadBuffers.emplace_back(qdma.get(),
-                                            HBM_BASE + (2 * i) * MEM_REGION_SIZE,
-                                            BUFFER_SIZE);
+                                            rawAddressFor(HBM_BASE, options, 2 * i),
+                                            options.bufferSize);
                 parWriteBuffers.emplace_back(qdma.get(),
-                                             HBM_BASE + (2 * i + 1) * MEM_REGION_SIZE,
-                                             BUFFER_SIZE);
+                                             rawAddressFor(HBM_BASE, options, 2 * i + 1),
+                                             options.bufferSize);
             }
             for (unsigned i = 0; i < N; ++i) {
                 parReadBuffers.emplace_back(qdma.get(),
-                                            DDR_BASE + (2 * i) * BUFFER_SIZE,
-                                            BUFFER_SIZE);
+                                            rawAddressFor(DDR_BASE, options, 2 * i),
+                                            options.bufferSize);
                 parWriteBuffers.emplace_back(qdma.get(),
-                                             DDR_BASE + (2 * i + 1) * BUFFER_SIZE,
-                                             BUFFER_SIZE);
+                                             rawAddressFor(DDR_BASE, options, 2 * i + 1),
+                                             options.bufferSize);
             }
 
-            testBidirectionalBandwidthSuite(parWriteBuffers, parReadBuffers, "HBM+DDR", ", raw QDMA");
+            testBidirectionalBandwidthSuite(parWriteBuffers, parReadBuffers, "HBM+DDR", ", raw QDMA", repeat);
         }
     }
 
@@ -727,6 +1166,7 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
     return 1;
 #else
     const unsigned N = options.threads;
+    const BandwidthRepeatOptions repeat = repeatOptionsFromValidate(options);
 
     if (!options.noReset) {
         std::cout << "QDMA-driver raw mode skips reset; continuing without VRTD reset." << std::endl;
@@ -736,6 +1176,8 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
     const bool runParallel = !options.ddrOnly && !options.hbmOnly;
 
     std::cout << "Using off-the-shelf Xilinx QDMA driver for board " << bdf << "..." << std::endl;
+    printChannelAllocation(options);
+    printBandwidthRepeatMode(repeat);
     smi::qdma_driver::QdmaDriverDevice qdma(bdf);
     std::cout << "Resolved QDMA function " << qdma.functionBdf() << std::endl;
     qdma.ensureQmax(runParallel ? 4 * N : 2 * N);
@@ -754,7 +1196,8 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             std::vector<smi::qdma_driver::QdmaDriverBuffer> hbmBuffers;
             hbmBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
-                hbmBuffers.emplace_back(qdma, i, HBM_BASE + i * MEM_REGION_SIZE, BUFFER_SIZE);
+                hbmBuffers.emplace_back(qdma, i, rawAddressFor(HBM_BASE, options, i),
+                                        options.bufferSize);
             }
 
             if (!testDataIntegrity(hbmBuffers, "HBM")) {
@@ -762,7 +1205,7 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
                 return 1;
             }
 
-            testBandwidthSuite(hbmBuffers, "HBM", ", QDMA driver");
+            testBandwidthSuite(hbmBuffers, "HBM", ", QDMA driver", repeat);
         }
         {
             std::vector<smi::qdma_driver::QdmaDriverBuffer> hbmWriteBuffers;
@@ -771,12 +1214,14 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             hbmReadBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
                 hbmReadBuffers.emplace_back(qdma, i,
-                                            HBM_BASE + (2 * i) * MEM_REGION_SIZE, BUFFER_SIZE);
+                                            rawAddressFor(HBM_BASE, options, 2 * i),
+                                            options.bufferSize);
                 hbmWriteBuffers.emplace_back(qdma, N + i,
-                                             HBM_BASE + (2 * i + 1) * MEM_REGION_SIZE, BUFFER_SIZE);
+                                             rawAddressFor(HBM_BASE, options, 2 * i + 1),
+                                             options.bufferSize);
             }
 
-            testBidirectionalBandwidthSuite(hbmWriteBuffers, hbmReadBuffers, "HBM", ", QDMA driver");
+            testBidirectionalBandwidthSuite(hbmWriteBuffers, hbmReadBuffers, "HBM", ", QDMA driver", repeat);
         }
     }
 
@@ -786,7 +1231,8 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             std::vector<smi::qdma_driver::QdmaDriverBuffer> ddrBuffers;
             ddrBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
-                ddrBuffers.emplace_back(qdma, i, DDR_BASE + i * BUFFER_SIZE, BUFFER_SIZE);
+                ddrBuffers.emplace_back(qdma, i, rawAddressFor(DDR_BASE, options, i),
+                                        options.bufferSize);
             }
 
             if (!testDataIntegrity(ddrBuffers, "DDR")) {
@@ -794,7 +1240,7 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
                 return 1;
             }
 
-            testBandwidthSuite(ddrBuffers, "DDR", ", QDMA driver");
+            testBandwidthSuite(ddrBuffers, "DDR", ", QDMA driver", repeat);
         }
         {
             std::vector<smi::qdma_driver::QdmaDriverBuffer> ddrWriteBuffers;
@@ -803,12 +1249,14 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             ddrReadBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
                 ddrReadBuffers.emplace_back(qdma, i,
-                                            DDR_BASE + (2 * i) * BUFFER_SIZE, BUFFER_SIZE);
+                                            rawAddressFor(DDR_BASE, options, 2 * i),
+                                            options.bufferSize);
                 ddrWriteBuffers.emplace_back(qdma, N + i,
-                                             DDR_BASE + (2 * i + 1) * BUFFER_SIZE, BUFFER_SIZE);
+                                             rawAddressFor(DDR_BASE, options, 2 * i + 1),
+                                             options.bufferSize);
             }
 
-            testBidirectionalBandwidthSuite(ddrWriteBuffers, ddrReadBuffers, "DDR", ", QDMA driver");
+            testBidirectionalBandwidthSuite(ddrWriteBuffers, ddrReadBuffers, "DDR", ", QDMA driver", repeat);
         }
     }
 
@@ -817,13 +1265,15 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             std::vector<smi::qdma_driver::QdmaDriverBuffer> parBuffers;
             parBuffers.reserve(2 * N);
             for (unsigned i = 0; i < N; ++i) {
-                parBuffers.emplace_back(qdma, i, HBM_BASE + i * MEM_REGION_SIZE, BUFFER_SIZE);
+                parBuffers.emplace_back(qdma, i, rawAddressFor(HBM_BASE, options, i),
+                                        options.bufferSize);
             }
             for (unsigned i = 0; i < N; ++i) {
-                parBuffers.emplace_back(qdma, N + i, DDR_BASE + i * BUFFER_SIZE, BUFFER_SIZE);
+                parBuffers.emplace_back(qdma, N + i, rawAddressFor(DDR_BASE, options, i),
+                                        options.bufferSize);
             }
 
-            testBandwidthSuite(parBuffers, "HBM+DDR", ", QDMA driver");
+            testBandwidthSuite(parBuffers, "HBM+DDR", ", QDMA driver", repeat);
         }
         {
             std::vector<smi::qdma_driver::QdmaDriverBuffer> parWriteBuffers;
@@ -832,18 +1282,22 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
             parReadBuffers.reserve(2 * N);
             for (unsigned i = 0; i < N; ++i) {
                 parReadBuffers.emplace_back(qdma, i,
-                                            HBM_BASE + (2 * i) * MEM_REGION_SIZE, BUFFER_SIZE);
+                                            rawAddressFor(HBM_BASE, options, 2 * i),
+                                            options.bufferSize);
                 parWriteBuffers.emplace_back(qdma, 2 * N + i,
-                                             HBM_BASE + (2 * i + 1) * MEM_REGION_SIZE, BUFFER_SIZE);
+                                             rawAddressFor(HBM_BASE, options, 2 * i + 1),
+                                             options.bufferSize);
             }
             for (unsigned i = 0; i < N; ++i) {
                 parReadBuffers.emplace_back(qdma, N + i,
-                                            DDR_BASE + (2 * i) * BUFFER_SIZE, BUFFER_SIZE);
+                                            rawAddressFor(DDR_BASE, options, 2 * i),
+                                            options.bufferSize);
                 parWriteBuffers.emplace_back(qdma, 3 * N + i,
-                                             DDR_BASE + (2 * i + 1) * BUFFER_SIZE, BUFFER_SIZE);
+                                             rawAddressFor(DDR_BASE, options, 2 * i + 1),
+                                             options.bufferSize);
             }
 
-            testBidirectionalBandwidthSuite(parWriteBuffers, parReadBuffers, "HBM+DDR", ", QDMA driver");
+            testBidirectionalBandwidthSuite(parWriteBuffers, parReadBuffers, "HBM+DDR", ", QDMA driver", repeat);
         }
     }
 
@@ -853,21 +1307,19 @@ static int runQdmaDriverTest(const std::string& bdf, const Validate::Options& op
 
 } // namespace
 
+uint64_t Validate::parseByteSizeOption(const std::string& text) {
+    return parseByteSizeText(text);
+}
+
 int Validate::run(const Options& options) {
     std::string bdf = resolveBoardBdf(options.bdf, "validate");
     unsigned N = options.threads;
 
-    if (!checkHostMemoryBudget(options)) {
+    if (!validatePlacement(options)) {
         return 1;
     }
 
-    // The HBM bidirectional phase uses 2*N HBM regions (write 0..N-1, read N..2N-1).
-    // HBM has only 64 regions, so N>32 is unsupportable unless HBM is excluded.
-    static constexpr unsigned HBM_REGIONS = 64;
-    if (!options.ddrOnly && 2 * N > HBM_REGIONS) {
-        std::cerr << "validate: --threads > " << (HBM_REGIONS / 2)
-                  << " requires --ddr-only (bidirectional HBM uses 2*N HBM regions, only "
-                  << HBM_REGIONS << " exist)" << std::endl;
+    if (!checkHostMemoryBudget(options)) {
         return 1;
     }
 
@@ -900,7 +1352,7 @@ int Validate::run(const Options& options) {
             std::vector<vrtd::Buffer> hbmBuffers;
             hbmBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
-                hbmBuffers.push_back(device.openHbmBuffer(i, BUFFER_SIZE));
+                hbmBuffers.push_back(openValidateHbmBuffer(device, options, i));
             }
 
             if (!testDataIntegrity(hbmBuffers, "HBM")) {
@@ -917,8 +1369,8 @@ int Validate::run(const Options& options) {
             hbmWriteBuffers.reserve(N);
             hbmReadBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
-                hbmReadBuffers.push_back(device.openHbmBuffer(2 * i, BUFFER_SIZE));
-                hbmWriteBuffers.push_back(device.openHbmBuffer(2 * i + 1, BUFFER_SIZE));
+                hbmReadBuffers.push_back(openValidateHbmBuffer(device, options, 2 * i));
+                hbmWriteBuffers.push_back(openValidateHbmBuffer(device, options, 2 * i + 1));
             }
 
             testBidirectionalBandwidthSuite(hbmWriteBuffers, hbmReadBuffers, "HBM", "");
@@ -933,7 +1385,7 @@ int Validate::run(const Options& options) {
             std::vector<vrtd::Buffer> ddrBuffers;
             ddrBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
-                ddrBuffers.push_back(device.openDdrBuffer(BUFFER_SIZE));
+                ddrBuffers.push_back(openValidateDdrBuffer(device, options, i));
             }
 
             if (!testDataIntegrity(ddrBuffers, "DDR")) {
@@ -950,8 +1402,13 @@ int Validate::run(const Options& options) {
             ddrWriteBuffers.reserve(N);
             ddrReadBuffers.reserve(N);
             for (unsigned i = 0; i < N; ++i) {
-                ddrWriteBuffers.push_back(device.openDdrBuffer(BUFFER_SIZE));
-                ddrReadBuffers.push_back(device.openDdrBuffer(BUFFER_SIZE));
+                if (options.placementExplicit) {
+                    ddrReadBuffers.push_back(openValidateDdrBuffer(device, options, 2 * i));
+                    ddrWriteBuffers.push_back(openValidateDdrBuffer(device, options, 2 * i + 1));
+                } else {
+                    ddrWriteBuffers.push_back(openValidateDdrBuffer(device, options, i));
+                    ddrReadBuffers.push_back(openValidateDdrBuffer(device, options, i));
+                }
             }
 
             testBidirectionalBandwidthSuite(ddrWriteBuffers, ddrReadBuffers, "DDR", "");
@@ -965,10 +1422,10 @@ int Validate::run(const Options& options) {
             std::vector<vrtd::Buffer> parBuffers;
             parBuffers.reserve(2 * N);
             for (unsigned i = 0; i < N; ++i) {
-                parBuffers.push_back(device.openHbmBuffer(i, BUFFER_SIZE));
+                parBuffers.push_back(openValidateHbmBuffer(device, options, i));
             }
             for (unsigned i = 0; i < N; ++i) {
-                parBuffers.push_back(device.openDdrBuffer(BUFFER_SIZE));
+                parBuffers.push_back(openValidateDdrBuffer(device, options, i));
             }
 
             testBandwidthSuite(parBuffers, "HBM+DDR", "");
@@ -980,12 +1437,17 @@ int Validate::run(const Options& options) {
             parWriteBuffers.reserve(2 * N);
             parReadBuffers.reserve(2 * N);
             for (unsigned i = 0; i < N; ++i) {
-                parReadBuffers.push_back(device.openHbmBuffer(2 * i, BUFFER_SIZE));
-                parWriteBuffers.push_back(device.openHbmBuffer(2 * i + 1, BUFFER_SIZE));
+                parReadBuffers.push_back(openValidateHbmBuffer(device, options, 2 * i));
+                parWriteBuffers.push_back(openValidateHbmBuffer(device, options, 2 * i + 1));
             }
             for (unsigned i = 0; i < N; ++i) {
-                parWriteBuffers.push_back(device.openDdrBuffer(BUFFER_SIZE));
-                parReadBuffers.push_back(device.openDdrBuffer(BUFFER_SIZE));
+                if (options.placementExplicit) {
+                    parReadBuffers.push_back(openValidateDdrBuffer(device, options, 2 * i));
+                    parWriteBuffers.push_back(openValidateDdrBuffer(device, options, 2 * i + 1));
+                } else {
+                    parWriteBuffers.push_back(openValidateDdrBuffer(device, options, i));
+                    parReadBuffers.push_back(openValidateDdrBuffer(device, options, i));
+                }
             }
 
             testBidirectionalBandwidthSuite(parWriteBuffers, parReadBuffers, "HBM+DDR", "");
