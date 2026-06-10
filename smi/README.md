@@ -183,20 +183,27 @@ bandwidth. Raw transfer modes skip reset and bypass the default VRTD buffer
 path for data movement.
 
 ```
-v80-smi validate -d <BDF> [-j <threads>] [-R] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only]
+v80-smi validate -d <BDF> [-j <threads>] [-R] [--buffer-size <size>] [--offset <size>] [--starting-offset <size>] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only] [--channel-allocation <auto|paired>] [--channel-region-stride <size>] [--bandwidth-iterations <N>] [--bandwidth-duration <seconds>]
 ```
 
 | Flag              | Description                                          |
 |-------------------|------------------------------------------------------|
 | `-d,--device`     | Board address (required), e.g. `03:00` or `0000:03:00` |
-| `-j,--threads`    | Parallel buffers/threads, 1-64 (default 8). Bidirectional HBM needs `2 * threads` HBM regions, so values above 32 require `--ddr-only`. |
+| `-j,--threads`    | Parallel buffers/threads, 1-64 (default 8). Bidirectional phases use `2 * threads` logical positions in each enabled memory space. |
 | `-R,--no-reset`   | Skip the device reset step before running memory tests |
+| `--buffer-size`   | Size of each test buffer, accepting bytes or `k`/`K`/`m`/`M` suffixes (default `512M`, maximum `512M`) |
+| `--offset`        | Distance between logical buffer positions (default `512M`) |
+| `--starting-offset` | Offset from each memory-space base for logical position 0 (default `0`) |
 | `--raw-transfer-test` | Use libslash raw QDMA transfers instead of VRTD buffers; implies `--no-reset` |
 | `--use-qdma-driver` | Run the raw transfer test over the off-the-shelf Xilinx QDMA driver instead of SLASH; implies `--no-reset`; mutually exclusive with `--raw-transfer-test` |
 | `--ddr-only`      | Run only DDR memory tests (skip HBM); mutually exclusive with `--hbm-only` |
 | `--hbm-only`      | Run only HBM memory tests (skip DDR); mutually exclusive with `--ddr-only` |
+| `--channel-allocation` | Raw-transfer-only placement: `auto` (default; mm-channel `qid&1`, linear addressing) or `paired` (couple mm-channel to a distinct memory region/NSU: even positions -> region 0/channel 0, odd -> region 1/channel 1). `paired` mirrors dma-perf `offset_ch0`/`offset_ch1` so both NoC NMUs drive independent memory endpoints. |
+| `--channel-region-stride` | In `--channel-allocation paired`, byte distance between the two per-channel regions (NSU stride). Default `16G` (half the per-memory space); accepts `k`/`K`/`m`/`M`/`g`/`G`. |
+| `--bandwidth-iterations` | Raw-transfer-only sustained bandwidth mode: repeat each whole-buffer transfer this many times in each bandwidth phase (default `1`). |
+| `--bandwidth-duration` | Raw-transfer-only duration mode: repeat whole-buffer transfers until this many seconds have elapsed; `0` disables duration mode and uses `--bandwidth-iterations`. |
 
-Each buffer is 512 MB (one HBM/DDR allocator region).  The integrity test
+Each buffer defaults to 512 MB (one HBM/DDR allocator region).  The integrity test
 writes a pattern, syncs to device, clears host memory, syncs back, and
 verifies.  Each bandwidth
 phase reports single-direction C2H reads, single-direction H2C writes,
@@ -208,10 +215,25 @@ threads for bidirectional tests; it is skipped when `--ddr-only` or
 VRTD for transfers and opens the board's SLASH QDMA device directly, so
 the SLASH QDMA driver node must be present.
 
-Each buffer is 512 MB. The largest phase maps up to
-`4 x <threads> x 512 MB` of host buffers when HBM and DDR are both enabled,
-or `2 x <threads> x 512 MB` with `--ddr-only` or `--hbm-only`; `validate`
-fails early if that footprint exceeds currently available host memory.
+Buffers are placed at `memory_base + starting-offset + position * offset`.
+The position sequence is `0..N-1` for single-direction phases and `0..2N-1`
+for bidirectional phases (reads on even positions, writes on odd positions).
+`--buffer-size`, `--offset`, and `--starting-offset` must be 4 KiB-aligned,
+`--offset` must be at least `--buffer-size`, and the highest buffer must fit
+within the 64 x 512 MB DDR/HBM address space. If any placement option is
+specified in default VRTD mode, `validate` uses raw VRTD buffers so the exact
+addresses are honored; this requires raw memory access permission.
+
+The largest phase maps up to `4 x <threads> x <buffer-size>` of host buffers
+when HBM and DDR are both enabled, or `2 x <threads> x <buffer-size>` with
+`--ddr-only` or `--hbm-only`; `validate` fails early if that footprint exceeds
+currently available host memory.
+
+Raw transfer modes can repeat the bandwidth phases without changing buffer
+placement or page size. `--bandwidth-iterations` repeats each whole-buffer
+transfer a fixed number of times, while `--bandwidth-duration` runs each
+bandwidth phase for a wall-clock duration and counts completed whole-buffer
+transfers. Integrity checks remain one-shot.
 
 With `--use-qdma-driver`, the command runs the same raw test over the
 off-the-shelf Xilinx QDMA driver (`submodules/qdma_drv`) instead of SLASH.

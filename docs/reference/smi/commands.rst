@@ -160,7 +160,7 @@ phase is skipped when ``--ddr-only`` or ``--hbm-only`` is given.
 
 .. code-block:: text
 
-   v80-smi validate -d <BDF> [-j|--threads <N>] [-R|--no-reset] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only]
+   v80-smi validate -d <BDF> [-j|--threads <N>] [-R|--no-reset] [--buffer-size <size>] [--offset <size>] [--starting-offset <size>] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only] [--channel-allocation <auto|paired>] [--channel-region-stride <size>] [--bandwidth-iterations <N>] [--bandwidth-duration <seconds>]
 
 Requirements by mode:
 
@@ -180,12 +180,40 @@ Requirements by mode:
 .. option:: -j, --threads <N>
 
    Number of parallel buffers/threads for the validation test (1–64, default 8).
-   Each buffer is 512 MB (one HBM/DDR allocator region). The bidirectional HBM
-   phase uses ``2 * N`` HBM regions, so values above 32 require ``--ddr-only``.
-   The largest phase maps up to ``4 * N * 512 MB`` of host buffers when both
-   HBM and DDR are enabled, or ``2 * N * 512 MB`` with ``--ddr-only`` or
-   ``--hbm-only``; the command fails early if that exceeds currently available
-   host memory.
+   Bidirectional phases use ``2 * N`` logical positions in each enabled memory
+   space.
+
+.. option:: --buffer-size <size>
+
+   Size of each test buffer. Values may be bare bytes or use ``k``/``K`` or
+   ``m``/``M`` suffixes. The default and maximum are ``512M``. Values must be
+   4 KiB-aligned.
+
+.. option:: --offset <size>
+
+   Distance between logical buffer positions. The default is ``512M``. Values
+   may be bare bytes or use ``k``/``K`` or ``m``/``M`` suffixes, must be
+   4 KiB-aligned, and must be at least ``--buffer-size`` so buffers do not
+   overlap.
+
+.. option:: --starting-offset <size>
+
+   Offset from each memory-space base for logical position 0. The default is
+   ``0``. Values may be bare bytes or use ``k``/``K`` or ``m``/``M`` suffixes
+   and must be 4 KiB-aligned.
+
+Buffers are placed at ``memory_base + starting_offset + position * offset``.
+Single-direction phases use positions ``0..N-1``. Bidirectional phases use
+positions ``0..2N-1`` with reads on even positions and writes on odd positions.
+The full range must remain inside the 64 x 512 MB DDR/HBM address space. If any
+placement option is specified in default VRTD mode, ``validate`` uses raw VRTD
+buffers so the exact addresses are honored; this requires raw memory access
+permission.
+
+The largest phase maps up to ``4 * N * buffer-size`` of host buffers when both
+HBM and DDR are enabled, or ``2 * N * buffer-size`` with ``--ddr-only`` or
+``--hbm-only``; the command fails early if that exceeds currently available
+host memory.
 
 .. option:: -R, --no-reset
 
@@ -220,6 +248,44 @@ Requirements by mode:
 
    Run only the HBM memory tests and skip the DDR phase. Mutually exclusive
    with ``--ddr-only``.
+
+.. option:: --channel-allocation <auto|paired>
+
+   Raw-transfer-only (``--raw-transfer-test`` or ``--use-qdma-driver``) control
+   over how QDMA MM/NoC channels map onto device memory. On CPM5 the host-side
+   NoC ingress port (NMU) is chosen per queue by the SW-context
+   mm-channel/host_id (SLASH uses ``qid & 1``), while the memory-side NoC egress
+   endpoint (NSU / pseudo-channel) is chosen by the device address. Default
+   ``auto`` keeps the historical behaviour: channel ``qid & 1`` with linear
+   addressing, so both NMUs can converge on a single NSU and bandwidth caps at
+   one path. ``paired`` couples the two: even positions land in memory region 0
+   on channel 0, odd positions in region 1 on channel 1 (one
+   ``--channel-region-stride`` apart), giving two independent NMU->NSU paths.
+   This mirrors the off-the-shelf ``dma-perf`` ``offset_ch0``/``offset_ch1``
+   knobs and is the placement that lets both NoC ports contribute bandwidth.
+
+.. option:: --channel-region-stride <size>
+
+   In ``--channel-allocation paired`` mode, the byte distance between the two
+   per-channel memory regions (the NSU / pseudo-channel stride). Default ``16G``
+   (== half the per-memory address space, matching the dma-perf HBM
+   ``offset_ch1 - offset_ch0`` spacing). Must be a non-zero multiple of 4 KiB.
+   Accepts bare bytes or ``k``/``K``, ``m``/``M``, ``g``/``G`` suffixes.
+
+.. option:: --bandwidth-iterations <N>
+
+   Raw-transfer-only (``--raw-transfer-test`` or ``--use-qdma-driver``). Repeat
+   each whole-buffer transfer in every bandwidth phase ``N`` times and report
+   bandwidth over the sustained loop. The default is ``1``, which preserves the
+   historical one-shot measurement.
+
+.. option:: --bandwidth-duration <seconds>
+
+   Raw-transfer-only duration mode. When non-zero, each bandwidth phase repeats
+   whole-buffer transfers until the requested wall-clock duration has elapsed
+   and counts only completed transfers. This is useful for comparing SLASH's raw
+   path against long-running tools such as ``dma-perf``. A value of ``0`` uses
+   ``--bandwidth-iterations`` instead.
 
 debug
 -----
