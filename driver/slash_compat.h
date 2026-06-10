@@ -77,4 +77,20 @@ static inline void slash_vm_flags_set(struct vm_area_struct *vma, vm_flags_t fla
 #  endif
 #endif
 
+/*
+ * The kernel headers included above (<linux/mm.h> -> <linux/printk.h>) install
+ * the default `#define pr_fmt(fmt) fmt` under an #ifndef guard. Because this
+ * header is force-included (-include, see driver/Makefile) ahead of every TU,
+ * that default lands before each pinned libqdma source's own top-of-file
+ *     #define pr_fmt(fmt) KBUILD_MODNAME ":%s: " fmt, __func__
+ * turning it into a redefinition ("pr_fmt redefined" warning). Undefine it here
+ * so each TU starts from the clean "nobody has defined pr_fmt yet" state the
+ * idiom relies on; the file's own #define is then the first and only one.
+ *
+ * TUs that never set their own pr_fmt and log via the kernel default (the
+ * qdma_access HAL, whose qdma_log_* macros expand to pr_*) re-arm that default
+ * from qdma_platform_env.h; see driver/patches/0003-libqdma-pr-fmt-guard.patch.
+ */
+#undef pr_fmt
+
 #endif /* SLASH_COMPAT_H */
