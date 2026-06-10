@@ -130,8 +130,20 @@
 #define SLASH_QDMA_HP_NUM_WORDS  8
 #define SLASH_QDMA_HP_SEL        0xAu   /* QDMA_CTXT_SELC_HOST_PROFILE */
 #define SLASH_QDMA_HP_OP_WR      0x1u   /* indirect context WR opcode */
+#define SLASH_QDMA_HP_OP_RD      0x2u   /* indirect context RD opcode */
 #define SLASH_QDMA_HP_SMID_BASE  0x100u /* bit 8 set; base AXI-MM master ID */
 #define SLASH_QDMA_HP_POLL_US    1000   /* busy-wait budget in microseconds */
+
+/*
+ * The qpair fd data path accepts either a span of 4 KiB base pages or a span
+ * of 2 MiB hugetlb pages.  Every scatter-gather entry within one request uses
+ * the same granule, which keeps the DMA mapping semantics unambiguous; the two
+ * granules are never mixed in a single request.  A whole transfer (of either
+ * granule) is submitted to libqdma as a single multi-descriptor request, and
+ * libqdma refills the descriptor ring as needed -- so the transfer size is not
+ * bounded by the ring depth.
+ */
+#define SLASH_QDMA_HUGEPAGE_SIZE (2UL * 1024UL * 1024UL)
 
 /*
  * qdma_force_mm_channel - Debug/experiment override for AXI-MM/NoC channel
@@ -181,6 +193,53 @@ module_param_cb(qdma_force_mm_channel, &slash_qdma_force_mm_channel_ops,
 MODULE_PARM_DESC(qdma_force_mm_channel,
     "Force QDMA AXI-MM/NoC channel for new queues: <0=auto(qid&1), 0 or 1 to pin (default -1)");
 
+/*
+ * qdma_huge_desc_size - Experimental descriptor granularity for hugetlb-backed
+ * raw qpair transfers.
+ *
+ * The userspace raw-transfer path prefers 2 MiB hugetlb pages so the host page
+ * size stays large and stable.  By default, each pinned 2 MiB page becomes one
+ * SGL entry / QDMA descriptor.  Reducing this value keeps the same pinned
+ * hugetlb page but emits several descriptors with increasing offsets inside
+ * that page, allowing us to test whether descriptor pressure (rather than host
+ * page size) is what makes dma-perf faster.
+ *
+ * Must be a page-aligned divisor of 2 MiB.  Examples:
+ *   2097152 -> current behaviour (1 descriptor per huge page)
+ *     65536 -> 32 descriptors per huge page
+ *      4096 -> 512 descriptors per huge page
+ */
+static unsigned int qdma_huge_desc_size = SLASH_QDMA_HUGEPAGE_SIZE;
+
+static int slash_qdma_huge_desc_size_set(const char *val,
+                                         const struct kernel_param *kp)
+{
+    unsigned int parsed;
+    int err;
+
+    err = kstrtouint(val, 0, &parsed);
+    if (err)
+        return err;
+
+    if (parsed < PAGE_SIZE ||
+        parsed > SLASH_QDMA_HUGEPAGE_SIZE ||
+        !IS_ALIGNED(parsed, PAGE_SIZE) ||
+        (SLASH_QDMA_HUGEPAGE_SIZE % parsed) != 0)
+        return -EINVAL;
+
+    return param_set_uint(val, kp);
+}
+
+static const struct kernel_param_ops slash_qdma_huge_desc_size_ops = {
+    .set = slash_qdma_huge_desc_size_set,
+    .get = param_get_uint,
+};
+
+module_param_cb(qdma_huge_desc_size, &slash_qdma_huge_desc_size_ops,
+                &qdma_huge_desc_size, 0644);
+MODULE_PARM_DESC(qdma_huge_desc_size,
+    "Descriptor size for 2 MiB hugetlb raw transfers; page-aligned divisor of 2 MiB (default 2097152)");
+
 /**
  * SLASH_QDMA_QTYPE_COUNT - Number of queue types tracked per queue pair.
  *
@@ -197,17 +256,6 @@ MODULE_PARM_DESC(qdma_force_mm_channel,
  * HW queue-set limit in sync.
  */
 #define SLASH_QDMA_MAX_QPAIRS 256
-
-/*
- * The qpair fd data path accepts either a span of 4 KiB base pages or a span
- * of 2 MiB hugetlb pages.  Every scatter-gather entry within one request uses
- * the same granule, which keeps the DMA mapping semantics unambiguous; the two
- * granules are never mixed in a single request.  A whole transfer (of either
- * granule) is submitted to libqdma as a single multi-descriptor request, and
- * libqdma refills the descriptor ring as needed -- so the transfer size is not
- * bounded by the ring depth.
- */
-#define SLASH_QDMA_HUGEPAGE_SIZE (2UL * 1024UL * 1024UL)
 
 /*
  * Upper bound on the number of pages pinned per get_user_pages_fast() call when
@@ -1009,7 +1057,113 @@ static void slash_qdma_hp_set_field(u32 *words, unsigned int hi,
 }
 
 /**
- * slash_qdma_write_host_profile() - Program one CPM5 Host Profile entry.
+ * slash_qdma_hp_wait_ready() - Poll the indirect-context BUSY bit.
+ * @device:  QDMA device (provides the libqdma handle for register access).
+ * @val_out: If non-NULL, receives the last QDMA_IND_CTXT_CMD value read.
+ *
+ * Spins (up to SLASH_QDMA_HP_POLL_US microseconds) until the indirect
+ * context command BUSY bit clears.  Logging is left to the caller so the
+ * write path can treat a timeout as fatal while the readback path can treat
+ * it as a warning.
+ *
+ * Return: 0 once not busy, -ETIMEDOUT on timeout, or a negative errno from
+ *         the register read.
+ */
+static int slash_qdma_hp_wait_ready(struct slash_qdma_dev *device, u32 *val_out)
+{
+    unsigned int waited_us = 0;
+    u32 val = 0;
+    int err;
+
+    do {
+        err = qdma_device_read_config_register(device->qdma_handle,
+                SLASH_QDMA_HP_CMD_ADDR, &val);
+        if (err)
+            return err;
+        if (!(val & SLASH_QDMA_HP_CMD_BUSY)) {
+            if (val_out)
+                *val_out = val;
+            return 0;
+        }
+        udelay(1);
+    } while (++waited_us < SLASH_QDMA_HP_POLL_US);
+
+    if (val_out)
+        *val_out = val;
+    return -ETIMEDOUT;
+}
+
+/**
+ * slash_qdma_hp_get_field() - Read a bit field from the host profile context.
+ * @words: Array of SLASH_QDMA_HP_NUM_WORDS u32s holding the 256-bit context
+ *         (word i covers bits [32*i+31 : 32*i]).
+ * @hi:    Most-significant bit index of the field (inclusive).
+ * @lo:    Least-significant bit index of the field (inclusive).
+ *
+ * Inverse of slash_qdma_hp_set_field(); handles fields that straddle a
+ * 32-bit word boundary (e.g. the C2H AXI4-MM steering field at bits
+ * [97:94], which spans words 2 and 3).
+ *
+ * Return: the value held in [hi:lo].
+ */
+static u32 slash_qdma_hp_get_field(const u32 *words, unsigned int hi,
+                                   unsigned int lo)
+{
+    unsigned int width = hi - lo + 1;
+    u32 fmask = (width >= 32) ? ~0u : ((1u << width) - 1u);
+    unsigned int word = lo >> 5;
+    unsigned int off = lo & 31;
+    u64 two = (u64)words[word];
+
+    if ((word + 1) < SLASH_QDMA_HP_NUM_WORDS)
+        two |= (u64)words[word + 1] << 32;
+
+    return (u32)((two >> off) & fmask);
+}
+
+/**
+ * slash_qdma_read_host_profile() - Read one CPM5 Host Profile entry back.
+ * @device:  QDMA device (provides the libqdma handle for register access).
+ * @host_id: Host Profile index to read.
+ * @out:     Array of SLASH_QDMA_HP_NUM_WORDS u32s that receives the 256-bit
+ *           context.
+ *
+ * Issues an indirect-context RD command for the host-profile selector,
+ * waits for the controller to complete it, and copies the IND_CTXT_DATA
+ * words back.  Used to verify a preceding write.
+ *
+ * Return: 0 on success, negative errno on register-access error or
+ *         -ETIMEDOUT if the BUSY bit never clears.
+ */
+static int slash_qdma_read_host_profile(struct slash_qdma_dev *device,
+                                        u32 host_id, u32 *out)
+{
+    u32 cmd = (host_id << 7) | (SLASH_QDMA_HP_OP_RD << 5) |
+              (SLASH_QDMA_HP_SEL << 1);
+    int err;
+    int i;
+
+    err = qdma_device_write_config_register(device->qdma_handle,
+            SLASH_QDMA_HP_CMD_ADDR, cmd);
+    if (err)
+        return err;
+
+    err = slash_qdma_hp_wait_ready(device, NULL);
+    if (err)
+        return err;
+
+    for (i = 0; i < SLASH_QDMA_HP_NUM_WORDS; i++) {
+        err = qdma_device_read_config_register(device->qdma_handle,
+                SLASH_QDMA_HP_DATA_ADDR + (i * sizeof(u32)), &out[i]);
+        if (err)
+            return err;
+    }
+
+    return 0;
+}
+
+/**
+ * slash_qdma_write_host_profile() - Program and verify one CPM5 Host Profile.
  * @device:  QDMA device (provides the libqdma handle for register access).
  * @host_id: Host Profile index to program (also the AXI4-MM steering value,
  *           i.e. the target NoC channel).
@@ -1018,6 +1172,11 @@ static void slash_qdma_hp_set_field(u32 *words, unsigned int hi,
  * AXI4-MM steering fields, writes it through the indirect-context
  * registers via the libqdma-exported config register accessors, and
  * polls the command BUSY bit until the controller completes the write.
+ *
+ * Once the write completes it reads the profile back and verifies the
+ * programmed fields (SMID and the two steering fields); a readback error
+ * or field mismatch is logged but is non-fatal (the profile is still
+ * considered applied).
  *
  * Only the SMID and the two steering fields are non-zero; the AXI
  * prot/cache attributes are left at 0.
@@ -1029,7 +1188,6 @@ static int slash_qdma_write_host_profile(struct slash_qdma_dev *device,
                                          u32 host_id)
 {
     u32 data[SLASH_QDMA_HP_NUM_WORDS] = {0};
-    unsigned int waited_us = 0;
     u32 smid = SLASH_QDMA_HP_SMID_BASE + host_id;
     u32 cmd;
     u32 val = 0;
@@ -1065,26 +1223,46 @@ static int slash_qdma_write_host_profile(struct slash_qdma_dev *device,
         goto err_reg;
 
     /* Wait for the controller to consume the command. */
-    do {
-        err = qdma_device_read_config_register(device->qdma_handle,
-                SLASH_QDMA_HP_CMD_ADDR, &val);
-        if (err)
-            goto err_reg;
-        if (!(val & SLASH_QDMA_HP_CMD_BUSY))
-            break;
-        udelay(1);
-    } while (++waited_us < SLASH_QDMA_HP_POLL_US);
-
-    if (val & SLASH_QDMA_HP_CMD_BUSY) {
+    err = slash_qdma_hp_wait_ready(device, &val);
+    if (err == -ETIMEDOUT) {
         dev_err(&device->pdev->dev,
                 "qdma: host profile %u programming timed out (cmd=0x%x)\n",
                 host_id, val);
         return -ETIMEDOUT;
     }
+    if (err)
+        goto err_reg;
 
-    dev_info(&device->pdev->dev,
-             "slash: qdma: host profile %u applied: H2C/C2H AXI-MM steering=%u (NoC channel %u), smid=0x%03x (cmd=0x%02x)\n",
-             host_id, host_id, host_id, smid, cmd);
+    /*
+     * Read the profile back and verify the programmed fields.  A readback
+     * error or field mismatch is non-fatal: the write itself completed, so
+     * the profile is still considered applied.
+     */
+    {
+        u32 rb[SLASH_QDMA_HP_NUM_WORDS] = {0};
+        int rerr = slash_qdma_read_host_profile(device, host_id, rb);
+
+        if (rerr) {
+            dev_warn(&device->pdev->dev,
+                     "slash: qdma: host profile %u applied (cmd=0x%02x) but readback failed: %d\n",
+                     host_id, cmd, rerr);
+        } else {
+            u32 smid_rb = slash_qdma_hp_get_field(rb, 201, 192);
+            u32 h2c_rb = slash_qdma_hp_get_field(rb, 181, 178);
+            u32 c2h_rb = slash_qdma_hp_get_field(rb, 97, 94);
+
+            if (smid_rb == smid && h2c_rb == host_id && c2h_rb == host_id) {
+                dev_info(&device->pdev->dev,
+                         "slash: qdma: host profile %u applied and readback verified: H2C/C2H AXI-MM steering=%u (NoC channel %u), smid=0x%03x (cmd=0x%02x)\n",
+                         host_id, host_id, host_id, smid, cmd);
+            } else {
+                dev_err(&device->pdev->dev,
+                        "slash: qdma: host profile %u readback MISMATCH: smid exp=0x%03x got=0x%03x, h2c exp=%u got=%u, c2h exp=%u got=%u\n",
+                        host_id, smid, smid_rb, host_id, h2c_rb,
+                        host_id, c2h_rb);
+            }
+        }
+    }
     return 0;
 
 err_reg:
@@ -2458,49 +2636,81 @@ static int slash_qdma_map_user_huge_page_to_sgl(struct slash_qdma_io_cb *iocb,
                                                 bool write)
 {
     unsigned long addr = (unsigned long)iocb->buf;
-    size_t entries = iocb->len / SLASH_QDMA_HUGEPAGE_SIZE;
+    size_t huge_pages = iocb->len / SLASH_QDMA_HUGEPAGE_SIZE;
+    unsigned int desc_size = READ_ONCE(qdma_huge_desc_size);
+    unsigned int descs_per_page;
+    size_t entries;
     unsigned int i;
+    unsigned int sg_idx = 0;
     int rv;
 
     if ((iocb->len % SLASH_QDMA_HUGEPAGE_SIZE) != 0 ||
-        entries == 0 || entries > UINT_MAX)
+        huge_pages == 0 || huge_pages > UINT_MAX)
         return -EINVAL;
+
+    if (desc_size < PAGE_SIZE ||
+        desc_size > SLASH_QDMA_HUGEPAGE_SIZE ||
+        !IS_ALIGNED(desc_size, PAGE_SIZE) ||
+        (SLASH_QDMA_HUGEPAGE_SIZE % desc_size) != 0)
+        return -EINVAL;
+
+    descs_per_page = SLASH_QDMA_HUGEPAGE_SIZE / desc_size;
+    if (huge_pages > UINT_MAX / descs_per_page)
+        return -EINVAL;
+    entries = huge_pages * descs_per_page;
 
     rv = slash_qdma_iocb_alloc_sgl(iocb, (unsigned int)entries);
     if (rv)
         return rv;
 
-    for (i = 0; i < entries; i++) {
+    for (i = 0; i < huge_pages; i++) {
         unsigned long curr_addr = addr + (i * SLASH_QDMA_HUGEPAGE_SIZE);
-        struct qdma_sw_sg *sg = &iocb->sgl[i];
+        struct page *page = NULL;
+        unsigned int j;
 
-        rv = get_user_pages_fast(curr_addr, 1, 1 /* write */, &iocb->pages[i]);
+        rv = get_user_pages_fast(curr_addr, 1, 1 /* write */, &page);
         if (rv != 1) {
             pr_err("slash: qdma: unable to pin 2 MiB user page %u/%zu, %d\n",
-                   i, entries, rv);
+                   i, huge_pages, rv);
             rv = rv < 0 ? rv : -EFAULT;
             goto err_out;
         }
-        iocb->pages_nr = i + 1;
 
-        if (!slash_qdma_page_is_2m_hugetlb_head(iocb->pages[i])) {
+        if (!slash_qdma_page_is_2m_hugetlb_head(page)) {
             pr_err("slash: qdma: 2 MiB transfer page %u/%zu is not backed by a 2 MiB hugetlb head page\n",
-                   i, entries);
+                   i, huge_pages);
+            put_page(page);
             rv = -EINVAL;
             goto err_out;
         }
 
-        flush_dcache_page(iocb->pages[i]);
+        flush_dcache_page(page);
 
-        sg->next = (i + 1 < entries) ? &iocb->sgl[i + 1] : NULL;
-        sg->pg = iocb->pages[i];
-        sg->offset = 0;
-        sg->len = SLASH_QDMA_HUGEPAGE_SIZE;
-        sg->dma_addr = 0UL;
+        for (j = 0; j < descs_per_page; j++, sg_idx++) {
+            struct qdma_sw_sg *sg = &iocb->sgl[sg_idx];
+
+            /*
+             * The first segment consumes the GUP reference.  Additional
+             * descriptors over the same hugetlb page take explicit references
+             * so slash_qdma_unmap_user_buf() can release one page ref per SGL
+             * entry without special casing repeated pages.
+             */
+            if (j != 0)
+                get_page(page);
+
+            iocb->pages[sg_idx] = page;
+            iocb->pages_nr = sg_idx + 1;
+
+            sg->next = (sg_idx + 1 < entries) ? &iocb->sgl[sg_idx + 1] : NULL;
+            sg->pg = page;
+            sg->offset = j * desc_size;
+            sg->len = desc_size;
+            sg->dma_addr = 0UL;
+        }
     }
 
-    SLASH_QDMA_OP_LOG("user transfer path=hugetlb-2m addr=0x%lx len=%zu pages=%zu write=%d\n",
-                      addr, iocb->len, entries, write);
+    SLASH_QDMA_OP_LOG("user transfer path=hugetlb-2m addr=0x%lx len=%zu pages=%zu desc_size=%u descs=%zu write=%d\n",
+                      addr, iocb->len, huge_pages, desc_size, entries, write);
 
     return 0;
 
