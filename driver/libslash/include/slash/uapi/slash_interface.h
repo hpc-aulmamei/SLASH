@@ -251,6 +251,19 @@ enum slash_qdma_transfer_dir {
 };
 
 /**
+ * @brief Advisory transfer topology for a registered QDMA buffer.
+ *
+ * The kernel returns this hint when a buffer is registered so userspace can
+ * choose a suitable transfer strategy without hard-coding hardware-specific
+ * scheduling policy.  The hint is advisory: transfers are still valid with any
+ * queue pair whose direction and ownership checks pass.
+ */
+enum slash_qdma_transfer_hint {
+    SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR = 1, /**< Prefer a single qpair. */
+    SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR   = 2, /**< Prefer two qpairs. */
+};
+
+/**
  * @brief Register a host buffer for DMA, pinning its pages once.
  *
  * The kernel pins the pages backing [user_addr, user_addr + length),
@@ -266,6 +279,9 @@ enum slash_qdma_transfer_dir {
  * Buffers are owned by the control-fd open instance they are registered
  * through, and are automatically unregistered when that fd is closed
  * (including on process exit) if userspace forgets to unregister them.
+ *
+ * The kernel also returns @transfer_hint.  Current SLASH hardware returns
+ * SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR; userspace may ignore this field.
  */
 struct slash_qdma_buf_register {
     __u32 size;        /**< Struct size for ABI versioning. */
@@ -277,7 +293,7 @@ struct slash_qdma_buf_register {
 
     /* Kernel to userspace */
     __u32 buf_id;      /**< [out] Kernel-assigned buffer handle. */
-    __u32 pad0;        /**< Padding for natural alignment. */
+    __u32 transfer_hint; /**< [out] enum slash_qdma_transfer_hint. */
 };
 
 /**

@@ -250,7 +250,8 @@ int slash_qdma_qpair_get_fd(struct slash_qdma *qdma, uint32_t qid, int flags)
 }
 
 int slash_qdma_buffer_register(struct slash_qdma *qdma, void *addr,
-                               uint64_t length, uint32_t *buf_id)
+                               uint64_t length, uint32_t *buf_id,
+                               enum slash_qdma_transfer_hint *transfer_hint)
 {
     struct slash_qdma_buf_register req;
     int ret;
@@ -261,7 +262,8 @@ int slash_qdma_buffer_register(struct slash_qdma *qdma, void *addr,
     }
 
     if (qdma->priv) {
-        return slash_qdma_mock_buffer_register(qdma, addr, length, buf_id);
+        return slash_qdma_mock_buffer_register(qdma, addr, length, buf_id,
+                                               transfer_hint);
     }
 
     memset(&req, 0, sizeof(req));
@@ -275,6 +277,9 @@ int slash_qdma_buffer_register(struct slash_qdma *qdma, void *addr,
     }
 
     *buf_id = req.buf_id;
+    if (transfer_hint != NULL) {
+        *transfer_hint = req.transfer_hint;
+    }
 
     return 0;
 }

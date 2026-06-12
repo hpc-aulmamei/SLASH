@@ -739,11 +739,22 @@ closed (including on process exit).
         __u64 user_addr;  /* [in]  Page-aligned host buffer base */
         __u64 length;     /* [in]  Buffer length in bytes (page multiple) */
         __u32 buf_id;     /* [out] Kernel-assigned buffer handle */
-        __u32 pad0;       /* padding */
+        __u32 transfer_hint; /* [out] enum slash_qdma_transfer_hint */
     };
 
 **Direction:** ``_IOWR`` — userspace writes ``flags``, ``user_addr``, ``length``; the kernel writes
-back ``buf_id``.
+back ``buf_id`` and ``transfer_hint``.
+
+``transfer_hint`` is advisory and tells userspace which queue topology the kernel expects to be
+best for this registered buffer on the current hardware. Current SLASH hardware returns
+``SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR``; userspace may ignore this value. Known values are:
+
+.. code-block:: c
+
+    enum slash_qdma_transfer_hint {
+        SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR = 1,
+        SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR   = 2,
+    };
 
 **Preconditions:**
 
@@ -755,6 +766,8 @@ back ``buf_id``.
 **Postconditions:**
 
 - ``buf_id`` is filled with the client-scoped handle, used in ``SLASH_QDMA_QPAIR_IOCTL_TRANSFER``.
+- ``transfer_hint`` is filled with an advisory transfer topology hint. Current SLASH hardware
+  returns ``SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR``.
 - The pages remain pinned and DMA-mapped until the buffer is unregistered or the owning control fd
   is closed.
 

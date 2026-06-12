@@ -713,7 +713,7 @@ private:
     }
 
     void registerBuffer() {
-        if (slash_qdma_buffer_register(qdma_, data_, size_, &bufId_) != 0) {
+        if (slash_qdma_buffer_register(qdma_, data_, size_, &bufId_, nullptr) != 0) {
             throwSystemError("Failed to register raw transfer DMA buffer");
         }
         bufRegistered_ = true;

@@ -125,7 +125,10 @@ and DMA-mapping it) and then move data by handle, avoiding per-transfer pinning:
 ```c
 /* buf must be page-aligned and a whole number of pages */
 uint32_t buf_id;
-slash_qdma_buffer_register(qdma, buf, len, &buf_id);
+enum slash_qdma_transfer_hint hint;
+slash_qdma_buffer_register(qdma, buf, len, &buf_id, &hint);
+/* Current SLASH hardware returns SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR.
+ * Pass NULL instead of &hint if the application does not care. */
 
 int fd = slash_qdma_qpair_get_fd(qdma, qid, O_CLOEXEC);
 

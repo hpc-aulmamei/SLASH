@@ -267,7 +267,8 @@ int slash_qdma_mock_qpair_get_fd(struct slash_qdma *qdma, uint32_t qid, int flag
 }
 
 int slash_qdma_mock_buffer_register(struct slash_qdma *qdma, void *addr,
-                                    uint64_t length, uint32_t *buf_id)
+                                    uint64_t length, uint32_t *buf_id,
+                                    enum slash_qdma_transfer_hint *transfer_hint)
 {
     struct slash_qdma_mock *ctx;
     size_t i;
@@ -295,6 +296,9 @@ int slash_qdma_mock_buffer_register(struct slash_qdma *qdma, void *addr,
     ctx->bufs[i].length = length;
 
     *buf_id = (uint32_t) i;
+    if (transfer_hint != NULL) {
+        *transfer_hint = SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR;
+    }
 
     return 0;
 }

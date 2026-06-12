@@ -105,13 +105,13 @@ TEST(QdmaNullTest, BufferRegister) {
     uint32_t buf_id = 0;
     uint8_t local = 0;
     errno = 0;
-    EXPECT_EQ(slash_qdma_buffer_register(nullptr, &local, 4096, &buf_id), -1);
+    EXPECT_EQ(slash_qdma_buffer_register(nullptr, &local, 4096, &buf_id, nullptr), -1);
     EXPECT_EQ(errno, EINVAL);
 
     struct slash_qdma fake{};
     fake.fd = -1;
     errno = 0;
-    EXPECT_EQ(slash_qdma_buffer_register(&fake, nullptr, 4096, &buf_id), -1);
+    EXPECT_EQ(slash_qdma_buffer_register(&fake, nullptr, 4096, &buf_id, nullptr), -1);
     EXPECT_EQ(errno, EINVAL);
 }
 
@@ -240,8 +240,12 @@ TEST_P(ParametrizedQdmaTest, RegisteredBufferTransfer) {
 
     uint32_t src_buf = 0;
     uint32_t dst_buf = 0;
-    ASSERT_EQ(slash_qdma_buffer_register(qdma_, src, XFER_SIZE, &src_buf), 0);
-    ASSERT_EQ(slash_qdma_buffer_register(qdma_, dst, XFER_SIZE, &dst_buf), 0);
+    enum slash_qdma_transfer_hint src_hint = SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR;
+    enum slash_qdma_transfer_hint dst_hint = SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR;
+    ASSERT_EQ(slash_qdma_buffer_register(qdma_, src, XFER_SIZE, &src_buf, &src_hint), 0);
+    ASSERT_EQ(slash_qdma_buffer_register(qdma_, dst, XFER_SIZE, &dst_buf, &dst_hint), 0);
+    EXPECT_EQ(src_hint, SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR);
+    EXPECT_EQ(dst_hint, SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR);
 
     // H2C: push the source buffer to the device.
     ssize_t written = slash_qdma_transfer(qdma_, queue_fd, src_buf, 0,

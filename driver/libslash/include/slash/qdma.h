@@ -165,15 +165,18 @@ int slash_qdma_qpair_get_fd(struct slash_qdma *qdma, uint32_t qid, int flags);
  * @param qdma    Open QDMA handle.
  * @param addr    Page-aligned host buffer base.
  * @param length  Buffer length in bytes (non-zero multiple of the page size).
- * @param buf_id  [out] Receives the kernel-assigned buffer handle.
+ * @param buf_id         [out] Receives the kernel-assigned buffer handle.
+ * @param transfer_hint  [out] Optional transfer-topology hint; pass NULL to ignore.
  *
  * The buffer is owned by @qdma and is automatically released when the
  * handle is closed.  Pass the returned @buf_id to slash_qdma_transfer().
+ * Current SLASH hardware returns SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR.
  *
  * @return 0 on success, -1 on failure (errno set).
  */
 int slash_qdma_buffer_register(struct slash_qdma *qdma, void *addr,
-                               uint64_t length, uint32_t *buf_id);
+                               uint64_t length, uint32_t *buf_id,
+                               enum slash_qdma_transfer_hint *transfer_hint);
 
 /**
  * @brief Unregister a buffer previously registered with
