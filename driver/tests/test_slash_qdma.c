@@ -823,4 +823,213 @@ TEST_F(qdma, hugepage_write_read_verify)
 	munmap(read_buf, HUGE_TRANSFER_SIZE);
 }
 
+/* ---------- registered buffers ---------- */
+
+/* Register a host buffer via the control fd; returns 0 or -errno. */
+static int qdma_buf_register(int ctl_fd, void *addr, uint64_t length,
+			     uint32_t *buf_id)
+{
+	struct slash_qdma_buf_register req;
+	int ret;
+
+	memset(&req, 0, sizeof(req));
+	req.size = sizeof(req);
+	req.user_addr = (uint64_t)(uintptr_t)addr;
+	req.length = length;
+
+	ret = ioctl(ctl_fd, SLASH_QDMA_IOCTL_BUF_REGISTER, &req);
+	if (ret < 0)
+		return -errno;
+
+	*buf_id = req.buf_id;
+	return 0;
+}
+
+/* Unregister a buffer via the control fd; returns 0 or -errno. */
+static int qdma_buf_unregister(int ctl_fd, uint32_t buf_id)
+{
+	struct slash_qdma_buf_unregister req;
+	int ret;
+
+	memset(&req, 0, sizeof(req));
+	req.size = sizeof(req);
+	req.buf_id = buf_id;
+
+	ret = ioctl(ctl_fd, SLASH_QDMA_IOCTL_BUF_UNREGISTER, &req);
+	return ret < 0 ? -errno : 0;
+}
+
+/* Issue a registered-buffer transfer on a qpair fd; returns ioctl result. */
+static long qdma_buf_transfer(int io_fd, uint32_t buf_id, uint64_t buf_offset,
+			      uint64_t dev_addr, uint64_t length,
+			      uint32_t direction)
+{
+	struct slash_qdma_transfer req;
+
+	memset(&req, 0, sizeof(req));
+	req.size = sizeof(req);
+	req.buf_id = buf_id;
+	req.buf_offset = buf_offset;
+	req.dev_addr = dev_addr;
+	req.length = length;
+	req.direction = direction;
+
+	return ioctl(io_fd, SLASH_QDMA_QPAIR_IOCTL_TRANSFER, &req);
+}
+
+TEST_F(qdma, buf_register_size_below_input_min_returns_einval)
+{
+	struct slash_qdma_buf_register req;
+
+	memset(&req, 0, sizeof(req));
+	req.size = sizeof(__u32); /* below the trailing input field */
+	EXPECT_EQ(-1, ioctl(self->ctl_fd, SLASH_QDMA_IOCTL_BUF_REGISTER, &req));
+	EXPECT_EQ(EINVAL, errno);
+}
+
+TEST_F(qdma, buf_register_zero_length_returns_einval)
+{
+	uint8_t *buf;
+	uint32_t buf_id = 0;
+
+	buf = aligned_alloc(4096, TRANSFER_SIZE);
+	ASSERT_NE(NULL, buf);
+
+	EXPECT_EQ(-EINVAL, qdma_buf_register(self->ctl_fd, buf, 0, &buf_id));
+
+	free(buf);
+}
+
+TEST_F(qdma, buf_register_unaligned_returns_einval)
+{
+	uint8_t *buf;
+	uint32_t buf_id = 0;
+
+	buf = aligned_alloc(4096, TRANSFER_SIZE * 2);
+	ASSERT_NE(NULL, buf);
+
+	/* Misaligned base address is rejected. */
+	EXPECT_EQ(-EINVAL,
+		  qdma_buf_register(self->ctl_fd, buf + 1, TRANSFER_SIZE, &buf_id));
+
+	free(buf);
+}
+
+TEST_F(qdma, transfer_size_below_input_min_returns_einval)
+{
+	struct slash_qdma_transfer req;
+
+	bring_up_qpair(_metadata, self, 0x3);
+
+	memset(&req, 0, sizeof(req));
+	req.size = sizeof(__u32); /* below the trailing input field */
+	EXPECT_EQ(-1, ioctl(self->io_fd, SLASH_QDMA_QPAIR_IOCTL_TRANSFER, &req));
+	EXPECT_EQ(EINVAL, errno);
+}
+
+TEST_F(qdma, transfer_unknown_buf_returns_enoent)
+{
+	long ret;
+
+	bring_up_qpair(_metadata, self, 0x3);
+
+	ret = qdma_buf_transfer(self->io_fd, 0xDEAD, 0,
+				get_dma_addr(), TRANSFER_SIZE,
+				SLASH_QDMA_XFER_H2C);
+	EXPECT_EQ(-1, ret);
+	EXPECT_EQ(ENOENT, errno);
+}
+
+TEST_F(qdma, transfer_wrong_direction_returns_enodev)
+{
+	uint8_t *buf;
+	uint32_t buf_id = 0;
+	long ret;
+
+	bring_up_qpair(_metadata, self, 0x1); /* H2C only */
+
+	buf = mmap(NULL, TRANSFER_SIZE, PROT_READ | PROT_WRITE,
+		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	ASSERT_NE(MAP_FAILED, buf);
+
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, buf, TRANSFER_SIZE, &buf_id));
+
+	/* C2H is not enabled on this qpair. */
+	ret = qdma_buf_transfer(self->io_fd, buf_id, 0,
+				get_dma_addr(), TRANSFER_SIZE,
+				SLASH_QDMA_XFER_C2H);
+	EXPECT_EQ(-1, ret);
+	EXPECT_EQ(ENODEV, errno);
+
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, buf_id));
+	munmap(buf, TRANSFER_SIZE);
+}
+
+TEST_F(qdma, transfer_out_of_range_returns_einval)
+{
+	uint8_t *buf;
+	uint32_t buf_id = 0;
+	long ret;
+
+	bring_up_qpair(_metadata, self, 0x3);
+
+	buf = mmap(NULL, TRANSFER_SIZE, PROT_READ | PROT_WRITE,
+		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	ASSERT_NE(MAP_FAILED, buf);
+
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, buf, TRANSFER_SIZE, &buf_id));
+
+	/* Slice extends past the registered length. */
+	ret = qdma_buf_transfer(self->io_fd, buf_id, TRANSFER_SIZE,
+				get_dma_addr(), TRANSFER_SIZE,
+				SLASH_QDMA_XFER_H2C);
+	EXPECT_EQ(-1, ret);
+	EXPECT_EQ(EINVAL, errno);
+
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, buf_id));
+	munmap(buf, TRANSFER_SIZE);
+}
+
+TEST_F(qdma, registered_buffer_round_trip)
+{
+	const size_t xfer_size = TRANSFER_SIZE * 8; /* 8 base pages */
+	uint8_t *write_buf, *read_buf;
+	uint32_t write_id = 0, read_id = 0;
+	uint64_t dma_addr = get_dma_addr();
+	long ret;
+
+	bring_up_qpair(_metadata, self, 0x3);
+
+	write_buf = mmap(NULL, xfer_size, PROT_READ | PROT_WRITE,
+			 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	ASSERT_NE(MAP_FAILED, write_buf);
+	read_buf = mmap(NULL, xfer_size, PROT_READ | PROT_WRITE,
+			MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	ASSERT_NE(MAP_FAILED, read_buf);
+
+	fill_pattern(write_buf, xfer_size);
+	memset(read_buf, 0, xfer_size);
+
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, write_buf, xfer_size,
+				       &write_id));
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, read_buf, xfer_size,
+				       &read_id));
+
+	ret = qdma_buf_transfer(self->io_fd, write_id, 0, dma_addr, xfer_size,
+				SLASH_QDMA_XFER_H2C);
+	ASSERT_EQ((long)xfer_size, ret);
+
+	ret = qdma_buf_transfer(self->io_fd, read_id, 0, dma_addr, xfer_size,
+				SLASH_QDMA_XFER_C2H);
+	ASSERT_EQ((long)xfer_size, ret);
+
+	EXPECT_EQ(0, memcmp(write_buf, read_buf, xfer_size));
+
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, write_id));
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, read_id));
+
+	munmap(write_buf, xfer_size);
+	munmap(read_buf, xfer_size);
+}
+
 TEST_HARNESS_MAIN
