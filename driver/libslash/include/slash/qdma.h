@@ -31,10 +31,11 @@
  *   6. slash_qdma_qpair_del()   — destroy
  *   7. slash_qdma_close()       — close the device
  *
- * The fd from qpair_get_fd() supports read() for C2H (card-to-host)
- * and write() for H2C (host-to-card) DMA transfers.  Positional I/O
- * via lseek()/pread()/pwrite() is also supported.  splice(), mmap(),
- * and poll() are not available.
+ * The fd from qpair_get_fd() is ioctl-only for data movement: register host
+ * buffers with slash_qdma_qpair_buffer_register() (or through the owning
+ * control fd), then transfer with slash_qdma_qpair_transfer() /
+ * slash_qdma_transfer().  read(), write(), mmap(), and poll() are not
+ * available for SLASH transfers.
  *
  * Registered buffers:
  *   For high-throughput transfers, a host buffer can be registered once
@@ -152,8 +153,8 @@ int slash_qdma_qpair_del(struct slash_qdma *qdma, uint32_t qid);
  * @param flags Only O_CLOEXEC is accepted; the kernel returns -EINVAL for
  *              any other bits.
  *
- * The returned fd supports read() (C2H) and write() (H2C).  Positional
- * I/O via lseek()/pread()/pwrite() is also available.
+ * The returned fd supports transfer and buffer-registration ioctls.  It does
+ * not support read/write data movement; use slash_qdma_qpair_transfer().
  *
  * @return Non-negative fd on success, -1 on failure.
  */
@@ -190,6 +191,26 @@ int slash_qdma_buffer_register(struct slash_qdma *qdma, void *addr,
 int slash_qdma_buffer_unregister(struct slash_qdma *qdma, uint32_t buf_id);
 
 /**
+ * @brief Register a host buffer through a queue-pair fd.
+ *
+ * Same semantics as slash_qdma_buffer_register(), but issues the registration
+ * ioctl on @p qpair_fd.  This is useful for clients that received only qpair
+ * fds via SCM_RIGHTS (for example libvrtd clients).
+ *
+ * @return 0 on success, -1 on failure (errno set).
+ */
+int slash_qdma_qpair_buffer_register(int qpair_fd, void *addr,
+                                     uint64_t length, uint32_t *buf_id,
+                                     enum slash_qdma_transfer_hint *transfer_hint);
+
+/**
+ * @brief Unregister a buffer through a queue-pair fd.
+ *
+ * @return 0 on success, -1 on failure (errno set).
+ */
+int slash_qdma_qpair_buffer_unregister(int qpair_fd, uint32_t buf_id);
+
+/**
  * @brief Perform a DMA transfer using a registered buffer.
  *
  * @param qdma       Open QDMA handle (used to dispatch to the mock backend).
@@ -207,6 +228,20 @@ ssize_t slash_qdma_transfer(struct slash_qdma *qdma, int qpair_fd,
                             uint32_t buf_id, uint64_t buf_offset,
                             uint64_t dev_addr, uint64_t length,
                             uint32_t direction);
+
+/**
+ * @brief Perform a DMA transfer using only a queue-pair fd.
+ *
+ * Same transfer ioctl as slash_qdma_transfer(), but without a device handle.
+ * This is the preferred form for code that received a qpair fd over
+ * SCM_RIGHTS.
+ *
+ * @return Number of bytes transferred (>= 0) on success, -1 on failure
+ *         (errno set).
+ */
+ssize_t slash_qdma_qpair_transfer(int qpair_fd, uint32_t buf_id,
+                                  uint64_t buf_offset, uint64_t dev_addr,
+                                  uint64_t length, uint32_t direction);
 
 #ifdef __cplusplus
 } /* extern "C" */

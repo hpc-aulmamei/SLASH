@@ -192,19 +192,37 @@ TEST_P(ParametrizedQdmaTest, QueueDmaTransfer) {
     int queue_fd = slash_qdma_qpair_get_fd(qdma_, qid, 0);
     ASSERT_GE(queue_fd, 0);
 
-    // Write a known pattern to DDR (H2C).
-    uint8_t src[XFER_SIZE];
+    // Write a known pattern to DDR (H2C) through the transfer-only ioctl path.
+    void *src_mem = nullptr;
+    void *dst_mem = nullptr;
+    ASSERT_EQ(posix_memalign(&src_mem, 4096, XFER_SIZE), 0);
+    ASSERT_EQ(posix_memalign(&dst_mem, 4096, XFER_SIZE), 0);
+    auto *src = static_cast<uint8_t *>(src_mem);
+    auto *dst = static_cast<uint8_t *>(dst_mem);
     for (size_t i = 0; i < XFER_SIZE; ++i) {
         src[i] = static_cast<uint8_t>(i & 0xFF);
     }
-    ssize_t written = pwrite(queue_fd, src, XFER_SIZE, static_cast<off_t>(DDR_BASE_ADDRESS));
+    std::memset(dst, 0, XFER_SIZE);
+
+    uint32_t src_buf = 0;
+    uint32_t dst_buf = 0;
+    ASSERT_EQ(slash_qdma_qpair_buffer_register(queue_fd, src, XFER_SIZE, &src_buf, nullptr), 0);
+    ASSERT_EQ(slash_qdma_qpair_buffer_register(queue_fd, dst, XFER_SIZE, &dst_buf, nullptr), 0);
+
+    ssize_t written = slash_qdma_qpair_transfer(
+        queue_fd, src_buf, 0, DDR_BASE_ADDRESS, XFER_SIZE, SLASH_QDMA_XFER_H2C);
     EXPECT_EQ(written, static_cast<ssize_t>(XFER_SIZE));
 
     // Read back from DDR (C2H) and verify.
-    uint8_t dst[XFER_SIZE]{};
-    ssize_t read_bytes = pread(queue_fd, dst, XFER_SIZE, static_cast<off_t>(DDR_BASE_ADDRESS));
+    ssize_t read_bytes = slash_qdma_qpair_transfer(
+        queue_fd, dst_buf, 0, DDR_BASE_ADDRESS, XFER_SIZE, SLASH_QDMA_XFER_C2H);
     EXPECT_EQ(read_bytes, static_cast<ssize_t>(XFER_SIZE));
     EXPECT_EQ(std::memcmp(src, dst, XFER_SIZE), 0);
+
+    EXPECT_EQ(slash_qdma_qpair_buffer_unregister(queue_fd, src_buf), 0);
+    EXPECT_EQ(slash_qdma_qpair_buffer_unregister(queue_fd, dst_buf), 0);
+    free(src_mem);
+    free(dst_mem);
 
     EXPECT_EQ(close(queue_fd), 0);
 
@@ -265,6 +283,36 @@ TEST_P(ParametrizedQdmaTest, RegisteredBufferTransfer) {
 
     free(src_mem);
     free(dst_mem);
+
+    EXPECT_EQ(close(queue_fd), 0);
+    EXPECT_EQ(slash_qdma_qpair_stop(qdma_, qid), 0);
+    EXPECT_EQ(slash_qdma_qpair_del(qdma_, qid), 0);
+}
+
+TEST_P(ParametrizedQdmaTest, QueueFdReadWriteRejectedOnHardware) {
+    if (mock) {
+        GTEST_SKIP() << "mock qpair fds are memfds and still support read/write";
+    }
+
+    struct slash_qdma_qpair_add req{};
+    req.mode     = 0;
+    req.dir_mask = 0x3;
+
+    ASSERT_EQ(slash_qdma_qpair_add(qdma_, &req), 0);
+    uint32_t qid = req.qid;
+    ASSERT_EQ(slash_qdma_qpair_start(qdma_, qid), 0);
+
+    int queue_fd = slash_qdma_qpair_get_fd(qdma_, qid, 0);
+    ASSERT_GE(queue_fd, 0);
+
+    uint8_t byte = 0;
+    errno = 0;
+    EXPECT_EQ(write(queue_fd, &byte, sizeof(byte)), -1);
+    EXPECT_TRUE(errno == EINVAL || errno == EOPNOTSUPP || errno == EBADF);
+
+    errno = 0;
+    EXPECT_EQ(read(queue_fd, &byte, sizeof(byte)), -1);
+    EXPECT_TRUE(errno == EINVAL || errno == EOPNOTSUPP || errno == EBADF);
 
     EXPECT_EQ(close(queue_fd), 0);
     EXPECT_EQ(slash_qdma_qpair_stop(qdma_, qid), 0);

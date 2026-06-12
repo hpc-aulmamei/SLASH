@@ -123,7 +123,7 @@ void *Buffer::data() noexcept
 
 int Buffer::getFd() const noexcept
 {
-    return buffer ? buffer->qpair_fd : -1;
+    return buffer ? buffer->qpair_fds[0] : -1;
 }
 
 int Buffer::releaseFd() noexcept
@@ -131,8 +131,8 @@ int Buffer::releaseFd() noexcept
     if (buffer == nullptr) {
         return -1;
     }
-    int ret = buffer->qpair_fd;
-    buffer->qpair_fd = -1;
+    int ret = buffer->qpair_fds[0];
+    buffer->qpair_fds[0] = -1;
     return ret;
 }
 
@@ -151,24 +151,12 @@ bool Buffer::isClosed() const noexcept
 
 std::fstream Buffer::fstream(std::ios_base::openmode mode) const
 {
+    (void)mode;
     if (isClosed()) {
         throw std::runtime_error("Buffer is closed");
     }
 
-    int fd = getFd();
-    if (fd < 0) {
-        throw std::runtime_error("Buffer FD is invalid");
-    }
-
-    std::string path = "/proc/self/fd/" + std::to_string(fd);
-
-    std::fstream stream;
-    stream.open(path, mode);
-    if (!stream.is_open()) {
-        throw std::runtime_error("Failed to open fstream for buffer");
-    }
-
-    return stream;
+    throw std::runtime_error("Buffer qpair fds are ioctl-only; use syncToDevice/syncFromDevice");
 }
 
 void Buffer::syncToDevice(uint64_t offset, uint64_t size)

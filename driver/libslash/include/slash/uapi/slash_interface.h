@@ -225,14 +225,14 @@ struct slash_qdma_qpair_op {
 /**
  * @brief Obtain a file descriptor for queue I/O.
  *
- * The returned fd can be used for read/write (or mmap) to transfer data
+ * The returned fd can be used for registered-buffer ioctls to transfer data
  * through the queue pair.
  *
  * The fd is returned as the ioctl return value (same convention as
  * the BAR fd ioctl).  A single fd is returned per queue pair;
- * read() on the fd performs C2H transfers and write() performs H2C
- * transfers, using whichever directions were enabled in \@dir_mask
- * when the queue pair was added.
+ * Data movement is issued via SLASH_QDMA_QPAIR_IOCTL_TRANSFER, using
+ * whichever directions were enabled in \@dir_mask when the queue pair was
+ * added.
  */
 struct slash_qdma_qpair_fd_request {
     __u32 size;  /**< Struct size for ABI versioning. */

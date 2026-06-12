@@ -45,6 +45,13 @@ static void fill_pattern(uint8_t *buf, size_t len)
 		buf[i] = (uint8_t)(i & 0xff);
 }
 
+static int qdma_buf_register(int ctl_fd, void *addr, uint64_t length,
+			     uint32_t *buf_id, uint32_t *transfer_hint);
+static int qdma_buf_unregister(int ctl_fd, uint32_t buf_id);
+static long qdma_buf_transfer(int io_fd, uint32_t buf_id, uint64_t buf_offset,
+			      uint64_t dev_addr, uint64_t length,
+			      uint32_t direction);
+
 /* ---------- fixture ---------- */
 
 FIXTURE(qdma)
@@ -138,7 +145,8 @@ TEST_F(qdma, write_read_verify)
 {
 	uint8_t *write_buf, *read_buf;
 	uint64_t dma_addr = get_dma_addr();
-	ssize_t ret;
+	uint32_t write_id = 0, read_id = 0;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
@@ -150,14 +158,23 @@ TEST_F(qdma, write_read_verify)
 	fill_pattern(write_buf, TRANSFER_SIZE);
 	memset(read_buf, 0, TRANSFER_SIZE);
 
-	ret = pwrite(self->io_fd, write_buf, TRANSFER_SIZE, (off_t)dma_addr);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, write_buf, TRANSFER_SIZE,
+				       &write_id, NULL));
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, read_buf, TRANSFER_SIZE,
+				       &read_id, NULL));
+
+	ret = qdma_buf_transfer(self->io_fd, write_id, 0, dma_addr,
+				TRANSFER_SIZE, SLASH_QDMA_XFER_H2C);
 	ASSERT_EQ(TRANSFER_SIZE, ret);
 
-	ret = pread(self->io_fd, read_buf, TRANSFER_SIZE, (off_t)dma_addr);
+	ret = qdma_buf_transfer(self->io_fd, read_id, 0, dma_addr,
+				TRANSFER_SIZE, SLASH_QDMA_XFER_C2H);
 	ASSERT_EQ(TRANSFER_SIZE, ret);
 
 	EXPECT_EQ(0, memcmp(write_buf, read_buf, TRANSFER_SIZE));
 
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, write_id));
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, read_id));
 	free(write_buf);
 	free(read_buf);
 }
@@ -282,51 +299,63 @@ TEST_F(qdma, qpair_get_fd_unknown_qid)
 TEST_F(qdma, io_read_on_h2c_only_returns_enodev)
 {
 	uint8_t *buf;
-	ssize_t ret;
+	uint32_t buf_id = 0;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x1); /* H2C only */
 
 	buf = aligned_alloc(4096, TRANSFER_SIZE);
 	ASSERT_NE(NULL, buf);
 
-	ret = pread(self->io_fd, buf, TRANSFER_SIZE, (off_t)SLASH_TEST_HBM_BASE);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, buf, TRANSFER_SIZE, &buf_id, NULL));
+	ret = qdma_buf_transfer(self->io_fd, buf_id, 0, SLASH_TEST_HBM_BASE,
+				TRANSFER_SIZE, SLASH_QDMA_XFER_C2H);
 	EXPECT_EQ(-1, ret);
 	EXPECT_EQ(ENODEV, errno);
 
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, buf_id));
 	free(buf);
 }
 
 TEST_F(qdma, io_write_on_c2h_only_returns_enodev)
 {
 	uint8_t *buf;
-	ssize_t ret;
+	uint32_t buf_id = 0;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x2); /* C2H only */
 
 	buf = aligned_alloc(4096, TRANSFER_SIZE);
 	ASSERT_NE(NULL, buf);
 
-	ret = pwrite(self->io_fd, buf, TRANSFER_SIZE, (off_t)SLASH_TEST_HBM_BASE);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, buf, TRANSFER_SIZE, &buf_id, NULL));
+	ret = qdma_buf_transfer(self->io_fd, buf_id, 0, SLASH_TEST_HBM_BASE,
+				TRANSFER_SIZE, SLASH_QDMA_XFER_H2C);
 	EXPECT_EQ(-1, ret);
 	EXPECT_EQ(ENODEV, errno);
 
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, buf_id));
 	free(buf);
 }
 
 TEST_F(qdma, io_zero_length_returns_einval)
 {
 	uint8_t *buf;
-	ssize_t ret;
+	uint32_t buf_id = 0;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
 	buf = aligned_alloc(4096, TRANSFER_SIZE);
 	ASSERT_NE(NULL, buf);
 
-	ret = pwrite(self->io_fd, buf, 0, (off_t)SLASH_TEST_HBM_BASE);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, buf, TRANSFER_SIZE, &buf_id, NULL));
+	ret = qdma_buf_transfer(self->io_fd, buf_id, 0, SLASH_TEST_HBM_BASE,
+				0, SLASH_QDMA_XFER_H2C);
 	EXPECT_EQ(-1, ret);
 	EXPECT_EQ(EINVAL, errno);
 
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, buf_id));
 	free(buf);
 }
 
@@ -355,74 +384,37 @@ TEST_F(qdma, io_ioctl_returns_enotty)
 	EXPECT_EQ(ENOTTY, errno);
 }
 
-TEST_F(qdma, io_lseek_set_cur_end)
+TEST_F(qdma, io_lseek_unsupported)
 {
 	off_t pos;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
 	pos = lseek(self->io_fd, (off_t)SLASH_TEST_HBM_BASE, SEEK_SET);
-	EXPECT_EQ((off_t)SLASH_TEST_HBM_BASE, pos);
-
-	pos = lseek(self->io_fd, 0, SEEK_CUR);
-	EXPECT_EQ((off_t)SLASH_TEST_HBM_BASE, pos);
-
-	pos = lseek(self->io_fd, 4096, SEEK_CUR);
-	EXPECT_EQ((off_t)(SLASH_TEST_HBM_BASE + 4096), pos);
-
-	/*
-	 * SEEK_END semantics are driver-defined for this anon-inode; the
-	 * contract is "doesn't error", not any specific value.
-	 */
-	pos = lseek(self->io_fd, 0, SEEK_END);
-	EXPECT_NE((off_t)-1, pos);
+	EXPECT_EQ((off_t)-1, pos);
+	EXPECT_EQ(ESPIPE, errno);
 }
 
-TEST_F(qdma, io_write_advances_file_position)
+TEST_F(qdma, io_read_write_unsupported)
 {
 	uint8_t *buf;
-	off_t pos;
-	ssize_t ret;
+	uint32_t buf_id = 0;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
 	buf = aligned_alloc(4096, TRANSFER_SIZE);
 	ASSERT_NE(NULL, buf);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, buf, TRANSFER_SIZE, &buf_id, NULL));
 	fill_pattern(buf, TRANSFER_SIZE);
-
-	ASSERT_EQ((off_t)SLASH_TEST_HBM_BASE,
-			  lseek(self->io_fd, (off_t)SLASH_TEST_HBM_BASE, SEEK_SET));
 
 	ret = write(self->io_fd, buf, TRANSFER_SIZE);
-	ASSERT_EQ(TRANSFER_SIZE, ret);
+	EXPECT_EQ(-1, ret);
+	EXPECT_EQ(EINVAL, errno);
 
-	pos = lseek(self->io_fd, 0, SEEK_CUR);
-	EXPECT_EQ((off_t)(SLASH_TEST_HBM_BASE + TRANSFER_SIZE), pos);
-
-	free(buf);
-}
-
-TEST_F(qdma, io_pwrite_does_not_advance_file_position)
-{
-	uint8_t *buf;
-	off_t pos;
-	ssize_t ret;
-
-	bring_up_qpair(_metadata, self, 0x3);
-
-	buf = aligned_alloc(4096, TRANSFER_SIZE);
-	ASSERT_NE(NULL, buf);
-	fill_pattern(buf, TRANSFER_SIZE);
-
-	ASSERT_EQ((off_t)0, lseek(self->io_fd, 0, SEEK_SET));
-
-	ret = pwrite(self->io_fd, buf, TRANSFER_SIZE,
-				 (off_t)SLASH_TEST_HBM_BASE);
-	ASSERT_EQ(TRANSFER_SIZE, ret);
-
-	/* p* variants must not advance the file position. */
-	pos = lseek(self->io_fd, 0, SEEK_CUR);
-	EXPECT_EQ((off_t)0, pos);
+	ret = read(self->io_fd, buf, TRANSFER_SIZE);
+	EXPECT_EQ(-1, ret);
+	EXPECT_EQ(EINVAL, errno);
 
 	free(buf);
 }
@@ -430,8 +422,9 @@ TEST_F(qdma, io_pwrite_does_not_advance_file_position)
 TEST_F(qdma, io_multiple_fds_same_qpair)
 {
 	uint8_t *write_buf, *read_buf;
+	uint32_t write_id = 0, read_id = 0;
 	int io_fd_b;
-	ssize_t ret;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
@@ -446,16 +439,23 @@ TEST_F(qdma, io_multiple_fds_same_qpair)
 	fill_pattern(write_buf, TRANSFER_SIZE);
 	memset(read_buf, 0, TRANSFER_SIZE);
 
-	ret = pwrite(self->io_fd, write_buf, TRANSFER_SIZE,
-				 (off_t)SLASH_TEST_HBM_BASE);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, write_buf, TRANSFER_SIZE,
+				       &write_id, NULL));
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, read_buf, TRANSFER_SIZE,
+				       &read_id, NULL));
+
+	ret = qdma_buf_transfer(self->io_fd, write_id, 0, SLASH_TEST_HBM_BASE,
+				TRANSFER_SIZE, SLASH_QDMA_XFER_H2C);
 	ASSERT_EQ(TRANSFER_SIZE, ret);
 
-	ret = pread(io_fd_b, read_buf, TRANSFER_SIZE,
-				(off_t)SLASH_TEST_HBM_BASE);
+	ret = qdma_buf_transfer(io_fd_b, read_id, 0, SLASH_TEST_HBM_BASE,
+				TRANSFER_SIZE, SLASH_QDMA_XFER_C2H);
 	ASSERT_EQ(TRANSFER_SIZE, ret);
 
 	EXPECT_EQ(0, memcmp(write_buf, read_buf, TRANSFER_SIZE));
 
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, write_id));
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, read_id));
 	close(io_fd_b);
 	free(write_buf);
 	free(read_buf);
@@ -464,7 +464,8 @@ TEST_F(qdma, io_multiple_fds_same_qpair)
 TEST_F(qdma, io_fd_outlives_qpair_del)
 {
 	uint8_t *buf;
-	ssize_t ret;
+	uint32_t buf_id = 0;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
@@ -476,16 +477,18 @@ TEST_F(qdma, io_fd_outlives_qpair_del)
 
 	buf = aligned_alloc(4096, TRANSFER_SIZE);
 	ASSERT_NE(NULL, buf);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, buf, TRANSFER_SIZE, &buf_id, NULL));
 
 	/*
 	 * fd is still valid but the qpair's HW queues are gone.  The spec
 	 * (index.rst:613-616) does not name a specific errno, so we only
 	 * assert the call fails — not which errno it returns.
 	 */
-	ret = pwrite(self->io_fd, buf, TRANSFER_SIZE,
-				 (off_t)SLASH_TEST_HBM_BASE);
+	ret = qdma_buf_transfer(self->io_fd, buf_id, 0, SLASH_TEST_HBM_BASE,
+				TRANSFER_SIZE, SLASH_QDMA_XFER_H2C);
 	EXPECT_EQ(-1, ret);
 
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, buf_id));
 	free(buf);
 	/* close(io_fd) happens in fixture teardown — must not crash. */
 }
@@ -496,7 +499,8 @@ static void region_round_trip(struct __test_metadata *_metadata,
 							  FIXTURE_DATA(qdma) * self, uint64_t base)
 {
 	uint8_t *write_buf, *read_buf;
-	ssize_t ret;
+	uint32_t write_id = 0, read_id = 0;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
@@ -508,16 +512,25 @@ static void region_round_trip(struct __test_metadata *_metadata,
 	fill_pattern(write_buf, TRANSFER_SIZE);
 	memset(read_buf, 0, TRANSFER_SIZE);
 
-	ret = pwrite(self->io_fd, write_buf, TRANSFER_SIZE, (off_t)base);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, write_buf, TRANSFER_SIZE,
+				       &write_id, NULL));
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, read_buf, TRANSFER_SIZE,
+				       &read_id, NULL));
+
+	ret = qdma_buf_transfer(self->io_fd, write_id, 0, base,
+				TRANSFER_SIZE, SLASH_QDMA_XFER_H2C);
 	ASSERT_EQ(TRANSFER_SIZE, ret)
-	TH_LOG("pwrite to 0x%llx failed: %s",
+	TH_LOG("H2C transfer to 0x%llx failed: %s",
 		   (unsigned long long)base, strerror(errno));
 
-	ret = pread(self->io_fd, read_buf, TRANSFER_SIZE, (off_t)base);
+	ret = qdma_buf_transfer(self->io_fd, read_id, 0, base,
+				TRANSFER_SIZE, SLASH_QDMA_XFER_C2H);
 	ASSERT_EQ(TRANSFER_SIZE, ret);
 
 	EXPECT_EQ(0, memcmp(write_buf, read_buf, TRANSFER_SIZE));
 
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, write_id));
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, read_id));
 	free(write_buf);
 	free(read_buf);
 }
@@ -711,8 +724,7 @@ TEST_F(qdma, qpair_get_fd_oversized_struct_zeros_tail)
 TEST_F(qdma, reject_unaligned_4k_transfer)
 {
 	uint8_t *write_buf;
-	uint64_t dma_addr = get_dma_addr();
-	ssize_t ret;
+	uint32_t buf_id = 0;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
@@ -720,10 +732,9 @@ TEST_F(qdma, reject_unaligned_4k_transfer)
 	ASSERT_NE(NULL, write_buf);
 	fill_pattern(write_buf, TRANSFER_SIZE * 2);
 
-	errno = 0;
-	ret = pwrite(self->io_fd, write_buf + 1, TRANSFER_SIZE, (off_t)dma_addr);
-	ASSERT_EQ(-1, ret);
-	ASSERT_EQ(EINVAL, errno);
+	EXPECT_EQ(-EINVAL,
+		  qdma_buf_register(self->ctl_fd, write_buf + 1, TRANSFER_SIZE,
+				    &buf_id, NULL));
 
 	free(write_buf);
 }
@@ -732,7 +743,8 @@ TEST_F(qdma, reject_partial_4k_transfer)
 {
 	uint8_t *write_buf;
 	uint64_t dma_addr = get_dma_addr();
-	ssize_t ret;
+	uint32_t buf_id = 0;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
@@ -740,11 +752,14 @@ TEST_F(qdma, reject_partial_4k_transfer)
 	ASSERT_NE(NULL, write_buf);
 	fill_pattern(write_buf, TRANSFER_SIZE);
 
-	errno = 0;
-	ret = pwrite(self->io_fd, write_buf, TRANSFER_SIZE / 2, (off_t)dma_addr);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, write_buf, TRANSFER_SIZE,
+				       &buf_id, NULL));
+	ret = qdma_buf_transfer(self->io_fd, buf_id, 0, dma_addr,
+				TRANSFER_SIZE / 2, SLASH_QDMA_XFER_H2C);
 	ASSERT_EQ(-1, ret);
 	ASSERT_EQ(EINVAL, errno);
 
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, buf_id));
 	free(write_buf);
 }
 
@@ -753,7 +768,8 @@ TEST_F(qdma, multipage_4k_write_read_verify)
 	const size_t xfer_size = TRANSFER_SIZE * 8; /* 8 base pages, one request */
 	uint8_t *write_buf, *read_buf;
 	uint64_t dma_addr = get_dma_addr();
-	ssize_t ret;
+	uint32_t write_id = 0, read_id = 0;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
@@ -774,14 +790,23 @@ TEST_F(qdma, multipage_4k_write_read_verify)
 	fill_pattern(write_buf, xfer_size);
 	memset(read_buf, 0, xfer_size);
 
-	ret = pwrite(self->io_fd, write_buf, xfer_size, (off_t)dma_addr);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, write_buf, xfer_size,
+				       &write_id, NULL));
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, read_buf, xfer_size,
+				       &read_id, NULL));
+
+	ret = qdma_buf_transfer(self->io_fd, write_id, 0, dma_addr, xfer_size,
+				SLASH_QDMA_XFER_H2C);
 	ASSERT_EQ((ssize_t)xfer_size, ret);
 
-	ret = pread(self->io_fd, read_buf, xfer_size, (off_t)dma_addr);
+	ret = qdma_buf_transfer(self->io_fd, read_id, 0, dma_addr, xfer_size,
+				SLASH_QDMA_XFER_C2H);
 	ASSERT_EQ((ssize_t)xfer_size, ret);
 
 	EXPECT_EQ(0, memcmp(write_buf, read_buf, xfer_size));
 
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, write_id));
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, read_id));
 	munmap(write_buf, xfer_size);
 	munmap(read_buf, xfer_size);
 }
@@ -790,7 +815,8 @@ TEST_F(qdma, hugepage_write_read_verify)
 {
 	uint8_t *write_buf, *read_buf;
 	uint64_t dma_addr = get_dma_addr();
-	ssize_t ret;
+	uint32_t write_id = 0, read_id = 0;
+	long ret;
 
 	bring_up_qpair(_metadata, self, 0x3);
 
@@ -811,14 +837,23 @@ TEST_F(qdma, hugepage_write_read_verify)
 	fill_pattern(write_buf, HUGE_TRANSFER_SIZE);
 	memset(read_buf, 0, HUGE_TRANSFER_SIZE);
 
-	ret = pwrite(self->io_fd, write_buf, HUGE_TRANSFER_SIZE, (off_t)dma_addr);
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, write_buf, HUGE_TRANSFER_SIZE,
+				       &write_id, NULL));
+	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, read_buf, HUGE_TRANSFER_SIZE,
+				       &read_id, NULL));
+
+	ret = qdma_buf_transfer(self->io_fd, write_id, 0, dma_addr, HUGE_TRANSFER_SIZE,
+				SLASH_QDMA_XFER_H2C);
 	ASSERT_EQ(HUGE_TRANSFER_SIZE, ret);
 
-	ret = pread(self->io_fd, read_buf, HUGE_TRANSFER_SIZE, (off_t)dma_addr);
+	ret = qdma_buf_transfer(self->io_fd, read_id, 0, dma_addr, HUGE_TRANSFER_SIZE,
+				SLASH_QDMA_XFER_C2H);
 	ASSERT_EQ(HUGE_TRANSFER_SIZE, ret);
 
 	EXPECT_EQ(0, memcmp(write_buf, read_buf, HUGE_TRANSFER_SIZE));
 
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, write_id));
+	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, read_id));
 	munmap(write_buf, HUGE_TRANSFER_SIZE);
 	munmap(read_buf, HUGE_TRANSFER_SIZE);
 }

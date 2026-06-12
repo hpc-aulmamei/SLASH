@@ -789,10 +789,6 @@ static void slash_qdma_buf_put(struct slash_qdma_buf *buf);
 static void slash_qdma_client_release(struct kref *ref);
 static long slash_qdma_qpair_transfer(struct file *file, void __user *uarg);
 
-static ssize_t slash_qdma_qpair_read(struct file *file, char __user *buf,
-                                     size_t count, loff_t *ppos);
-static ssize_t slash_qdma_qpair_write(struct file *file, const char __user *buf,
-                                      size_t count, loff_t *ppos);
 static int slash_qdma_qpair_release(struct inode *inode, struct file *file);
 static long slash_qdma_qpair_ioctl(struct file *file,
                                    unsigned int cmd, unsigned long arg);
@@ -800,20 +796,14 @@ static long slash_qdma_qpair_ioctl(struct file *file,
 /**
  * slash_qdma_qpair_fops - File operations for per-qpair anon_inode fds.
  *
- * read()  performs a C2H (card-to-host) DMA transfer.
- * write() performs an H2C (host-to-card) DMA transfer.
- * llseek  uses default_llseek so that pread/pwrite can set the
- *         device-side address via the file position.
- * ioctl   is a stub that returns -ENOTTY (no per-fd ioctls defined yet).
+ * ioctl   performs registered-buffer transfers and buffer registration
+ *         operations that share the owning control fd's client context.
  * release drops the refs on the qpair entry and device.
  */
 static const struct file_operations slash_qdma_qpair_fops = {
     .owner          = THIS_MODULE,
-    .read           = slash_qdma_qpair_read,
-    .write          = slash_qdma_qpair_write,
     .unlocked_ioctl = slash_qdma_qpair_ioctl,
     .release        = slash_qdma_qpair_release,
-    .llseek         = default_llseek,
 };
 
 
@@ -1849,23 +1839,9 @@ static int slash_qdma_fop_open(struct inode *inode, struct file *file)
 static int slash_qdma_fop_release(struct inode *inode, struct file *file)
 {
     struct slash_qdma_client *client = file->private_data;
-    struct slash_qdma_buf *buf;
-    unsigned long index;
 
     if (!client)
         return 0;
-
-    /*
-     * Auto-unregister any buffers the client forgot (or had no chance) to
-     * release.  Remove each from the lookup table first so no new transfer
-     * can find it, then drop the table's reference.  Buffers with an
-     * in-flight transfer stay alive until that transfer releases its ref.
-     */
-    xa_for_each(&client->buffers, index, buf) {
-        xa_erase(&client->buffers, index);
-        slash_qdma_buf_put(buf);
-    }
-    xa_destroy(&client->buffers);
 
     kref_put(&client->ref, slash_qdma_client_release);
 
@@ -2980,7 +2956,20 @@ static void slash_qdma_client_release(struct kref *ref)
 {
     struct slash_qdma_client *client =
         container_of(ref, struct slash_qdma_client, ref);
+    struct slash_qdma_buf *buf;
+    unsigned long index;
 
+    /*
+     * Auto-unregister any buffers the client forgot (or had no chance) to
+     * release.  This runs when the final fd referencing the shared client
+     * context closes (control fd or any derived qpair fd), so registrations
+     * remain usable after the control fd closes as long as a qpair fd is
+     * still alive.
+     */
+    xa_for_each(&client->buffers, index, buf) {
+        xa_erase(&client->buffers, index);
+        slash_qdma_buf_put(buf);
+    }
     xa_destroy(&client->buffers);
     if (client->qdma_dev)
         kref_put(&client->qdma_dev->ref, slash_qdma_dev_release);
@@ -3182,186 +3171,6 @@ static int slash_qdma_ioctl_buf_unregister_w(struct miscdevice *misc,
 }
 
 /**
- * slash_qdma_qpair_read_write() - Perform a DMA transfer via a qpair fd.
- * @file:  The anon_inode file for this queue pair.
- * @buf:   User-space buffer (source for write/H2C, destination for read/C2H).
- * @count: Number of bytes to transfer.
- * @ppos:  File position — used as the device-side (endpoint) address.
- *         Updated on success to reflect the bytes transferred, enabling
- *         sequential positional I/O.
- * @write: true for H2C (host-to-card write), false for C2H (card-to-host read).
- *
- * Transfer flow:
- *   1. Validate context and check that the required direction (H2C or C2H)
- *      is enabled on this queue pair.
- *   2. Pin user pages and build a scatter-gather list.
- *   3. Populate a qdma_request:
- *      - ep_addr = *ppos: the device-side address (FPGA memory offset).
- *      - h2c_eot = 1: signals end-of-transfer to the FPGA, allowing it to
- *        process the complete data packet.
- *      - timeout_ms = 10000 (10 seconds): if the transfer doesn't complete
- *        in this time, qdma_request_submit returns an error.
- *      - fp_done = NULL: synchronous mode — the call blocks until completion.
- *        If fp_done were set, libqdma would call it asynchronously.
- *      - dma_mapped = 0: libqdma handles the DMA mapping internally.
- *   4. Submit to libqdma via qdma_request_submit().
- *   5. On success, advance *ppos by the number of bytes transferred.
- *   6. Unpin pages and free the SGL.
- *
- * Return: Number of bytes transferred (>= 0) on success, negative errno
- *         on failure.
- */
-static ssize_t slash_qdma_qpair_read_write(struct file *file, char __user *buf,
-                                           size_t count, loff_t *ppos,
-                                           bool write)
-{
-    struct slash_qdma_qpair_file_ctx *ctx = file->private_data;
-    struct slash_qdma_dev *qdma_dev;
-    struct slash_qdma_qpair_entry *entry;
-    struct slash_qdma_io_cb iocb;
-    struct qdma_request *req;
-    unsigned long qhndl;
-    ssize_t res;
-    int rv;
-#if SLASH_QDMA_TIMING
-    ktime_t t_start, t_mapped, t_submitted, t_done;
-#endif
-
-    if (!ctx)
-        return -EINVAL;
-
-    qdma_dev = ctx->qdma_dev;
-    entry = ctx->entry;
-
-    if (!qdma_dev || !entry)
-        return -ENODEV;
-
-    /* Check device liveness and resolve the queue handle for the direction. */
-    mutex_lock(&qdma_dev->lock);
-    if (qdma_dev->hw_shutdown || !qdma_dev->have_qdma_handle) {
-        mutex_unlock(&qdma_dev->lock);
-        return -ENODEV;
-    }
-
-    if (write) {
-        /* H2C: writing data from host to card */
-        if (!(entry->dir_mask & SLASH_QDMA_DIR_H2C) ||
-            !slash_qdma_qhndl_is_valid(entry->qhndl[Q_H2C])) {
-            mutex_unlock(&qdma_dev->lock);
-            return -ENODEV;
-        }
-        qhndl = entry->qhndl[Q_H2C];
-    } else {
-        /* C2H: reading data from card to host */
-        if (!(entry->dir_mask & SLASH_QDMA_DIR_C2H) ||
-            !slash_qdma_qhndl_is_valid(entry->qhndl[Q_C2H])) {
-            mutex_unlock(&qdma_dev->lock);
-            return -ENODEV;
-        }
-        qhndl = entry->qhndl[Q_C2H];
-    }
-    mutex_unlock(&qdma_dev->lock);
-
-    /* Pin user pages and build the scatter-gather list. */
-#if SLASH_QDMA_TIMING
-    t_start = ktime_get();
-#endif
-    memset(&iocb, 0, sizeof(iocb));
-    iocb.buf = buf;
-    iocb.len = count;
-    rv = slash_qdma_map_user_buf_to_sgl(&iocb, write);
-    if (rv < 0)
-        return rv;
-#if SLASH_QDMA_TIMING
-    t_mapped = ktime_get();
-#endif
-
-    /* Populate the libqdma request structure. */
-    req = &iocb.req;
-    req->sgcnt = iocb.pages_nr;         /* Number of SGL entries */
-    req->sgl = iocb.sgl;                /* Scatter-gather list */
-    req->write = write ? 1 : 0;         /* Direction flag for libqdma */
-    req->dma_mapped = 0;                /* Let libqdma handle DMA mapping */
-    req->udd_len = 0;                   /* No user-defined data */
-    req->ep_addr = (u64)*ppos;           /* Device-side (endpoint) address */
-    req->count = count;                  /* Total byte count */
-    req->timeout_ms = 10 * 1000;         /* 10-second timeout */
-    req->fp_done = NULL;                 /* Synchronous: block until complete */
-    req->h2c_eot = 1;                   /* End-of-transfer marker for FPGA */
-
-    SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
-                          "qdma_request_submit start: qid=%u qhndl=%lu write=%d count=%zu ep_addr=0x%llx\n",
-                          ctx->qid, qhndl, req->write, req->count,
-                          (unsigned long long)req->ep_addr);
-    res = qdma_request_submit(qdma_dev->qdma_handle, qhndl, req);
-    SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
-                          "qdma_request_submit done: qid=%u qhndl=%lu res=%zd\n",
-                          ctx->qid, qhndl, res);
-#if SLASH_QDMA_TIMING
-    t_submitted = ktime_get();
-#endif
-
-    /* Advance the file position by the number of bytes transferred. */
-    if (res > 0)
-        *ppos += res;
-
-    /* Unpin pages (marking dirty for C2H reads) and free the SGL. */
-    slash_qdma_unmap_user_buf(&iocb, write);
-    slash_qdma_iocb_release(&iocb);
-
-#if SLASH_QDMA_TIMING
-    t_done = ktime_get();
-    dev_info(&qdma_dev->pdev->dev,
-             "slash: qdma: timing qid=%u %s count=%zu sgcnt=%u ep=0x%llx res=%zd | map=%lld submit=%lld unmap=%lld total=%lld ns\n",
-             ctx->qid, write ? "H2C" : "C2H", count, req->sgcnt,
-             (unsigned long long)req->ep_addr, res,
-             ktime_to_ns(ktime_sub(t_mapped, t_start)),
-             ktime_to_ns(ktime_sub(t_submitted, t_mapped)),
-             ktime_to_ns(ktime_sub(t_done, t_submitted)),
-             ktime_to_ns(ktime_sub(t_done, t_start)));
-#endif
-
-    return res;
-}
-
-/**
- * slash_qdma_qpair_read() - Read (C2H) file operation for a qpair fd.
- * @file:  Anon_inode file for the queue pair.
- * @buf:   User-space destination buffer.
- * @count: Number of bytes to read.
- * @ppos:  Device-side address to read from.
- *
- * Thin wrapper that delegates to slash_qdma_qpair_read_write() with
- * write=false (C2H direction).
- *
- * Return: Bytes transferred or negative errno.
- */
-static ssize_t slash_qdma_qpair_read(struct file *file, char __user *buf,
-                                     size_t count, loff_t *ppos)
-{
-    return slash_qdma_qpair_read_write(file, buf, count, ppos, false);
-}
-
-/**
- * slash_qdma_qpair_write() - Write (H2C) file operation for a qpair fd.
- * @file:  Anon_inode file for the queue pair.
- * @buf:   User-space source buffer.
- * @count: Number of bytes to write.
- * @ppos:  Device-side address to write to.
- *
- * Thin wrapper that delegates to slash_qdma_qpair_read_write() with
- * write=true (H2C direction).
- *
- * Return: Bytes transferred or negative errno.
- */
-static ssize_t slash_qdma_qpair_write(struct file *file, const char __user *buf,
-                                      size_t count, loff_t *ppos)
-{
-    return slash_qdma_qpair_read_write(file, (char __user *)buf,
-                                       count, ppos, true);
-}
-
-/**
  * slash_qdma_qpair_transfer() - Registered-buffer DMA transfer on a qpair fd.
  * @file: Anon_inode file for the queue pair.
  * @uarg: User pointer to a struct slash_qdma_transfer.
@@ -3519,7 +3328,20 @@ static long slash_qdma_qpair_transfer(struct file *file, void __user *uarg)
 static long slash_qdma_qpair_ioctl(struct file *file,
                                    unsigned int cmd, unsigned long arg)
 {
+    struct slash_qdma_qpair_file_ctx *ctx = file->private_data;
+
+    if (!ctx || !ctx->client || !ctx->qdma_dev)
+        return -ENODEV;
+
     switch (cmd) {
+    case SLASH_QDMA_IOCTL_BUF_REGISTER:
+        return slash_qdma_ioctl_buf_register_w(&ctx->qdma_dev->misc,
+                                               ctx->client,
+                                               (void __user *)arg);
+    case SLASH_QDMA_IOCTL_BUF_UNREGISTER:
+        return slash_qdma_ioctl_buf_unregister_w(&ctx->qdma_dev->misc,
+                                                 ctx->client,
+                                                 (void __user *)arg);
     case SLASH_QDMA_QPAIR_IOCTL_TRANSFER:
         return slash_qdma_qpair_transfer(file, (void __user *)arg);
     default:
@@ -3572,16 +3394,15 @@ static int slash_qdma_qpair_release(struct inode *inode, struct file *file)
  * @qdma_dev: QDMA device.
  * @uarg:     User-space pointer to a slash_qdma_qpair_fd_request struct.
  *
- * Creates an anonymous inode file descriptor that userspace can use
- * for read() (C2H) and write() (H2C) DMA transfers on the specified
- * queue pair.  The fd holds references to both the qpair entry and the
- * device, preventing either from being freed while the fd is open.
+ * Creates an anonymous inode file descriptor that userspace can use for
+ * registered-buffer transfer ioctls on the specified queue pair.  The fd
+ * holds references to the qpair entry, client context, and device,
+ * preventing any of them from being freed while the fd is open.
  *
  * The only supported flag is O_CLOEXEC (close-on-exec).
  *
- * The file is created with FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE
- * enabled, allowing pread/pwrite and lseek to set the device-side
- * address for DMA transfers.
+ * The fd is ioctl-only for data movement; transfers pass the device-side
+ * address in struct slash_qdma_transfer.
  *
  * Error handling: on any failure after resources are acquired, all
  * refs and allocations are cleaned up before returning.
@@ -3673,10 +3494,6 @@ static int slash_qdma_ioctl_qpair_get_fd_w(struct miscdevice *misc,
         kfree(ctx);
         return err;
     }
-
-    /* Enable seek and positional read/write for device-address control. */
-    file->f_mode |= FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE;
-
 
     /* Allocate a file descriptor number. */
     fd = get_unused_fd_flags(req.flags & O_CLOEXEC);

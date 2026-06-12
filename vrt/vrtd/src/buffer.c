@@ -52,7 +52,12 @@
 #define VRTD_QDMA_Q_MODE_MM 0u          /* Memory-mapped (MM) mode */
 #define VRTD_QDMA_DIR_H2C (1u << 0)     /* Host-to-Card direction */
 #define VRTD_QDMA_DIR_C2H (1u << 1)     /* Card-to-Host direction */
-#define VRTD_QDMA_RING_SZ_IDX 0u        /* Default ring size index */
+/*
+ * TODO: make this a vrtd.conf setting.  Index 15 is the largest QDMA descriptor
+ * ring and gives the best sustained transfer speed, but it consumes more
+ * host-side DMA-coherent memory per queue.
+ */
+#define VRTD_QDMA_RING_SZ_IDX 15u       /* Default ring size index */
 
 /**
  * Initialise a buffer: allocate device memory, create a QDMA queue pair,
@@ -101,8 +106,9 @@ static int buffer_init(struct buffer *buf,
         .client_id = client_id,
         .addr = 0,
         .size = 0,
-        .qid = 0,
-        .fd = -1,
+        .qpair_count = 0,
+        .qids = {0},
+        .fds = {-1, -1},
         .allocation_valid = false,
         .qpair_created = false,
     };
@@ -172,47 +178,49 @@ static int buffer_init(struct buffer *buf,
     buf->size = alloc_size;
     buf->allocation_valid = true;
 
-    /* Step 2: Configure and create a QDMA queue pair.  If the caller
-     * supplied custom qpair parameters (e.g. streaming mode), use those;
-     * otherwise default to memory-mapped mode with the smallest ring size. */
-    struct slash_qdma_qpair_add qpair = {0};
-    if (qpair_params != NULL) {
-        qpair = *qpair_params;
-    } else {
-        qpair.mode = VRTD_QDMA_Q_MODE_MM;
-        qpair.h2c_ring_sz = VRTD_QDMA_RING_SZ_IDX;
-        qpair.c2h_ring_sz = VRTD_QDMA_RING_SZ_IDX;
-        qpair.cmpt_ring_sz = VRTD_QDMA_RING_SZ_IDX;
+    /* Steps 2-4: create/start queue pairs and obtain their fds.  Current
+     * SLASH hardware benefits from two qpairs per registered buffer; future
+     * backends may choose to send only one. */
+    for (uint32_t i = 0; i < VRTD_BUFFER_MAX_QPAIR_FDS; ++i) {
+        struct slash_qdma_qpair_add qpair = {0};
+
+        if (qpair_params != NULL) {
+            qpair = *qpair_params;
+        } else {
+            qpair.mode = VRTD_QDMA_Q_MODE_MM;
+            qpair.h2c_ring_sz = VRTD_QDMA_RING_SZ_IDX;
+            qpair.c2h_ring_sz = VRTD_QDMA_RING_SZ_IDX;
+            qpair.cmpt_ring_sz = VRTD_QDMA_RING_SZ_IDX;
+        }
+        qpair.dir_mask = dir_mask;
+        qpair.mm_channel = mm_channel;
+        qpair.size = sizeof(qpair);
+
+        if (slash_qdma_qpair_add(qdma, &qpair) != 0) {
+            LOG(LOG_ERR, "Failed to add buffer qpair %u: %m", (unsigned int)i);
+            goto fail;
+        }
+
+        buf->qids[i] = qpair.qid;
+        buf->qpair_count = i + 1;
+        buf->qpair_created = true;
+
+        if (slash_qdma_qpair_start(qdma, qpair.qid) != 0) {
+            LOG(LOG_ERR, "Failed to start buffer qpair %u: %m", qpair.qid);
+            goto fail;
+        }
+
+        int fd = slash_qdma_qpair_get_fd(qdma, qpair.qid, O_CLOEXEC);
+        if (fd < 0) {
+            LOG(LOG_ERR, "Failed to get fd for buffer qpair %u: %m", qpair.qid);
+            goto fail;
+        }
+        buf->fds[i] = fd;
     }
-    qpair.dir_mask = dir_mask;
-    qpair.mm_channel = mm_channel;
-    qpair.size = sizeof(qpair);
 
-    if (slash_qdma_qpair_add(qdma, &qpair) != 0) {
-        LOG(LOG_ERR, "Failed to add buffer qpair: %m");
-        goto fail;
-    }
-
-    buf->qid = qpair.qid;
-    buf->qpair_created = true;
-
-    /* Step 3: Start the queue pair so DMA transfers can be issued. */
-    if (slash_qdma_qpair_start(qdma, buf->qid) != 0) {
-        LOG(LOG_ERR, "Failed to start buffer qpair %u: %m", buf->qid);
-        goto fail;
-    }
-
-    /* Step 4: Obtain a file descriptor for the queue.  The client will use
-     * this fd (passed over the Unix socket via SCM_RIGHTS) to perform
-     * read/write/mmap against the QDMA queue. */
-    int fd = slash_qdma_qpair_get_fd(qdma, buf->qid, O_CLOEXEC);
-    if (fd < 0) {
-        LOG(LOG_ERR, "Failed to get fd for buffer qpair %u: %m", buf->qid);
-        goto fail;
-    }
-    buf->fd = fd;
-
-    LOG(LOG_DEBUG, "Buffer initialized addr=0x%llx size=%llu qid=%u", (unsigned long long)buf->addr, (unsigned long long)buf->size, buf->qid);
+    LOG(LOG_DEBUG, "Buffer initialized addr=0x%llx size=%llu qpairs=%u",
+        (unsigned long long)buf->addr, (unsigned long long)buf->size,
+        (unsigned int)buf->qpair_count);
     return 0;
 
 fail:
@@ -306,46 +314,52 @@ struct buffer *buffer_create_raw(struct slash_qdma *qdma,
         .client_id = 0,
         .addr = phys_addr,
         .size = size,
-        .qid = 0,
-        .fd = -1,
+        .qpair_count = 0,
+        .qids = {0},
+        .fds = {-1, -1},
         .allocation_valid = false, /* no allocator reservation to free */
         .qpair_created = false,
     };
 
-    struct slash_qdma_qpair_add qpair = {0};
-    qpair.mode = VRTD_QDMA_Q_MODE_MM;
-    qpair.h2c_ring_sz = VRTD_QDMA_RING_SZ_IDX;
-    qpair.c2h_ring_sz = VRTD_QDMA_RING_SZ_IDX;
-    qpair.cmpt_ring_sz = VRTD_QDMA_RING_SZ_IDX;
-    qpair.dir_mask = dir_mask;
-    qpair.mm_channel = mm_channel;
-    qpair.size = sizeof(qpair);
+    for (uint32_t i = 0; i < VRTD_BUFFER_MAX_QPAIR_FDS; ++i) {
+        struct slash_qdma_qpair_add qpair = {0};
 
-    if (slash_qdma_qpair_add(qdma, &qpair) != 0) {
-        LOG(LOG_ERR, "buffer_create_raw: failed to add qpair: %m");
-        free(buf);
-        return NULL;
+        qpair.mode = VRTD_QDMA_Q_MODE_MM;
+        qpair.h2c_ring_sz = VRTD_QDMA_RING_SZ_IDX;
+        qpair.c2h_ring_sz = VRTD_QDMA_RING_SZ_IDX;
+        qpair.cmpt_ring_sz = VRTD_QDMA_RING_SZ_IDX;
+        qpair.dir_mask = dir_mask;
+        qpair.mm_channel = mm_channel;
+        qpair.size = sizeof(qpair);
+
+        if (slash_qdma_qpair_add(qdma, &qpair) != 0) {
+            LOG(LOG_ERR, "buffer_create_raw: failed to add qpair %u: %m", (unsigned int)i);
+            cleanup_buffer(buf);
+            return NULL;
+        }
+
+        buf->qids[i] = qpair.qid;
+        buf->qpair_count = i + 1;
+        buf->qpair_created = true;
+
+        if (slash_qdma_qpair_start(qdma, qpair.qid) != 0) {
+            LOG(LOG_ERR, "buffer_create_raw: failed to start qpair %u: %m", qpair.qid);
+            cleanup_buffer(buf);
+            return NULL;
+        }
+
+        int fd = slash_qdma_qpair_get_fd(qdma, qpair.qid, O_CLOEXEC);
+        if (fd < 0) {
+            LOG(LOG_ERR, "buffer_create_raw: failed to get fd for qpair %u: %m", qpair.qid);
+            cleanup_buffer(buf);
+            return NULL;
+        }
+        buf->fds[i] = fd;
     }
 
-    buf->qid = qpair.qid;
-    buf->qpair_created = true;
-
-    if (slash_qdma_qpair_start(qdma, buf->qid) != 0) {
-        LOG(LOG_ERR, "buffer_create_raw: failed to start qpair %u: %m", buf->qid);
-        cleanup_buffer(buf);
-        return NULL;
-    }
-
-    int fd = slash_qdma_qpair_get_fd(qdma, buf->qid, O_CLOEXEC);
-    if (fd < 0) {
-        LOG(LOG_ERR, "buffer_create_raw: failed to get fd for qpair %u: %m", buf->qid);
-        cleanup_buffer(buf);
-        return NULL;
-    }
-    buf->fd = fd;
-
-    LOG(LOG_DEBUG, "Raw buffer created phys_addr=0x%llx size=%llu qid=%u",
-        (unsigned long long)phys_addr, (unsigned long long)size, buf->qid);
+    LOG(LOG_DEBUG, "Raw buffer created phys_addr=0x%llx size=%llu qpairs=%u",
+        (unsigned long long)phys_addr, (unsigned long long)size,
+        (unsigned int)buf->qpair_count);
     return buf;
 }
 
@@ -353,12 +367,12 @@ struct buffer *buffer_create_raw(struct slash_qdma *qdma,
  * Tear down a buffer and release all associated resources.
  *
  * Resources are released in reverse acquisition order:
- *  1. Close the file descriptor (if open).
- *  2. Stop and delete the QDMA queue pair (if created).
+ *  1. Close the file descriptors (if open).
+ *  2. Stop and delete the QDMA queue pairs (if created).
  *  3. Free the device memory allocation (if valid).
  *  4. Zero all fields and free the struct.
  *
- * Each step is guarded by its corresponding flag (fd >= 0,
+ * Each step is guarded by its corresponding flag (fds[] >= 0,
  * qpair_created, allocation_valid) so this function is safe to call
  * after partial initialisation.  NULL-safe.
  */
@@ -368,31 +382,33 @@ void cleanup_buffer(struct buffer *buf)
         return;
     }
 
-    LOG(LOG_DEBUG, "Freeing buffer addr=0x%llx size=%llu qid=%u", (unsigned long long)buf->addr, (unsigned long long)buf->size, buf->qid);
+    LOG(LOG_DEBUG, "Freeing buffer addr=0x%llx size=%llu qpairs=%u",
+        (unsigned long long)buf->addr, (unsigned long long)buf->size,
+        (unsigned int)buf->qpair_count);
 
-    /* Close the QDMA queue fd first, before stopping the queue. */
-    if (buf->fd >= 0) {
-        (void) close(buf->fd);
-        buf->fd = -1;
+    /* Close the QDMA queue fds first, before stopping the queues. */
+    for (uint32_t i = 0; i < VRTD_BUFFER_MAX_QPAIR_FDS; ++i) {
+        if (buf->fds[i] >= 0) {
+            (void) close(buf->fds[i]);
+            buf->fds[i] = -1;
+        }
     }
 
-    /* Stop and delete the QDMA queue pair.  Errors are logged but
+    /* Stop and delete the QDMA queue pairs.  Errors are logged but
      * otherwise ignored -- we are on the teardown path and must continue
      * releasing remaining resources. */
     if (buf->qpair_created && buf->qdma != NULL) {
-        if (slash_qdma_qpair_stop(buf->qdma, buf->qid) != 0) {
-            LOG(
-                LOG_WARNING,
-                "Error stopping buffer qpair %u: %m (ignored)",
-                buf->qid
-            );
-        }
-        if (slash_qdma_qpair_del(buf->qdma, buf->qid) != 0) {
-            LOG(
-                LOG_WARNING,
-                "Error deleting buffer qpair %u: %m (ignored)",
-                buf->qid
-            );
+        for (uint32_t i = 0; i < buf->qpair_count; ++i) {
+            if (slash_qdma_qpair_stop(buf->qdma, buf->qids[i]) != 0) {
+                LOG(LOG_WARNING,
+                    "Error stopping buffer qpair %u: %m (ignored)",
+                    buf->qids[i]);
+            }
+            if (slash_qdma_qpair_del(buf->qdma, buf->qids[i]) != 0) {
+                LOG(LOG_WARNING,
+                    "Error deleting buffer qpair %u: %m (ignored)",
+                    buf->qids[i]);
+            }
         }
     }
 
@@ -422,8 +438,11 @@ void cleanup_buffer(struct buffer *buf)
     buf->allocation_valid = false;
     buf->addr = 0;
     buf->size = 0;
-    buf->qid = 0;
-    buf->fd = -1;
+    buf->qpair_count = 0;
+    memset(buf->qids, 0, sizeof(buf->qids));
+    for (uint32_t i = 0; i < VRTD_BUFFER_MAX_QPAIR_FDS; ++i) {
+        buf->fds[i] = -1;
+    }
 
     free(buf);
 }

@@ -77,7 +77,7 @@
  *
  * When SLASH_QDMA_TIMING is non-zero (compile-time flag, e.g. built with
  * -DSLASH_QDMA_TIMING=1), the sync_to/from_device paths log the wall-clock
- * cost of each pwrite/pread syscall plus the aggregate per-sync time and
+ * cost of each transfer ioctl plus the aggregate per-sync time and
  * effective bandwidth.  This is the userspace counterpart to the kernel's
  * SLASH_QDMA_TIMING and libqdma's QDMA_TIMING breakdowns.
  */
@@ -131,9 +131,11 @@ static int vrtd_mmap_regular_base_pages(uint64_t size, void **addr_out) {
     return 0;
 }
 
-static int vrtd_transfer_pages(
-    int fd,
-    void *buf,
+static int vrtd_transfer_registered(
+    const int *qpair_fds,
+    uint32_t qpair_fd_count,
+    enum slash_qdma_transfer_hint transfer_hint,
+    uint32_t buf_id,
     uint64_t phys_addr,
     uint64_t offset,
     uint64_t size,
@@ -142,9 +144,14 @@ static int vrtd_transfer_pages(
 ) {
     uint64_t max_chunk;
     uint64_t transferred = 0;
+    uint32_t direction = to_device ? SLASH_QDMA_XFER_H2C : SLASH_QDMA_XFER_C2H;
 
     if (size == 0) {
         return 0;
+    }
+
+    if (qpair_fds == NULL || qpair_fd_count == 0 || qpair_fds[0] < 0) {
+        return -EINVAL;
     }
 
     if (step == 0 || (offset % step) != 0 || (size % step) != 0) {
@@ -165,30 +172,73 @@ static int vrtd_transfer_pages(
         }
 
         while (done < chunk) {
-            size_t remaining = (size_t)(chunk - done);
-            off_t dev_offset = (off_t)(phys_addr + offset + transferred + done);
-            uint8_t *ptr = (uint8_t *)buf + offset + transferred + done;
+            uint64_t remaining = chunk - done;
+            uint64_t xfer_offset = offset + transferred + done;
+            uint64_t dev_offset = phys_addr + xfer_offset;
+            uint64_t xfer_size = remaining;
+            uint32_t fd_index = 0;
             ssize_t ret;
 
-            if (to_device) {
-                ret = pwrite(fd, ptr, remaining, dev_offset);
-            } else {
-                ret = pread(fd, ptr, remaining, dev_offset);
+            if (transfer_hint == SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR &&
+                qpair_fd_count > 1 && qpair_fds[1] >= 0 &&
+                remaining > step) {
+                /*
+                 * Use the second qpair for the upper half of each large chunk.
+                 * This keeps ranges disjoint while preserving alignment.
+                 */
+                uint64_t half = (chunk / 2) - ((chunk / 2) % step);
+                if (half != 0 && done < half) {
+                    xfer_size = half - done;
+                } else if (half != 0) {
+                    fd_index = 1;
+                }
             }
 
-            if (ret < 0 && errno == EINTR) {
-                continue;
-            }
-            if (ret <= 0) {
+            ret = slash_qdma_qpair_transfer(
+                qpair_fds[fd_index], buf_id, xfer_offset,
+                dev_offset, xfer_size, direction);
+
+            if (ret < 0) {
                 return -EIO;
             }
-            done += (uint64_t)ret;
+            if (ret == 0) {
+                return -EIO;
+            }
+            done += (uint64_t) ret;
         }
 
         transferred += chunk;
     }
 
     return 0;
+}
+
+static int vrtd_transfer_temporary_mapping(
+    const struct vrtd_buffer *buffer,
+    void *mapping,
+    uint64_t phys_addr,
+    uint64_t size,
+    bool to_device
+) {
+    uint32_t buf_id = 0;
+    enum slash_qdma_transfer_hint hint = SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR;
+    int ret;
+
+    if (buffer == NULL || mapping == NULL || buffer->qpair_fd_count == 0) {
+        return -EINVAL;
+    }
+
+    if (slash_qdma_qpair_buffer_register(buffer->qpair_fds[0], mapping, size,
+                                         &buf_id, &hint) != 0) {
+        return -EIO;
+    }
+
+    ret = vrtd_transfer_registered(buffer->qpair_fds, buffer->qpair_fd_count,
+                                   hint, buf_id, phys_addr, 0, size,
+                                   BASE_TRANSFER_STEP_SIZE, to_device);
+
+    (void)slash_qdma_qpair_buffer_unregister(buffer->qpair_fds[0], buf_id);
+    return ret;
 }
 
 enum vrtd_ret vrtd_buffer_create_raw(
@@ -199,7 +249,8 @@ enum vrtd_ret vrtd_buffer_create_raw(
     uint64_t alloc_arg,
     uint64_t size,
     uint64_t phys_addr,
-    int qpair_fd,
+    const int *qpair_fds,
+    uint32_t qpair_fd_count,
     enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 ) {
@@ -214,6 +265,16 @@ enum vrtd_ret vrtd_buffer_create_raw(
 
     buffer->buf = MAP_FAILED;
     buffer->transfer_step_size = BASE_TRANSFER_STEP_SIZE;
+    buffer->qpair_fds[0] = -1;
+    buffer->qpair_fds[1] = -1;
+    buffer->qpair_fd_count = 0;
+    buffer->buf_id = 0;
+    buffer->transfer_hint = SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR;
+
+    if (qpair_fds == NULL || qpair_fd_count == 0 || qpair_fd_count > 2 || qpair_fds[0] < 0) {
+        free(buffer);
+        return VRTD_RET_BAD_LIB_CALL;
+    }
 
     if (page_mode == VRTD_HOST_PAGE_2M) {
         /*
@@ -290,7 +351,18 @@ enum vrtd_ret vrtd_buffer_create_raw(
     buffer->alloc_arg  = alloc_arg;
     buffer->size       = size;
     buffer->phys_addr  = phys_addr;
-    buffer->qpair_fd   = qpair_fd;
+    buffer->qpair_fd_count = qpair_fd_count;
+    for (uint32_t i = 0; i < qpair_fd_count; ++i) {
+        buffer->qpair_fds[i] = qpair_fds[i];
+    }
+
+    if (slash_qdma_qpair_buffer_register(
+            buffer->qpair_fds[0], buffer->buf, buffer->size,
+            &buffer->buf_id, &buffer->transfer_hint) != 0) {
+        (void) munmap(buffer->buf, buffer->size);
+        free(buffer);
+        return VRTD_RET_INTERNAL_ERROR;
+    }
 
     *buffer_out = buffer;
 
@@ -359,8 +431,18 @@ enum vrtd_ret vrtd_buffer_destroy(
         return VRTD_RET_BAD_LIB_CALL;
     }
 
-    if (buffer->qpair_fd >= 0) {
-        (void) close(buffer->qpair_fd);
+    for (uint32_t i = 0; i < buffer->qpair_fd_count && i < 2; ++i) {
+        if (buffer->qpair_fds[i] >= 0) {
+            (void) slash_qdma_qpair_buffer_unregister(buffer->qpair_fds[i], buffer->buf_id);
+            break;
+        }
+    }
+
+    for (uint32_t i = 0; i < buffer->qpair_fd_count && i < 2; ++i) {
+        if (buffer->qpair_fds[i] >= 0) {
+            (void) close(buffer->qpair_fds[i]);
+            buffer->qpair_fds[i] = -1;
+        }
     }
 
     if (buffer->buf != NULL) {
@@ -418,7 +500,8 @@ enum vrtd_ret vrtd_buffer_sync_to_device(
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
-    assert(buffer->qpair_fd >= 0);
+    assert(buffer->qpair_fd_count > 0);
+    assert(buffer->qpair_fds[0] >= 0);
     assert(buffer->buf != NULL);
     uint64_t aligned_offset = 0;
     uint64_t aligned_size = 0;
@@ -445,18 +528,18 @@ enum vrtd_ret vrtd_buffer_sync_to_device(
             return VRTD_RET_INTERNAL_ERROR;
         }
 
-        transfer_ret = vrtd_transfer_pages(
-            buffer->qpair_fd, bounce, buffer->phys_addr + aligned_offset,
-            0, aligned_size, BASE_TRANSFER_STEP_SIZE, false);
+        transfer_ret = vrtd_transfer_temporary_mapping(
+            buffer, bounce, buffer->phys_addr + aligned_offset,
+            aligned_size, false);
         if (transfer_ret == 0) {
             memcpy(
                 (uint8_t *)bounce + (offset - aligned_offset),
                 (uint8_t *)buffer->buf + offset,
                 size
             );
-            transfer_ret = vrtd_transfer_pages(
-                buffer->qpair_fd, bounce, buffer->phys_addr + aligned_offset,
-                0, aligned_size, BASE_TRANSFER_STEP_SIZE, true);
+            transfer_ret = vrtd_transfer_temporary_mapping(
+                buffer, bounce, buffer->phys_addr + aligned_offset,
+                aligned_size, true);
         }
         (void) munmap(bounce, aligned_size);
     } else {
@@ -465,8 +548,9 @@ enum vrtd_ret vrtd_buffer_sync_to_device(
          * granule for a read-modify-write, so keep the historical behavior:
          * expand partial syncs to the backing DMA granule.
          */
-        transfer_ret = vrtd_transfer_pages(
-            buffer->qpair_fd, buffer->buf, buffer->phys_addr,
+        transfer_ret = vrtd_transfer_registered(
+            buffer->qpair_fds, buffer->qpair_fd_count, buffer->transfer_hint,
+            buffer->buf_id, buffer->phys_addr,
             aligned_offset, aligned_size, step, true);
     }
     if (transfer_ret != 0) {
@@ -503,7 +587,8 @@ enum vrtd_ret vrtd_buffer_sync_from_device(
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
-    assert(buffer->qpair_fd >= 0);
+    assert(buffer->qpair_fd_count > 0);
+    assert(buffer->qpair_fds[0] >= 0);
     assert(buffer->buf != NULL);
     uint64_t aligned_offset = 0;
     uint64_t aligned_size = 0;
@@ -530,9 +615,9 @@ enum vrtd_ret vrtd_buffer_sync_from_device(
             return VRTD_RET_INTERNAL_ERROR;
         }
 
-        transfer_ret = vrtd_transfer_pages(
-            buffer->qpair_fd, bounce, buffer->phys_addr + aligned_offset,
-            0, aligned_size, BASE_TRANSFER_STEP_SIZE, false);
+        transfer_ret = vrtd_transfer_temporary_mapping(
+            buffer, bounce, buffer->phys_addr + aligned_offset,
+            aligned_size, false);
         if (transfer_ret == 0) {
             memcpy(
                 (uint8_t *)buffer->buf + offset,
@@ -542,8 +627,9 @@ enum vrtd_ret vrtd_buffer_sync_from_device(
         }
         (void) munmap(bounce, aligned_size);
     } else {
-        transfer_ret = vrtd_transfer_pages(
-            buffer->qpair_fd, buffer->buf, buffer->phys_addr,
+        transfer_ret = vrtd_transfer_registered(
+            buffer->qpair_fds, buffer->qpair_fd_count, buffer->transfer_hint,
+            buffer->buf_id, buffer->phys_addr,
             aligned_offset, aligned_size, step, false);
     }
     if (transfer_ret != 0) {

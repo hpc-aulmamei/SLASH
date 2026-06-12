@@ -761,7 +761,7 @@ static int client_handle_in(struct client *client)
      * Allocate a cmsg buffer large enough for one fd.
      * CMSG_SPACE includes alignment padding required by the kernel.
      */
-    char cbuf[CMSG_SPACE(sizeof(int))];
+    char cbuf[CMSG_SPACE(2 * sizeof(int))];
     struct msghdr msg = {
         .msg_name       = NULL,
         .msg_namelen    = 0,
@@ -895,17 +895,24 @@ static int client_handle_out(struct client *client)
      * The cbuf is zeroed to satisfy kernel expectations about padding.
      */
     if (client->have_out_fd) {
+        uint32_t fd_count = client->out_fd_count ? client->out_fd_count : 1;
+
+        if (fd_count > 2) {
+            LOG(LOG_ERR, "Invalid outbound fd count %u", (unsigned int)fd_count);
+            return -1;
+        }
+
         memset(cbuf, 0, sizeof cbuf);
 
         msg.msg_control = cbuf;
-        msg.msg_controllen = sizeof cbuf;
+        msg.msg_controllen = CMSG_SPACE(fd_count * sizeof(int));
 
         struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
         cmsg->cmsg_level = SOL_SOCKET;
         cmsg->cmsg_type  = SCM_RIGHTS;
-        cmsg->cmsg_len   = CMSG_LEN(sizeof(int));
+        cmsg->cmsg_len   = CMSG_LEN(fd_count * sizeof(int));
 
-        memcpy(CMSG_DATA(cmsg), &client->out_fd, sizeof(int));
+        memcpy(CMSG_DATA(cmsg), client->out_fds, fd_count * sizeof(int));
     }
 
     ssize_t n;
@@ -937,6 +944,7 @@ retry:
     /* Response sent -- clear state so the client can send a new request. */
     client->have_response = false;
     client->have_out_fd = false;
+    client->out_fd_count = 0;
 
     return 0;
 }
@@ -1040,7 +1048,7 @@ static int client_handle_request(struct client *client)
                 req_header->size,
                 CLIENT_OUT_BODY(*client, vrtd_resp_get_bar_fd),
                 &size,
-                &client->out_fd,
+                &client->out_fds[0],
                 &client->have_out_fd
             );
         break;
@@ -1082,7 +1090,7 @@ static int client_handle_request(struct client *client)
                 req_header->size,
                 CLIENT_OUT_BODY(*client, vrtd_resp_qdma_qpair_get_fd),
                 &size,
-                &client->out_fd,
+                &client->out_fds[0],
                 &client->have_out_fd
             );
         break;
@@ -1094,7 +1102,7 @@ static int client_handle_request(struct client *client)
                 req_header->size,
                 CLIENT_OUT_BODY(*client, vrtd_resp_buffer_open),
                 &size,
-                &client->out_fd,
+                &client->out_fds[0],
                 &client->have_out_fd
             );
         break;
@@ -1106,7 +1114,7 @@ static int client_handle_request(struct client *client)
                 req_header->size,
                 CLIENT_OUT_BODY(*client, vrtd_resp_buffer_open_raw),
                 &size,
-                &client->out_fd,
+                &client->out_fds[0],
                 &client->have_out_fd
             );
         break;
@@ -2016,14 +2024,19 @@ static uint16_t client_handle_request_buffer_open(
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    if (buf->fd < 0) {
-        LOG(LOG_ERR, "Buffer created without valid fd");
+    if (buf->qpair_count == 0 || buf->qpair_count > VRTD_BUFFER_MAX_QPAIR_FDS ||
+        buf->fds[0] < 0) {
+        LOG(LOG_ERR, "Buffer created without valid qpair fd");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
     uint64_t real_size = buf->size;
-    int fd = buf->fd;
     uint64_t phys_addr = buf->addr;
+    uint32_t qpair_fd_count = buf->qpair_count;
+    int fds[VRTD_BUFFER_MAX_QPAIR_FDS];
+    for (uint32_t i = 0; i < qpair_fd_count; ++i) {
+        fds[i] = buf->fds[i];
+    }
 
     /*
      * Transfer ownership of the buffer into the device's buffer list.
@@ -2037,7 +2050,12 @@ static uint16_t client_handle_request_buffer_open(
 
     resp_body->size = real_size;
     resp_body->phys_addr = phys_addr;
-    *out_fd = fd;
+    resp_body->qpair_fd_count = qpair_fd_count;
+    for (uint32_t i = 0; i < qpair_fd_count; ++i) {
+        client->out_fds[i] = fds[i];
+    }
+    client->out_fd_count = qpair_fd_count;
+    *out_fd = fds[0];
     *have_out_fd = true;
     *resp_size = sizeof(*resp_body);
 
@@ -2140,20 +2158,29 @@ static uint16_t client_handle_request_buffer_open_raw(
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    if (buf->fd < 0) {
-        LOG(LOG_ERR, "Raw buffer created without valid fd");
+    if (buf->qpair_count == 0 || buf->qpair_count > VRTD_BUFFER_MAX_QPAIR_FDS ||
+        buf->fds[0] < 0) {
+        LOG(LOG_ERR, "Raw buffer created without valid qpair fd");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    int fd = buf->fd;
+    uint32_t qpair_fd_count = buf->qpair_count;
+    int fds[VRTD_BUFFER_MAX_QPAIR_FDS];
+    for (uint32_t i = 0; i < qpair_fd_count; ++i) {
+        fds[i] = buf->fds[i];
+    }
 
     if (buffer_ptr_array_push_move(&d->buffers, &buf) != 0) {
         LOG(LOG_ERR, "Failed to add raw buffer to device buffer list");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    resp_body->zero = 0;
-    *out_fd = fd;
+    resp_body->qpair_fd_count = qpair_fd_count;
+    for (uint32_t i = 0; i < qpair_fd_count; ++i) {
+        client->out_fds[i] = fds[i];
+    }
+    client->out_fd_count = qpair_fd_count;
+    *out_fd = fds[0];
     *have_out_fd = true;
     *resp_size = sizeof(*resp_body);
 

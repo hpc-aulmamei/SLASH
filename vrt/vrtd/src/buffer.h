@@ -48,6 +48,8 @@
 #include "array.h"
 #include "vrtd/wire.h"
 
+#define VRTD_BUFFER_MAX_QPAIR_FDS 2u
+
 /**
  * @brief A single DMA buffer allocated on a SLASH FPGA device.
  *
@@ -72,11 +74,13 @@ struct buffer {
     uint64_t addr;
     /** @brief Size of the allocated memory region in bytes (rounded up to subregion granularity). */
     uint64_t size;
-    /** @brief QDMA queue ID assigned to this buffer's queue pair. */
-    uint32_t qid;
-    /** @brief File descriptor for the QDMA queue pair character device.
+    /** @brief Number of QDMA queue pairs created for this buffer. */
+    uint32_t qpair_count;
+    /** @brief QDMA queue IDs assigned to this buffer's queue pairs. */
+    uint32_t qids[VRTD_BUFFER_MAX_QPAIR_FDS];
+    /** @brief File descriptors for the QDMA queue pairs.
      *  Passed to the client via SCM_RIGHTS for direct data transfer. */
-    int fd;
+    int fds[VRTD_BUFFER_MAX_QPAIR_FDS];
     /** @brief True if the address-space allocation in the memory map is valid and must be freed. */
     bool allocation_valid;
     /** @brief True if the QDMA queue pair has been created and must be torn down on cleanup. */

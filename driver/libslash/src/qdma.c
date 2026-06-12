@@ -41,6 +41,109 @@
 
 #include <sys/ioctl.h>
 
+#define QPAIR_FALLBACK_MAX_BUFS 128
+
+struct qpair_fallback_buf {
+    int      in_use;
+    void    *addr;
+    uint64_t length;
+};
+
+/*
+ * Small process-local fallback table used only when qpair-fd registration
+ * ioctls return ENOTTY (the memfd-backed @mock path).  Real hardware qpair fds
+ * implement the ioctl in the kernel and never use this table.
+ */
+static struct qpair_fallback_buf qpair_fallback_bufs[QPAIR_FALLBACK_MAX_BUFS];
+
+static int qpair_fallback_register(void *addr, uint64_t length, uint32_t *buf_id,
+                                   enum slash_qdma_transfer_hint *transfer_hint)
+{
+    uint32_t i;
+
+    if (addr == NULL || length == 0 || buf_id == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    for (i = 0; i < QPAIR_FALLBACK_MAX_BUFS; ++i) {
+        if (!qpair_fallback_bufs[i].in_use) {
+            qpair_fallback_bufs[i].in_use = 1;
+            qpair_fallback_bufs[i].addr = addr;
+            qpair_fallback_bufs[i].length = length;
+            *buf_id = i;
+            if (transfer_hint != NULL) {
+                *transfer_hint = SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR;
+            }
+            return 0;
+        }
+    }
+
+    errno = ENOSPC;
+    return -1;
+}
+
+static int qpair_fallback_unregister(uint32_t buf_id)
+{
+    if (buf_id >= QPAIR_FALLBACK_MAX_BUFS || !qpair_fallback_bufs[buf_id].in_use) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    memset(&qpair_fallback_bufs[buf_id], 0, sizeof(qpair_fallback_bufs[buf_id]));
+    return 0;
+}
+
+static ssize_t qpair_fallback_transfer(int qpair_fd, uint32_t buf_id,
+                                       uint64_t buf_offset, uint64_t dev_addr,
+                                       uint64_t length, uint32_t direction)
+{
+    struct qpair_fallback_buf *buf;
+    char *host;
+    uint64_t done = 0;
+
+    if (qpair_fd < 0 || buf_id >= QPAIR_FALLBACK_MAX_BUFS ||
+        !qpair_fallback_bufs[buf_id].in_use) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    buf = &qpair_fallback_bufs[buf_id];
+    if (length == 0 || buf_offset > buf->length || length > buf->length - buf_offset) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    host = (char *)buf->addr + buf_offset;
+    while (done < length) {
+        ssize_t n;
+
+        if (direction == SLASH_QDMA_XFER_H2C) {
+            n = pwrite(qpair_fd, host + done, (size_t)(length - done),
+                       (off_t)(dev_addr + done));
+        } else if (direction == SLASH_QDMA_XFER_C2H) {
+            n = pread(qpair_fd, host + done, (size_t)(length - done),
+                      (off_t)(dev_addr + done));
+        } else {
+            errno = EINVAL;
+            return -1;
+        }
+
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        if (n == 0) {
+            break;
+        }
+        done += (uint64_t)n;
+    }
+
+    return (ssize_t)done;
+}
+
 struct slash_qdma *slash_qdma_open(const char *path)
 {
     struct slash_qdma *qdma;
@@ -310,6 +413,64 @@ int slash_qdma_buffer_unregister(struct slash_qdma *qdma, uint32_t buf_id)
     return 0;
 }
 
+int slash_qdma_qpair_buffer_register(int qpair_fd, void *addr,
+                                     uint64_t length, uint32_t *buf_id,
+                                     enum slash_qdma_transfer_hint *transfer_hint)
+{
+    struct slash_qdma_buf_register req;
+    int ret;
+
+    if (qpair_fd < 0 || addr == NULL || buf_id == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.size      = sizeof(req);
+    req.user_addr = (uint64_t)(uintptr_t)addr;
+    req.length    = length;
+
+    ret = ioctl(qpair_fd, SLASH_QDMA_IOCTL_BUF_REGISTER, &req);
+    if (ret < 0) {
+        if (errno == ENOTTY) {
+            return qpair_fallback_register(addr, length, buf_id, transfer_hint);
+        }
+        return -1;
+    }
+
+    *buf_id = req.buf_id;
+    if (transfer_hint != NULL) {
+        *transfer_hint = req.transfer_hint;
+    }
+
+    return 0;
+}
+
+int slash_qdma_qpair_buffer_unregister(int qpair_fd, uint32_t buf_id)
+{
+    struct slash_qdma_buf_unregister req;
+    int ret;
+
+    if (qpair_fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.size   = sizeof(req);
+    req.buf_id = buf_id;
+
+    ret = ioctl(qpair_fd, SLASH_QDMA_IOCTL_BUF_UNREGISTER, &req);
+    if (ret < 0) {
+        if (errno == ENOTTY) {
+            return qpair_fallback_unregister(buf_id);
+        }
+        return -1;
+    }
+
+    return 0;
+}
+
 ssize_t slash_qdma_transfer(struct slash_qdma *qdma, int qpair_fd,
                             uint32_t buf_id, uint64_t buf_offset,
                             uint64_t dev_addr, uint64_t length,
@@ -333,6 +494,27 @@ ssize_t slash_qdma_transfer(struct slash_qdma *qdma, int qpair_fd,
                                         dev_addr, length, direction);
     }
 
+    return slash_qdma_qpair_transfer(qpair_fd, buf_id, buf_offset, dev_addr,
+                                     length, direction);
+}
+
+ssize_t slash_qdma_qpair_transfer(int qpair_fd, uint32_t buf_id,
+                                  uint64_t buf_offset, uint64_t dev_addr,
+                                  uint64_t length, uint32_t direction)
+{
+    struct slash_qdma_transfer req;
+    int ret;
+
+    if (qpair_fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (direction != SLASH_QDMA_XFER_H2C && direction != SLASH_QDMA_XFER_C2H) {
+        errno = EINVAL;
+        return -1;
+    }
+
     memset(&req, 0, sizeof(req));
     req.size       = sizeof(req);
     req.buf_id     = buf_id;
@@ -343,6 +525,10 @@ ssize_t slash_qdma_transfer(struct slash_qdma *qdma, int qpair_fd,
 
     ret = ioctl(qpair_fd, SLASH_QDMA_QPAIR_IOCTL_TRANSFER, &req);
     if (ret < 0) {
+        if (errno == ENOTTY) {
+            return qpair_fallback_transfer(qpair_fd, buf_id, buf_offset,
+                                           dev_addr, length, direction);
+        }
         return -1;
     }
 

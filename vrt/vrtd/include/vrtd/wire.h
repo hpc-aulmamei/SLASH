@@ -276,8 +276,9 @@ struct vrtd_resp_qdma_qpair_op {
 /**
  * @brief Request a read/write file descriptor for a QDMA qpair.
  *
- * The qpair FD is sent out-of-band via SCM_RIGHTS when
- * @ref vrtd_resp_header::ret == VRTD_RET_OK.
+ * One or more qpair FDs are sent out-of-band via SCM_RIGHTS when
+ * @ref vrtd_resp_header::ret == VRTD_RET_OK.  The response body reports the
+ * number of descriptors attached.
  */
 struct vrtd_req_qdma_qpair_get_fd {
     uint32_t dev_number; ///< Device index (0-based).
@@ -307,6 +308,7 @@ struct vrtd_req_buffer_open {
 struct vrtd_resp_buffer_open {
     uint64_t size; ///< Allocated size in bytes (rounded up to subregion).
     uint64_t phys_addr; ///< Device physical address of the allocation.
+    uint32_t qpair_fd_count; ///< Number of qpair FDs sent via SCM_RIGHTS (1 or 2).
 } __attribute__((packed));
 
 /**
@@ -328,8 +330,9 @@ struct vrtd_resp_buffer_close {
  * Bypasses the allocator entirely — the caller is responsible for ensuring the
  * address is valid and not in use.  Requires the @c raw-mem-access permission.
  *
- * The qpair FD is sent out-of-band via SCM_RIGHTS when
- * @ref vrtd_resp_header::ret == VRTD_RET_OK.
+ * One or more qpair FDs are sent out-of-band via SCM_RIGHTS when
+ * @ref vrtd_resp_header::ret == VRTD_RET_OK.  The response body reports the
+ * number of descriptors attached.
  */
 struct vrtd_req_buffer_open_raw {
     uint32_t dev_number; ///< Device index (0-based).
@@ -340,7 +343,7 @@ struct vrtd_req_buffer_open_raw {
 } __attribute__((packed));
 
 struct vrtd_resp_buffer_open_raw {
-    uint8_t zero; ///< Placeholder; all data is carried via SCM_RIGHTS.
+    uint32_t qpair_fd_count; ///< Number of qpair FDs sent via SCM_RIGHTS (1 or 2).
 } __attribute__((packed));
 
 /**

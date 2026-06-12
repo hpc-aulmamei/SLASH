@@ -336,8 +336,8 @@ Memory transfers via QDMA: ``/dev/slash_qdma_ctl<N>``
 The QDMA device manages DMA queue pairs for bulk data movement between host memory and the card's
 on-board memory (HBM or DDR). Each queue pair is allocated with a mode (currently only MM) and a
 direction mask, then started before use. An anon-inode fd obtained from the queue pair serves as
-the I/O channel: ``write()`` performs H2C transfers, ``read()`` performs C2H transfers, and the
-file position encodes the device-side physical address.
+the transfer channel: host buffers are registered once, and transfer ioctls name the registered
+buffer, buffer offset, device-side physical address, length, and direction.
 
 - **Device file name:** ``/dev/slash_qdma_ctl<N>`` (e.g. ``/dev/slash_qdma_ctl0``)
 - **Sysfs name:** ``slash_qdma_ctl_<PCI-BDF>`` (e.g. ``/sys/class/misc/slash_qdma_ctl_0000:61:00.1``)
@@ -353,9 +353,9 @@ Usage
 -----
 
 In order to transfer data via QDMA, a queue pair must be added, started, and an I/O fd needs
-to be created. The I/O fd treats the file position as the device-side physical address:
-``write()`` performs an H2C (host-to-card) transfer, and ``read()`` performs a C2H (card-to-host)
-transfer. Full lifecycle:
+to be created. The I/O fd is ioctl-only for data movement: userspace registers a host buffer,
+then issues transfer ioctls that name the registered buffer, buffer offset, device-side address,
+length, and direction. Full lifecycle:
 
 .. code-block:: c
 
@@ -381,27 +381,38 @@ transfer. Full lifecycle:
     };
     int io_fd = ioctl(qdma_fd, SLASH_QDMA_IOCTL_QPAIR_GET_FD, &fd_req);
 
-    /* Step 4: H2C transfer to device address 0x4000000000 */
-    pwrite(io_fd, host_buf, nbytes, 0x4000000000LL);
+    /* Step 4: Register a page-aligned host buffer. */
+    struct slash_qdma_buf_register reg = {
+        .size = sizeof(reg), .user_addr = (uintptr_t)host_buf, .length = nbytes
+    };
+    ioctl(io_fd, SLASH_QDMA_IOCTL_BUF_REGISTER, &reg);
 
-    /* Step 5: C2H transfer from device address 0x4000000000 */
-    pread(io_fd, host_buf, nbytes, 0x4000000000LL);
+    /* Step 5: H2C transfer to device address 0x4000000000 */
+    struct slash_qdma_transfer xfer = {
+        .size = sizeof(xfer),
+        .buf_id = reg.buf_id,
+        .buf_offset = 0,
+        .dev_addr = 0x4000000000LL,
+        .length = nbytes,
+        .direction = SLASH_QDMA_XFER_H2C,
+    };
+    ioctl(io_fd, SLASH_QDMA_QPAIR_IOCTL_TRANSFER, &xfer);
 
-    /* Step 6: Teardown */
+    /* Step 6: C2H transfer from device address 0x4000000000 */
+    xfer.direction = SLASH_QDMA_XFER_C2H;
+    ioctl(io_fd, SLASH_QDMA_QPAIR_IOCTL_TRANSFER, &xfer);
+
+    /* Step 7: Teardown */
+    struct slash_qdma_buf_unregister unreg = {
+        .size = sizeof(unreg), .buf_id = reg.buf_id
+    };
+    ioctl(io_fd, SLASH_QDMA_IOCTL_BUF_UNREGISTER, &unreg);
     close(io_fd);
     op.op = 1;  ioctl(qdma_fd, SLASH_QDMA_IOCTL_Q_OP, &op);  /* STOP */
     op.op = 2;  ioctl(qdma_fd, SLASH_QDMA_IOCTL_Q_OP, &op);  /* DEL */
 
-The file position can also be set explicitly with ``lseek`` before a plain ``read()``/``write()``:
-
-.. code-block:: c
-
-    lseek(io_fd, 0x1000, SEEK_SET);
-    write(io_fd, src_buf, nbytes);
-
-``lseek`` supports all flags ``SEEK_SET``, ``SEEK_CUR``, and ``SEEK_END``, and both ``pread`` and
-``pwrite`` are supported. However, the fd does **not** support ``mmap``, ``poll``/``select``, or
-``splice``.
+The qpair fd does **not** support ``read``, ``write``, ``pread``, ``pwrite``, ``mmap``,
+``poll``/``select``, or ``splice`` for data movement.
 
 All transfers are synchronous and block until the transfer completes or times out. The timeout is
 **10 seconds**; after expiry the call returns ``-ETIME``. Partial transfers are possible; the
@@ -675,10 +686,11 @@ removed.
 ``SLASH_QDMA_IOCTL_QPAIR_GET_FD``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Creates a new file descriptor for data transfer on an existing queue pair. The returned fd supports
-``read``, ``write``, ``pread``, ``pwrite``, and ``lseek``; it does **not** support ``mmap``,
-``poll``/``select``, or ``splice``. Multiple fds can be obtained for the same qpair via multiple
-calls. The fd is returned as the ``ioctl()`` return value.
+Creates a new file descriptor for data transfer on an existing queue pair. The returned fd is
+ioctl-only for data movement: it supports buffer register/unregister and transfer ioctls, but not
+``read``, ``write``, ``pread``, ``pwrite``, ``mmap``, ``poll``/``select``, or ``splice``. Multiple
+fds can be obtained for the same qpair via multiple calls. The fd is returned as the ``ioctl()``
+return value.
 
 **Interface:**
 
@@ -705,8 +717,8 @@ as the ``ioctl()`` return value (not as a struct field).
 **Postconditions:**
 
 - The return value is a non-negative fd number on success.
-- The fd holds a reference on both the qpair entry and the device; neither can be freed while
-  this fd is open.
+- The fd holds a reference on the qpair entry, device, and the client context that owns registered
+  buffers; neither can be freed while this fd is open.
 
 **Return values:**
 
@@ -721,11 +733,12 @@ as the ``ioctl()`` return value (not as a struct field).
 ``SLASH_QDMA_IOCTL_BUF_REGISTER``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Registers a host buffer for DMA. The kernel pins the backing pages, builds a scatter-gather list,
-and DMA-maps it **once**. Subsequent transfers reference the buffer by ``buf_id`` and reuse the
-cached, pre-DMA-mapped SGL instead of pinning and mapping per transfer. Registered buffers are owned
-by the control-fd open instance they are registered through and are auto-released when that fd is
-closed (including on process exit).
+Registers a host buffer for DMA. The ioctl may be issued on either the QDMA control fd or a qpair
+fd derived from that control fd; both resolve to the same client-scoped buffer table. The kernel
+pins the backing pages, builds a scatter-gather list, and DMA-maps it **once**. Subsequent transfers
+reference the buffer by ``buf_id`` and reuse the cached, pre-DMA-mapped SGL instead of pinning and
+mapping per transfer. Registered buffers are owned by the shared client context and are
+auto-released when the final fd referencing that context is closed (including on process exit).
 
 **Interface:**
 
@@ -742,8 +755,8 @@ closed (including on process exit).
         __u32 transfer_hint; /* [out] enum slash_qdma_transfer_hint */
     };
 
-**Direction:** ``_IOWR`` — userspace writes ``flags``, ``user_addr``, ``length``; the kernel writes
-back ``buf_id`` and ``transfer_hint``.
+**Direction:** ``_IOWR`` — issued on the control fd or a qpair fd. Userspace writes ``flags``,
+``user_addr``, ``length``; the kernel writes back ``buf_id`` and ``transfer_hint``.
 
 ``transfer_hint`` is advisory and tells userspace which queue topology the kernel expects to be
 best for this registered buffer on the current hardware. Current SLASH hardware returns
@@ -784,8 +797,9 @@ best for this registered buffer on the current hardware. Current SLASH hardware 
 ``SLASH_QDMA_IOCTL_BUF_UNREGISTER``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Removes a registered buffer from the owning client's table. The pages are unpinned and the DMA
-mapping torn down once no in-flight transfer still references the buffer.
+Removes a registered buffer from the owning client's table. This ioctl may be issued on the same
+control fd used for registration or on any qpair fd derived from that client context. The pages are
+unpinned and the DMA mapping torn down once no in-flight transfer still references the buffer.
 
 **Interface:**
 

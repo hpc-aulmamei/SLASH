@@ -108,38 +108,28 @@ uint32_t qid = req.qid;
 
 slash_qdma_qpair_start(qdma, qid);
 
-/* Get an fd for data transfer — read() = C2H, write() = H2C */
+/* Get an ioctl-only qpair fd for registered-buffer transfers. */
 int fd = slash_qdma_qpair_get_fd(qdma, qid, O_CLOEXEC);
-write(fd, buf, len);   /* H2C */
-read(fd, buf, len);    /* C2H */
+
+/* buf must be page-aligned and a whole number of pages */
+uint32_t buf_id;
+enum slash_qdma_transfer_hint hint;
+slash_qdma_qpair_buffer_register(fd, buf, len, &buf_id, &hint);
+/* Current SLASH hardware returns SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR.
+ * Pass NULL instead of &hint if the application does not care. */
+
+/* H2C: host -> device at dev_addr */
+slash_qdma_qpair_transfer(fd, buf_id, /*buf_offset=*/0, dev_addr, len,
+                          SLASH_QDMA_XFER_H2C);
+/* C2H: device -> host */
+slash_qdma_qpair_transfer(fd, buf_id, 0, dev_addr, len, SLASH_QDMA_XFER_C2H);
+
+slash_qdma_qpair_buffer_unregister(fd, buf_id);
 close(fd);
 
 slash_qdma_qpair_stop(qdma, qid);
 slash_qdma_qpair_del(qdma, qid);
 slash_qdma_close(qdma);
-```
-
-For high-throughput transfers, register a host buffer once (pinning its pages
-and DMA-mapping it) and then move data by handle, avoiding per-transfer pinning:
-
-```c
-/* buf must be page-aligned and a whole number of pages */
-uint32_t buf_id;
-enum slash_qdma_transfer_hint hint;
-slash_qdma_buffer_register(qdma, buf, len, &buf_id, &hint);
-/* Current SLASH hardware returns SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR.
- * Pass NULL instead of &hint if the application does not care. */
-
-int fd = slash_qdma_qpair_get_fd(qdma, qid, O_CLOEXEC);
-
-/* H2C: host -> device at dev_addr */
-slash_qdma_transfer(qdma, fd, buf_id, /*buf_offset=*/0, dev_addr, len,
-                    SLASH_QDMA_XFER_H2C);
-/* C2H: device -> host */
-slash_qdma_transfer(qdma, fd, buf_id, 0, dev_addr, len, SLASH_QDMA_XFER_C2H);
-
-close(fd);
-slash_qdma_buffer_unregister(qdma, buf_id);
 ```
 
 ### Hotplug — PCIe device lifecycle

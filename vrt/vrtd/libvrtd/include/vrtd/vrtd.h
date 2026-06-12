@@ -316,9 +316,10 @@ enum vrtd_ret vrtd_qdma_qpair_del(
 );
 
 /**
- * @brief Obtain a read/write file descriptor for a QDMA qpair.
+ * @brief Obtain an ioctl-only file descriptor for a QDMA qpair.
  *
- * The descriptor can be used with read()/write() for C2H/H2C data transfer.
+ * The descriptor can be used with registered-buffer transfer ioctls for
+ * C2H/H2C data transfer.
  *
  * @param fd        Connected vrtd socket file descriptor.
  * @param dev       Device index (0‑based).
@@ -547,7 +548,10 @@ struct vrtd_buffer {
 
     uint64_t size;
     uint64_t phys_addr;
-    int qpair_fd;
+    int qpair_fds[2];
+    uint32_t qpair_fd_count;
+    uint32_t buf_id;
+    enum slash_qdma_transfer_hint transfer_hint;
     void *buf;
     /* Internal DMA granule for the local host mapping: 4096 or 2 MiB. */
     uint64_t transfer_step_size;
@@ -561,7 +565,8 @@ enum vrtd_ret vrtd_buffer_create_raw(
     uint64_t alloc_arg,
     uint64_t size,
     uint64_t phys_addr,
-    int qpair_fd,
+    const int *qpair_fds,
+    uint32_t qpair_fd_count,
     enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 );
