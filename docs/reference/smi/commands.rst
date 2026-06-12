@@ -160,7 +160,7 @@ phase is skipped when ``--ddr-only`` or ``--hbm-only`` is given.
 
 .. code-block:: text
 
-   v80-smi validate -d <BDF> [-j|--threads <N>] [-R|--no-reset] [--page-size <4k|2m>] [--buffer-size <size>] [--offset <size>] [--starting-offset <size>] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only] [--channel-allocation <auto|paired>] [--channel-region-stride <size>] [--bandwidth-iterations <N>] [--bandwidth-duration <seconds>]
+   v80-smi validate -d <BDF> [-j|--threads <N>] [-R|--no-reset] [--page-size <4k|2m>] [--mm-channel <spec>] [--buffer-size <size>] [--offset <size>] [--starting-offset <size>] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only] [--channel-allocation <auto|paired>] [--channel-region-stride <size>] [--ring-size-index <0-15>] [--bandwidth-iterations <N>] [--bandwidth-duration <seconds>]
 
 Requirements by mode:
 
@@ -231,6 +231,26 @@ host memory. With ``--page-size 2m`` that footprint is checked against the free
    2 MiB-aligned, otherwise ``validate`` fails early. Reserve hugepages with,
    e.g., ``echo <N> | sudo tee /proc/sys/vm/nr_hugepages``.
 
+.. option:: --mm-channel <spec>
+
+   AXI-MM / NoC channel selection for each buffer's QDMA queue pair, in every
+   mode. ``spec`` is either a single value applied to all buffers, or a
+   comma-separated list giving one channel per logical buffer position
+   (exactly ``2 x --threads`` entries; there is no repeating/wrap, and any
+   other length is an error):
+
+   * ``auto`` (the default) lets the driver stripe queues across both channels
+     by ``qid & 1``.
+   * ``0`` / ``1`` pin the queue to that AXI-MM channel (and hence NoC channel).
+   * e.g. with ``-j 1`` the list ``0,1`` puts buffer position 0 on channel 0 and
+     position 1 on channel 1. Bidirectional phases use positions ``0..2N-1``;
+     single-direction phases use the first ``N`` entries.
+
+   This is independent of ``--channel-allocation`` (which controls the device
+   address): ``--mm-channel`` controls the host-side NoC ingress (NMU) per
+   queue. With ``--use-qdma-driver`` the selection maps to the stock driver's
+   per-queue MM-channel attribute.
+
 .. option:: --raw-transfer-test
 
    Use libslash raw QDMA transfers instead of VRTD buffers. This mode implies
@@ -283,6 +303,14 @@ host memory. With ``--page-size 2m`` that footprint is checked against the free
    (== half the per-memory address space, matching the dma-perf HBM
    ``offset_ch1 - offset_ch0`` spacing). Must be a non-zero multiple of 4 KiB.
    Accepts bare bytes or ``k``/``K``, ``m``/``M``, ``g``/``G`` suffixes.
+
+.. option:: --ring-size-index <0-15>
+
+   Raw-transfer-only (``--raw-transfer-test`` or ``--use-qdma-driver``).
+   Override the QDMA descriptor-ring size index used when creating SLASH raw
+   queue pairs or starting stock-driver queues. When omitted, each backend keeps
+   its existing default. Useful A/B values for 4 KiB descriptor throughput are
+   ``0``, ``11``, ``13``, and ``15``.
 
 .. option:: --bandwidth-iterations <N>
 

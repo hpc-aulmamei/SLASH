@@ -183,7 +183,7 @@ bandwidth. Raw transfer modes skip reset and bypass the default VRTD buffer
 path for data movement.
 
 ```
-v80-smi validate -d <BDF> [-j <threads>] [-R] [--page-size <4k|2m>] [--buffer-size <size>] [--offset <size>] [--starting-offset <size>] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only] [--channel-allocation <auto|paired>] [--channel-region-stride <size>] [--bandwidth-iterations <N>] [--bandwidth-duration <seconds>]
+v80-smi validate -d <BDF> [-j <threads>] [-R] [--page-size <4k|2m>] [--mm-channel <spec>] [--buffer-size <size>] [--offset <size>] [--starting-offset <size>] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only] [--channel-allocation <auto|paired>] [--channel-region-stride <size>] [--ring-size-index <0-15>] [--bandwidth-iterations <N>] [--bandwidth-duration <seconds>]
 ```
 
 | Flag              | Description                                          |
@@ -192,6 +192,7 @@ v80-smi validate -d <BDF> [-j <threads>] [-R] [--page-size <4k|2m>] [--buffer-si
 | `-j,--threads`    | Parallel buffers/threads, 1-64 (default 8). Bidirectional phases use `2 * threads` logical positions in each enabled memory space. |
 | `-R,--no-reset`   | Skip the device reset step before running memory tests |
 | `--page-size`     | Host staging-buffer page granule for all backends: `4k` (default; 4 KiB base pages) or `2m` (2 MiB hugepages). No fallback: `2m` needs reserved 2 MiB hugepages and 2 MiB-aligned `--buffer-size`/`--offset`/`--starting-offset` (and `--channel-region-stride` in paired mode). |
+| `--mm-channel`    | AXI-MM/NoC channel per buffer queue: `auto` (default; driver stripes by `qid&1`), `0`, or `1`, or a comma-separated list with exactly one entry per buffer position (`2 x --threads` entries, e.g. `-j 1` -> `0,1`); no repeating, wrong length errors. Independent of `--channel-allocation`; also honored by `--use-qdma-driver`. |
 | `--buffer-size`   | Size of each test buffer, accepting bytes or `k`/`K`/`m`/`M` suffixes (default `512M`, maximum `512M`) |
 | `--offset`        | Distance between logical buffer positions (default `512M`) |
 | `--starting-offset` | Offset from each memory-space base for logical position 0 (default `0`) |
@@ -201,6 +202,7 @@ v80-smi validate -d <BDF> [-j <threads>] [-R] [--page-size <4k|2m>] [--buffer-si
 | `--hbm-only`      | Run only HBM memory tests (skip DDR); mutually exclusive with `--ddr-only` |
 | `--channel-allocation` | Raw-transfer-only placement: `auto` (default; mm-channel `qid&1`, linear addressing) or `paired` (couple mm-channel to a distinct memory region/NSU: even positions -> region 0/channel 0, odd -> region 1/channel 1). `paired` mirrors dma-perf `offset_ch0`/`offset_ch1` so both NoC NMUs drive independent memory endpoints. |
 | `--channel-region-stride` | In `--channel-allocation paired`, byte distance between the two per-channel regions (NSU stride). Default `16G` (half the per-memory space); accepts `k`/`K`/`m`/`M`/`g`/`G`. |
+| `--ring-size-index` | Raw-transfer-only descriptor-ring size index, `0`-`15`. Overrides the backend default when creating SLASH raw qpairs or starting stock-driver queues. |
 | `--bandwidth-iterations` | Raw-transfer-only sustained bandwidth mode: repeat each whole-buffer transfer this many times in each bandwidth phase (default `1`). |
 | `--bandwidth-duration` | Raw-transfer-only duration mode: repeat whole-buffer transfers until this many seconds have elapsed; `0` disables duration mode and uses `--bandwidth-iterations`. |
 
@@ -236,6 +238,9 @@ placement or page size. `--bandwidth-iterations` repeats each whole-buffer
 transfer a fixed number of times, while `--bandwidth-duration` runs each
 bandwidth phase for a wall-clock duration and counts completed whole-buffer
 transfers. Integrity checks remain one-shot.
+`--ring-size-index` can override the QDMA descriptor-ring size index for these
+raw modes; useful A/B values for 4 KiB descriptor throughput are `0`, `11`,
+`13`, and `15`.
 
 With `--use-qdma-driver`, the command runs the same raw test over the
 off-the-shelf Xilinx QDMA driver (`submodules/qdma_drv`) instead of SLASH.
