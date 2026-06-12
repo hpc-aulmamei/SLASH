@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <unistd.h>
 
@@ -100,6 +101,39 @@ TEST(QdmaNullTest, QpaiGetFd) {
     EXPECT_EQ(errno, EINVAL);
 }
 
+TEST(QdmaNullTest, BufferRegister) {
+    uint32_t buf_id = 0;
+    uint8_t local = 0;
+    errno = 0;
+    EXPECT_EQ(slash_qdma_buffer_register(nullptr, &local, 4096, &buf_id), -1);
+    EXPECT_EQ(errno, EINVAL);
+
+    struct slash_qdma fake{};
+    fake.fd = -1;
+    errno = 0;
+    EXPECT_EQ(slash_qdma_buffer_register(&fake, nullptr, 4096, &buf_id), -1);
+    EXPECT_EQ(errno, EINVAL);
+}
+
+TEST(QdmaNullTest, BufferUnregister) {
+    errno = 0;
+    EXPECT_EQ(slash_qdma_buffer_unregister(nullptr, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+}
+
+TEST(QdmaNullTest, Transfer) {
+    errno = 0;
+    EXPECT_EQ(slash_qdma_transfer(nullptr, 3, 0, 0, 0, 4096, SLASH_QDMA_XFER_H2C), -1);
+    EXPECT_EQ(errno, EINVAL);
+
+    struct slash_qdma fake{};
+    fake.fd = -1;
+    errno = 0;
+    /* Invalid direction is rejected before any backend dispatch. */
+    EXPECT_EQ(slash_qdma_transfer(&fake, 3, 0, 0, 0, 4096, 0), -1);
+    EXPECT_EQ(errno, EINVAL);
+}
+
 // ─── Real device tests (requires /dev/slash_qdma_ctl0) ───────────────────────
 
 class ParametrizedQdmaTest : public ::testing::TestWithParam<bool> {
@@ -174,6 +208,61 @@ TEST_P(ParametrizedQdmaTest, QueueDmaTransfer) {
 
     EXPECT_EQ(close(queue_fd), 0);
 
+    EXPECT_EQ(slash_qdma_qpair_stop(qdma_, qid), 0);
+    EXPECT_EQ(slash_qdma_qpair_del(qdma_, qid), 0);
+}
+
+TEST_P(ParametrizedQdmaTest, RegisteredBufferTransfer) {
+    static constexpr size_t XFER_SIZE = 4096;
+
+    struct slash_qdma_qpair_add req{};
+    req.mode     = 0;   /* QDMA_Q_MODE_MM */
+    req.dir_mask = 0x3; /* H2C | C2H */
+
+    ASSERT_EQ(slash_qdma_qpair_add(qdma_, &req), 0);
+    uint32_t qid = req.qid;
+    ASSERT_EQ(slash_qdma_qpair_start(qdma_, qid), 0);
+
+    int queue_fd = slash_qdma_qpair_get_fd(qdma_, qid, 0);
+    ASSERT_GE(queue_fd, 0);
+
+    // Page-aligned host staging buffers, as registration requires.
+    void *src_mem = nullptr;
+    void *dst_mem = nullptr;
+    ASSERT_EQ(posix_memalign(&src_mem, 4096, XFER_SIZE), 0);
+    ASSERT_EQ(posix_memalign(&dst_mem, 4096, XFER_SIZE), 0);
+    auto *src = static_cast<uint8_t *>(src_mem);
+    auto *dst = static_cast<uint8_t *>(dst_mem);
+    for (size_t i = 0; i < XFER_SIZE; ++i) {
+        src[i] = static_cast<uint8_t>(i & 0xFF);
+    }
+    std::memset(dst, 0, XFER_SIZE);
+
+    uint32_t src_buf = 0;
+    uint32_t dst_buf = 0;
+    ASSERT_EQ(slash_qdma_buffer_register(qdma_, src, XFER_SIZE, &src_buf), 0);
+    ASSERT_EQ(slash_qdma_buffer_register(qdma_, dst, XFER_SIZE, &dst_buf), 0);
+
+    // H2C: push the source buffer to the device.
+    ssize_t written = slash_qdma_transfer(qdma_, queue_fd, src_buf, 0,
+                                          DDR_BASE_ADDRESS, XFER_SIZE,
+                                          SLASH_QDMA_XFER_H2C);
+    EXPECT_EQ(written, static_cast<ssize_t>(XFER_SIZE));
+
+    // C2H: pull it back into the destination buffer and verify.
+    ssize_t read_bytes = slash_qdma_transfer(qdma_, queue_fd, dst_buf, 0,
+                                             DDR_BASE_ADDRESS, XFER_SIZE,
+                                             SLASH_QDMA_XFER_C2H);
+    EXPECT_EQ(read_bytes, static_cast<ssize_t>(XFER_SIZE));
+    EXPECT_EQ(std::memcmp(src, dst, XFER_SIZE), 0);
+
+    EXPECT_EQ(slash_qdma_buffer_unregister(qdma_, src_buf), 0);
+    EXPECT_EQ(slash_qdma_buffer_unregister(qdma_, dst_buf), 0);
+
+    free(src_mem);
+    free(dst_mem);
+
+    EXPECT_EQ(close(queue_fd), 0);
     EXPECT_EQ(slash_qdma_qpair_stop(qdma_, qid), 0);
     EXPECT_EQ(slash_qdma_qpair_del(qdma_, qid), 0);
 }

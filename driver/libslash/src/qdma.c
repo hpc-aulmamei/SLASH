@@ -146,6 +146,7 @@ int slash_qdma_qpair_add(struct slash_qdma *qdma,
     tmp.size        = sizeof(tmp);
     tmp.mode        = req->mode;
     tmp.dir_mask    = req->dir_mask;
+    tmp.mm_channel  = req->mm_channel;
     tmp.h2c_ring_sz = req->h2c_ring_sz;
     tmp.c2h_ring_sz = req->c2h_ring_sz;
     tmp.cmpt_ring_sz = req->cmpt_ring_sz;
@@ -246,5 +247,100 @@ int slash_qdma_qpair_get_fd(struct slash_qdma *qdma, uint32_t qid, int flags)
     }
 
     return fd;
+}
+
+int slash_qdma_buffer_register(struct slash_qdma *qdma, void *addr,
+                               uint64_t length, uint32_t *buf_id)
+{
+    struct slash_qdma_buf_register req;
+    int ret;
+
+    if (qdma == NULL || addr == NULL || buf_id == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (qdma->priv) {
+        return slash_qdma_mock_buffer_register(qdma, addr, length, buf_id);
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.size      = sizeof(req);
+    req.user_addr = (uint64_t)(uintptr_t)addr;
+    req.length    = length;
+
+    ret = ioctl(qdma->fd, SLASH_QDMA_IOCTL_BUF_REGISTER, &req);
+    if (ret < 0) {
+        return -1;
+    }
+
+    *buf_id = req.buf_id;
+
+    return 0;
+}
+
+int slash_qdma_buffer_unregister(struct slash_qdma *qdma, uint32_t buf_id)
+{
+    struct slash_qdma_buf_unregister req;
+    int ret;
+
+    if (qdma == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (qdma->priv) {
+        return slash_qdma_mock_buffer_unregister(qdma, buf_id);
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.size   = sizeof(req);
+    req.buf_id = buf_id;
+
+    ret = ioctl(qdma->fd, SLASH_QDMA_IOCTL_BUF_UNREGISTER, &req);
+    if (ret < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+ssize_t slash_qdma_transfer(struct slash_qdma *qdma, int qpair_fd,
+                            uint32_t buf_id, uint64_t buf_offset,
+                            uint64_t dev_addr, uint64_t length,
+                            uint32_t direction)
+{
+    struct slash_qdma_transfer req;
+    int ret;
+
+    if (qdma == NULL || qpair_fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (direction != SLASH_QDMA_XFER_H2C && direction != SLASH_QDMA_XFER_C2H) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (qdma->priv) {
+        return slash_qdma_mock_transfer(qdma, qpair_fd, buf_id, buf_offset,
+                                        dev_addr, length, direction);
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.size       = sizeof(req);
+    req.buf_id     = buf_id;
+    req.buf_offset = buf_offset;
+    req.dev_addr   = dev_addr;
+    req.length     = length;
+    req.direction  = direction;
+
+    ret = ioctl(qpair_fd, SLASH_QDMA_QPAIR_IOCTL_TRANSFER, &req);
+    if (ret < 0) {
+        return -1;
+    }
+
+    return (ssize_t)ret;
 }
 

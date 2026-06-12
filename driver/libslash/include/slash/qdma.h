@@ -36,6 +36,13 @@
  * via lseek()/pread()/pwrite() is also supported.  splice(), mmap(),
  * and poll() are not available.
  *
+ * Registered buffers:
+ *   For high-throughput transfers, a host buffer can be registered once
+ *   with slash_qdma_buffer_register() (pinning its pages and DMA-mapping
+ *   it), then moved with slash_qdma_transfer() which references the buffer
+ *   by handle instead of re-pinning per call.  Buffers are owned by the
+ *   open QDMA handle and are auto-released when it is closed.
+ *
  * Error conventions: int-returning functions return -1 with errno set.
  * Pointer-returning functions return NULL with errno set.
  */
@@ -46,6 +53,7 @@
 #include "uapi/slash_interface.h"
 
 #include <stdint.h>
+#include <sys/types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -150,6 +158,52 @@ int slash_qdma_qpair_del(struct slash_qdma *qdma, uint32_t qid);
  * @return Non-negative fd on success, -1 on failure.
  */
 int slash_qdma_qpair_get_fd(struct slash_qdma *qdma, uint32_t qid, int flags);
+
+/**
+ * @brief Register a host buffer for DMA, pinning and DMA-mapping it once.
+ *
+ * @param qdma    Open QDMA handle.
+ * @param addr    Page-aligned host buffer base.
+ * @param length  Buffer length in bytes (non-zero multiple of the page size).
+ * @param buf_id  [out] Receives the kernel-assigned buffer handle.
+ *
+ * The buffer is owned by @qdma and is automatically released when the
+ * handle is closed.  Pass the returned @buf_id to slash_qdma_transfer().
+ *
+ * @return 0 on success, -1 on failure (errno set).
+ */
+int slash_qdma_buffer_register(struct slash_qdma *qdma, void *addr,
+                               uint64_t length, uint32_t *buf_id);
+
+/**
+ * @brief Unregister a buffer previously registered with
+ *        slash_qdma_buffer_register().
+ *
+ * @param qdma   Open QDMA handle.
+ * @param buf_id Buffer handle to release.
+ *
+ * @return 0 on success, -1 on failure (errno set).
+ */
+int slash_qdma_buffer_unregister(struct slash_qdma *qdma, uint32_t buf_id);
+
+/**
+ * @brief Perform a DMA transfer using a registered buffer.
+ *
+ * @param qdma       Open QDMA handle (used to dispatch to the mock backend).
+ * @param qpair_fd   Queue-pair I/O fd from slash_qdma_qpair_get_fd().
+ * @param buf_id     Registered buffer handle.
+ * @param buf_offset Byte offset within the registered buffer.
+ * @param dev_addr   Device-side (endpoint) address.
+ * @param length     Number of bytes to transfer.
+ * @param direction  One of enum slash_qdma_transfer_dir (H2C or C2H).
+ *
+ * @return Number of bytes transferred (>= 0) on success, -1 on failure
+ *         (errno set).
+ */
+ssize_t slash_qdma_transfer(struct slash_qdma *qdma, int qpair_fd,
+                            uint32_t buf_id, uint64_t buf_offset,
+                            uint64_t dev_addr, uint64_t length,
+                            uint32_t direction);
 
 #ifdef __cplusplus
 } /* extern "C" */

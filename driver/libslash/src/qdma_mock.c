@@ -39,6 +39,7 @@
 #include <sys/mman.h>
 
 #define QDMA_MOCK_MAX_QUEUES 64
+#define QDMA_MOCK_MAX_BUFS 64
 
 struct slash_qdma_mock_qpair {
     bool in_use;
@@ -46,8 +47,15 @@ struct slash_qdma_mock_qpair {
     int  fd; /* backing memfd; -1 when slot is free */
 };
 
+struct slash_qdma_mock_buf {
+    bool      in_use;
+    void     *addr;   /* host base address */
+    uint64_t  length;
+};
+
 struct slash_qdma_mock {
     struct slash_qdma_mock_qpair queues[QDMA_MOCK_MAX_QUEUES];
+    struct slash_qdma_mock_buf   bufs[QDMA_MOCK_MAX_BUFS];
 };
 
 static struct slash_qdma_mock *mock_ctx(struct slash_qdma *qdma)
@@ -256,4 +264,123 @@ int slash_qdma_mock_qpair_get_fd(struct slash_qdma *qdma, uint32_t qid, int flag
     }
 
     return new_fd;
+}
+
+int slash_qdma_mock_buffer_register(struct slash_qdma *qdma, void *addr,
+                                    uint64_t length, uint32_t *buf_id)
+{
+    struct slash_qdma_mock *ctx;
+    size_t i;
+
+    if (qdma == NULL || addr == NULL || buf_id == NULL || length == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ctx = mock_ctx(qdma);
+
+    for (i = 0; i < QDMA_MOCK_MAX_BUFS; ++i) {
+        if (!ctx->bufs[i].in_use) {
+            break;
+        }
+    }
+
+    if (i == QDMA_MOCK_MAX_BUFS) {
+        errno = ENOSPC;
+        return -1;
+    }
+
+    ctx->bufs[i].in_use = true;
+    ctx->bufs[i].addr   = addr;
+    ctx->bufs[i].length = length;
+
+    *buf_id = (uint32_t) i;
+
+    return 0;
+}
+
+int slash_qdma_mock_buffer_unregister(struct slash_qdma *qdma, uint32_t buf_id)
+{
+    struct slash_qdma_mock *ctx;
+
+    if (qdma == NULL || buf_id >= QDMA_MOCK_MAX_BUFS) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ctx = mock_ctx(qdma);
+
+    if (!ctx->bufs[buf_id].in_use) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    memset(&ctx->bufs[buf_id], 0, sizeof(ctx->bufs[buf_id]));
+
+    return 0;
+}
+
+ssize_t slash_qdma_mock_transfer(struct slash_qdma *qdma, int qpair_fd,
+                                 uint32_t buf_id, uint64_t buf_offset,
+                                 uint64_t dev_addr, uint64_t length,
+                                 uint32_t direction)
+{
+    struct slash_qdma_mock *ctx;
+    struct slash_qdma_mock_buf *buf;
+    char *host;
+    uint64_t done = 0;
+
+    if (qdma == NULL || qpair_fd < 0 || buf_id >= QDMA_MOCK_MAX_BUFS) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ctx = mock_ctx(qdma);
+    buf = &ctx->bufs[buf_id];
+
+    if (!buf->in_use) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if (length == 0 || buf_offset > buf->length ||
+        length > buf->length - buf_offset) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    host = (char *) buf->addr + buf_offset;
+
+    /*
+     * Emulate the device endpoint with the queue's backing memfd: H2C writes
+     * host data to the memfd at dev_addr, C2H reads it back.  Loop to absorb
+     * short transfers from the underlying file ops.
+     */
+    while (done < length) {
+        ssize_t n;
+
+        if (direction == SLASH_QDMA_XFER_H2C) {
+            n = pwrite(qpair_fd, host + done, (size_t)(length - done),
+                       (off_t)(dev_addr + done));
+        } else if (direction == SLASH_QDMA_XFER_C2H) {
+            n = pread(qpair_fd, host + done, (size_t)(length - done),
+                      (off_t)(dev_addr + done));
+        } else {
+            errno = EINVAL;
+            return -1;
+        }
+
+        if (n < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        if (n == 0) {
+            break;
+        }
+        done += (uint64_t) n;
+    }
+
+    return (ssize_t) done;
 }
