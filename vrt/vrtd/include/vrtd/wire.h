@@ -299,6 +299,7 @@ struct vrtd_req_buffer_open {
     uint32_t dev_number; ///< Device index (0-based).
     uint32_t alloc_type; ///< One of enum vrtd_alloc_type.
     uint32_t alloc_dir;  ///< One of enum vrtd_alloc_dir.
+    uint32_t mm_channel; ///< AXI-MM/NoC channel selection (enum vrtd_mm_channel).
     uint64_t alloc_arg;  ///< Allocation argument (HBM region index for HBM).
     uint64_t size;       ///< Requested size in bytes.
 } __attribute__((packed));
@@ -333,6 +334,7 @@ struct vrtd_resp_buffer_close {
 struct vrtd_req_buffer_open_raw {
     uint32_t dev_number; ///< Device index (0-based).
     uint32_t alloc_dir;  ///< One of enum vrtd_alloc_dir.
+    uint32_t mm_channel; ///< AXI-MM/NoC channel selection (enum vrtd_mm_channel).
     uint64_t phys_addr;  ///< Caller-specified device physical address (bypasses allocator).
     uint64_t size;       ///< Size in bytes.
 } __attribute__((packed));

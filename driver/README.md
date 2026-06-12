@@ -9,35 +9,36 @@ Exposed under `/sys/module/slash/parameters/` (all writable at runtime; see
 |-----------|------|---------|-------------|
 | `qdma_num_threads` | uint | 8 | Number of libqdma worker threads. |
 | `qdma_debugfs_path` | charp | disabled | debugfs mount path for libqdma. |
-| `qdma_force_mm_channel` | int | -1 | Force the QDMA AXI-MM / NoC channel for newly-added queues: `<0` = auto (stripe by `qid & 1`), `0` or `1` = pin every new queue to that channel. |
 
 ### A/B testing NoC channel bandwidth
 
-`qdma_force_mm_channel` is read when each queue pair is added, so it can be
-changed between test runs to check whether both PCIe NMUs (NoC channels)
-actually contribute bandwidth. Each value pins all new queues to one NoC
-channel; the default (`-1`) splits them across both:
+The AXI-MM / NoC channel is chosen per queue pair when it is added (the
+`mm_channel` field of the qpair-add ioctl, `enum slash_qdma_mm_channel`):
+`auto` stripes queues across both channels by `qid & 1`, while `0` / `1` pin a
+queue to a single channel. Every queue creator carries this setting, so it can
+be driven per buffer to check whether both PCIe NMUs (NoC channels) actually
+contribute bandwidth. With `v80-smi validate`:
 
 ```sh
 # All queues on NoC channel 0 (NMU S00)
-echo 0  | sudo tee /sys/module/slash/parameters/qdma_force_mm_channel
-sudo v80-smi validate -d <BDF> --raw-transfer-test --no-reset
+sudo v80-smi validate -d <BDF> --raw-transfer-test --no-reset --mm-channel 0
 
 # All queues on NoC channel 1 (NMU S01)
-echo 1  | sudo tee /sys/module/slash/parameters/qdma_force_mm_channel
-sudo v80-smi validate -d <BDF> --raw-transfer-test --no-reset
+sudo v80-smi validate -d <BDF> --raw-transfer-test --no-reset --mm-channel 1
 
-# Default: split across both channels (qid & 1)
-echo -1 | sudo tee /sys/module/slash/parameters/qdma_force_mm_channel
-sudo v80-smi validate -d <BDF> --raw-transfer-test --no-reset
+# Split across both channels (qid & 1)
+sudo v80-smi validate -d <BDF> --raw-transfer-test --no-reset --mm-channel auto
+
+# Explicit per-buffer split (even positions -> channel 0, odd -> channel 1)
+sudo v80-smi validate -d <BDF> --raw-transfer-test --no-reset --mm-channel 0,1
 ```
 
 Debug builds with `SLASH_QDMA_OP_DEBUG=1` log each queue's selected
 `mm_channel` when it is added. If the split run is no faster than a single
-forced channel, traffic is not being spread across both NMUs. The parameter
-affects every queue created through this driver (both the VRTD buffer path and
-`--raw-transfer-test`), but not the off-the-shelf Xilinx QDMA driver path
-(`--use-qdma-driver`).
+forced channel, traffic is not being spread across both NMUs. The per-queue
+setting affects every queue created through this driver (both the VRTD buffer
+path and `--raw-transfer-test`); the off-the-shelf Xilinx QDMA driver path
+(`--use-qdma-driver`) honors `--mm-channel` through its own channel attribute.
 
 ## Testing
 

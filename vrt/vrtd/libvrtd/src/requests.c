@@ -468,6 +468,7 @@ enum vrtd_ret vrtd_buffer_open(
     uint32_t alloc_dir,
     uint64_t alloc_arg,
     uint64_t size_in,
+    enum vrtd_mm_channel mm_channel,
     enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 )
@@ -481,6 +482,7 @@ enum vrtd_ret vrtd_buffer_open(
         .dev_number = dev,
         .alloc_type = alloc_type,
         .alloc_dir = alloc_dir,
+        .mm_channel = mm_channel,
         .alloc_arg = alloc_arg,
         .size = size_in,
     };
@@ -525,6 +527,7 @@ enum vrtd_ret vrtd_buffer_open_raw(
     uint64_t phys_addr,
     uint64_t size,
     uint32_t alloc_dir,
+    enum vrtd_mm_channel mm_channel,
     enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 )
@@ -537,6 +540,7 @@ enum vrtd_ret vrtd_buffer_open_raw(
     struct vrtd_req_buffer_open_raw req = {
         .dev_number = dev,
         .alloc_dir = alloc_dir,
+        .mm_channel = mm_channel,
         .phys_addr = phys_addr,
         .size = size,
     };

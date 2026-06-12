@@ -31,8 +31,8 @@ Device::Device(uint32_t num,
                uint16_t subsystemDeviceId,
                std::function<Bar(const Device&, uint8_t)> fGetBar,
                std::function<QdmaQpair(const Device&, const struct slash_qdma_qpair_add&)> fCreateQdmaQpair,
-               std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir, HostPageSize)> fOpenBuffer,
-               std::function<Buffer(const Device&, uint64_t, uint64_t, BufferAllocDir, HostPageSize)> fOpenBufferRaw,
+               std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir, MmChannel, HostPageSize)> fOpenBuffer,
+               std::function<Buffer(const Device&, uint64_t, uint64_t, BufferAllocDir, MmChannel, HostPageSize)> fOpenBufferRaw,
                std::function<void(const Device&, HotplugOp, uint8_t)> fHotplugOp,
                std::function<void(const Device&, int)> fDesignWrite,
                std::function<void(const Device&, std::string_view)> fDesignWriteFile,
@@ -98,15 +98,17 @@ Buffer Device::openBuffer(BufferAllocType allocType,
                           uint64_t size,
                           uint64_t allocArg,
                           BufferAllocDir allocDir,
+                          MmChannel mmChannel,
                           HostPageSize page) const {
-    return fOpenBuffer(*this, allocType, size, allocArg, allocDir, page);
+    return fOpenBuffer(*this, allocType, size, allocArg, allocDir, mmChannel, page);
 }
 
 Buffer Device::openRawBuffer(uint64_t phys_addr,
                              uint64_t size,
                              BufferAllocDir allocDir,
+                             MmChannel mmChannel,
                              HostPageSize page) const {
-    return fOpenBufferRaw(*this, phys_addr, size, allocDir, page);
+    return fOpenBufferRaw(*this, phys_addr, size, allocDir, mmChannel, page);
 }
 
 void Device::hotplugOp(HotplugOp op, uint8_t function) const {

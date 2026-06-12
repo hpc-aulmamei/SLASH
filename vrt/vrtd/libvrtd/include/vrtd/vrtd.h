@@ -67,6 +67,18 @@ enum vrtd_host_page_mode {
     VRTD_HOST_PAGE_2M = 1, ///< 2 MiB hugetlb pages; allocation fails if they cannot be mapped.
 };
 
+/**
+ * @brief AXI-MM / NoC channel selection for a buffer's QDMA queue pair.
+ *
+ * Sent to the daemon, which forwards it to the SLASH driver's qpair-add ioctl
+ * (the values mirror enum slash_qdma_mm_channel).
+ */
+enum vrtd_mm_channel {
+    VRTD_MM_CHANNEL_AUTO = 0, ///< Stripe across channels by (qid & 1).
+    VRTD_MM_CHANNEL_0    = 1, ///< Pin to AXI-MM/NoC channel 0.
+    VRTD_MM_CHANNEL_1    = 2, ///< Pin to AXI-MM/NoC channel 1.
+};
+
 
 /**
  * @brief Connect to the vrtd UNIX domain socket.
@@ -338,6 +350,7 @@ enum vrtd_ret vrtd_qdma_qpair_get_fd(
  * @param alloc_dir  QDMA direction (one of enum vrtd_alloc_dir).
  * @param alloc_arg  Allocation argument (HBM region index for HBM).
  * @param size_in     Requested size in bytes.
+ * @param mm_channel  AXI-MM/NoC channel selection (one of enum vrtd_mm_channel).
  * @param page_mode   Host staging-buffer page granule (one of enum vrtd_host_page_mode).
  * @param buffer_out  Output pointer to receive the allocated buffer handle.
  *
@@ -352,6 +365,7 @@ enum vrtd_ret vrtd_buffer_open(
     uint32_t alloc_dir,
     uint64_t alloc_arg,
     uint64_t size_in,
+    enum vrtd_mm_channel mm_channel,
     enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 );
@@ -367,6 +381,7 @@ enum vrtd_ret vrtd_buffer_open(
  * @param phys_addr   Caller-specified device physical address.
  * @param size        Size in bytes.
  * @param alloc_dir   One of #vrtd_alloc_dir.
+ * @param mm_channel  AXI-MM/NoC channel selection (one of enum vrtd_mm_channel).
  * @param page_mode   Host staging-buffer page granule (one of enum vrtd_host_page_mode).
  * @param buffer_out  Output parameter set to the new buffer handle on success.
  *
@@ -380,6 +395,7 @@ enum vrtd_ret vrtd_buffer_open_raw(
     uint64_t phys_addr,
     uint64_t size,
     uint32_t alloc_dir,
+    enum vrtd_mm_channel mm_channel,
     enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 );

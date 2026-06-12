@@ -1966,6 +1966,12 @@ static uint16_t client_handle_request_buffer_open(
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
+    if (req_body->mm_channel > SLASH_QDMA_MM_CHANNEL_1) {
+        LOG(LOG_WARNING, "Received buffer open request with invalid mm_channel %u",
+            (unsigned int)req_body->mm_channel);
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL || d->qdma == NULL || d->memory_map == NULL) {
         LOG(LOG_WARNING, "Received buffer open request for non-existent or non-functional device");
@@ -1992,6 +1998,7 @@ static uint16_t client_handle_request_buffer_open(
         req_body->size,
         req_body->alloc_arg,
         client_id,
+        req_body->mm_channel,
         NULL
     );
     if (buf == NULL) {
@@ -2104,6 +2111,12 @@ static uint16_t client_handle_request_buffer_open_raw(
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
+    if (req_body->mm_channel > SLASH_QDMA_MM_CHANNEL_1) {
+        LOG(LOG_WARNING, "Received raw buffer open request with invalid mm_channel %u",
+            (unsigned int)req_body->mm_channel);
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
     struct device *d = client->state->devices.d[req_body->dev_number];
     if (d == NULL || d->qdma == NULL) {
         LOG(LOG_WARNING, "Received raw buffer open request for non-existent or non-functional device");
@@ -2115,7 +2128,8 @@ static uint16_t client_handle_request_buffer_open_raw(
         d->qdma,
         req_body->phys_addr,
         req_body->size,
-        (enum vrtd_alloc_dir) req_body->alloc_dir
+        (enum vrtd_alloc_dir) req_body->alloc_dir,
+        req_body->mm_channel
     );
     if (buf == NULL) {
         if (errno == EINVAL) {

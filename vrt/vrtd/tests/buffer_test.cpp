@@ -43,7 +43,7 @@ TEST(BufferNullTest, NullQdma) {
     ASSERT_NE(map, nullptr);
     struct buffer *buf = buffer_create(nullptr, map, ALLOCATION_TYPE_DDR,
                                        VRTD_ALLOC_DIR_HOST_TO_DEVICE,
-                                       XFER_SIZE, 0, CLIENT_ID, nullptr);
+                                       XFER_SIZE, 0, CLIENT_ID, SLASH_QDMA_MM_CHANNEL_AUTO, nullptr);
     EXPECT_EQ(buf, nullptr);
     device_memory_map_cleanup(map);
 }
@@ -53,7 +53,7 @@ TEST(BufferNullTest, NullMap) {
     ASSERT_NE(qdma, nullptr);
     struct buffer *buf = buffer_create(qdma, nullptr, ALLOCATION_TYPE_DDR,
                                        VRTD_ALLOC_DIR_HOST_TO_DEVICE,
-                                       XFER_SIZE, 0, CLIENT_ID, nullptr);
+                                       XFER_SIZE, 0, CLIENT_ID, SLASH_QDMA_MM_CHANNEL_AUTO, nullptr);
     EXPECT_EQ(buf, nullptr);
     slash_qdma_close(qdma);
 }
@@ -65,7 +65,7 @@ TEST(BufferNullTest, ZeroSize) {
     ASSERT_NE(map, nullptr);
     struct buffer *buf = buffer_create(qdma, map, ALLOCATION_TYPE_DDR,
                                        VRTD_ALLOC_DIR_HOST_TO_DEVICE,
-                                       0, 0, CLIENT_ID, nullptr);
+                                       0, 0, CLIENT_ID, SLASH_QDMA_MM_CHANNEL_AUTO, nullptr);
     EXPECT_EQ(buf, nullptr);
     device_memory_map_cleanup(map);
     slash_qdma_close(qdma);
@@ -78,7 +78,7 @@ TEST(BufferNullTest, ZeroClientId) {
     ASSERT_NE(map, nullptr);
     struct buffer *buf = buffer_create(qdma, map, ALLOCATION_TYPE_DDR,
                                        VRTD_ALLOC_DIR_HOST_TO_DEVICE,
-                                       XFER_SIZE, 0, 0, nullptr);
+                                       XFER_SIZE, 0, 0, SLASH_QDMA_MM_CHANNEL_AUTO, nullptr);
     EXPECT_EQ(buf, nullptr);
     device_memory_map_cleanup(map);
     slash_qdma_close(qdma);
@@ -91,7 +91,7 @@ TEST(BufferNullTest, InvalidDirection) {
     ASSERT_NE(map, nullptr);
     struct buffer *buf = buffer_create(qdma, map, ALLOCATION_TYPE_DDR,
                                        static_cast<vrtd_alloc_dir>(99),
-                                       XFER_SIZE, 0, CLIENT_ID, nullptr);
+                                       XFER_SIZE, 0, CLIENT_ID, SLASH_QDMA_MM_CHANNEL_AUTO, nullptr);
     EXPECT_EQ(buf, nullptr);
     device_memory_map_cleanup(map);
     slash_qdma_close(qdma);
@@ -103,7 +103,7 @@ TEST(BufferNullTest, CleanupNull) {
 
 TEST(BufferNullTest, RawNullQdma) {
     struct buffer *buf = buffer_create_raw(nullptr, DDR_START_ADDRESS, XFER_SIZE,
-                                           VRTD_ALLOC_DIR_HOST_TO_DEVICE);
+                                           VRTD_ALLOC_DIR_HOST_TO_DEVICE, SLASH_QDMA_MM_CHANNEL_AUTO);
     EXPECT_EQ(buf, nullptr);
     EXPECT_EQ(errno, EINVAL);
 }
@@ -112,7 +112,7 @@ TEST(BufferNullTest, RawZeroSize) {
     struct slash_qdma *qdma = slash_qdma_open("@mock");
     ASSERT_NE(qdma, nullptr);
     struct buffer *buf = buffer_create_raw(qdma, DDR_START_ADDRESS, 0,
-                                           VRTD_ALLOC_DIR_HOST_TO_DEVICE);
+                                           VRTD_ALLOC_DIR_HOST_TO_DEVICE, SLASH_QDMA_MM_CHANNEL_AUTO);
     EXPECT_EQ(buf, nullptr);
     EXPECT_EQ(errno, EINVAL);
     slash_qdma_close(qdma);
@@ -154,7 +154,7 @@ class BufferTest : public ::testing::TestWithParam<bool> {
 TEST_P(BufferTest, LifecycleBidirectional) {
     struct buffer *buf = buffer_create(qdma_, map_, ALLOCATION_TYPE_DDR,
                                        VRTD_ALLOC_DIR_BIDIRECTIONAL,
-                                       XFER_SIZE, 0, CLIENT_ID, nullptr);
+                                       XFER_SIZE, 0, CLIENT_ID, SLASH_QDMA_MM_CHANNEL_AUTO, nullptr);
     ASSERT_NE(buf, nullptr);
     EXPECT_GE(buf->fd, 0);
 
@@ -175,7 +175,7 @@ TEST_P(BufferTest, LifecycleBidirectional) {
 
 TEST_P(BufferTest, RawCreateAndIO) {
     struct buffer *buf = buffer_create_raw(qdma_, DDR_START_ADDRESS, XFER_SIZE,
-                                           VRTD_ALLOC_DIR_BIDIRECTIONAL);
+                                           VRTD_ALLOC_DIR_BIDIRECTIONAL, SLASH_QDMA_MM_CHANNEL_AUTO);
     ASSERT_NE(buf, nullptr);
     EXPECT_GE(buf->fd, 0);
     EXPECT_EQ(buf->addr, DDR_START_ADDRESS);
@@ -208,14 +208,14 @@ TEST_P(BufferTest, QueueExhaustion) {
 
     for (int i = 0; i < MAX_QUEUES; ++i) {
         struct buffer *buf = buffer_create_raw(qdma_, DDR_START_ADDRESS + i * XFER_SIZE,
-                                               XFER_SIZE, VRTD_ALLOC_DIR_HOST_TO_DEVICE);
+                                               XFER_SIZE, VRTD_ALLOC_DIR_HOST_TO_DEVICE, SLASH_QDMA_MM_CHANNEL_AUTO);
         ASSERT_NE(buf, nullptr) << "Expected success for queue " << i;
         bufs.push_back(buf);
     }
 
     /* 65th allocation must fail */
     struct buffer *overflow = buffer_create_raw(qdma_, DDR_START_ADDRESS,
-                                                XFER_SIZE, VRTD_ALLOC_DIR_HOST_TO_DEVICE);
+                                                XFER_SIZE, VRTD_ALLOC_DIR_HOST_TO_DEVICE, SLASH_QDMA_MM_CHANNEL_AUTO);
     EXPECT_EQ(overflow, nullptr);
     EXPECT_EQ(errno, ENOSPC);
 

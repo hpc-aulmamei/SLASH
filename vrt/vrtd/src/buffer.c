@@ -81,6 +81,7 @@ static int buffer_init(struct buffer *buf,
                        uint64_t size,
                        uint64_t alloc_arg,
                        uint64_t client_id,
+                       uint32_t mm_channel,
                        const struct slash_qdma_qpair_add *qpair_params)
 {
     if (buf == NULL) {
@@ -184,6 +185,7 @@ static int buffer_init(struct buffer *buf,
         qpair.cmpt_ring_sz = VRTD_QDMA_RING_SZ_IDX;
     }
     qpair.dir_mask = dir_mask;
+    qpair.mm_channel = mm_channel;
     qpair.size = sizeof(qpair);
 
     if (slash_qdma_qpair_add(qdma, &qpair) != 0) {
@@ -235,6 +237,7 @@ struct buffer *buffer_create(struct slash_qdma *qdma,
                              uint64_t size,
                              uint64_t alloc_arg,
                              uint64_t client_id,
+                             uint32_t mm_channel,
                              const struct slash_qdma_qpair_add *qpair_params)
 {
     struct buffer *buf = calloc(1, sizeof(*buf));
@@ -243,7 +246,7 @@ struct buffer *buffer_create(struct slash_qdma *qdma,
         return NULL;
     }
 
-    if (buffer_init(buf, qdma, map, alloc_type, alloc_dir, size, alloc_arg, client_id, qpair_params) != 0) {
+    if (buffer_init(buf, qdma, map, alloc_type, alloc_dir, size, alloc_arg, client_id, mm_channel, qpair_params) != 0) {
         LOG(LOG_ERR, "Failed to initialize buffer: %m");
         return NULL;
     }
@@ -263,7 +266,8 @@ struct buffer *buffer_create(struct slash_qdma *qdma,
 struct buffer *buffer_create_raw(struct slash_qdma *qdma,
                                  uint64_t phys_addr,
                                  uint64_t size,
-                                 enum vrtd_alloc_dir alloc_dir)
+                                 enum vrtd_alloc_dir alloc_dir,
+                                 uint32_t mm_channel)
 {
     if (qdma == NULL || size == 0) {
         errno = EINVAL;
@@ -314,6 +318,7 @@ struct buffer *buffer_create_raw(struct slash_qdma *qdma,
     qpair.c2h_ring_sz = VRTD_QDMA_RING_SZ_IDX;
     qpair.cmpt_ring_sz = VRTD_QDMA_RING_SZ_IDX;
     qpair.dir_mask = dir_mask;
+    qpair.mm_channel = mm_channel;
     qpair.size = sizeof(qpair);
 
     if (slash_qdma_qpair_add(qdma, &qpair) != 0) {
