@@ -718,6 +718,124 @@ as the ``ioctl()`` return value (not as a struct field).
 - ``-ENOMEM`` — allocation failure
 - Other negative errno from ``anon_inode_getfile()`` or ``get_unused_fd_flags()``
 
+``SLASH_QDMA_IOCTL_BUF_REGISTER``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Registers a host buffer for DMA. The kernel pins the backing pages, builds a scatter-gather list,
+and DMA-maps it **once**. Subsequent transfers reference the buffer by ``buf_id`` and reuse the
+cached, pre-DMA-mapped SGL instead of pinning and mapping per transfer. Registered buffers are owned
+by the control-fd open instance they are registered through and are auto-released when that fd is
+closed (including on process exit).
+
+**Interface:**
+
+.. code-block:: c
+
+    #define SLASH_QDMA_IOCTL_BUF_REGISTER _IOWR('v', 0x54, struct slash_qdma_buf_register)
+
+    struct slash_qdma_buf_register {
+        __u32 size;       /* [in/out] ABI version */
+        __u32 flags;      /* [in]  Reserved; must be 0 */
+        __u64 user_addr;  /* [in]  Page-aligned host buffer base */
+        __u64 length;     /* [in]  Buffer length in bytes (page multiple) */
+        __u32 buf_id;     /* [out] Kernel-assigned buffer handle */
+        __u32 pad0;       /* padding */
+    };
+
+**Direction:** ``_IOWR`` — userspace writes ``flags``, ``user_addr``, ``length``; the kernel writes
+back ``buf_id``.
+
+**Preconditions:**
+
+- ``size`` must cover at least ``length`` (the trailing input field) — otherwise ``-EINVAL``
+- ``flags`` must be 0
+- ``user_addr`` must be page-aligned; ``length`` must be a non-zero multiple of the page size
+- The buffer must be backed by a single page granule (all 4 KiB base pages or all 2 MiB hugepages)
+
+**Postconditions:**
+
+- ``buf_id`` is filled with the client-scoped handle, used in ``SLASH_QDMA_QPAIR_IOCTL_TRANSFER``.
+- The pages remain pinned and DMA-mapped until the buffer is unregistered or the owning control fd
+  is closed.
+
+**Return values:**
+
+- ``0`` — success
+- ``-EFAULT`` — copy failure
+- ``-EINVAL`` — ``size`` too small, non-zero ``flags``, misaligned/zero ``length`` or ``user_addr``,
+  or a page granule that does not match the transfer data path
+- ``-ENOMEM`` — allocation, pinning, or DMA-mapping failure
+- ``-EBUSY`` — no buffer IDs available
+- ``-ENODEV`` — device shutting down
+
+``SLASH_QDMA_IOCTL_BUF_UNREGISTER``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Removes a registered buffer from the owning client's table. The pages are unpinned and the DMA
+mapping torn down once no in-flight transfer still references the buffer.
+
+**Interface:**
+
+.. code-block:: c
+
+    #define SLASH_QDMA_IOCTL_BUF_UNREGISTER _IOWR('v', 0x55, struct slash_qdma_buf_unregister)
+
+    struct slash_qdma_buf_unregister {
+        __u32 size;    /* [in/out] ABI version */
+        __u32 buf_id;  /* [in]     Buffer handle from BUF_REGISTER */
+    };
+
+**Return values:**
+
+- ``0`` — success
+- ``-EFAULT`` — copy failure
+- ``-EINVAL`` — ``size`` too small
+- ``-ENOENT`` — ``buf_id`` not found in this client's table
+
+``SLASH_QDMA_QPAIR_IOCTL_TRANSFER``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Performs a DMA transfer using a registered buffer. Unlike ``read``/``write``/``pread``/``pwrite``,
+this ioctl is issued on a **queue-pair I/O fd** (from ``SLASH_QDMA_IOCTL_QPAIR_GET_FD``), not the
+control device. No pages are pinned or DMA-mapped on this path — that work was amortised at
+registration time — so it submits the cached, pre-DMA-mapped SGL slice directly.
+
+**Interface:**
+
+.. code-block:: c
+
+    #define SLASH_QDMA_QPAIR_IOCTL_TRANSFER _IOWR('v', 0x56, struct slash_qdma_transfer)
+
+    struct slash_qdma_transfer {
+        __u32 size;        /* [in/out] ABI version */
+        __u32 buf_id;      /* [in] Registered buffer handle */
+        __u64 buf_offset;  /* [in] Byte offset within the registered buffer */
+        __u64 dev_addr;    /* [in] Device-side (endpoint) address */
+        __u64 length;      /* [in] Number of bytes to transfer */
+        __u32 direction;   /* [in] 1=H2C (write), 2=C2H (read) */
+        __u32 pad0;        /* padding */
+    };
+
+**Direction:** ``_IOWR`` — userspace writes all input fields; the number of bytes transferred is
+returned as the ``ioctl()`` return value (not as a struct field).
+
+**Preconditions:**
+
+- ``size`` must cover at least ``direction`` (the trailing input field) — otherwise ``-EINVAL``
+- ``direction`` must be 1 (H2C) or 2 (C2H) and must be enabled on the queue pair
+- ``buf_id`` must refer to a buffer registered on the same control fd that created this qpair fd
+- ``buf_offset`` and ``length`` must be aligned to the buffer's page granule, ``length`` non-zero,
+  and ``buf_offset + length`` must not exceed the registered length
+
+**Return values:**
+
+- ``>= 0`` — number of bytes transferred (success)
+- ``-EFAULT`` — copy failure
+- ``-EINVAL`` — ``size`` too small, bad ``direction``, or an out-of-range / misaligned slice
+- ``-ENOENT`` — ``buf_id`` not found
+- ``-ENODEV`` — device shutting down or the requested direction is not enabled on the qpair
+- Other negative errno from libqdma's ``qdma_request_submit()``
+
 Device resets and hotplugging: ``/dev/slash_hotplug``
 =====================================================
 

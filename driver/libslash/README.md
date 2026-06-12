@@ -119,6 +119,26 @@ slash_qdma_qpair_del(qdma, qid);
 slash_qdma_close(qdma);
 ```
 
+For high-throughput transfers, register a host buffer once (pinning its pages
+and DMA-mapping it) and then move data by handle, avoiding per-transfer pinning:
+
+```c
+/* buf must be page-aligned and a whole number of pages */
+uint32_t buf_id;
+slash_qdma_buffer_register(qdma, buf, len, &buf_id);
+
+int fd = slash_qdma_qpair_get_fd(qdma, qid, O_CLOEXEC);
+
+/* H2C: host -> device at dev_addr */
+slash_qdma_transfer(qdma, fd, buf_id, /*buf_offset=*/0, dev_addr, len,
+                    SLASH_QDMA_XFER_H2C);
+/* C2H: device -> host */
+slash_qdma_transfer(qdma, fd, buf_id, 0, dev_addr, len, SLASH_QDMA_XFER_C2H);
+
+close(fd);
+slash_qdma_buffer_unregister(qdma, buf_id);
+```
+
 ### Hotplug — PCIe device lifecycle
 
 Typical FPGA reconfiguration flow:
