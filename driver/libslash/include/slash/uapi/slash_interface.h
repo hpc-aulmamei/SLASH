@@ -154,6 +154,19 @@ struct slash_qdma_info {
 };
 
 /**
+ * @brief AXI-MM / NoC channel selection for a queue pair.
+ *
+ * Selects which CPM5 AXI-MM channel a queue pair uses.  libqdma mirrors the
+ * channel into the SW-context host_id, which selects the programmed Host
+ * Profile and hence the NoC channel.
+ */
+enum slash_qdma_mm_channel {
+    SLASH_QDMA_MM_CHANNEL_AUTO = 0, /**< Stripe across channels by (qid & 1). */
+    SLASH_QDMA_MM_CHANNEL_0    = 1, /**< Pin to AXI-MM/NoC channel 0. */
+    SLASH_QDMA_MM_CHANNEL_1    = 2, /**< Pin to AXI-MM/NoC channel 1. */
+};
+
+/**
  * @brief Add (allocate) a new QDMA queue pair.
  *
  * \@mode must be one of:
@@ -176,6 +189,7 @@ struct slash_qdma_qpair_add {
     /* Userspace to kernel */
     __u32 mode;          /**< [in]  Queue operating mode. */
     __u32 dir_mask;      /**< [in]  Direction bitmask — which directions to enable. */
+    __u32 mm_channel;    /**< [in]  AXI-MM/NoC channel selection (enum slash_qdma_mm_channel). */
 
     __u32 h2c_ring_sz;   /**< [in]  Host-to-card descriptor ring size. */
     __u32 c2h_ring_sz;   /**< [in]  Card-to-host descriptor ring size. */
@@ -228,6 +242,79 @@ struct slash_qdma_qpair_fd_request {
     __u32 flags; /**< [in] File descriptor flags.  Only O_CLOEXEC is honoured. */
 };
 
+/**
+ * @brief Transfer direction for a registered-buffer DMA transfer.
+ */
+enum slash_qdma_transfer_dir {
+    SLASH_QDMA_XFER_H2C = 1, /**< Host-to-Card (write to device). */
+    SLASH_QDMA_XFER_C2H = 2, /**< Card-to-Host (read from device). */
+};
+
+/**
+ * @brief Register a host buffer for DMA, pinning its pages once.
+ *
+ * The kernel pins the pages backing [user_addr, user_addr + length),
+ * builds a scatter-gather list, and DMA-maps it once.  Subsequent
+ * transfers reference the buffer by \@buf_id instead of re-pinning and
+ * re-mapping per transfer.
+ *
+ * \@user_addr must be page-aligned and \@length a non-zero multiple of
+ * the host page size.  The buffer must be backed by a single page
+ * granule (all 4 KiB base pages or all 2 MiB hugepages), matching the
+ * transfer data path.
+ *
+ * Buffers are owned by the control-fd open instance they are registered
+ * through, and are automatically unregistered when that fd is closed
+ * (including on process exit) if userspace forgets to unregister them.
+ */
+struct slash_qdma_buf_register {
+    __u32 size;        /**< Struct size for ABI versioning. */
+
+    /* Userspace to kernel */
+    __u32 flags;       /**< [in]  Reserved; must be 0. */
+    __u64 user_addr;   /**< [in]  Page-aligned host buffer base address. */
+    __u64 length;      /**< [in]  Buffer length in bytes (page multiple). */
+
+    /* Kernel to userspace */
+    __u32 buf_id;      /**< [out] Kernel-assigned buffer handle. */
+    __u32 pad0;        /**< Padding for natural alignment. */
+};
+
+/**
+ * @brief Unregister a previously registered buffer.
+ *
+ * Removes the buffer from the owning client's lookup table.  The pages
+ * are unpinned and the DMA mapping torn down once no in-flight transfer
+ * still references the buffer.
+ */
+struct slash_qdma_buf_unregister {
+    __u32 size;    /**< Struct size for ABI versioning. */
+    __u32 buf_id;  /**< [in] Buffer handle from slash_qdma_buf_register. */
+};
+
+/**
+ * @brief Perform a DMA transfer using a registered buffer.
+ *
+ * Issued on a queue-pair I/O fd (from SLASH_QDMA_IOCTL_QPAIR_GET_FD).
+ * Transfers \@length bytes between the registered buffer at
+ * \@buf_offset and the device endpoint address \@dev_addr.  The number
+ * of bytes transferred is returned as the ioctl return value.
+ *
+ * \@buf_offset and \@length must be aligned to the registered buffer's
+ * page granule, and \@buf_offset + \@length must not exceed the
+ * registered length.  \@direction must be one of enum slash_qdma_transfer_dir
+ * and must be enabled on the queue pair.
+ */
+struct slash_qdma_transfer {
+    __u32 size;        /**< Struct size for ABI versioning. */
+    __u32 buf_id;      /**< [in] Registered buffer handle. */
+    __u64 buf_offset;  /**< [in] Byte offset within the registered buffer. */
+    __u64 dev_addr;    /**< [in] Device-side (endpoint) address. */
+    __u64 length;      /**< [in] Number of bytes to transfer. */
+    __u32 direction;   /**< [in] enum slash_qdma_transfer_dir (H2C or C2H). */
+    __u32 pad0;        /**< Padding for natural alignment. */
+};
+
 /** Query QDMA subsystem capabilities. */
 #define SLASH_QDMA_IOCTL_INFO          _IOWR('v', 0x50, struct slash_qdma_info)
 
@@ -239,5 +326,17 @@ struct slash_qdma_qpair_fd_request {
 
 /** Obtain an I/O file descriptor for a queue pair. */
 #define SLASH_QDMA_IOCTL_QPAIR_GET_FD  _IOWR('v', 0x53, struct slash_qdma_qpair_fd_request)
+
+/** Register a host buffer (pin + DMA-map once); returns assigned buf_id. */
+#define SLASH_QDMA_IOCTL_BUF_REGISTER  _IOWR('v', 0x54, struct slash_qdma_buf_register)
+
+/** Unregister a previously registered buffer. */
+#define SLASH_QDMA_IOCTL_BUF_UNREGISTER _IOWR('v', 0x55, struct slash_qdma_buf_unregister)
+
+/**
+ * Perform a registered-buffer DMA transfer.  Issued on a queue-pair I/O
+ * fd (not the control device); returns the number of bytes transferred.
+ */
+#define SLASH_QDMA_QPAIR_IOCTL_TRANSFER _IOWR('v', 0x56, struct slash_qdma_transfer)
 
 #endif
