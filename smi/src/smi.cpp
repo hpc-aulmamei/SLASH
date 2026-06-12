@@ -139,6 +139,19 @@ static int smiMain(int argc, char **argv) {
         "buffer-size/offsets; the allocation fails with no fallback otherwise.")
         ->transform(CLI::CheckedTransformer(pageSizeMap, CLI::ignore_case))
         ->default_str("4k");
+    validateCommand->add_option_function<std::string>("--mm-channel",
+        [&validateOptions](const std::string& value) {
+            try {
+                validateOptions.mmChannels = Validate::parseMmChannelSpec(value);
+            } catch (const std::exception& e) {
+                throw CLI::ValidationError("--mm-channel", e.what());
+            }
+        },
+        "AXI-MM/NoC channel per buffer: auto|0|1 applied to all buffers, or a "
+        "comma-separated list with exactly one entry per buffer position "
+        "(2 x --threads entries, e.g. -j 1 -> '0,1'); no repeating. "
+        "auto stripes across channels by qid&1. Default auto.")
+        ->default_str("auto");
     addValidateSizeOption("--buffer-size", &validateOptions.bufferSize,
         "Size of each validate buffer; accepts bytes or k/K/m/M suffixes (max 512M)")
         ->default_str("512M");
@@ -177,6 +190,13 @@ static int smiMain(int argc, char **argv) {
         "In --channel-allocation paired mode, byte distance between the two per-channel "
         "memory regions (NSU/pseudo-channel stride); accepts k/K/m/M/g/G suffixes")
         ->default_str("16G");
+    validateCommand->add_option_function<uint32_t>("--ring-size-index",
+        [&validateOptions](uint32_t value) {
+            validateOptions.ringSizeIndex = value;
+        },
+        "Raw-transfer queue descriptor-ring size index (0-15). Overrides the backend default.")
+        ->check(CLI::Range(0u, 15u))
+        ->default_str("backend default");
     validateCommand->add_option("--bandwidth-iterations", validateOptions.bandwidthIterations,
         "Raw-transfer bandwidth mode only: repeat each whole-buffer transfer this many times")
         ->default_val(1)->check(CLI::Range(static_cast<uint64_t>(1),

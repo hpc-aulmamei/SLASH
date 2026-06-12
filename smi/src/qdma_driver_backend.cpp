@@ -302,8 +302,10 @@ constexpr uint32_t QRNGSZ_IDX_DEFAULT = 9;
 
 } // namespace
 
-QdmaDriverDevice::QdmaDriverDevice(const std::string& boardBdf)
-    : nl_(std::make_unique<XnlClient>()) {
+QdmaDriverDevice::QdmaDriverDevice(const std::string& boardBdf,
+                                   std::optional<uint32_t> ringSizeIndex)
+    : nl_(std::make_unique<XnlClient>()),
+      ringSizeIndex_(ringSizeIndex.value_or(QRNGSZ_IDX_DEFAULT)) {
     const ParsedBdf board = parseBdf(boardBdf);
 
     // Enumerate the driver's devices and find the QDMA function on this board.
@@ -439,16 +441,16 @@ void QdmaDriverDevice::queueAdd(uint32_t qid) {
     }
 }
 
-void QdmaDriverDevice::queueStart(uint32_t qid) {
-    // Round-robin the queue pair across the function's MM engine channels.
-    // This has to be carried on `q start`: the driver only reads
-    // XNL_ATTR_MM_CHANNEL in its start handler (via qdma_queue_config) and
-    // defaults the queue to channel 0 whenever the attribute is absent.
-    // mmChannelMax_ is always >= 1, so the modulo is safe.
-    const uint32_t channel = qid % mmChannelMax_;
+void QdmaDriverDevice::queueStart(uint32_t qid, uint32_t channel) {
+    // The caller chooses the MM engine channel for this queue pair.  It has to
+    // be carried on `q start`: the driver only reads XNL_ATTR_MM_CHANNEL in its
+    // start handler (via qdma_queue_config) and defaults the queue to channel 0
+    // whenever the attribute is absent.  mmChannelMax_ is always >= 1, so the
+    // modulo keeps an out-of-range request inside the device's channel count.
+    channel %= mmChannelMax_;
     XnlClient::Response resp = nl_->sendCmd(XNL_CMD_Q_START, index_,
         {{XNL_ATTR_QIDX, qid}, {XNL_ATTR_NUM_Q, 1}, {XNL_ATTR_QFLAG, QFLAG_MM_BI_START},
-         {XNL_ATTR_QRNGSZ_IDX, QRNGSZ_IDX_DEFAULT}, {XNL_ATTR_MM_CHANNEL, channel}});
+         {XNL_ATTR_QRNGSZ_IDX, ringSizeIndex_}, {XNL_ATTR_MM_CHANNEL, channel}});
     if (resp.present[XNL_ATTR_ERROR] && resp.attrs[XNL_ATTR_ERROR] != 0) {
         throw std::runtime_error("QDMA q start failed for qid " + std::to_string(qid) + ": " +
                                  (resp.genmsg.empty() ? "netlink error" : resp.genmsg));
@@ -481,14 +483,19 @@ std::string QdmaDriverDevice::charDevPath(uint32_t qid) const {
 
 QdmaDriverBuffer::QdmaDriverBuffer(QdmaDriverDevice& device, uint32_t qid,
                                    uint64_t physAddr, uint64_t size,
-                                   raw::PageSize pageSize)
+                                   raw::PageSize pageSize, int mmChannel)
     : device_(&device), qid_(qid), physAddr_(physAddr) {
     try {
         mapping_ = raw::createHostMapping(size, physAddr, pageSize);
 
+        // mmChannel < 0 means auto: spread the queue across channels by qid.
+        const uint32_t channel = (mmChannel < 0)
+            ? qid_
+            : static_cast<uint32_t>(mmChannel);
+
         device_->queueAdd(qid_);
         queueAdded_ = true;
-        device_->queueStart(qid_);
+        device_->queueStart(qid_, channel);
         queueStarted_ = true;
 
         const std::string path = device_->charDevPath(qid_);

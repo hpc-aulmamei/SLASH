@@ -30,7 +30,9 @@
 /// the default VRTD buffer path.
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <vector>
 
 /// @brief Static entry-point for the validate command.
 ///
@@ -66,6 +68,17 @@ public:
             Huge2M, ///< 2 MiB hugepages.
         };
 
+        /// @brief Per-queue AXI-MM/NoC channel selection for a buffer.
+        ///
+        /// Auto lets the driver stripe by qid&1; Ch0/Ch1 pin the queue to a
+        /// single AXI-MM channel (and hence NoC channel).  Applies to the VRTD,
+        /// raw SLASH, and off-the-shelf QDMA-driver backends.
+        enum class MmChannel {
+            Auto, ///< Driver stripes by qid&1 (default).
+            Ch0,  ///< Pin to AXI-MM/NoC channel 0.
+            Ch1,  ///< Pin to AXI-MM/NoC channel 1.
+        };
+
         std::string bdf;           ///< BDF (Bus:Device.Function) address of the target device.
         unsigned threads = 8;      ///< Number of parallel buffers/threads (1-64).
         bool noReset = false;      ///< Skip the device reset step before running memory tests.
@@ -74,6 +87,9 @@ public:
         bool rawTransferTest = false; ///< Use libslash raw QDMA transfers instead of VRTD buffers.
         bool useQdmaDriver = false;   ///< Run the raw test over the off-the-shelf Xilinx QDMA driver.
         PageSize pageSize = PageSize::Base4K; ///< Host staging-buffer page granule (4 KiB or 2 MiB).
+        /// Per-buffer AXI-MM channel selection, indexed by buffer position
+        /// modulo size (a single entry applies to every buffer). Default auto.
+        std::vector<MmChannel> mmChannels{MmChannel::Auto};
         uint64_t bufferSize = 512ULL * 1024ULL * 1024ULL; ///< Size of each test buffer.
         uint64_t offset = 512ULL * 1024ULL * 1024ULL; ///< Distance between logical buffer positions.
         uint64_t startingOffset = 0; ///< Offset from memory-space base for position 0.
@@ -88,6 +104,8 @@ public:
         uint64_t bandwidthIterations = 1;
         /// Raw bandwidth phase duration in seconds. 0 means use fixed iterations.
         double bandwidthDuration = 0.0;
+        /// Optional descriptor-ring size index for raw QDMA queue creation.
+        std::optional<uint32_t> ringSizeIndex;
     };
 
     /// @brief Executes the validate command.
@@ -97,6 +115,9 @@ public:
 
     /// @brief Parse a byte-size option accepting bare values and k/K/m/M suffixes.
     static uint64_t parseByteSizeOption(const std::string& text);
+
+    /// @brief Parse an --mm-channel spec: a single auto|0|1 or a comma-separated list.
+    static std::vector<Options::MmChannel> parseMmChannelSpec(const std::string& text);
 };
 
 #endif // SMI_VALIDATE_HPP

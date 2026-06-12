@@ -40,6 +40,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "raw_transfer.hpp"
@@ -57,7 +58,8 @@ class QdmaDriverDevice {
 public:
     /// @param boardBdf Board-level BDF "DDDD:BB:DD" (function is resolved by
     ///                 enumerating the driver's device list).
-    explicit QdmaDriverDevice(const std::string& boardBdf);
+    explicit QdmaDriverDevice(const std::string& boardBdf,
+                              std::optional<uint32_t> ringSizeIndex = std::nullopt);
     ~QdmaDriverDevice();
 
     QdmaDriverDevice(const QdmaDriverDevice&) = delete;
@@ -73,7 +75,9 @@ public:
     /// spreading queues across the device's MM channels (the channel only
     /// takes effect on `q start`; the driver ignores it on `q add`).
     void queueAdd(uint32_t qid);
-    void queueStart(uint32_t qid);
+    /// Start queue @p qid pinned to MM engine @p channel (0-based, clamped to
+    /// the device's channel count).
+    void queueStart(uint32_t qid, uint32_t channel);
 
     /// Stop + delete a queue pair.  Best-effort; never throws (safe in dtors).
     void queueStop(uint32_t qid) noexcept;
@@ -97,6 +101,7 @@ private:
     std::string functionBdf_;     ///< Full BDF including function.
     unsigned qmax_ = 0;           ///< Currently provisioned queue count.
     unsigned mmChannelMax_ = 1;   ///< Number of MM engine channels (>= 1).
+    uint32_t ringSizeIndex_ = 0;  ///< QRNGSZ_IDX used when starting queues.
 };
 
 /// One host buffer bound to a freshly-created upstream QDMA queue pair.
@@ -105,8 +110,10 @@ private:
 /// testBandwidth() templates.
 class QdmaDriverBuffer {
 public:
+    /// @param mmChannel Concrete MM channel to pin to, or -1 to spread the
+    ///                  queue across channels by qid % channel-count.
     QdmaDriverBuffer(QdmaDriverDevice& device, uint32_t qid, uint64_t physAddr, uint64_t size,
-                     raw::PageSize pageSize);
+                     raw::PageSize pageSize, int mmChannel);
 
     QdmaDriverBuffer(const QdmaDriverBuffer&) = delete;
     QdmaDriverBuffer& operator=(const QdmaDriverBuffer&) = delete;
