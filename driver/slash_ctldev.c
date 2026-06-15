@@ -65,6 +65,17 @@
 #define SLASH_IOCTL_BAR_FD_RESPONSE_SIZE \
     (offsetof(struct slash_ioctl_bar_fd_request, length) + SLASH_FIELD_SIZE(struct slash_ioctl_bar_fd_request, length))
 
+/*
+ * GET_DEVICE_INFO is pure output: there are no input fields beyond `size`
+ * itself, so the smallest meaningful user_size is the size field on its
+ * own. A caller passing size==0 has either forgotten to initialise the
+ * struct or claimed an incoherent "my struct has zero bytes" — either way
+ * the kernel rejects with -EINVAL rather than silently writing 0 bytes
+ * back.
+ */
+#define SLASH_IOCTL_DEVICE_INFO_MIN_SIZE \
+    SLASH_FIELD_SIZE(struct slash_ioctl_device_info, size)
+
 static int slash_ctldev_set_bar_info(struct pci_dev *pdev, struct slash_ctldev *ctldev);
 static int slash_ctldev_create_bar_dmabufs(struct slash_ctldev *ctldev);
 static int slash_ctldev_create_misc(struct slash_ctldev *ctldev);
@@ -642,6 +653,11 @@ static long slash_ctldev_fop_ioctl(struct file *file, unsigned int op, unsigned 
         if (copy_from_user(&user_size, (void __user *)arg, sizeof(user_size))) {
             dev_err(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO copy_from_user failed\n");
             return -EFAULT;
+        }
+
+        if (user_size < SLASH_IOCTL_DEVICE_INFO_MIN_SIZE) {
+            dev_warn(&pdev->dev, "ctldev: SLASH_CTLDEV_IOCTL_GET_DEVICE_INFO size too small (%u)\n", user_size);
+            return -EINVAL;
         }
 
         memset(&info, 0, sizeof(info));

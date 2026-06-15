@@ -60,6 +60,7 @@
 #include <linux/pci.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
+#include <linux/stddef.h>
 #include <linux/uaccess.h>
 #include <linux/xarray.h>
 #include <linux/anon_inodes.h>
@@ -80,6 +81,25 @@
 #define SLASH_QDMA_DIR_CMPT BIT(2)
 #define SLASH_QDMA_DIR_MASK (SLASH_QDMA_DIR_H2C | SLASH_QDMA_DIR_C2H | \
                              SLASH_QDMA_DIR_CMPT)
+
+/*
+ * Minimum user_size accepted by each QDMA ioctl. For input-bearing ioctls
+ * this is the end-offset of the trailing input field — callers with a
+ * smaller user_size would silently send zero-filled inputs after the
+ * versioned copy-in, so the handler must refuse with -EINVAL before
+ * acting on them. QDMA_IOCTL_INFO has no input fields beyond `size`, so
+ * its minimum is the size field on its own — a caller passing size==0
+ * has either forgotten to initialise the struct or claimed an incoherent
+ * "my struct has zero bytes", both of which the kernel rejects.
+ */
+#define SLASH_QDMA_INFO_MIN_SIZE \
+    offsetofend(struct slash_qdma_info, size)
+#define SLASH_QDMA_QPAIR_ADD_MIN_SIZE \
+    offsetofend(struct slash_qdma_qpair_add, cmpt_ring_sz)
+#define SLASH_QDMA_QPAIR_OP_MIN_SIZE \
+    offsetofend(struct slash_qdma_qpair_op, op)
+#define SLASH_QDMA_QPAIR_GET_FD_MIN_SIZE \
+    offsetofend(struct slash_qdma_qpair_fd_request, flags)
 
 /**
  * SLASH_QDMA_QTYPE_COUNT - Number of queue types tracked per queue pair.
@@ -1338,6 +1358,12 @@ static int slash_qdma_ioctl_info_w(struct miscdevice *misc,
     if (copy_from_user(&user_size, uarg, sizeof(user_size)))
         return -EFAULT;
 
+    if (user_size < SLASH_QDMA_INFO_MIN_SIZE) {
+        dev_warn(misc->this_device,
+                 "qdma: INFO size too small (%u)\n", user_size);
+        return -EINVAL;
+    }
+
     memset(&info, 0, sizeof(info));
     info.size = sizeof(info);
 
@@ -1420,6 +1446,12 @@ static int slash_qdma_ioctl_qpair_add_w(struct miscdevice *misc,
      */
     if (copy_from_user(&user_size, uarg, sizeof(user_size)))
         return -EFAULT;
+
+    if (user_size < SLASH_QDMA_QPAIR_ADD_MIN_SIZE) {
+        dev_warn(misc->this_device,
+                 "qdma: QPAIR_ADD size too small (%u)\n", user_size);
+        return -EINVAL;
+    }
 
     memset(&req, 0, sizeof(req));
 
@@ -1765,6 +1797,12 @@ static int slash_qdma_ioctl_qpair_op_w(struct miscdevice *misc,
      */
     if (copy_from_user(&user_size, uarg, sizeof(user_size)))
         return -EFAULT;
+
+    if (user_size < SLASH_QDMA_QPAIR_OP_MIN_SIZE) {
+        dev_warn(misc->this_device,
+                 "qdma: Q_OP size too small (%u)\n", user_size);
+        return -EINVAL;
+    }
 
     memset(&req, 0, sizeof(req));
 
@@ -2362,10 +2400,14 @@ static int slash_qdma_ioctl_qpair_get_fd_w(struct miscdevice *misc,
     int fd;
     int err;
 
-    (void)misc;
-
     if (copy_from_user(&user_size, uarg, sizeof(user_size)))
         return -EFAULT;
+
+    if (user_size < SLASH_QDMA_QPAIR_GET_FD_MIN_SIZE) {
+        dev_warn(misc->this_device,
+                 "qdma: QPAIR_GET_FD size too small (%u)\n", user_size);
+        return -EINVAL;
+    }
 
     memset(&req, 0, sizeof(req));
 
@@ -2456,48 +2498,4 @@ static int slash_qdma_ioctl_qpair_get_fd_w(struct miscdevice *misc,
     fd_install(fd, file);
 
     return fd;
-}
-
-/* ─────────────────────────────────────────────────────────────────────
- * Queue pair teardown helper
- * ───────────────────────────────────────────────────────────────────── */
-
-/**
- * slash_qdma_qpair_teardown() - Fully remove a queue pair and its HW queues.
- * @qdma_dev: QDMA device.
- * @qid:      Queue pair ID.
- * @entry:    Queue pair entry to tear down.
- *
- * Must be called with @qdma_dev->lock held.
- *
- * Stops and removes all HW queues in the pair, invalidates all handles,
- * erases the entry from the xarray, and drops the xarray's ref on the
- * entry.  The entry itself is freed only when all references (including
- * any held by open anon_inode fds) have been released.
- */
-/* Must be called with qdma_dev->lock held */
-static void slash_qdma_qpair_teardown(struct slash_qdma_dev *qdma_dev, u32 qid,
-                                      struct slash_qdma_qpair_entry *entry)
-{
-    unsigned int idx;
-
-    if (!entry)
-        return;
-
-    /* Remove any queues that still exist */
-    for (idx = 0; idx < SLASH_QDMA_QTYPE_COUNT; idx++) {
-        enum queue_type_t qtype = idx;
-
-        if (entry->dir_mask & slash_qdma_qtype_to_dir(qtype))
-            slash_qdma_ioctl_qpair_rm_q(&qdma_dev->misc, qdma_dev, entry, qtype);
-    }
-
-    /* Mark entry dead for any stale FDs */
-    for (idx = 0; idx < SLASH_QDMA_QTYPE_COUNT; idx++)
-        entry->qhndl[idx] = QDMA_QUEUE_IDX_INVALID;
-    entry->dir_mask = 0;
-
-    /* Drop from xarray and release ref */
-    xa_erase(&qdma_dev->qpairs, qid);
-    slash_qdma_qpair_put(entry);
 }

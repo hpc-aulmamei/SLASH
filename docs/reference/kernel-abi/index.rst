@@ -187,6 +187,9 @@ After a device is removed from the PCI hierarchy, mapped BAR regions remain acce
 memory. However, all physical accesses will return ``0xFFFFFFFF`` (PCIe completion timeout) and
 writes are silently discarded.
 
+After a device is removed from the PCI hierarchy, mapped BAR regions remain accessible in virtual
+memory but their behavior is undefined. Userspace should treat the mapping as invalid after removal..
+
 IOCTL Reference
 ---------------
 
@@ -306,17 +309,26 @@ fd with a physical board and with the matching QDMA control device.
 
 **Direction:** ``_IOWR`` — userspace writes ``size``; the kernel writes back all output fields.
 
-**Preconditions:** None.
+**Preconditions:**
+
+- ``size`` must cover at least the ``size`` field itself (``size >= sizeof(__u32)``) — otherwise
+  ``-EINVAL``. This ioctl carries no input fields beyond ``size``, so the minimum is just the
+  ``size`` field on its own.
 
 **Postconditions:**
 
-- All output fields are populated.
-- ``bdf`` is a NUL-terminated string in ``DDDD:BB:SS.F`` format with full domain.
+- The output is truncated to ``min(size, sizeof(struct))`` bytes. Fields whose tail lies beyond
+  the user-supplied ``size`` are not written; the corresponding bytes in the user buffer are left
+  untouched.
+- If ``size > sizeof(struct)``, the trailing bytes of the user buffer are zero-filled.
+- Within the written range, all output fields are populated and ``bdf`` is a NUL-terminated string
+  in ``DDDD:BB:SS.F`` format with full domain.
 
 **Return values:**
 
 - ``0`` — success
 - ``-EFAULT`` — copy failure
+- ``-EINVAL`` — ``size`` too small (below ``sizeof(__u32)``)
 
 Memory transfers via QDMA: ``/dev/slash_qdma_ctl<N>``
 =====================================================
@@ -490,16 +502,25 @@ based on the returned values in the current implementation.
 
 **Direction:** ``_IOWR`` — userspace writes ``size``; the kernel writes back all output fields.
 
-**Preconditions:** None beyond the standard size-field protocol.
+**Preconditions:**
+
+- ``size`` must cover at least the ``size`` field itself (``size >= sizeof(__u32)``) — otherwise
+  ``-EINVAL``. This ioctl carries no input fields beyond ``size``, so the minimum is just the
+  ``size`` field on its own.
 
 **Postconditions:**
 
 - All output fields are set to 0 in the current implementation.
+- The output is truncated to ``min(size, sizeof(struct))`` bytes. Fields whose tail lies beyond
+  the user-supplied ``size`` are not written; the corresponding bytes in the user buffer are left
+  untouched.
+- If ``size > sizeof(struct)``, the trailing bytes of the user buffer are zero-filled.
 
 **Return values:**
 
 - ``0`` — success
 - ``-EFAULT`` — copy failure
+- ``-EINVAL`` — ``size`` too small (below ``sizeof(__u32)``)
 - ``-ENODEV`` — device shutting down or QDMA handle not open
 
 ``SLASH_QDMA_IOCTL_QPAIR_ADD``
@@ -551,25 +572,30 @@ kernel writes back ``qid``.
 
 **Preconditions:**
 
+- ``size`` must cover at least ``cmpt_ring_sz`` (the trailing input field) — otherwise ``-EINVAL``
 - ``dir_mask`` must be non-zero and contain only bits ``[0, 1]``; bit 2 (CMPT) is not yet
   supported
 - ``mode`` must be 0 (MM); streaming mode (1) is not yet supported
 - All ring size indices must be in ``[0, 15]``
-- At most 256 concurrent queue pairs per device
+- At most 256 concurrent queue pairs per device. The actual ceiling is lower in practice and
+  depends on how many queues libqdma's resource manager makes available to the calling process
+  (the 256-slot pool is shared across all PCI functions of the device).
 
 **Postconditions:**
 
 - ``qid`` is filled with the kernel-assigned ID (0–255), used for all subsequent operations on
-  this queue pair.
+  this queue pair. If ``size`` is too small to cover ``qid``, the field is silently dropped on the
+  write-back but the qpair is still created — callers should always supply ``size = sizeof(struct)``
+  so they can recover the assigned id.
 
 **Return values:**
 
 - ``0`` — success
 - ``-EFAULT`` — copy failure
-- ``-EINVAL`` — invalid ``dir_mask``, ``mode``, or ring size index
+- ``-EINVAL`` — ``size`` too small, or invalid ``dir_mask``, ``mode``, or ring size index
 - ``-EOPNOTSUPP`` — streaming mode or completion queue requested (not yet supported)
 - ``-ENOMEM`` — allocation failure
-- ``-EBUSY`` — all 256 qpair IDs in use
+- ``-EBUSY`` — no qpair IDs available (the per-process queue ceiling has been reached)
 - ``-ENODEV`` — device shutting down
 - Other negative errno from libqdma's ``qdma_queue_add()``
 
@@ -619,6 +645,7 @@ removed.
 
 **Preconditions:**
 
+- ``size`` must cover at least ``op`` (the trailing input field) — otherwise ``-EINVAL``
 - ``op`` must be in ``[0, 2]``
 - ``qid`` must refer to an existing queue pair
 
@@ -632,7 +659,7 @@ removed.
 
 - ``0`` — success
 - ``-EFAULT`` — copy failure
-- ``-EINVAL`` — ``op`` value not in ``[0, 2]``
+- ``-EINVAL`` — ``size`` too small, or ``op`` value not in ``[0, 2]``
 - ``-ENOENT`` — ``qid`` not found in the device's xarray
 - ``-ENODEV`` — device shutting down
 - Other negative errno from libqdma queue start, stop, or remove
@@ -662,6 +689,7 @@ as the ``ioctl()`` return value (not as a struct field).
 
 **Preconditions:**
 
+- ``size`` must cover at least ``flags`` (the trailing input field) — otherwise ``-EINVAL``
 - ``qid`` must refer to an existing, non-empty queue pair
 - ``flags & ~O_CLOEXEC == 0`` (any other bits cause ``-EINVAL``)
 - The queue pair should be in the started state for I/O to work
@@ -676,7 +704,7 @@ as the ``ioctl()`` return value (not as a struct field).
 
 - ``>= 0`` — file descriptor (success)
 - ``-EFAULT`` — copy failure
-- ``-EINVAL`` — unsupported ``flags`` bits
+- ``-EINVAL`` — ``size`` too small, or unsupported ``flags`` bits
 - ``-ENOENT`` — ``qid`` not found or qpair is empty
 - ``-ENODEV`` — device shutting down
 - ``-ENOMEM`` — allocation failure
@@ -762,7 +790,7 @@ struct:
     #define SLASH_HOTPLUG_BDF_LEN 32
 
     struct slash_hotplug_device_request {
-        __u32 size;                        /* ABI version; 0 is accepted (treated as sizeof) */
+        __u32 size;                        /* ABI version: set to sizeof(struct) */
         char  bdf[SLASH_HOTPLUG_BDF_LEN]; /* NUL-terminated PCI BDF, e.g. "0000:03:00.0" */
     };
 
@@ -811,7 +839,7 @@ callback. The corresponding ``/dev/slash_ctl<N>`` or ``/dev/slash_qdma_ctl<N>`` 
 **Preconditions:**
 
 - ``bdf`` must be a valid, parseable ``DDDD:BB:SS.F`` string (or empty for single-device shorthand)
-- ``size`` must cover the ``bdf`` field (or be 0, treated as ``sizeof``)
+- ``size`` must cover the ``bdf`` field — otherwise ``-EINVAL``
 
 **Postconditions:**
 
@@ -844,6 +872,7 @@ after the call returns before rescanning.
 
 **Preconditions:**
 
+- ``size`` must cover the ``bdf`` field — otherwise ``-EINVAL``
 - ``bdf`` must be a valid ``DDDD:BB:SS.F`` string; only the domain and bus number are used to
   locate the upstream bridge
 - The endpoint device may have been removed before calling; the kernel resolves the bridge via the
@@ -860,7 +889,7 @@ after the call returns before rescanning.
 
 - ``0`` — success (after 1000 ms delay)
 - ``-EFAULT`` — copy failure
-- ``-EINVAL`` — malformed BDF
+- ``-EINVAL`` — malformed BDF or request ``size`` too small
 - ``-ENODEV`` — no upstream bridge found for the specified bus
 
 ``SLASH_HOTPLUG_IOCTL_HOTPLUG``
@@ -881,6 +910,7 @@ is needed.
 
 **Preconditions:**
 
+- ``size`` must cover the ``bdf`` field — otherwise ``-EINVAL``
 - ``bdf`` must be a valid, parseable ``DDDD:BB:SS.F`` string
 - The device and its parent bus must exist in the PCI subsystem
 
@@ -894,5 +924,5 @@ is needed.
 
 - ``0`` — success
 - ``-EFAULT`` — copy failure
-- ``-EINVAL`` — malformed BDF
+- ``-EINVAL`` — malformed BDF or request ``size`` too small
 - ``-ENODEV`` — device or parent bus not found
