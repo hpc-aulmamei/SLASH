@@ -171,7 +171,7 @@ int slash_qdma_qpair_get_fd(struct slash_qdma *qdma, uint32_t qid, int flags);
  *
  * The buffer is owned by @qdma and is automatically released when the
  * handle is closed.  Pass the returned @buf_id to slash_qdma_transfer().
- * Current SLASH hardware returns SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR.
+ * Current SLASH hardware returns SLASH_QDMA_TRANSFER_HINT_V80.
  *
  * @return 0 on success, -1 on failure (errno set).
  */

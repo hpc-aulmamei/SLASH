@@ -73,7 +73,7 @@ static int qpair_fallback_register(void *addr, uint64_t length, uint32_t *buf_id
             qpair_fallback_bufs[i].length = length;
             *buf_id = i;
             if (transfer_hint != NULL) {
-                *transfer_hint = SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR;
+                *transfer_hint = SLASH_QDMA_TRANSFER_HINT_V80;
             }
             return 0;
         }

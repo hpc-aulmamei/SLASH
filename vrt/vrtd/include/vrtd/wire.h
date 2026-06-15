@@ -308,7 +308,14 @@ struct vrtd_req_buffer_open {
 struct vrtd_resp_buffer_open {
     uint64_t size; ///< Allocated size in bytes (rounded up to subregion).
     uint64_t phys_addr; ///< Device physical address of the allocation.
-    uint32_t qpair_fd_count; ///< Number of qpair FDs sent via SCM_RIGHTS (1 or 2).
+    /**
+     * Number of qpair FDs sent via SCM_RIGHTS (1 or 2).  When two FDs are
+     * sent (an mm_channel == AUTO request), the ordering is fixed: FD[0] is
+     * pinned to AXI-MM channel 0 and FD[1] to channel 1, so the client can
+     * apply the V80 placement policy deterministically.  A single FD is
+     * pinned to the explicitly requested channel.
+     */
+    uint32_t qpair_fd_count;
 } __attribute__((packed));
 
 /**
@@ -343,7 +350,12 @@ struct vrtd_req_buffer_open_raw {
 } __attribute__((packed));
 
 struct vrtd_resp_buffer_open_raw {
-    uint32_t qpair_fd_count; ///< Number of qpair FDs sent via SCM_RIGHTS (1 or 2).
+    /**
+     * Number of qpair FDs sent via SCM_RIGHTS (1 or 2).  Same fd-to-channel
+     * ordering as @ref vrtd_resp_buffer_open: FD[0] -> channel 0, FD[1] ->
+     * channel 1 for an AUTO request; a single FD pins the requested channel.
+     */
+    uint32_t qpair_fd_count;
 } __attribute__((packed));
 
 /**

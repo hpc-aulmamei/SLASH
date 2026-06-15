@@ -297,7 +297,7 @@ int slash_qdma_mock_buffer_register(struct slash_qdma *qdma, void *addr,
 
     *buf_id = (uint32_t) i;
     if (transfer_hint != NULL) {
-        *transfer_hint = SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR;
+        *transfer_hint = SLASH_QDMA_TRANSFER_HINT_V80;
     }
 
     return 0;

@@ -259,8 +259,8 @@ enum slash_qdma_transfer_dir {
  * queue pair whose direction and ownership checks pass.
  */
 enum slash_qdma_transfer_hint {
-    SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR = 1, /**< Prefer a single qpair. */
-    SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR   = 2, /**< Prefer two qpairs. */
+    SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR = 1, /**< Prefer a single qpair (all traffic on one channel). */
+    SLASH_QDMA_TRANSFER_HINT_V80          = 2, /**< Apply the V80 placement-aware channel policy. */
 };
 
 /**
@@ -281,7 +281,7 @@ enum slash_qdma_transfer_hint {
  * (including on process exit) if userspace forgets to unregister them.
  *
  * The kernel also returns @transfer_hint.  Current SLASH hardware returns
- * SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR; userspace may ignore this field.
+ * SLASH_QDMA_TRANSFER_HINT_V80; userspace may ignore this field.
  */
 struct slash_qdma_buf_register {
     __u32 size;        /**< Struct size for ABI versioning. */

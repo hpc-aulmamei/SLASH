@@ -115,7 +115,7 @@ int fd = slash_qdma_qpair_get_fd(qdma, qid, O_CLOEXEC);
 uint32_t buf_id;
 enum slash_qdma_transfer_hint hint;
 slash_qdma_qpair_buffer_register(fd, buf, len, &buf_id, &hint);
-/* Current SLASH hardware returns SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR.
+/* Current SLASH hardware returns SLASH_QDMA_TRANSFER_HINT_V80.
  * Pass NULL instead of &hint if the application does not care. */
 
 /* H2C: host -> device at dev_addr */

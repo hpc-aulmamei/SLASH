@@ -262,8 +262,8 @@ TEST_P(ParametrizedQdmaTest, RegisteredBufferTransfer) {
     enum slash_qdma_transfer_hint dst_hint = SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR;
     ASSERT_EQ(slash_qdma_buffer_register(qdma_, src, XFER_SIZE, &src_buf, &src_hint), 0);
     ASSERT_EQ(slash_qdma_buffer_register(qdma_, dst, XFER_SIZE, &dst_buf, &dst_hint), 0);
-    EXPECT_EQ(src_hint, SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR);
-    EXPECT_EQ(dst_hint, SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR);
+    EXPECT_EQ(src_hint, SLASH_QDMA_TRANSFER_HINT_V80);
+    EXPECT_EQ(dst_hint, SLASH_QDMA_TRANSFER_HINT_V80);
 
     // H2C: push the source buffer to the device.
     ssize_t written = slash_qdma_transfer(qdma_, queue_fd, src_buf, 0,

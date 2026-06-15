@@ -760,14 +760,21 @@ auto-released when the final fd referencing that context is closed (including on
 
 ``transfer_hint`` is advisory and tells userspace which queue topology the kernel expects to be
 best for this registered buffer on the current hardware. Current SLASH hardware returns
-``SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR``; userspace may ignore this value. Known values are:
+``SLASH_QDMA_TRANSFER_HINT_V80``; userspace may ignore this value. Known values are:
 
 .. code-block:: c
 
     enum slash_qdma_transfer_hint {
         SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR = 1,
-        SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR   = 2,
+        SLASH_QDMA_TRANSFER_HINT_V80          = 2,
     };
+
+``SLASH_QDMA_TRANSFER_HINT_V80`` asks userspace to apply the V80 placement-aware channel policy:
+spread a transfer across both AXI-MM channels so each NoC ingress master (NMU) drives an
+independent memory endpoint (NSU). The marker is opaque; the client computes the actual split from
+the buffer's device address (DDR ranges are halved across the two channels, while HBM ranges are
+routed by the 16 GiB half-memory boundary). ``SLASH_QDMA_TRANSFER_HINT_SINGLE_QPAIR`` keeps all
+traffic on a single queue.
 
 **Preconditions:**
 
@@ -780,7 +787,7 @@ best for this registered buffer on the current hardware. Current SLASH hardware 
 
 - ``buf_id`` is filled with the client-scoped handle, used in ``SLASH_QDMA_QPAIR_IOCTL_TRANSFER``.
 - ``transfer_hint`` is filled with an advisory transfer topology hint. Current SLASH hardware
-  returns ``SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR``.
+  returns ``SLASH_QDMA_TRANSFER_HINT_V80``.
 - The pages remain pinned and DMA-mapped until the buffer is unregistered or the owning control fd
   is closed.
 

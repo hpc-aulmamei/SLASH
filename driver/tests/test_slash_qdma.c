@@ -992,7 +992,7 @@ TEST_F(qdma, transfer_wrong_direction_returns_enodev)
 
 	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, buf, TRANSFER_SIZE, &buf_id,
 				       &transfer_hint));
-	EXPECT_EQ(SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR, transfer_hint);
+	EXPECT_EQ(SLASH_QDMA_TRANSFER_HINT_V80, transfer_hint);
 
 	/* C2H is not enabled on this qpair. */
 	ret = qdma_buf_transfer(self->io_fd, buf_id, 0,
@@ -1020,7 +1020,7 @@ TEST_F(qdma, transfer_out_of_range_returns_einval)
 
 	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, buf, TRANSFER_SIZE, &buf_id,
 				       &transfer_hint));
-	EXPECT_EQ(SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR, transfer_hint);
+	EXPECT_EQ(SLASH_QDMA_TRANSFER_HINT_V80, transfer_hint);
 
 	/* Slice extends past the registered length. */
 	ret = qdma_buf_transfer(self->io_fd, buf_id, TRANSFER_SIZE,
@@ -1058,8 +1058,8 @@ TEST_F(qdma, registered_buffer_round_trip)
 				       &write_id, &write_hint));
 	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, read_buf, xfer_size,
 				       &read_id, &read_hint));
-	EXPECT_EQ(SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR, write_hint);
-	EXPECT_EQ(SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR, read_hint);
+	EXPECT_EQ(SLASH_QDMA_TRANSFER_HINT_V80, write_hint);
+	EXPECT_EQ(SLASH_QDMA_TRANSFER_HINT_V80, read_hint);
 
 	ret = qdma_buf_transfer(self->io_fd, write_id, 0, dma_addr, xfer_size,
 				SLASH_QDMA_XFER_H2C);

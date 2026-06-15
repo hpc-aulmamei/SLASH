@@ -3110,7 +3110,7 @@ static int slash_qdma_ioctl_buf_register_w(struct miscdevice *misc,
     /* Copy the assigned buf_id back to userspace. */
     req.size = sizeof(req);
     req.buf_id = buf_id;
-    req.transfer_hint = SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR;
+    req.transfer_hint = SLASH_QDMA_TRANSFER_HINT_V80;
     copy_size = min_t(size_t, user_size, sizeof(req));
     if (copy_to_user(uarg, &req, copy_size)) {
         xa_erase(&client->buffers, buf_id);

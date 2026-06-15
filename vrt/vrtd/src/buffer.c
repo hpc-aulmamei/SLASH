@@ -60,6 +60,32 @@
 #define VRTD_QDMA_RING_SZ_IDX 15u       /* Default ring size index */
 
 /**
+ * Decide how many qpairs back a buffer and which AXI-MM channel each one uses.
+ *
+ * A request of SLASH_QDMA_MM_CHANNEL_AUTO is expanded into two qpairs --
+ * @c fds[0] pinned to channel 0 and @c fds[1] to channel 1 -- so the client can
+ * apply the V80 placement policy with a deterministic fd-to-channel mapping.
+ * An explicit channel request pins a single qpair to that channel (no split).
+ *
+ * @param mm_channel  Requested channel (enum slash_qdma_mm_channel).
+ * @param channels    [out] Per-qpair channel value, indexed by qpair number.
+ * @return Number of qpairs to create (1 or VRTD_BUFFER_MAX_QPAIR_FDS).
+ */
+static uint32_t buffer_plan_qpair_channels(
+    uint32_t mm_channel,
+    uint32_t channels[VRTD_BUFFER_MAX_QPAIR_FDS])
+{
+    if (mm_channel == SLASH_QDMA_MM_CHANNEL_AUTO) {
+        channels[0] = SLASH_QDMA_MM_CHANNEL_0;
+        channels[1] = SLASH_QDMA_MM_CHANNEL_1;
+        return VRTD_BUFFER_MAX_QPAIR_FDS;
+    }
+
+    channels[0] = mm_channel;
+    return 1u;
+}
+
+/**
  * Initialise a buffer: allocate device memory, create a QDMA queue pair,
  * start the queue, and obtain a file descriptor for host-side access.
  *
@@ -178,10 +204,14 @@ static int buffer_init(struct buffer *buf,
     buf->size = alloc_size;
     buf->allocation_valid = true;
 
-    /* Steps 2-4: create/start queue pairs and obtain their fds.  Current
-     * SLASH hardware benefits from two qpairs per registered buffer; future
-     * backends may choose to send only one. */
-    for (uint32_t i = 0; i < VRTD_BUFFER_MAX_QPAIR_FDS; ++i) {
+    /* Steps 2-4: create/start queue pairs and obtain their fds.  An AUTO
+     * request yields two qpairs -- fds[0] on channel 0, fds[1] on channel 1 --
+     * so the client's V80 placement policy has a deterministic fd-to-channel
+     * mapping; an explicit channel pins a single qpair. */
+    uint32_t qpair_channels[VRTD_BUFFER_MAX_QPAIR_FDS];
+    uint32_t num_qpairs = buffer_plan_qpair_channels(mm_channel, qpair_channels);
+
+    for (uint32_t i = 0; i < num_qpairs; ++i) {
         struct slash_qdma_qpair_add qpair = {0};
 
         if (qpair_params != NULL) {
@@ -193,7 +223,7 @@ static int buffer_init(struct buffer *buf,
             qpair.cmpt_ring_sz = VRTD_QDMA_RING_SZ_IDX;
         }
         qpair.dir_mask = dir_mask;
-        qpair.mm_channel = mm_channel;
+        qpair.mm_channel = qpair_channels[i];
         qpair.size = sizeof(qpair);
 
         if (slash_qdma_qpair_add(qdma, &qpair) != 0) {
@@ -321,7 +351,10 @@ struct buffer *buffer_create_raw(struct slash_qdma *qdma,
         .qpair_created = false,
     };
 
-    for (uint32_t i = 0; i < VRTD_BUFFER_MAX_QPAIR_FDS; ++i) {
+    uint32_t qpair_channels[VRTD_BUFFER_MAX_QPAIR_FDS];
+    uint32_t num_qpairs = buffer_plan_qpair_channels(mm_channel, qpair_channels);
+
+    for (uint32_t i = 0; i < num_qpairs; ++i) {
         struct slash_qdma_qpair_add qpair = {0};
 
         qpair.mode = VRTD_QDMA_Q_MODE_MM;
@@ -329,7 +362,7 @@ struct buffer *buffer_create_raw(struct slash_qdma *qdma,
         qpair.c2h_ring_sz = VRTD_QDMA_RING_SZ_IDX;
         qpair.cmpt_ring_sz = VRTD_QDMA_RING_SZ_IDX;
         qpair.dir_mask = dir_mask;
-        qpair.mm_channel = mm_channel;
+        qpair.mm_channel = qpair_channels[i];
         qpair.size = sizeof(qpair);
 
         if (slash_qdma_qpair_add(qdma, &qpair) != 0) {

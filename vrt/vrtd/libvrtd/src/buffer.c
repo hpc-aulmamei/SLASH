@@ -46,6 +46,8 @@
 
 #include <vrtd/vrtd.h>
 
+#include "v80_policy.h"
+
 #include <assert.h>
 #include <errno.h>
 #include <limits.h>
@@ -131,6 +133,44 @@ static int vrtd_mmap_regular_base_pages(uint64_t size, void **addr_out) {
     return 0;
 }
 
+/*
+ * Issue a single contiguous transfer of [buf_offset, buf_offset + size) on one
+ * qpair fd.  The QDMA transfer ioctl operates on signed ssize_t lengths, so the
+ * range is chunked to stay within SSIZE_MAX while preserving step alignment.
+ */
+static int vrtd_transfer_segment(
+    int qpair_fd,
+    uint32_t buf_id,
+    uint64_t buf_offset,
+    uint64_t phys_addr,
+    uint64_t size,
+    uint64_t step,
+    uint32_t direction
+) {
+    uint64_t max_chunk = (uint64_t)SSIZE_MAX - ((uint64_t)SSIZE_MAX % step);
+    uint64_t done = 0;
+
+    if (max_chunk == 0) {
+        return -EINVAL;
+    }
+
+    while (done < size) {
+        uint64_t remaining = size - done;
+        uint64_t chunk = remaining > max_chunk ? max_chunk : remaining;
+        uint64_t xfer_offset = buf_offset + done;
+        uint64_t dev_offset = phys_addr + xfer_offset;
+        ssize_t ret = slash_qdma_qpair_transfer(
+            qpair_fd, buf_id, xfer_offset, dev_offset, chunk, direction);
+
+        if (ret <= 0) {
+            return -EIO;
+        }
+        done += (uint64_t) ret;
+    }
+
+    return 0;
+}
+
 static int vrtd_transfer_registered(
     const int *qpair_fds,
     uint32_t qpair_fd_count,
@@ -142,8 +182,6 @@ static int vrtd_transfer_registered(
     uint64_t step,
     bool to_device
 ) {
-    uint64_t max_chunk;
-    uint64_t transferred = 0;
     uint32_t direction = to_device ? SLASH_QDMA_XFER_H2C : SLASH_QDMA_XFER_C2H;
 
     if (size == 0) {
@@ -158,56 +196,38 @@ static int vrtd_transfer_registered(
         return -EINVAL;
     }
 
-    max_chunk = (uint64_t)SSIZE_MAX - ((uint64_t)SSIZE_MAX % step);
-    if (max_chunk == 0) {
-        return -EINVAL;
+    /*
+     * Decide how the transfer maps onto the available queues.  V80 applies the
+     * placement-aware policy (DDR halved, HBM routed by the half-memory
+     * boundary); any other hint keeps everything on the primary qpair.
+     */
+    struct vrtd_xfer_seg segs[VRTD_V80_MAX_SEGS];
+    uint32_t nseg;
+
+    if (transfer_hint == SLASH_QDMA_TRANSFER_HINT_V80) {
+        nseg = vrtd_plan_v80(phys_addr, offset, size, step, qpair_fd_count, segs);
+    } else {
+        segs[0].fd_index = 0;
+        segs[0].offset = offset;
+        segs[0].size = size;
+        nseg = 1;
     }
 
-    while (transferred < size) {
-        uint64_t chunk = size - transferred;
-        uint64_t done = 0;
+    for (uint32_t i = 0; i < nseg; ++i) {
+        uint32_t fd_index = segs[i].fd_index;
 
-        if (chunk > max_chunk) {
-            chunk = max_chunk;
+        /* The plan only references fds[0]/fds[1]; fall back to the primary
+         * qpair if a planned fd is somehow unavailable. */
+        if (fd_index >= qpair_fd_count || qpair_fds[fd_index] < 0) {
+            fd_index = 0;
         }
 
-        while (done < chunk) {
-            uint64_t remaining = chunk - done;
-            uint64_t xfer_offset = offset + transferred + done;
-            uint64_t dev_offset = phys_addr + xfer_offset;
-            uint64_t xfer_size = remaining;
-            uint32_t fd_index = 0;
-            ssize_t ret;
-
-            if (transfer_hint == SLASH_QDMA_TRANSFER_HINT_DUAL_QPAIR &&
-                qpair_fd_count > 1 && qpair_fds[1] >= 0 &&
-                remaining > step) {
-                /*
-                 * Use the second qpair for the upper half of each large chunk.
-                 * This keeps ranges disjoint while preserving alignment.
-                 */
-                uint64_t half = (chunk / 2) - ((chunk / 2) % step);
-                if (half != 0 && done < half) {
-                    xfer_size = half - done;
-                } else if (half != 0) {
-                    fd_index = 1;
-                }
-            }
-
-            ret = slash_qdma_qpair_transfer(
-                qpair_fds[fd_index], buf_id, xfer_offset,
-                dev_offset, xfer_size, direction);
-
-            if (ret < 0) {
-                return -EIO;
-            }
-            if (ret == 0) {
-                return -EIO;
-            }
-            done += (uint64_t) ret;
+        int ret = vrtd_transfer_segment(
+            qpair_fds[fd_index], buf_id, segs[i].offset,
+            phys_addr, segs[i].size, step, direction);
+        if (ret != 0) {
+            return ret;
         }
-
-        transferred += chunk;
     }
 
     return 0;
