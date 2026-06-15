@@ -183,7 +183,7 @@ bandwidth. Raw transfer modes skip reset and bypass the default VRTD buffer
 path for data movement.
 
 ```
-v80-smi validate -d <BDF> [-j <threads>] [-R] [--page-size <4k|2m>] [--mm-channel <spec>] [--buffer-size <size>] [--offset <size>] [--starting-offset <size>] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only] [--channel-allocation <auto|paired>] [--channel-region-stride <size>] [--ring-size-index <0-15>] [--bandwidth-iterations <N>] [--bandwidth-duration <seconds>]
+v80-smi validate -d <BDF> [-j <threads>] [-R] [--mm-channel <spec>] [--buffer-size <size>] [--offset <size>] [--starting-offset <size>] [--raw-transfer-test | --use-qdma-driver] [--ddr-only | --hbm-only] [--channel-allocation <auto|paired>] [--channel-region-stride <size>] [--ring-size-index <0-15>] [--bandwidth-iterations <N>] [--bandwidth-duration <seconds>]
 ```
 
 | Flag              | Description                                          |
@@ -191,7 +191,6 @@ v80-smi validate -d <BDF> [-j <threads>] [-R] [--page-size <4k|2m>] [--mm-channe
 | `-d,--device`     | Board address (required), e.g. `03:00` or `0000:03:00` |
 | `-j,--threads`    | Parallel buffers/threads, 1-64 (default 8). Bidirectional phases use `2 * threads` logical positions in each enabled memory space. |
 | `-R,--no-reset`   | Skip the device reset step before running memory tests |
-| `--page-size`     | Host staging-buffer page granule for all backends: `4k` (default; 4 KiB base pages) or `2m` (2 MiB hugepages). No fallback: `2m` needs reserved 2 MiB hugepages and 2 MiB-aligned `--buffer-size`/`--offset`/`--starting-offset` (and `--channel-region-stride` in paired mode). |
 | `--mm-channel`    | AXI-MM/NoC channel per buffer queue: `auto` (default; driver stripes by `qid&1`), `0`, or `1`, or a comma-separated list with exactly one entry per buffer position (`2 x --threads` entries, e.g. `-j 1` -> `0,1`); no repeating, wrong length errors. Independent of `--channel-allocation`; also honored by `--use-qdma-driver`. |
 | `--buffer-size`   | Size of each test buffer, accepting bytes or `k`/`K`/`m`/`M` suffixes (default `512M`, maximum `512M`) |
 | `--offset`        | Distance between logical buffer positions (default `512M`) |
@@ -221,8 +220,8 @@ the SLASH QDMA driver node must be present.
 Buffers are placed at `memory_base + starting-offset + position * offset`.
 The position sequence is `0..N-1` for single-direction phases and `0..2N-1`
 for bidirectional phases (reads on even positions, writes on odd positions).
-`--buffer-size`, `--offset`, and `--starting-offset` must be 4 KiB-aligned (or
-2 MiB-aligned with `--page-size 2m`), `--offset` must be at least
+`--buffer-size`, `--offset`, and `--starting-offset` must be 4 KiB-aligned,
+`--offset` must be at least
 `--buffer-size`, and the highest buffer must fit within the 64 x 512 MB DDR/HBM
 address space. If any placement option is
 specified in default VRTD mode, `validate` uses raw VRTD buffers so the exact
@@ -234,7 +233,7 @@ when HBM and DDR are both enabled, or `2 x <threads> x <buffer-size>` with
 currently available host memory.
 
 Raw transfer modes can repeat the bandwidth phases without changing buffer
-placement or page size. `--bandwidth-iterations` repeats each whole-buffer
+placement. `--bandwidth-iterations` repeats each whole-buffer
 transfer a fixed number of times, while `--bandwidth-duration` runs each
 bandwidth phase for a wall-clock duration and counts completed whole-buffer
 transfers. Integrity checks remain one-shot.

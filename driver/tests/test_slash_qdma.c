@@ -15,16 +15,6 @@
 #include <sys/mman.h>
 
 #define TRANSFER_SIZE 4096
-#define HUGE_PAGE_SIZE (2 * 1024 * 1024)
-#define HUGE_TRANSFER_SIZE (2 * HUGE_PAGE_SIZE)
-
-#ifndef MAP_HUGE_SHIFT
-#define MAP_HUGE_SHIFT 26
-#endif
-
-#ifndef MAP_HUGE_2MB
-#define MAP_HUGE_2MB (21 << MAP_HUGE_SHIFT)
-#endif
 
 /* ---------- helpers ---------- */
 
@@ -809,53 +799,6 @@ TEST_F(qdma, multipage_4k_write_read_verify)
 	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, read_id));
 	munmap(write_buf, xfer_size);
 	munmap(read_buf, xfer_size);
-}
-
-TEST_F(qdma, hugepage_write_read_verify)
-{
-	uint8_t *write_buf, *read_buf;
-	uint64_t dma_addr = get_dma_addr();
-	uint32_t write_id = 0, read_id = 0;
-	long ret;
-
-	bring_up_qpair(_metadata, self, 0x3);
-
-	write_buf = mmap(NULL, HUGE_TRANSFER_SIZE, PROT_READ | PROT_WRITE,
-			 MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB,
-			 -1, 0);
-	if (write_buf == MAP_FAILED)
-		SKIP(return, "2 MiB hugepage write mmap failed (errno=%d)", errno);
-
-	read_buf = mmap(NULL, HUGE_TRANSFER_SIZE, PROT_READ | PROT_WRITE,
-			MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB,
-			-1, 0);
-	if (read_buf == MAP_FAILED) {
-		munmap(write_buf, HUGE_TRANSFER_SIZE);
-		SKIP(return, "2 MiB hugepage read mmap failed (errno=%d)", errno);
-	}
-
-	fill_pattern(write_buf, HUGE_TRANSFER_SIZE);
-	memset(read_buf, 0, HUGE_TRANSFER_SIZE);
-
-	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, write_buf, HUGE_TRANSFER_SIZE,
-				       &write_id, NULL));
-	ASSERT_EQ(0, qdma_buf_register(self->ctl_fd, read_buf, HUGE_TRANSFER_SIZE,
-				       &read_id, NULL));
-
-	ret = qdma_buf_transfer(self->io_fd, write_id, 0, dma_addr, HUGE_TRANSFER_SIZE,
-				SLASH_QDMA_XFER_H2C);
-	ASSERT_EQ(HUGE_TRANSFER_SIZE, ret);
-
-	ret = qdma_buf_transfer(self->io_fd, read_id, 0, dma_addr, HUGE_TRANSFER_SIZE,
-				SLASH_QDMA_XFER_C2H);
-	ASSERT_EQ(HUGE_TRANSFER_SIZE, ret);
-
-	EXPECT_EQ(0, memcmp(write_buf, read_buf, HUGE_TRANSFER_SIZE));
-
-	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, write_id));
-	EXPECT_EQ(0, qdma_buf_unregister(self->ctl_fd, read_id));
-	munmap(write_buf, HUGE_TRANSFER_SIZE);
-	munmap(read_buf, HUGE_TRANSFER_SIZE);
 }
 
 /* ---------- registered buffers ---------- */

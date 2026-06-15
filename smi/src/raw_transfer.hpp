@@ -55,30 +55,15 @@
 /// -DSLASH_QDMA_TIMING=1), the raw-transfer path logs the wall-clock cost of
 /// each pwrite/pread syscall plus the aggregate per-transfer time and
 /// effective bandwidth.  This is the userspace counterpart to the kernel's
-/// SLASH_QDMA_TIMING and libqdma's QDMA_TIMING breakdowns.
+/// SLASH_QDMA_TIMING breakdown.
 #ifndef SLASH_QDMA_TIMING
 #define SLASH_QDMA_TIMING 0
-#endif
-
-#ifndef MAP_HUGE_SHIFT
-#define MAP_HUGE_SHIFT 26
-#endif
-
-#ifndef MAP_HUGE_2MB
-#define MAP_HUGE_2MB (21UL << MAP_HUGE_SHIFT)
 #endif
 
 namespace smi::raw {
 
 /// Host transfer sizes mirror libvrtd's QDMA staging policy.
 static constexpr uint64_t BASE_TRANSFER_STEP_SIZE = 4ULL * 1024ULL;
-static constexpr uint64_t HUGE_TRANSFER_STEP_SIZE = 2ULL * 1024ULL * 1024ULL;
-
-/// Host staging-buffer page granule selection for raw transfers.
-enum class PageSize {
-    Base4K, ///< Regular 4 KiB base pages.
-    Huge2M, ///< 2 MiB hugetlb pages; a mapping failure is fatal (no fallback).
-};
 
 [[noreturn]] inline void throwSystemError(const std::string& message) {
     throw std::runtime_error(message + ": " + std::strerror(errno));
@@ -86,9 +71,8 @@ enum class PageSize {
 
 /// A host staging buffer plus the DMA granule it is backed by.
 ///
-/// `step` is HUGE_TRANSFER_STEP_SIZE when a 2 MiB hugetlb mapping succeeded,
-/// otherwise BASE_TRANSFER_STEP_SIZE (4 KiB base pages).  It is used only for
-/// range/alignment validation: either way the whole range is transferred in a
+/// `step` is always BASE_TRANSFER_STEP_SIZE (4 KiB base pages).  It is used
+/// only for range/alignment validation: the whole range is transferred in a
 /// single syscall and the kernel builds one DMA descriptor per page.
 struct HostMapping {
     void* data = nullptr;
@@ -96,46 +80,22 @@ struct HostMapping {
     uint64_t step = 0;
 };
 
-/// Create a host staging buffer for raw transfers using the requested page
-/// granule.  @p pageSize selects 4 KiB base pages or 2 MiB hugetlb pages; there
-/// is no fallback, so a 2 MiB request fails (throws) when hugepages cannot be
-/// mapped.  @p physAddr is the device address this buffer backs and is only used
-/// to make error messages actionable.
-inline HostMapping createHostMapping(uint64_t size, uint64_t physAddr, PageSize pageSize) {
+/// Create a host staging buffer of 4 KiB base pages for raw transfers.  @p
+/// physAddr is the device address this buffer backs and is only used to make
+/// error messages actionable.
+inline HostMapping createHostMapping(uint64_t size, uint64_t physAddr) {
     HostMapping mapping;
     mapping.size = size;
 
-    if (pageSize == PageSize::Huge2M) {
-        if ((size % HUGE_TRANSFER_STEP_SIZE) != 0) {
-            throw std::invalid_argument(
-                "Raw transfer buffer size must be a multiple of 2 MiB to use 2 MiB pages");
-        }
-
-        mapping.data = mmap(nullptr,
-                            size,
-                            PROT_READ | PROT_WRITE,
-                            MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB | MAP_POPULATE,
-                            -1,
-                            0);
-        if (mapping.data == MAP_FAILED) {
-            char where[64];
-            std::snprintf(where, sizeof(where), " at device 0x%llx",
-                          static_cast<unsigned long long>(physAddr));
-            throwSystemError(std::string("Failed to map 2 MiB hugetlb raw transfer host buffer") +
-                             where + " (reserve 2 MiB hugepages or use --page-size 4k)");
-        }
-        mapping.step = HUGE_TRANSFER_STEP_SIZE;
-        return mapping;
-    }
-
-    // PageSize::Base4K: map regular base pages.  MAP_POPULATE is deliberately
-    // omitted: it would pre-fault the whole buffer during mmap(), i.e. before
-    // the MADV_NOHUGEPAGE below can take effect. On hosts with transparent
-    // hugepages set to "always", those early faults hand back 2 MiB THP compound
-    // pages, and MADV_NOHUGEPAGE does not split pages that are already faulted
-    // in. The driver's strict 4 KiB base-page path
-    // (slash_qdma_map_user_base_page_to_sgl) then rejects every transfer with
-    // -EINVAL ("4 KiB transfer is not backed by a base page").
+    // Map regular base pages.  MAP_POPULATE is deliberately omitted: it would
+    // pre-fault the whole buffer during mmap(), i.e. before the MADV_NOHUGEPAGE
+    // below can take effect. On hosts with transparent hugepages set to
+    // "always", those early faults hand back 2 MiB THP compound pages, and
+    // MADV_NOHUGEPAGE does not split pages that are already faulted in. The
+    // driver's strict 4 KiB base-page path (slash_qdma_map_user_base_pages_to_sgl)
+    // then rejects every transfer with -EINVAL ("4 KiB transfer is not backed by
+    // a base page").
+    (void)physAddr;
     mapping.data = mmap(nullptr,
                         size,
                         PROT_READ | PROT_WRITE,

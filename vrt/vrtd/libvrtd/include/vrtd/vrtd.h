@@ -55,19 +55,6 @@ extern "C" {
 struct vrtd_buffer;
 
 /**
- * @brief Host staging-buffer page granule for DMA buffers.
- *
- * Selects how the client-side host buffer backing a DMA transfer is mapped.
- * libvrtd mmaps the host buffer locally, so this is a client-local concept and
- * is never sent to the daemon. There is no automatic fallback: requesting
- * #VRTD_HOST_PAGE_2M fails the allocation when 2 MiB hugepages are unavailable.
- */
-enum vrtd_host_page_mode {
-    VRTD_HOST_PAGE_4K = 0, ///< Regular 4 KiB base pages (transparent hugepages disabled).
-    VRTD_HOST_PAGE_2M = 1, ///< 2 MiB hugetlb pages; allocation fails if they cannot be mapped.
-};
-
-/**
  * @brief AXI-MM / NoC channel selection for a buffer's QDMA queue pair.
  *
  * Sent to the daemon, which forwards it to the SLASH driver's qpair-add ioctl
@@ -352,7 +339,6 @@ enum vrtd_ret vrtd_qdma_qpair_get_fd(
  * @param alloc_arg  Allocation argument (HBM region index for HBM).
  * @param size_in     Requested size in bytes.
  * @param mm_channel  AXI-MM/NoC channel selection (one of enum vrtd_mm_channel).
- * @param page_mode   Host staging-buffer page granule (one of enum vrtd_host_page_mode).
  * @param buffer_out  Output pointer to receive the allocated buffer handle.
  *
  * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
@@ -367,7 +353,6 @@ enum vrtd_ret vrtd_buffer_open(
     uint64_t alloc_arg,
     uint64_t size_in,
     enum vrtd_mm_channel mm_channel,
-    enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 );
 
@@ -383,7 +368,6 @@ enum vrtd_ret vrtd_buffer_open(
  * @param size        Size in bytes.
  * @param alloc_dir   One of #vrtd_alloc_dir.
  * @param mm_channel  AXI-MM/NoC channel selection (one of enum vrtd_mm_channel).
- * @param page_mode   Host staging-buffer page granule (one of enum vrtd_host_page_mode).
  * @param buffer_out  Output parameter set to the new buffer handle on success.
  *
  * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
@@ -397,7 +381,6 @@ enum vrtd_ret vrtd_buffer_open_raw(
     uint64_t size,
     uint32_t alloc_dir,
     enum vrtd_mm_channel mm_channel,
-    enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 );
 
@@ -553,7 +536,7 @@ struct vrtd_buffer {
     uint32_t buf_id;
     enum slash_qdma_transfer_hint transfer_hint;
     void *buf;
-    /* Internal DMA granule for the local host mapping: 4096 or 2 MiB. */
+    /* Internal DMA granule for the local host mapping (4 KiB base pages). */
     uint64_t transfer_step_size;
 };
 
@@ -567,7 +550,6 @@ enum vrtd_ret vrtd_buffer_create_raw(
     uint64_t phys_addr,
     const int *qpair_fds,
     uint32_t qpair_fd_count,
-    enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 );
 

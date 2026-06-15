@@ -159,7 +159,6 @@ public:
      * @param allocArg  Allocation argument (HBM region index for HBM).
      * @param allocDir  QDMA transfer direction.
      * @param mmChannel AXI-MM/NoC channel selection (defaults to auto).
-     * @param page      Host staging-buffer page granule (defaults to 4 KiB).
      * @return An owning @c Buffer.
      * @throws vrtd::Error on error.
      */
@@ -167,16 +166,14 @@ public:
                       uint64_t size,
                       uint64_t allocArg = 0,
                       BufferAllocDir allocDir = BufferAllocDir::Bidirectional,
-                      MmChannel mmChannel = MmChannel::Auto,
-                      HostPageSize page = HostPageSize::Base4K) const;
+                      MmChannel mmChannel = MmChannel::Auto) const;
 
     /**
      * @brief Convenience helper for DDR allocations.
      */
     Buffer openDdrBuffer(uint64_t size, BufferAllocDir allocDir = BufferAllocDir::Bidirectional,
-                         MmChannel mmChannel = MmChannel::Auto,
-                         HostPageSize page = HostPageSize::Base4K) const {
-        return openBuffer(BufferAllocType::Ddr, size, 0, allocDir, mmChannel, page);
+                         MmChannel mmChannel = MmChannel::Auto) const {
+        return openBuffer(BufferAllocType::Ddr, size, 0, allocDir, mmChannel);
     }
 
     /**
@@ -185,9 +182,8 @@ public:
     Buffer openHbmBuffer(uint32_t region,
                          uint64_t size,
                          BufferAllocDir allocDir = BufferAllocDir::Bidirectional,
-                         MmChannel mmChannel = MmChannel::Auto,
-                         HostPageSize page = HostPageSize::Base4K) const {
-        return openBuffer(BufferAllocType::Hbm, size, region, allocDir, mmChannel, page);
+                         MmChannel mmChannel = MmChannel::Auto) const {
+        return openBuffer(BufferAllocType::Hbm, size, region, allocDir, mmChannel);
     }
 
     /**
@@ -195,9 +191,8 @@ public:
      */
     Buffer openHbmVnocBuffer(uint64_t size,
                              BufferAllocDir allocDir = BufferAllocDir::Bidirectional,
-                             MmChannel mmChannel = MmChannel::Auto,
-                             HostPageSize page = HostPageSize::Base4K) const {
-        return openBuffer(BufferAllocType::HbmVnoc, size, 0, allocDir, mmChannel, page);
+                             MmChannel mmChannel = MmChannel::Auto) const {
+        return openBuffer(BufferAllocType::HbmVnoc, size, 0, allocDir, mmChannel);
     }
 
     /**
@@ -210,15 +205,13 @@ public:
      * @param size      Size in bytes.
      * @param allocDir  QDMA transfer direction.
      * @param mmChannel AXI-MM/NoC channel selection (defaults to auto).
-     * @param page      Host staging-buffer page granule (defaults to 4 KiB).
      * @return An owning @c Buffer.
      * @throws vrtd::Error on error.
      */
     Buffer openRawBuffer(uint64_t phys_addr,
                          uint64_t size,
                          BufferAllocDir allocDir = BufferAllocDir::Bidirectional,
-                         MmChannel mmChannel = MmChannel::Auto,
-                         HostPageSize page = HostPageSize::Base4K) const;
+                         MmChannel mmChannel = MmChannel::Auto) const;
 
     /**
      * @brief Perform a PCIe hotplug operation for this device.
@@ -365,8 +358,8 @@ private:
            uint16_t subsystemDeviceId,
            std::function<Bar(const Device&, uint8_t)> fGetBar,
            std::function<QdmaQpair(const Device&, const struct slash_qdma_qpair_add&)> fCreateQdmaQpair,
-           std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir, MmChannel, HostPageSize)> fOpenBuffer,
-           std::function<Buffer(const Device&, uint64_t, uint64_t, BufferAllocDir, MmChannel, HostPageSize)> fOpenBufferRaw,
+           std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir, MmChannel)> fOpenBuffer,
+           std::function<Buffer(const Device&, uint64_t, uint64_t, BufferAllocDir, MmChannel)> fOpenBufferRaw,
            std::function<void(const Device&, HotplugOp, uint8_t)> fHotplugOp,
            std::function<void(const Device&, int)> fDesignWrite,
            std::function<void(const Device&, std::string_view)> fDesignWriteFile,
@@ -384,8 +377,8 @@ private:
 
     std::function<Bar(const Device&, uint8_t)> fGetBar;
     std::function<QdmaQpair(const Device&, const struct slash_qdma_qpair_add&)> fCreateQdmaQpair;
-    std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir, MmChannel, HostPageSize)> fOpenBuffer;
-    std::function<Buffer(const Device&, uint64_t, uint64_t, BufferAllocDir, MmChannel, HostPageSize)> fOpenBufferRaw;
+    std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir, MmChannel)> fOpenBuffer;
+    std::function<Buffer(const Device&, uint64_t, uint64_t, BufferAllocDir, MmChannel)> fOpenBufferRaw;
     std::function<void(const Device&, HotplugOp, uint8_t)> fHotplugOp;
     std::function<void(const Device&, int)> fDesignWrite;
     std::function<void(const Device&, std::string_view)> fDesignWriteFile;

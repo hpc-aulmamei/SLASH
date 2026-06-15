@@ -56,7 +56,6 @@
 #include <linux/err.h>
 #include <linux/file.h>
 #include <linux/fs.h>
-#include <linux/hugetlb.h>
 #include <linux/kernel.h>
 #include <linux/kref.h>
 #include <linux/ktime.h>
@@ -142,62 +141,12 @@
 #define SLASH_QDMA_HP_POLL_US    1000   /* busy-wait budget in microseconds */
 
 /*
- * The qpair fd data path accepts either a span of 4 KiB base pages or a span
- * of 2 MiB hugetlb pages.  Every scatter-gather entry within one request uses
- * the same granule, which keeps the DMA mapping semantics unambiguous; the two
- * granules are never mixed in a single request.  A whole transfer (of either
- * granule) is submitted to libqdma as a single multi-descriptor request, and
- * libqdma refills the descriptor ring as needed -- so the transfer size is not
- * bounded by the ring depth.
+ * The qpair fd data path operates on spans of 4 KiB base pages.  Each
+ * scatter-gather entry is exactly one base page, so a whole transfer is
+ * submitted to libqdma as a single multi-descriptor request and libqdma
+ * refills the descriptor ring as needed -- the transfer size is not bounded
+ * by the ring depth.
  */
-#define SLASH_QDMA_HUGEPAGE_SIZE (2UL * 1024UL * 1024UL)
-
-/*
- * qdma_huge_desc_size - Experimental descriptor granularity for hugetlb-backed
- * raw qpair transfers.
- *
- * The userspace raw-transfer path prefers 2 MiB hugetlb pages so the host page
- * size stays large and stable.  By default, each pinned 2 MiB page becomes one
- * SGL entry / QDMA descriptor.  Reducing this value keeps the same pinned
- * hugetlb page but emits several descriptors with increasing offsets inside
- * that page, allowing us to test whether descriptor pressure (rather than host
- * page size) is what makes dma-perf faster.
- *
- * Must be a page-aligned divisor of 2 MiB.  Examples:
- *   2097152 -> current behaviour (1 descriptor per huge page)
- *     65536 -> 32 descriptors per huge page
- *      4096 -> 512 descriptors per huge page
- */
-static unsigned int qdma_huge_desc_size = SLASH_QDMA_HUGEPAGE_SIZE;
-
-static int slash_qdma_huge_desc_size_set(const char *val,
-                                         const struct kernel_param *kp)
-{
-    unsigned int parsed;
-    int err;
-
-    err = kstrtouint(val, 0, &parsed);
-    if (err)
-        return err;
-
-    if (parsed < PAGE_SIZE ||
-        parsed > SLASH_QDMA_HUGEPAGE_SIZE ||
-        !IS_ALIGNED(parsed, PAGE_SIZE) ||
-        (SLASH_QDMA_HUGEPAGE_SIZE % parsed) != 0)
-        return -EINVAL;
-
-    return param_set_uint(val, kp);
-}
-
-static const struct kernel_param_ops slash_qdma_huge_desc_size_ops = {
-    .set = slash_qdma_huge_desc_size_set,
-    .get = param_get_uint,
-};
-
-module_param_cb(qdma_huge_desc_size, &slash_qdma_huge_desc_size_ops,
-                &qdma_huge_desc_size, 0644);
-MODULE_PARM_DESC(qdma_huge_desc_size,
-    "Descriptor size for 2 MiB hugetlb raw transfers; page-aligned divisor of 2 MiB (default 2097152)");
 
 /**
  * SLASH_QDMA_QTYPE_COUNT - Number of queue types tracked per queue pair.
@@ -282,8 +231,7 @@ MODULE_PARM_DESC(qdma_huge_desc_size,
  *   - submit: the whole libqdma qdma_request_submit() call, which covers
  *             SGL DMA-mapping (IOMMU), descriptor-ring fill, the PIDX
  *             doorbell, and the synchronous completion wait (HW transfer +
- *             poll-mode spin).  libqdma can be built with QDMA_TIMING=1 for
- *             a finer breakdown of this phase.
+ *             poll-mode spin).
  *   - unmap:  unpin pages (mark dirty for C2H) and free the SGL.
  *
  * Timestamps use ktime_get() (CLOCK_MONOTONIC); the reads are cheap, but
@@ -694,9 +642,9 @@ struct slash_qdma_io_cb {
  *              owning client holds the device reference).
  * @buf_id:     Client-scoped handle returned to userspace.
  * @length:     Registered length in bytes.
- * @granule:    Bytes per SGL entry (PAGE_SIZE for base pages, or the
- *              hugepage descriptor size).  Uniform across all entries, so
- *              transfer slices can be computed by simple division.
+ * @granule:    Bytes per SGL entry (PAGE_SIZE; one 4 KiB base page each).
+ *              Uniform across all entries, so transfer slices can be computed
+ *              by simple division.
  * @iocb:       Pinned pages and prebuilt scatter-gather list.  Each entry's
  *              dma_addr is filled in once at registration so transfers can
  *              submit with req->dma_mapped = 1.
@@ -2255,6 +2203,38 @@ static int slash_qdma_ioctl_qpair_add_q(struct miscdevice *misc,
                           "qdma_queue_add done: qid=%u type=%u qhndl=%lu\n",
                           req->qid, qtype, qhndl);
 
+    /*
+     * Reconfigure the queue immediately after adding it.
+     *
+     * qdma_queue_add() runs qdma_descq_config(..., reconfig=0), which on
+     * Versal hard IP does NOT mirror qconf.mm_channel into descq->channel --
+     * only the reconfig=1 branch does.  descq->channel feeds the SW-context
+     * mm_chn/host_id programmed when the queue is started; without this step
+     * it would stay 0 and collapse both queues onto NoC channel 0, defeating
+     * mm-channel selection.  Calling qdma_queue_config() here (the queue is in
+     * Q_STATE_ENABLED, before start) replays the same qconf through the
+     * reconfig=1 path, setting descq->channel.  This replaces the former
+     * 0002-libqdma-versal-channel.patch without modifying libqdma.
+     */
+    err = qdma_queue_config(qdma_dev->qdma_handle, qhndl, &qconf,
+                            errbuf, sizeof(errbuf));
+    if (err) {
+        SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
+                              "qdma_queue_config failed: qid=%u type=%u err=%d (%s)\n",
+                              req->qid, qtype, err, errbuf);
+        dev_err(&qdma_dev->pdev->dev,
+                "qdma: queue config failed (qid=%u, type=%u): %d (%s)\n",
+                req->qid, qtype, err, errbuf);
+        /*
+         * The queue was added but is not yet tracked in @entry, so the
+         * caller's rollback (keyed on its local added[] array) will not
+         * reach it.  Remove it here to avoid leaking the libqdma queue.
+         */
+        slash_qdma_queue_remove_safe(qdma_dev->qdma_handle, qhndl,
+                                     errbuf, sizeof(errbuf));
+        return err;
+    }
+
     /* Record the handle and mark this direction as active. */
     entry->qhndl[qtype] = qhndl;
     entry->dir_mask |= dir_bit;
@@ -2615,19 +2595,6 @@ static bool slash_qdma_page_is_base_page(struct page *page)
     return !PageCompound(page);
 }
 
-static bool slash_qdma_page_is_2m_hugetlb_head(struct page *page)
-{
-#ifdef CONFIG_HUGETLB_PAGE
-    struct page *head = compound_head(page);
-
-    return page == head &&
-           PageHuge(head) &&
-           compound_order(head) == get_order(SLASH_QDMA_HUGEPAGE_SIZE);
-#else
-    return false;
-#endif
-}
-
 static int slash_qdma_map_user_base_pages_to_sgl(struct slash_qdma_io_cb *iocb,
                                                  bool write)
 {
@@ -2698,111 +2665,15 @@ err_out:
     return rv;
 }
 
-static int slash_qdma_map_user_huge_page_to_sgl(struct slash_qdma_io_cb *iocb,
-                                                bool write)
-{
-    unsigned long addr = (unsigned long)iocb->buf;
-    size_t huge_pages = iocb->len / SLASH_QDMA_HUGEPAGE_SIZE;
-    unsigned int desc_size = READ_ONCE(qdma_huge_desc_size);
-    unsigned int descs_per_page;
-    size_t entries;
-    unsigned int i;
-    unsigned int sg_idx = 0;
-    int rv;
-
-    if ((iocb->len % SLASH_QDMA_HUGEPAGE_SIZE) != 0 ||
-        huge_pages == 0 || huge_pages > UINT_MAX)
-        return -EINVAL;
-
-    if (desc_size < PAGE_SIZE ||
-        desc_size > SLASH_QDMA_HUGEPAGE_SIZE ||
-        !IS_ALIGNED(desc_size, PAGE_SIZE) ||
-        (SLASH_QDMA_HUGEPAGE_SIZE % desc_size) != 0)
-        return -EINVAL;
-
-    descs_per_page = SLASH_QDMA_HUGEPAGE_SIZE / desc_size;
-    if (huge_pages > UINT_MAX / descs_per_page)
-        return -EINVAL;
-    entries = huge_pages * descs_per_page;
-
-    rv = slash_qdma_iocb_alloc_sgl(iocb, (unsigned int)entries);
-    if (rv)
-        return rv;
-
-    for (i = 0; i < huge_pages; i++) {
-        unsigned long curr_addr = addr + (i * SLASH_QDMA_HUGEPAGE_SIZE);
-        struct page *page = NULL;
-        unsigned int j;
-
-        rv = get_user_pages_fast(curr_addr, 1, 1 /* write */, &page);
-        if (rv != 1) {
-            pr_err("slash: qdma: unable to pin 2 MiB user page %u/%zu, %d\n",
-                   i, huge_pages, rv);
-            rv = rv < 0 ? rv : -EFAULT;
-            goto err_out;
-        }
-
-        if (!slash_qdma_page_is_2m_hugetlb_head(page)) {
-            pr_err("slash: qdma: 2 MiB transfer page %u/%zu is not backed by a 2 MiB hugetlb head page\n",
-                   i, huge_pages);
-            put_page(page);
-            rv = -EINVAL;
-            goto err_out;
-        }
-
-        flush_dcache_page(page);
-
-        for (j = 0; j < descs_per_page; j++, sg_idx++) {
-            struct qdma_sw_sg *sg = &iocb->sgl[sg_idx];
-
-            /*
-             * The first segment consumes the GUP reference.  Additional
-             * descriptors over the same hugetlb page take explicit references
-             * so slash_qdma_unmap_user_buf() can release one page ref per SGL
-             * entry without special casing repeated pages.
-             */
-            if (j != 0)
-                get_page(page);
-
-            iocb->pages[sg_idx] = page;
-            iocb->pages_nr = sg_idx + 1;
-
-            sg->next = (sg_idx + 1 < entries) ? &iocb->sgl[sg_idx + 1] : NULL;
-            sg->pg = page;
-            sg->offset = j * desc_size;
-            sg->len = desc_size;
-            sg->dma_addr = 0UL;
-        }
-    }
-
-    SLASH_QDMA_OP_LOG("user transfer path=hugetlb-2m addr=0x%lx len=%zu pages=%zu desc_size=%u descs=%zu write=%d\n",
-                      addr, iocb->len, huge_pages, desc_size, entries, write);
-
-    return 0;
-
-err_out:
-    slash_qdma_unmap_user_buf(iocb, write);
-    slash_qdma_iocb_release(iocb);
-    return rv;
-}
-
 /**
  * slash_qdma_map_user_buf_to_sgl() - Pin a user buffer and build its SGL.
  * @iocb:  I/O control block.  @iocb->buf and @iocb->len must be set.
  * @write: Transfer direction (true = H2C write, false = C2H read).
  *
- * The buffer must be page-aligned and a whole number of 4 KiB pages.  It is
- * mapped as either:
- *   - a span of 2 MiB hugetlb pages (when it is 2 MiB-aligned, a multiple of
- *     2 MiB, and actually backed by hugetlb pages), or
- *   - a span of 4 KiB base pages (every other accepted case).
- *
- * Each page becomes one SGL entry / one DMA descriptor, and the whole span is
- * submitted to libqdma as a single request.
- *
- * The hugetlb-vs-base decision is made by probing the first page rather than by
- * length/alignment alone: a large anonymous (base-page) mapping can happen to
- * be 2 MiB-aligned, and must not be mistaken for a hugetlb buffer.
+ * The buffer must be page-aligned and a whole number of 4 KiB pages, and is
+ * mapped as a span of 4 KiB base pages: each page becomes one SGL entry / one
+ * DMA descriptor, and the whole span is submitted to libqdma as a single
+ * request.
  *
  * Return: 0 on success, negative errno on failure.
  */
@@ -2811,7 +2682,6 @@ static int slash_qdma_map_user_buf_to_sgl(struct slash_qdma_io_cb *iocb,
 {
     unsigned long addr = (unsigned long)iocb->buf;
     size_t len = iocb->len;
-    bool huge = false;
 
     iocb->pages_nr = 0;
 
@@ -2823,30 +2693,6 @@ static int slash_qdma_map_user_buf_to_sgl(struct slash_qdma_io_cb *iocb,
                addr, len);
         return -EINVAL;
     }
-
-    /*
-     * Only a 2 MiB-aligned, 2 MiB-multiple span can be hugetlb-backed.  Probe
-     * the first page to confirm it actually is a hugetlb page before committing
-     * to the huge path; otherwise fall through to the base-page path.
-     */
-    if (IS_ALIGNED(addr, SLASH_QDMA_HUGEPAGE_SIZE) &&
-        (len % SLASH_QDMA_HUGEPAGE_SIZE) == 0) {
-        struct page *probe = NULL;
-        int probe_ret;
-
-        probe_ret = get_user_pages_fast(addr, 1, 1 /* write */, &probe);
-        if (probe_ret < 0)
-            return probe_ret;
-        if (probe_ret == 0)
-            return -EFAULT;
-        if (probe_ret == 1) {
-            huge = slash_qdma_page_is_2m_hugetlb_head(probe);
-            put_page(probe);
-        }
-    }
-
-    if (huge)
-        return slash_qdma_map_user_huge_page_to_sgl(iocb, write);
 
     return slash_qdma_map_user_base_pages_to_sgl(iocb, write);
 }
@@ -3010,9 +2856,9 @@ slash_qdma_buf_lookup_get(struct slash_qdma_client *client, u32 buf_id)
  * @uarg:   User pointer to a struct slash_qdma_buf_register.
  *
  * Pins the pages backing the user buffer, builds a scatter-gather list
- * (reusing the same 4 KiB / 2 MiB granule detection as the per-transfer
- * path), DMA-maps every entry once, and inserts the resulting buffer into
- * the client's table under a freshly allocated buf_id.
+ * (one 4 KiB base page per entry), DMA-maps every entry once, and inserts
+ * the resulting buffer into the client's table under a freshly allocated
+ * buf_id.
  *
  * Return: 0 on success, negative errno on failure.
  */

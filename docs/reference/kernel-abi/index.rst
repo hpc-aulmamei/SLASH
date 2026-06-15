@@ -419,12 +419,11 @@ All transfers are synchronous and block until the transfer completes or times ou
 return value is the number of bytes transferred, and the file position is advanced accordingly.
 
 The userspace buffer address and ``count`` must be page-aligned: the address
-must be 4 KiB-aligned and ``count`` must be a non-zero multiple of 4 KiB. A
-2 MiB-aligned, 2 MiB-multiple transfer backed by 2 MiB hugetlb pages uses one
-descriptor per hugepage; all other accepted transfers use one descriptor per
-4 KiB base page. Transparent hugepages are not accepted on the 4 KiB path, so
-callers using anonymous mappings should apply ``MADV_NOHUGEPAGE`` before
-faulting pages when they need deterministic base-page transfers.
+must be 4 KiB-aligned and ``count`` must be a non-zero multiple of 4 KiB. The
+transfer is backed by 4 KiB base pages, one descriptor per page. Transparent
+hugepages are not accepted, so callers using anonymous mappings should apply
+``MADV_NOHUGEPAGE`` before faulting pages when they need deterministic
+base-page transfers.
 
 Multiple fds can be obtained for the same qpair via multiple ``QPAIR_GET_FD`` calls, including
 from different processes. Concurrent ``read()``/``write()`` calls on the same qpair (from any
@@ -781,7 +780,7 @@ traffic on a single queue.
 - ``size`` must cover at least ``length`` (the trailing input field) — otherwise ``-EINVAL``
 - ``flags`` must be 0
 - ``user_addr`` must be page-aligned; ``length`` must be a non-zero multiple of the page size
-- The buffer must be backed by a single page granule (all 4 KiB base pages or all 2 MiB hugepages)
+- The buffer must be backed by 4 KiB base pages
 
 **Postconditions:**
 

@@ -191,7 +191,6 @@ private:
      * @param allocArg  Allocation argument (HBM region index for HBM).
      * @param allocDir  QDMA transfer direction.
      * @param mmChannel AXI-MM/NoC channel selection for the queue pair.
-     * @param pageSize  Host staging-buffer page granule (4 KiB or 2 MiB).
      * @return An owning @c Buffer.
      * @throws vrtd::Error on error.
      */
@@ -201,8 +200,7 @@ private:
         uint64_t size,
         uint64_t allocArg,
         BufferAllocDir allocDir,
-        MmChannel mmChannel,
-        HostPageSize pageSize
+        MmChannel mmChannel
     ) const;
 
     /**
@@ -213,7 +211,6 @@ private:
      * @param size      Size in bytes.
      * @param allocDir  QDMA transfer direction.
      * @param mmChannel AXI-MM/NoC channel selection for the queue pair.
-     * @param pageSize  Host staging-buffer page granule (4 KiB or 2 MiB).
      * @return An owning @c Buffer.
      * @throws vrtd::Error on error.
      */
@@ -222,8 +219,7 @@ private:
         uint64_t phys_addr,
         uint64_t size,
         BufferAllocDir allocDir,
-        MmChannel mmChannel,
-        HostPageSize pageSize
+        MmChannel mmChannel
     ) const;
 
     /**

@@ -24,11 +24,9 @@
  * DMA buffer lifecycle management for the vrtd C client library.
  *
  * Buffers are host-side memory regions used for DMA transfers to/from
- * the FPGA.  Each buffer is backed by an anonymous mmap whose page granule
- * (4 KiB base pages or 2 MiB hugepages) is selected explicitly by the caller
- * via enum vrtd_host_page_mode -- there is no automatic fallback -- and
- * associated with a QDMA queue pair fd for performing the actual H2C / C2H
- * transfers.
+ * the FPGA.  Each buffer is backed by an anonymous mmap of 4 KiB base pages
+ * (transparent hugepages disabled) and associated with a QDMA queue pair fd
+ * for performing the actual H2C / C2H transfers.
  *
  * Sync operations (sync_to_device / sync_from_device) accept arbitrary
  * in-buffer ranges. Internally, the QDMA fd requires page-aligned transfer
@@ -63,16 +61,7 @@
 
 #include <stdio.h>
 
-#ifndef MAP_HUGE_SHIFT
-#define MAP_HUGE_SHIFT 26
-#endif
-
-#ifndef MAP_HUGE_2MB
-#define MAP_HUGE_2MB (21UL << MAP_HUGE_SHIFT)
-#endif
-
 #define BASE_TRANSFER_STEP_SIZE (4ULL * 1024ULL)              // 4K
-#define HUGE_TRANSFER_STEP_SIZE (2ULL * 1024ULL * 1024ULL)    // 2M
 
 /*
  * Per-sync timing instrumentation.
@@ -81,7 +70,7 @@
  * -DSLASH_QDMA_TIMING=1), the sync_to/from_device paths log the wall-clock
  * cost of each transfer ioctl plus the aggregate per-sync time and
  * effective bandwidth.  This is the userspace counterpart to the kernel's
- * SLASH_QDMA_TIMING and libqdma's QDMA_TIMING breakdowns.
+ * SLASH_QDMA_TIMING breakdown.
  */
 #ifndef SLASH_QDMA_TIMING
 #define SLASH_QDMA_TIMING 0
@@ -271,7 +260,6 @@ enum vrtd_ret vrtd_buffer_create_raw(
     uint64_t phys_addr,
     const int *qpair_fds,
     uint32_t qpair_fd_count,
-    enum vrtd_host_page_mode page_mode,
     struct vrtd_buffer **buffer_out
 ) {
     if (buffer_out == NULL) {
@@ -296,73 +284,27 @@ enum vrtd_ret vrtd_buffer_create_raw(
         return VRTD_RET_BAD_LIB_CALL;
     }
 
-    if (page_mode == VRTD_HOST_PAGE_2M) {
-        /*
-         * Explicit 2 MiB hugetlb request: there is no fallback.  The DMA
-         * granule and the device address must both be 2 MiB aligned, and the
-         * hugetlb mapping must succeed, otherwise the allocation fails so the
-         * caller can react instead of silently transferring over 4 KiB pages.
-         */
-        if ((size % HUGE_TRANSFER_STEP_SIZE) != 0 ||
-            (phys_addr % HUGE_TRANSFER_STEP_SIZE) != 0) {
-            free(buffer);
-            return VRTD_RET_INVALID_ARGUMENT;
-        }
-
-        buffer->buf = mmap(
-            NULL, /* address (let the kernel choose) */
-            size,
-            PROT_READ | PROT_WRITE,
-            MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB | MAP_HUGE_2MB | MAP_POPULATE,
-            -1, /* fd */
-            0   /* offset */
-        );
-        if (buffer->buf == MAP_FAILED) {
-            int huge_errno = errno;
-            syslog(
-                LOG_ERR,
-                "libvrtd: 2 MiB hugetlb mapping failed for buffer size=%llu phys_addr=0x%llx errno=%d; "
-                "reserve 2 MiB hugepages or request 4 KiB pages",
-                (unsigned long long)size,
-                (unsigned long long)phys_addr,
-                huge_errno
-            );
-            free(buffer);
-            return VRTD_RET_INTERNAL_ERROR;
-        }
-        buffer->transfer_step_size = HUGE_TRANSFER_STEP_SIZE;
-#if SLASH_QDMA_TIMING
-        syslog(
-            LOG_INFO,
-            "libvrtd: buffer host mapping path=hugetlb-2m size=%llu phys_addr=0x%llx step=%llu",
-            (unsigned long long)size,
-            (unsigned long long)phys_addr,
-            (unsigned long long)buffer->transfer_step_size
-        );
-#endif
-    } else {
-        /*
-         * Explicit 4 KiB base-page request.  Do not use MAP_POPULATE before
-         * MADV_NOHUGEPAGE: THP=always can fault compound pages before the
-         * advice takes effect, and the kernel QDMA base-page path intentionally
-         * rejects those pages (vrtd_mmap_regular_base_pages handles this).
-         */
-        int mmap_ret = vrtd_mmap_regular_base_pages(size, &buffer->buf);
-        if (mmap_ret != 0) {
-            free(buffer);
-            return VRTD_RET_INTERNAL_ERROR;
-        }
-        buffer->transfer_step_size = BASE_TRANSFER_STEP_SIZE;
-#if SLASH_QDMA_TIMING
-        syslog(
-            LOG_INFO,
-            "libvrtd: buffer host mapping path=regular-4k size=%llu phys_addr=0x%llx step=%llu",
-            (unsigned long long)size,
-            (unsigned long long)phys_addr,
-            (unsigned long long)buffer->transfer_step_size
-        );
-#endif
+    /*
+     * Host staging buffer is always 4 KiB base pages.  Do not use MAP_POPULATE
+     * before MADV_NOHUGEPAGE: THP=always can fault compound pages before the
+     * advice takes effect, and the kernel QDMA base-page path intentionally
+     * rejects those pages (vrtd_mmap_regular_base_pages handles this).
+     */
+    int mmap_ret = vrtd_mmap_regular_base_pages(size, &buffer->buf);
+    if (mmap_ret != 0) {
+        free(buffer);
+        return VRTD_RET_INTERNAL_ERROR;
     }
+    buffer->transfer_step_size = BASE_TRANSFER_STEP_SIZE;
+#if SLASH_QDMA_TIMING
+    syslog(
+        LOG_INFO,
+        "libvrtd: buffer host mapping path=regular-4k size=%llu phys_addr=0x%llx step=%llu",
+        (unsigned long long)size,
+        (unsigned long long)phys_addr,
+        (unsigned long long)buffer->transfer_step_size
+    );
+#endif
 
     buffer->sock_fd    = sock_fd;
     buffer->dev        = dev;

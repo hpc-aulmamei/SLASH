@@ -113,7 +113,7 @@ public:
     /// @param mmChannel Concrete MM channel to pin to, or -1 to spread the
     ///                  queue across channels by qid % channel-count.
     QdmaDriverBuffer(QdmaDriverDevice& device, uint32_t qid, uint64_t physAddr, uint64_t size,
-                     raw::PageSize pageSize, int mmChannel);
+                     int mmChannel);
 
     QdmaDriverBuffer(const QdmaDriverBuffer&) = delete;
     QdmaDriverBuffer& operator=(const QdmaDriverBuffer&) = delete;

@@ -483,10 +483,10 @@ std::string QdmaDriverDevice::charDevPath(uint32_t qid) const {
 
 QdmaDriverBuffer::QdmaDriverBuffer(QdmaDriverDevice& device, uint32_t qid,
                                    uint64_t physAddr, uint64_t size,
-                                   raw::PageSize pageSize, int mmChannel)
+                                   int mmChannel)
     : device_(&device), qid_(qid), physAddr_(physAddr) {
     try {
-        mapping_ = raw::createHostMapping(size, physAddr, pageSize);
+        mapping_ = raw::createHostMapping(size, physAddr);
 
         // mmChannel < 0 means auto: spread the queue across channels by qid.
         const uint32_t channel = (mmChannel < 0)

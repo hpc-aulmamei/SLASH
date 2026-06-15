@@ -52,10 +52,8 @@ LIBQDMA_PATCH_DIR := patches
 SLASH_QDMA_OP_DEBUG ?= 0
 
 # Per-transfer timing instrumentation. Set to 1 to emit one dmesg line per
-# DMA transfer breaking down the kernel phases (SLASH_QDMA_TIMING) and the
-# libqdma submit sub-phases (QDMA_TIMING). Default off (zero overhead).
+# DMA transfer breaking down the kernel phases. Default off (zero overhead).
 SLASH_QDMA_TIMING ?= 0
-QDMA_TIMING ?= 0
 
 # Kcompat feature flags. Defaults are "n"; the all: recipe runs
 # driver/kcompat/probe.sh against $(KDIR) to detect the actual values
@@ -86,7 +84,6 @@ ccflags-y += \
 	-DTANDEM_BOOT_SUPPORTED=1 \
 	-DSLASH_QDMA_OP_DEBUG=$(SLASH_QDMA_OP_DEBUG) \
 	-DSLASH_QDMA_TIMING=$(SLASH_QDMA_TIMING) \
-	-DQDMA_TIMING=$(QDMA_TIMING) \
 	-DSLASH_VERSION_STR=\"$(SLASH_VERSION)\"
 
 ifeq ($(SLASH_HAVE_VM_FLAGS_SET),y)

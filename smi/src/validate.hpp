@@ -57,17 +57,6 @@ public:
             Paired,  ///< Couple mm-channel to a distinct memory region: even positions -> region 0, odd -> region 1.
         };
 
-        /// @brief Host staging-buffer page granule used for DMA transfers.
-        ///
-        /// Selects how the host-side buffer is mapped for every backend (VRTD,
-        /// raw SLASH, and the off-the-shelf QDMA driver).  2 MiB requires
-        /// reserved hugepages plus 2 MiB-aligned sizes/addresses; the allocation
-        /// fails with no fallback otherwise.
-        enum class PageSize {
-            Base4K, ///< 4 KiB base pages (default).
-            Huge2M, ///< 2 MiB hugepages.
-        };
-
         /// @brief Per-queue AXI-MM/NoC channel selection for a buffer.
         ///
         /// Auto lets the driver stripe by qid&1; Ch0/Ch1 pin the queue to a
@@ -86,7 +75,6 @@ public:
         bool hbmOnly = false;      ///< Skip DDR phase (mutually exclusive with ddrOnly).
         bool rawTransferTest = false; ///< Use libslash raw QDMA transfers instead of VRTD buffers.
         bool useQdmaDriver = false;   ///< Run the raw test over the off-the-shelf Xilinx QDMA driver.
-        PageSize pageSize = PageSize::Base4K; ///< Host staging-buffer page granule (4 KiB or 2 MiB).
         /// Per-buffer AXI-MM channel selection, indexed by buffer position
         /// modulo size (a single entry applies to every buffer). Default auto.
         std::vector<MmChannel> mmChannels{MmChannel::Auto};

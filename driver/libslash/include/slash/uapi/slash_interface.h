@@ -272,9 +272,8 @@ enum slash_qdma_transfer_hint {
  * re-mapping per transfer.
  *
  * \@user_addr must be page-aligned and \@length a non-zero multiple of
- * the host page size.  The buffer must be backed by a single page
- * granule (all 4 KiB base pages or all 2 MiB hugepages), matching the
- * transfer data path.
+ * the host page size.  The buffer is backed by 4 KiB base pages, matching
+ * the transfer data path.
  *
  * Buffers are owned by the control-fd open instance they are registered
  * through, and are automatically unregistered when that fd is closed
@@ -317,7 +316,7 @@ struct slash_qdma_buf_unregister {
  * of bytes transferred is returned as the ioctl return value.
  *
  * \@buf_offset and \@length must be aligned to the registered buffer's
- * page granule, and \@buf_offset + \@length must not exceed the
+ * 4 KiB page granule, and \@buf_offset + \@length must not exceed the
  * registered length.  \@direction must be one of enum slash_qdma_transfer_dir
  * and must be enabled on the queue pair.
  */
