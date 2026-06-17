@@ -100,7 +100,7 @@ DOCKER_RUN_ARGS+="-w $PWD "
 
 # Mounting the Xilinx toolchain in the container
 if [ -z $SLASH_XILINX_PATH ]; then
-    echo "Please set SLASH_XILINX_PATH to the path of your Xilinx tools installation (e.g. /opt/Xilinx)" 2&1
+    echo "Please set SLASH_XILINX_PATH to the path of your Xilinx tools installation (e.g. /opt/Xilinx)" >&2
     exit 1
 fi
 
