@@ -127,6 +127,8 @@ struct buffer *buffer_create(struct slash_qdma *qdma,
  * @param phys_addr  Caller-specified device physical address.
  * @param size       Size in bytes.
  * @param alloc_dir  DMA transfer direction.
+ * @param client_id  Connection ID of the owning client (for ownership checks
+ *                   and automatic cleanup on disconnect; must be non-zero).
  * @param mm_channel AXI-MM/NoC channel selection (enum slash_qdma_mm_channel).
  * @return Heap-allocated buffer on success, NULL on failure (errno set).
  */
@@ -134,6 +136,7 @@ struct buffer *buffer_create_raw(struct slash_qdma *qdma,
                                  uint64_t phys_addr,
                                  uint64_t size,
                                  enum vrtd_alloc_dir alloc_dir,
+                                 uint64_t client_id,
                                  uint32_t mm_channel);
 
 /**

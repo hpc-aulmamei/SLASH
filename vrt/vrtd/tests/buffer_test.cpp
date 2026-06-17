@@ -124,7 +124,8 @@ TEST(BufferNullTest, CleanupNull) {
 
 TEST(BufferNullTest, RawNullQdma) {
     struct buffer *buf = buffer_create_raw(nullptr, DDR_START_ADDRESS, XFER_SIZE,
-                                           VRTD_ALLOC_DIR_HOST_TO_DEVICE, SLASH_QDMA_MM_CHANNEL_AUTO);
+                                           VRTD_ALLOC_DIR_HOST_TO_DEVICE, CLIENT_ID,
+                                           SLASH_QDMA_MM_CHANNEL_AUTO);
     EXPECT_EQ(buf, nullptr);
     EXPECT_EQ(errno, EINVAL);
 }
@@ -133,7 +134,8 @@ TEST(BufferNullTest, RawZeroSize) {
     struct slash_qdma *qdma = slash_qdma_open("@mock");
     ASSERT_NE(qdma, nullptr);
     struct buffer *buf = buffer_create_raw(qdma, DDR_START_ADDRESS, 0,
-                                           VRTD_ALLOC_DIR_HOST_TO_DEVICE, SLASH_QDMA_MM_CHANNEL_AUTO);
+                                           VRTD_ALLOC_DIR_HOST_TO_DEVICE, CLIENT_ID,
+                                           SLASH_QDMA_MM_CHANNEL_AUTO);
     EXPECT_EQ(buf, nullptr);
     EXPECT_EQ(errno, EINVAL);
     slash_qdma_close(qdma);
@@ -193,12 +195,14 @@ TEST_P(BufferTest, LifecycleBidirectional) {
 
 TEST_P(BufferTest, RawCreateAndIO) {
     struct buffer *buf = buffer_create_raw(qdma_, DDR_START_ADDRESS, XFER_SIZE,
-                                           VRTD_ALLOC_DIR_BIDIRECTIONAL, SLASH_QDMA_MM_CHANNEL_AUTO);
+                                           VRTD_ALLOC_DIR_BIDIRECTIONAL, CLIENT_ID,
+                                           SLASH_QDMA_MM_CHANNEL_AUTO);
     ASSERT_NE(buf, nullptr);
     ASSERT_GE(buf->qpair_count, 1u);
     EXPECT_GE(buf->fd, 0);
     EXPECT_EQ(buf->addr, DDR_START_ADDRESS);
     EXPECT_FALSE(buf->allocation_valid);
+    EXPECT_EQ(buf->client_id, CLIENT_ID);
 
     uint8_t src[XFER_SIZE];
     std::memset(src, 0xCD, sizeof(src));
@@ -223,14 +227,16 @@ TEST_P(BufferTest, QueueExhaustion) {
 
     for (int i = 0; i < MAX_BUFFERS; ++i) {
         struct buffer *buf = buffer_create_raw(qdma_, DDR_START_ADDRESS + i * XFER_SIZE,
-                                               XFER_SIZE, VRTD_ALLOC_DIR_HOST_TO_DEVICE, SLASH_QDMA_MM_CHANNEL_AUTO);
+                                               XFER_SIZE, VRTD_ALLOC_DIR_HOST_TO_DEVICE, CLIENT_ID,
+                                               SLASH_QDMA_MM_CHANNEL_AUTO);
         ASSERT_NE(buf, nullptr) << "Expected success for buffer " << i;
         bufs.push_back(buf);
     }
 
     /* 33rd allocation needs queues 65/66 and must fail. */
     struct buffer *overflow = buffer_create_raw(qdma_, DDR_START_ADDRESS,
-                                                XFER_SIZE, VRTD_ALLOC_DIR_HOST_TO_DEVICE, SLASH_QDMA_MM_CHANNEL_AUTO);
+                                                XFER_SIZE, VRTD_ALLOC_DIR_HOST_TO_DEVICE, CLIENT_ID,
+                                                SLASH_QDMA_MM_CHANNEL_AUTO);
     EXPECT_EQ(overflow, nullptr);
     EXPECT_EQ(errno, ENOSPC);
 

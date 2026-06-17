@@ -309,6 +309,7 @@ struct buffer *buffer_create_raw(struct slash_qdma *qdma,
                                  uint64_t phys_addr,
                                  uint64_t size,
                                  enum vrtd_alloc_dir alloc_dir,
+                                 uint64_t client_id,
                                  uint32_t mm_channel)
 {
     if (qdma == NULL || size == 0) {
@@ -345,7 +346,7 @@ struct buffer *buffer_create_raw(struct slash_qdma *qdma,
         .alloc_type = 0,
         .alloc_arg = 0,
         .alloc_dir = alloc_dir,
-        .client_id = 0,
+        .client_id = client_id,
         .addr = phys_addr,
         .size = size,
         .qpair_count = 0,

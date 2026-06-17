@@ -2138,12 +2138,19 @@ static uint16_t client_handle_request_buffer_open_raw(
         return VRTD_RET_NOEXIST;
     }
 
+    uint64_t client_id = client->conn_id;
+    if (client_id == 0) {
+        LOG(LOG_ERR, "Invalid client connection id");
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
     _cleanup_(cleanup_bufferp)
     struct buffer *buf = buffer_create_raw(
         d->qdma,
         req_body->phys_addr,
         req_body->size,
         (enum vrtd_alloc_dir) req_body->alloc_dir,
+        client_id,
         req_body->mm_channel
     );
     if (buf == NULL) {
@@ -2244,8 +2251,15 @@ static uint16_t client_handle_request_buffer_close(
         return VRTD_RET_NOEXIST;
     }
 
-    /* Search for the buffer by physical address. */
+    /*
+     * Search for the caller's buffer by physical address.  Raw buffers bypass
+     * the allocator and use caller-specified addresses, so distinct clients can
+     * hold buffers at the same address; scan all matches and pick the one owned
+     * by this connection rather than rejecting on the first address match.
+     */
     struct buffer *found = NULL;
+    bool addr_size_match_foreign = false; /* same addr+size, owned by another conn */
+    bool addr_match_size_mismatch = false; /* same addr, different size */
     for (size_t i = 0; i < d->buffers.len; ++i) {
         struct buffer *buf = d->buffers.d[i];
         if (buf == NULL) {
@@ -2254,15 +2268,20 @@ static uint16_t client_handle_request_buffer_close(
         if (buf->addr != req_body->phys_addr) {
             continue;
         }
-        /* Found a buffer at the right address -- verify size. */
         if (buf->size != req_body->size) {
-            LOG(LOG_WARNING, "buffer_close: size mismatch at addr=0x%llx (expected %llu, got %llu)",
-                (unsigned long long)req_body->phys_addr,
-                (unsigned long long)buf->size, (unsigned long long)req_body->size);
-            return VRTD_RET_INVALID_ARGUMENT;
+            addr_match_size_mismatch = true;
+            continue;
         }
-        /* Verify ownership: only the client that opened the buffer may close it. */
         if (buf->client_id != client->conn_id) {
+            addr_size_match_foreign = true;
+            continue;
+        }
+        found = buf;
+        break;
+    }
+
+    if (found == NULL) {
+        if (addr_size_match_foreign) {
             char pwbuf[1024];
             LOG(
                 LOG_WARNING,
@@ -2272,11 +2291,12 @@ static uint16_t client_handle_request_buffer_close(
             );
             return VRTD_RET_AUTH_ERROR;
         }
-        found = buf;
-        break;
-    }
-
-    if (found == NULL) {
+        if (addr_match_size_mismatch) {
+            LOG(LOG_WARNING, "buffer_close: size mismatch at addr=0x%llx (got %llu)",
+                (unsigned long long)req_body->phys_addr,
+                (unsigned long long)req_body->size);
+            return VRTD_RET_INVALID_ARGUMENT;
+        }
         LOG(LOG_NOTICE, "buffer_close: no buffer at addr=0x%llx on device %u",
             (unsigned long long)req_body->phys_addr, (unsigned int)req_body->dev_number);
         return VRTD_RET_NOEXIST;
