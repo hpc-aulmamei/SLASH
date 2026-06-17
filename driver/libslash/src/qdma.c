@@ -40,107 +40,177 @@
 #include <stdio.h>
 
 #include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
-#define QPAIR_FALLBACK_MAX_BUFS 128
-
-struct qpair_fallback_buf {
-    int      in_use;
-    void    *addr;
-    uint64_t length;
-};
+/* Bounce-copy chunk used by the @mock transfer fallback. */
+#define QDMA_XFER_BOUNCE_CHUNK (1u << 20)
 
 /*
- * Small process-local fallback table used only when qpair-fd registration
- * ioctls return ENOTTY (the memfd-backed @mock path).  Real hardware qpair fds
- * implement the ioctl in the kernel and never use this table.
+ * mmap a buffer fd (kernel buffer or @mock memfd) for CPU access.  Always
+ * MAP_SHARED so writes are visible to the kernel/device and to pread/pwrite on
+ * the same fd.
  */
-static struct qpair_fallback_buf qpair_fallback_bufs[QPAIR_FALLBACK_MAX_BUFS];
-
-static int qpair_fallback_register(void *addr, uint64_t length, uint32_t *buf_id,
-                                   enum slash_qdma_transfer_hint *transfer_hint)
+static int qdma_buffer_mmap(struct slash_qdma_buffer *buf)
 {
-    uint32_t i;
+    void *addr = mmap(NULL, (size_t)buf->length, PROT_READ | PROT_WRITE,
+                      MAP_SHARED, buf->fd, 0);
 
-    if (addr == NULL || length == 0 || buf_id == NULL) {
-        errno = EINVAL;
+    if (addr == MAP_FAILED) {
         return -1;
     }
-
-    for (i = 0; i < QPAIR_FALLBACK_MAX_BUFS; ++i) {
-        if (!qpair_fallback_bufs[i].in_use) {
-            qpair_fallback_bufs[i].in_use = 1;
-            qpair_fallback_bufs[i].addr = addr;
-            qpair_fallback_bufs[i].length = length;
-            *buf_id = i;
-            if (transfer_hint != NULL) {
-                *transfer_hint = SLASH_QDMA_TRANSFER_HINT_V80;
-            }
-            return 0;
-        }
-    }
-
-    errno = ENOSPC;
-    return -1;
-}
-
-static int qpair_fallback_unregister(uint32_t buf_id)
-{
-    if (buf_id >= QPAIR_FALLBACK_MAX_BUFS || !qpair_fallback_bufs[buf_id].in_use) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    memset(&qpair_fallback_bufs[buf_id], 0, sizeof(qpair_fallback_bufs[buf_id]));
+    buf->addr = addr;
     return 0;
 }
 
-static ssize_t qpair_fallback_transfer(int qpair_fd, uint32_t buf_id,
-                                       uint64_t buf_offset, uint64_t dev_addr,
-                                       uint64_t length, uint32_t direction)
+/*
+ * @mock / fallback buffer: a memfd sized to @length and mmapped shared.  Used
+ * when the BUF_CREATE ioctl is unavailable (the memfd-backed @mock path).
+ */
+static int qdma_buffer_create_memfd(uint64_t length,
+                                    struct slash_qdma_buffer *buf_out)
 {
-    struct qpair_fallback_buf *buf;
-    char *host;
+    int fd;
+    int saved_errno;
+
+    fd = memfd_create("slash_qdma_buf", MFD_CLOEXEC);
+    if (fd < 0) {
+        return -1;
+    }
+    if (ftruncate(fd, (off_t)length) != 0) {
+        saved_errno = errno;
+        (void)close(fd);
+        errno = saved_errno;
+        return -1;
+    }
+
+    buf_out->fd = fd;
+    buf_out->length = length;
+    buf_out->granule = 4096;
+    buf_out->transfer_hint = SLASH_QDMA_TRANSFER_HINT_V80;
+    buf_out->addr = NULL;
+
+    if (qdma_buffer_mmap(buf_out) != 0) {
+        saved_errno = errno;
+        (void)close(fd);
+        buf_out->fd = -1;
+        errno = saved_errno;
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * Create a kernel buffer via the BUF_CREATE ioctl on @ioctl_fd (control fd or
+ * queue-pair fd), then mmap it.  Falls back to a memfd buffer when the ioctl is
+ * not implemented (ENOTTY: the @mock path).
+ */
+static int qdma_buffer_create_on_fd(int ioctl_fd, uint64_t length,
+                                    struct slash_qdma_buffer *buf_out)
+{
+    struct slash_qdma_buf_create req;
+    int fd;
+    int saved_errno;
+
+    memset(&req, 0, sizeof(req));
+    req.size = sizeof(req);
+    req.flags = O_CLOEXEC;
+    req.length = length;
+
+    fd = ioctl(ioctl_fd, SLASH_QDMA_IOCTL_BUF_CREATE, &req);
+    if (fd < 0) {
+        if (errno == ENOTTY) {
+            return qdma_buffer_create_memfd(length, buf_out);
+        }
+        return -1;
+    }
+
+    buf_out->fd = fd;
+    buf_out->length = length;
+    buf_out->granule = req.granule ? req.granule : 4096;
+    buf_out->transfer_hint = (enum slash_qdma_transfer_hint)req.transfer_hint;
+    buf_out->addr = NULL;
+
+    if (qdma_buffer_mmap(buf_out) != 0) {
+        saved_errno = errno;
+        (void)close(fd);
+        buf_out->fd = -1;
+        errno = saved_errno;
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * @mock transfer fallback: bounce a single sub-transfer between the host buffer
+ * fd and the queue-pair memfd that stands in for device memory.  Only used when
+ * the transfer ioctl returns ENOTTY.
+ */
+static ssize_t qdma_fallback_subxfer(int qpair_fd,
+                                     const struct slash_qdma_subxfer *x)
+{
+    uint8_t *tmp;
     uint64_t done = 0;
 
-    if (qpair_fd < 0 || buf_id >= QPAIR_FALLBACK_MAX_BUFS ||
-        !qpair_fallback_bufs[buf_id].in_use) {
+    if (x->buf_fd < 0 ||
+        (x->direction != SLASH_QDMA_XFER_H2C &&
+         x->direction != SLASH_QDMA_XFER_C2H)) {
         errno = EINVAL;
         return -1;
     }
 
-    buf = &qpair_fallback_bufs[buf_id];
-    if (length == 0 || buf_offset > buf->length || length > buf->length - buf_offset) {
-        errno = EINVAL;
-        return -1;
-    }
+    /*
+     * For C2H, make sure the device memfd is large enough that reads of
+     * never-written regions return zeros instead of a short read.  Only ever
+     * grow the file: shrinking would discard data a prior H2C wrote.
+     */
+    if (x->direction == SLASH_QDMA_XFER_C2H) {
+        struct stat st;
+        off_t want = (off_t)(x->dev_addr + x->length);
 
-    host = (char *)buf->addr + buf_offset;
-    while (done < length) {
-        ssize_t n;
-
-        if (direction == SLASH_QDMA_XFER_H2C) {
-            n = pwrite(qpair_fd, host + done, (size_t)(length - done),
-                       (off_t)(dev_addr + done));
-        } else if (direction == SLASH_QDMA_XFER_C2H) {
-            n = pread(qpair_fd, host + done, (size_t)(length - done),
-                      (off_t)(dev_addr + done));
-        } else {
-            errno = EINVAL;
-            return -1;
+        if (fstat(qpair_fd, &st) == 0 && st.st_size < want) {
+            (void)ftruncate(qpair_fd, want);
         }
+    }
 
-        if (n < 0) {
-            if (errno == EINTR) {
-                continue;
+    tmp = (uint8_t *)malloc(QDMA_XFER_BOUNCE_CHUNK);
+    if (tmp == NULL) {
+        return -1;
+    }
+
+    while (done < x->length) {
+        uint64_t remaining = x->length - done;
+        size_t chunk = remaining < QDMA_XFER_BOUNCE_CHUNK
+                           ? (size_t)remaining : QDMA_XFER_BOUNCE_CHUNK;
+        ssize_t r;
+        ssize_t w;
+
+        if (x->direction == SLASH_QDMA_XFER_H2C) {
+            r = pread(x->buf_fd, tmp, chunk, (off_t)(x->buf_offset + done));
+            if (r <= 0) {
+                free(tmp);
+                return -1;
             }
+            w = pwrite(qpair_fd, tmp, (size_t)r, (off_t)(x->dev_addr + done));
+        } else {
+            r = pread(qpair_fd, tmp, chunk, (off_t)(x->dev_addr + done));
+            if (r <= 0) {
+                free(tmp);
+                return -1;
+            }
+            w = pwrite(x->buf_fd, tmp, (size_t)r, (off_t)(x->buf_offset + done));
+        }
+
+        if (w != r) {
+            free(tmp);
             return -1;
         }
-        if (n == 0) {
-            break;
-        }
-        done += (uint64_t)n;
+        done += (uint64_t)r;
     }
 
+    free(tmp);
     return (ssize_t)done;
 }
 
@@ -352,186 +422,156 @@ int slash_qdma_qpair_get_fd(struct slash_qdma *qdma, uint32_t qid, int flags)
     return fd;
 }
 
-int slash_qdma_buffer_register(struct slash_qdma *qdma, void *addr,
-                               uint64_t length, uint32_t *buf_id,
-                               enum slash_qdma_transfer_hint *transfer_hint)
+int slash_qdma_qpair_get_fd_multi(struct slash_qdma *qdma, const uint32_t *qids,
+                                  uint32_t qpair_count, int flags)
 {
-    struct slash_qdma_buf_register req;
-    int ret;
+    struct slash_qdma_qpair_fd_request req;
+    uint32_t i;
+    int fd;
 
-    if (qdma == NULL || addr == NULL || buf_id == NULL) {
+    if (qdma == NULL || qids == NULL ||
+        qpair_count == 0 || qpair_count > SLASH_QDMA_FD_MAX_QPAIRS) {
         errno = EINVAL;
         return -1;
     }
 
     if (qdma->priv) {
-        return slash_qdma_mock_buffer_register(qdma, addr, length, buf_id,
-                                               transfer_hint);
+        return slash_qdma_mock_qpair_get_fd_multi(qdma, qids, qpair_count,
+                                                  flags);
     }
 
     memset(&req, 0, sizeof(req));
-    req.size      = sizeof(req);
-    req.user_addr = (uint64_t)(uintptr_t)addr;
-    req.length    = length;
+    req.size        = sizeof(req);
+    req.flags       = flags;
+    req.qid         = qids[0];
+    req.qpair_count = qpair_count;
+    for (i = 0; i < qpair_count; ++i) {
+        req.qpair_ids[i] = qids[i];
+    }
 
-    ret = ioctl(qdma->fd, SLASH_QDMA_IOCTL_BUF_REGISTER, &req);
-    if (ret < 0) {
+    fd = ioctl(qdma->fd, SLASH_QDMA_IOCTL_QPAIR_GET_FD, &req);
+    if (fd < 0) {
         return -1;
     }
 
-    *buf_id = req.buf_id;
-    if (transfer_hint != NULL) {
-        *transfer_hint = req.transfer_hint;
-    }
-
-    return 0;
+    return fd;
 }
 
-int slash_qdma_buffer_unregister(struct slash_qdma *qdma, uint32_t buf_id)
+int slash_qdma_buffer_create(struct slash_qdma *qdma, uint64_t length,
+                             struct slash_qdma_buffer *buf_out)
 {
-    struct slash_qdma_buf_unregister req;
-    int ret;
-
-    if (qdma == NULL) {
+    if (qdma == NULL || buf_out == NULL || length == 0) {
         errno = EINVAL;
         return -1;
     }
 
+    /* @mock has no character device: back the buffer with a memfd directly. */
     if (qdma->priv) {
-        return slash_qdma_mock_buffer_unregister(qdma, buf_id);
+        return qdma_buffer_create_memfd(length, buf_out);
     }
 
-    memset(&req, 0, sizeof(req));
-    req.size   = sizeof(req);
-    req.buf_id = buf_id;
-
-    ret = ioctl(qdma->fd, SLASH_QDMA_IOCTL_BUF_UNREGISTER, &req);
-    if (ret < 0) {
-        return -1;
-    }
-
-    return 0;
+    return qdma_buffer_create_on_fd(qdma->fd, length, buf_out);
 }
 
-int slash_qdma_qpair_buffer_register(int qpair_fd, void *addr,
-                                     uint64_t length, uint32_t *buf_id,
-                                     enum slash_qdma_transfer_hint *transfer_hint)
+int slash_qdma_qpair_buffer_create(int qpair_fd, uint64_t length,
+                                   struct slash_qdma_buffer *buf_out)
 {
-    struct slash_qdma_buf_register req;
-    int ret;
-
-    if (qpair_fd < 0 || addr == NULL || buf_id == NULL) {
+    if (qpair_fd < 0 || buf_out == NULL || length == 0) {
         errno = EINVAL;
         return -1;
     }
 
-    memset(&req, 0, sizeof(req));
-    req.size      = sizeof(req);
-    req.user_addr = (uint64_t)(uintptr_t)addr;
-    req.length    = length;
-
-    ret = ioctl(qpair_fd, SLASH_QDMA_IOCTL_BUF_REGISTER, &req);
-    if (ret < 0) {
-        if (errno == ENOTTY) {
-            return qpair_fallback_register(addr, length, buf_id, transfer_hint);
-        }
-        return -1;
-    }
-
-    *buf_id = req.buf_id;
-    if (transfer_hint != NULL) {
-        *transfer_hint = req.transfer_hint;
-    }
-
-    return 0;
+    return qdma_buffer_create_on_fd(qpair_fd, length, buf_out);
 }
 
-int slash_qdma_qpair_buffer_unregister(int qpair_fd, uint32_t buf_id)
+int slash_qdma_buffer_destroy(struct slash_qdma_buffer *buf)
 {
-    struct slash_qdma_buf_unregister req;
-    int ret;
+    int ret = 0;
 
-    if (qpair_fd < 0) {
+    if (buf == NULL) {
         errno = EINVAL;
         return -1;
     }
 
-    memset(&req, 0, sizeof(req));
-    req.size   = sizeof(req);
-    req.buf_id = buf_id;
-
-    ret = ioctl(qpair_fd, SLASH_QDMA_IOCTL_BUF_UNREGISTER, &req);
-    if (ret < 0) {
-        if (errno == ENOTTY) {
-            return qpair_fallback_unregister(buf_id);
+    if (buf->addr != NULL && buf->addr != MAP_FAILED && buf->length != 0) {
+        if (munmap(buf->addr, (size_t)buf->length) != 0) {
+            ret = -1;
         }
-        return -1;
+    }
+    buf->addr = NULL;
+
+    if (buf->fd >= 0) {
+        if (close(buf->fd) != 0) {
+            ret = -1;
+        }
+        buf->fd = -1;
     }
 
-    return 0;
+    return ret;
 }
 
-ssize_t slash_qdma_transfer(struct slash_qdma *qdma, int qpair_fd,
-                            uint32_t buf_id, uint64_t buf_offset,
-                            uint64_t dev_addr, uint64_t length,
-                            uint32_t direction)
+ssize_t slash_qdma_qpair_transfer_batch(int qpair_fd,
+                                        const struct slash_qdma_subxfer *xfers,
+                                        uint32_t count)
 {
     struct slash_qdma_transfer req;
+    uint32_t i;
     int ret;
 
-    if (qdma == NULL || qpair_fd < 0) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (direction != SLASH_QDMA_XFER_H2C && direction != SLASH_QDMA_XFER_C2H) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (qdma->priv) {
-        return slash_qdma_mock_transfer(qdma, qpair_fd, buf_id, buf_offset,
-                                        dev_addr, length, direction);
-    }
-
-    return slash_qdma_qpair_transfer(qpair_fd, buf_id, buf_offset, dev_addr,
-                                     length, direction);
-}
-
-ssize_t slash_qdma_qpair_transfer(int qpair_fd, uint32_t buf_id,
-                                  uint64_t buf_offset, uint64_t dev_addr,
-                                  uint64_t length, uint32_t direction)
-{
-    struct slash_qdma_transfer req;
-    int ret;
-
-    if (qpair_fd < 0) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    if (direction != SLASH_QDMA_XFER_H2C && direction != SLASH_QDMA_XFER_C2H) {
+    if (qpair_fd < 0 || xfers == NULL ||
+        count == 0 || count > SLASH_QDMA_FD_MAX_QPAIRS) {
         errno = EINVAL;
         return -1;
     }
 
     memset(&req, 0, sizeof(req));
-    req.size       = sizeof(req);
-    req.buf_id     = buf_id;
-    req.buf_offset = buf_offset;
-    req.dev_addr   = dev_addr;
-    req.length     = length;
-    req.direction  = direction;
+    req.size  = sizeof(req);
+    req.count = count;
+    for (i = 0; i < count; ++i) {
+        if (xfers[i].direction != SLASH_QDMA_XFER_H2C &&
+            xfers[i].direction != SLASH_QDMA_XFER_C2H) {
+            errno = EINVAL;
+            return -1;
+        }
+        req.xfers[i] = xfers[i];
+    }
 
     ret = ioctl(qpair_fd, SLASH_QDMA_QPAIR_IOCTL_TRANSFER, &req);
     if (ret < 0) {
         if (errno == ENOTTY) {
-            return qpair_fallback_transfer(qpair_fd, buf_id, buf_offset,
-                                           dev_addr, length, direction);
+            /* @mock path: bounce each sub-transfer through the memfds. */
+            uint64_t total = 0;
+
+            for (i = 0; i < count; ++i) {
+                ssize_t n = qdma_fallback_subxfer(qpair_fd, &xfers[i]);
+
+                if (n < 0) {
+                    return -1;
+                }
+                total += (uint64_t)n;
+            }
+            return (ssize_t)total;
         }
         return -1;
     }
 
     return (ssize_t)ret;
+}
+
+ssize_t slash_qdma_qpair_transfer(int qpair_fd, int buf_fd,
+                                  uint64_t buf_offset, uint64_t dev_addr,
+                                  uint64_t length, uint32_t direction)
+{
+    struct slash_qdma_subxfer xfer;
+
+    memset(&xfer, 0, sizeof(xfer));
+    xfer.qpair_index = 0;
+    xfer.direction   = direction;
+    xfer.buf_fd      = buf_fd;
+    xfer.buf_offset  = buf_offset;
+    xfer.dev_addr    = dev_addr;
+    xfer.length      = length;
+
+    return slash_qdma_qpair_transfer_batch(qpair_fd, &xfer, 1);
 }
 

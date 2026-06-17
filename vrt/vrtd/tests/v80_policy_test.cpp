@@ -35,7 +35,7 @@ TEST(V80Plan, SingleQueueIsWhole) {
     vrtd_xfer_seg segs[VRTD_V80_MAX_SEGS];
     uint32_t n = vrtd_plan_v80(VRTD_V80_HBM_BASE, 0, 512 * MiB, STEP, 1, segs);
     ASSERT_EQ(n, 1u);
-    EXPECT_EQ(segs[0].fd_index, 0u);
+    EXPECT_EQ(segs[0].qpair_index, 0u);
     EXPECT_EQ(segs[0].offset, 0u);
     EXPECT_EQ(segs[0].size, 512 * MiB);
 }
@@ -45,10 +45,10 @@ TEST(V80Plan, DdrSplitsInHalf) {
     vrtd_xfer_seg segs[VRTD_V80_MAX_SEGS];
     uint32_t n = vrtd_plan_v80(VRTD_V80_DDR_BASE, 0, 512 * MiB, STEP, 2, segs);
     ASSERT_EQ(n, 2u);
-    EXPECT_EQ(segs[0].fd_index, 0u);
+    EXPECT_EQ(segs[0].qpair_index, 0u);
     EXPECT_EQ(segs[0].offset, 0u);
     EXPECT_EQ(segs[0].size, 256 * MiB);
-    EXPECT_EQ(segs[1].fd_index, 1u);
+    EXPECT_EQ(segs[1].qpair_index, 1u);
     EXPECT_EQ(segs[1].offset, 256 * MiB);
     EXPECT_EQ(segs[1].size, 256 * MiB);
 }
@@ -58,7 +58,7 @@ TEST(V80Plan, DdrTinyTransferStaysOnPrimary) {
     vrtd_xfer_seg segs[VRTD_V80_MAX_SEGS];
     uint32_t n = vrtd_plan_v80(VRTD_V80_DDR_BASE, 0, STEP, STEP, 2, segs);
     ASSERT_EQ(n, 1u);
-    EXPECT_EQ(segs[0].fd_index, 0u);
+    EXPECT_EQ(segs[0].qpair_index, 0u);
     EXPECT_EQ(segs[0].size, STEP);
 }
 
@@ -67,7 +67,7 @@ TEST(V80Plan, HbmLowerHalfChannel0) {
     vrtd_xfer_seg segs[VRTD_V80_MAX_SEGS];
     uint32_t n = vrtd_plan_v80(VRTD_V80_HBM_BASE, 0, 512 * MiB, STEP, 2, segs);
     ASSERT_EQ(n, 1u);
-    EXPECT_EQ(segs[0].fd_index, 0u);
+    EXPECT_EQ(segs[0].qpair_index, 0u);
     EXPECT_EQ(segs[0].offset, 0u);
     EXPECT_EQ(segs[0].size, 512 * MiB);
 }
@@ -78,7 +78,7 @@ TEST(V80Plan, HbmUpperHalfChannel1) {
     uint64_t base = VRTD_V80_HBM_BASE + VRTD_V80_HBM_HALF + 4 * GiB;
     uint32_t n = vrtd_plan_v80(base, 0, 512 * MiB, STEP, 2, segs);
     ASSERT_EQ(n, 1u);
-    EXPECT_EQ(segs[0].fd_index, 1u);
+    EXPECT_EQ(segs[0].qpair_index, 1u);
     EXPECT_EQ(segs[0].offset, 0u);
     EXPECT_EQ(segs[0].size, 512 * MiB);
 }
@@ -89,7 +89,7 @@ TEST(V80Plan, HbmOnBoundaryIsUpperHalf) {
     uint64_t base = VRTD_V80_HBM_BASE + VRTD_V80_HBM_HALF;
     uint32_t n = vrtd_plan_v80(base, 0, 256 * MiB, STEP, 2, segs);
     ASSERT_EQ(n, 1u);
-    EXPECT_EQ(segs[0].fd_index, 1u);
+    EXPECT_EQ(segs[0].qpair_index, 1u);
 }
 
 // An HBM range straddling the boundary splits exactly at it.
@@ -98,10 +98,10 @@ TEST(V80Plan, HbmSpanningSplitsAtBoundary) {
     uint64_t base = VRTD_V80_HBM_BASE + VRTD_V80_HBM_HALF - 256 * MiB;
     uint32_t n = vrtd_plan_v80(base, 0, 512 * MiB, STEP, 2, segs);
     ASSERT_EQ(n, 2u);
-    EXPECT_EQ(segs[0].fd_index, 0u);
+    EXPECT_EQ(segs[0].qpair_index, 0u);
     EXPECT_EQ(segs[0].offset, 0u);
     EXPECT_EQ(segs[0].size, 256 * MiB);
-    EXPECT_EQ(segs[1].fd_index, 1u);
+    EXPECT_EQ(segs[1].qpair_index, 1u);
     EXPECT_EQ(segs[1].offset, 256 * MiB);
     EXPECT_EQ(segs[1].size, 256 * MiB);
 }
@@ -113,10 +113,10 @@ TEST(V80Plan, HbmSpanningWithOffset) {
     uint64_t offset = VRTD_V80_HBM_HALF - STEP;  // crosses boundary STEP into the range
     uint32_t n = vrtd_plan_v80(VRTD_V80_HBM_BASE, offset, 2 * STEP, STEP, 2, segs);
     ASSERT_EQ(n, 2u);
-    EXPECT_EQ(segs[0].fd_index, 0u);
+    EXPECT_EQ(segs[0].qpair_index, 0u);
     EXPECT_EQ(segs[0].offset, offset);
     EXPECT_EQ(segs[0].size, STEP);
-    EXPECT_EQ(segs[1].fd_index, 1u);
+    EXPECT_EQ(segs[1].qpair_index, 1u);
     EXPECT_EQ(segs[1].offset, offset + STEP);
     EXPECT_EQ(segs[1].size, STEP);
 }

@@ -531,12 +531,16 @@ struct vrtd_buffer {
 
     uint64_t size;
     uint64_t phys_addr;
-    int qpair_fds[2];
-    uint32_t qpair_fd_count;
-    uint32_t buf_id;
+    /* Single transfer fd that owns @qpair_count queue pairs (channels). */
+    int qpair_fd;
+    /* Number of queue pairs (channels) the fd owns; selects 1- or 2-way split. */
+    uint32_t qpair_count;
+    /* Kernel-owned DMA buffer fd backing @buf (from slash_qdma_qpair_buffer_create). */
+    int buffer_fd;
     enum slash_qdma_transfer_hint transfer_hint;
+    /* CPU mapping of the kernel buffer (mmap of @buffer_fd). */
     void *buf;
-    /* Internal DMA granule for the local host mapping (4 KiB base pages). */
+    /* Internal DMA granule for the host mapping (4 KiB base pages). */
     uint64_t transfer_step_size;
 };
 
@@ -548,8 +552,8 @@ enum vrtd_ret vrtd_buffer_create_raw(
     uint64_t alloc_arg,
     uint64_t size,
     uint64_t phys_addr,
-    const int *qpair_fds,
-    uint32_t qpair_fd_count,
+    int qpair_fd,
+    uint32_t qpair_count,
     struct vrtd_buffer **buffer_out
 );
 

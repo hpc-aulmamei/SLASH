@@ -2025,18 +2025,15 @@ static uint16_t client_handle_request_buffer_open(
     }
 
     if (buf->qpair_count == 0 || buf->qpair_count > VRTD_BUFFER_MAX_QPAIR_FDS ||
-        buf->fds[0] < 0) {
+        buf->fd < 0) {
         LOG(LOG_ERR, "Buffer created without valid qpair fd");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
     uint64_t real_size = buf->size;
     uint64_t phys_addr = buf->addr;
-    uint32_t qpair_fd_count = buf->qpair_count;
-    int fds[VRTD_BUFFER_MAX_QPAIR_FDS];
-    for (uint32_t i = 0; i < qpair_fd_count; ++i) {
-        fds[i] = buf->fds[i];
-    }
+    uint32_t qpair_count = buf->qpair_count;
+    int fd = buf->fd;
 
     /*
      * Transfer ownership of the buffer into the device's buffer list.
@@ -2050,12 +2047,12 @@ static uint16_t client_handle_request_buffer_open(
 
     resp_body->size = real_size;
     resp_body->phys_addr = phys_addr;
-    resp_body->qpair_fd_count = qpair_fd_count;
-    for (uint32_t i = 0; i < qpair_fd_count; ++i) {
-        client->out_fds[i] = fds[i];
-    }
-    client->out_fd_count = qpair_fd_count;
-    *out_fd = fds[0];
+    resp_body->qpair_count = qpair_count;
+    /* A single transfer fd owns all qpairs; the client selects channels by
+     * qpair_index per sub-transfer. */
+    client->out_fds[0] = fd;
+    client->out_fd_count = 1;
+    *out_fd = fd;
     *have_out_fd = true;
     *resp_size = sizeof(*resp_body);
 
@@ -2159,28 +2156,23 @@ static uint16_t client_handle_request_buffer_open_raw(
     }
 
     if (buf->qpair_count == 0 || buf->qpair_count > VRTD_BUFFER_MAX_QPAIR_FDS ||
-        buf->fds[0] < 0) {
+        buf->fd < 0) {
         LOG(LOG_ERR, "Raw buffer created without valid qpair fd");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    uint32_t qpair_fd_count = buf->qpair_count;
-    int fds[VRTD_BUFFER_MAX_QPAIR_FDS];
-    for (uint32_t i = 0; i < qpair_fd_count; ++i) {
-        fds[i] = buf->fds[i];
-    }
+    uint32_t qpair_count = buf->qpair_count;
+    int fd = buf->fd;
 
     if (buffer_ptr_array_push_move(&d->buffers, &buf) != 0) {
         LOG(LOG_ERR, "Failed to add raw buffer to device buffer list");
         return VRTD_RET_INTERNAL_ERROR;
     }
 
-    resp_body->qpair_fd_count = qpair_fd_count;
-    for (uint32_t i = 0; i < qpair_fd_count; ++i) {
-        client->out_fds[i] = fds[i];
-    }
-    client->out_fd_count = qpair_fd_count;
-    *out_fd = fds[0];
+    resp_body->qpair_count = qpair_count;
+    client->out_fds[0] = fd;
+    client->out_fd_count = 1;
+    *out_fd = fd;
     *have_out_fd = true;
     *resp_size = sizeof(*resp_body);
 

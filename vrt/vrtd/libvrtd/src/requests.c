@@ -572,23 +572,21 @@ enum vrtd_ret vrtd_buffer_open(
     };
     struct vrtd_resp_buffer_open resp = {0};
 
-    int qpair_fds[2] = {-1, -1};
-    uint32_t qpair_fd_count = 0;
+    /* The daemon sends a single transfer fd that owns resp.qpair_count qpairs. */
+    int qpair_fd = -1;
+    uint32_t fd_count = 0;
     int ret = vrtd_raw_request_fds(fd, VRTD_REQ_BUFFER_OPEN,
                                    &req, sizeof(req),
                                    &resp, sizeof(resp),
-                                   qpair_fds, 2, &qpair_fd_count, NULL);
+                                   &qpair_fd, 1, &fd_count, NULL);
     if (ret != VRTD_RET_OK) {
         return ret;
     }
 
-    if (qpair_fd_count == 0 || qpair_fd_count > 2 ||
-        resp.qpair_fd_count == 0 || resp.qpair_fd_count > qpair_fd_count ||
-        qpair_fds[0] < 0) {
-        for (uint32_t i = 0; i < qpair_fd_count; ++i) {
-            if (qpair_fds[i] >= 0) {
-                (void) close(qpair_fds[i]);
-            }
+    if (fd_count != 1 || qpair_fd < 0 ||
+        resp.qpair_count == 0 || resp.qpair_count > 2) {
+        if (qpair_fd >= 0) {
+            (void) close(qpair_fd);
         }
         return VRTD_RET_INTERNAL_ERROR;
     }
@@ -601,16 +599,12 @@ enum vrtd_ret vrtd_buffer_open(
         alloc_arg,
         resp.size,
         resp.phys_addr,
-        qpair_fds,
-        resp.qpair_fd_count,
+        qpair_fd,
+        resp.qpair_count,
         buffer_out
     );
     if (ret != VRTD_RET_OK) {
-        for (uint32_t i = 0; i < qpair_fd_count; ++i) {
-            if (qpair_fds[i] >= 0) {
-                (void) close(qpair_fds[i]);
-            }
-        }
+        (void) close(qpair_fd);
         return ret;
     }
 
@@ -641,23 +635,21 @@ enum vrtd_ret vrtd_buffer_open_raw(
     };
     struct vrtd_resp_buffer_open_raw resp = {0};
 
-    int qpair_fds[2] = {-1, -1};
-    uint32_t qpair_fd_count = 0;
+    /* The daemon sends a single transfer fd that owns resp.qpair_count qpairs. */
+    int qpair_fd = -1;
+    uint32_t fd_count = 0;
     int ret = vrtd_raw_request_fds(fd, VRTD_REQ_BUFFER_OPEN_RAW,
                                    &req, sizeof(req),
                                    &resp, sizeof(resp),
-                                   qpair_fds, 2, &qpair_fd_count, NULL);
+                                   &qpair_fd, 1, &fd_count, NULL);
     if (ret != VRTD_RET_OK) {
         return ret;
     }
 
-    if (qpair_fd_count == 0 || qpair_fd_count > 2 ||
-        resp.qpair_fd_count == 0 || resp.qpair_fd_count > qpair_fd_count ||
-        qpair_fds[0] < 0) {
-        for (uint32_t i = 0; i < qpair_fd_count; ++i) {
-            if (qpair_fds[i] >= 0) {
-                (void) close(qpair_fds[i]);
-            }
+    if (fd_count != 1 || qpair_fd < 0 ||
+        resp.qpair_count == 0 || resp.qpair_count > 2) {
+        if (qpair_fd >= 0) {
+            (void) close(qpair_fd);
         }
         return VRTD_RET_INTERNAL_ERROR;
     }
@@ -670,16 +662,12 @@ enum vrtd_ret vrtd_buffer_open_raw(
         0,           /* alloc_arg: not used for raw buffers */
         size,
         phys_addr,
-        qpair_fds,
-        resp.qpair_fd_count,
+        qpair_fd,
+        resp.qpair_count,
         buffer_out
     );
     if (ret != VRTD_RET_OK) {
-        for (uint32_t i = 0; i < qpair_fd_count; ++i) {
-            if (qpair_fds[i] >= 0) {
-                (void) close(qpair_fds[i]);
-            }
-        }
+        (void) close(qpair_fd);
         return ret;
     }
 

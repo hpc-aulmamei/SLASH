@@ -74,13 +74,14 @@ struct buffer {
     uint64_t addr;
     /** @brief Size of the allocated memory region in bytes (rounded up to subregion granularity). */
     uint64_t size;
-    /** @brief Number of QDMA queue pairs created for this buffer. */
+    /** @brief Number of QDMA queue pairs created for this buffer (1 or 2). */
     uint32_t qpair_count;
     /** @brief QDMA queue IDs assigned to this buffer's queue pairs. */
     uint32_t qids[VRTD_BUFFER_MAX_QPAIR_FDS];
-    /** @brief File descriptors for the QDMA queue pairs.
-     *  Passed to the client via SCM_RIGHTS for direct data transfer. */
-    int fds[VRTD_BUFFER_MAX_QPAIR_FDS];
+    /** @brief Single transfer fd that owns all @qpair_count queue pairs.
+     *  Passed to the client via SCM_RIGHTS for direct data transfer; the client
+     *  selects a channel per sub-transfer by qpair_index. -1 when not created. */
+    int fd;
     /** @brief True if the address-space allocation in the memory map is valid and must be freed. */
     bool allocation_valid;
     /** @brief True if the QDMA queue pair has been created and must be torn down on cleanup. */

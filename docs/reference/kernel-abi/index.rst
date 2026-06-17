@@ -381,38 +381,46 @@ length, and direction. Full lifecycle:
     };
     int io_fd = ioctl(qdma_fd, SLASH_QDMA_IOCTL_QPAIR_GET_FD, &fd_req);
 
-    /* Step 4: Register a page-aligned host buffer. */
-    struct slash_qdma_buf_register reg = {
-        .size = sizeof(reg), .user_addr = (uintptr_t)host_buf, .length = nbytes
-    };
-    ioctl(io_fd, SLASH_QDMA_IOCTL_BUF_REGISTER, &reg);
+    /* Step 4: Create a kernel-owned DMA buffer and mmap it for CPU access.
+     * The buffer fd is returned by the ioctl; the kernel allocated the pages,
+     * built the SGL, and DMA-mapped everything once. */
+    struct slash_qdma_buf_create bc = { .size = sizeof(bc), .length = nbytes };
+    int buf_fd = ioctl(io_fd, SLASH_QDMA_IOCTL_BUF_CREATE, &bc);
+    void *host_buf = mmap(NULL, nbytes, PROT_READ | PROT_WRITE, MAP_SHARED,
+                          buf_fd, 0);
 
-    /* Step 5: H2C transfer to device address 0x4000000000 */
+    /* Step 5: H2C transfer to device address 0x4000000000.  The transfer
+     * carries an array of per-qpair sub-transfers; a single-channel fd uses
+     * one sub-transfer with qpair_index 0. */
     struct slash_qdma_transfer xfer = {
         .size = sizeof(xfer),
-        .buf_id = reg.buf_id,
-        .buf_offset = 0,
-        .dev_addr = 0x4000000000LL,
-        .length = nbytes,
-        .direction = SLASH_QDMA_XFER_H2C,
+        .count = 1,
+        .xfers[0] = {
+            .qpair_index = 0,
+            .direction = SLASH_QDMA_XFER_H2C,
+            .buf_fd = buf_fd,
+            .buf_offset = 0,
+            .dev_addr = 0x4000000000LL,
+            .length = nbytes,
+        },
     };
     ioctl(io_fd, SLASH_QDMA_QPAIR_IOCTL_TRANSFER, &xfer);
 
     /* Step 6: C2H transfer from device address 0x4000000000 */
-    xfer.direction = SLASH_QDMA_XFER_C2H;
+    xfer.xfers[0].direction = SLASH_QDMA_XFER_C2H;
     ioctl(io_fd, SLASH_QDMA_QPAIR_IOCTL_TRANSFER, &xfer);
 
-    /* Step 7: Teardown */
-    struct slash_qdma_buf_unregister unreg = {
-        .size = sizeof(unreg), .buf_id = reg.buf_id
-    };
-    ioctl(io_fd, SLASH_QDMA_IOCTL_BUF_UNREGISTER, &unreg);
+    /* Step 7: Teardown — closing the buffer fd (after munmap) releases it. */
+    munmap(host_buf, nbytes);
+    close(buf_fd);
     close(io_fd);
     op.op = 1;  ioctl(qdma_fd, SLASH_QDMA_IOCTL_Q_OP, &op);  /* STOP */
     op.op = 2;  ioctl(qdma_fd, SLASH_QDMA_IOCTL_Q_OP, &op);  /* DEL */
 
 The qpair fd does **not** support ``read``, ``write``, ``pread``, ``pwrite``, ``mmap``,
-``poll``/``select``, or ``splice`` for data movement.
+``poll``/``select``, or ``splice`` for data movement.  Buffer fds returned by
+``SLASH_QDMA_IOCTL_BUF_CREATE`` **are** mappable with ``mmap`` (full length,
+offset 0).
 
 All transfers are synchronous and block until the transfer completes or times out. The timeout is
 **10 seconds**; after expiry the call returns ``-ETIME``. Partial transfers are possible; the
@@ -685,33 +693,43 @@ removed.
 ``SLASH_QDMA_IOCTL_QPAIR_GET_FD``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Creates a new file descriptor for data transfer on an existing queue pair. The returned fd is
-ioctl-only for data movement: it supports buffer register/unregister and transfer ioctls, but not
-``read``, ``write``, ``pread``, ``pwrite``, ``mmap``, ``poll``/``select``, or ``splice``. Multiple
-fds can be obtained for the same qpair via multiple calls. The fd is returned as the ``ioctl()``
-return value.
+Creates a new file descriptor for data transfer.  The fd is a **collection of one or two queue
+pairs** (typically one per AXI-MM/NoC channel): a transfer issued on it selects a bound queue pair
+by index, so one transfer ioctl can fan across both channels.  The returned fd is ioctl-only for
+data movement: it supports buffer register/unregister and transfer ioctls, but not ``read``,
+``write``, ``pread``, ``pwrite``, ``mmap``, ``poll``/``select``, or ``splice`` (an optional
+``io_uring`` ``uring_cmd`` async transfer path is available on capable kernels).  Multiple fds can
+be obtained for the same qpair(s) via multiple calls.  The fd is returned as the ``ioctl()`` return
+value.
 
 **Interface:**
 
 .. code-block:: c
 
+    #define SLASH_QDMA_FD_MAX_QPAIRS 2u
+
     #define SLASH_QDMA_IOCTL_QPAIR_GET_FD _IOWR('v', 0x53, struct slash_qdma_qpair_fd_request)
 
     struct slash_qdma_qpair_fd_request {
-        __u32 size;   /* [in/out] ABI version */
-        __u32 qid;    /* [in]     Queue pair ID (must exist and be non-empty) */
-        __u32 flags;  /* [in]     fd flags: only O_CLOEXEC is honoured */
+        __u32 size;        /* [in/out] ABI version */
+        __u32 qid;         /* [in]     Legacy single qpair ID; used when qpair_count == 0 */
+        __u32 flags;       /* [in]     fd flags: only O_CLOEXEC is honoured */
+        __u32 qpair_count; /* [in]     Number of qpair_ids (1..SLASH_QDMA_FD_MAX_QPAIRS); 0 = use qid */
+        __u32 qpair_ids[SLASH_QDMA_FD_MAX_QPAIRS]; /* [in] qpair IDs; index == qpair_index */
     };
 
-**Direction:** ``_IOWR`` — userspace writes ``qid`` and ``flags``; the kernel returns the new fd
-as the ``ioctl()`` return value (not as a struct field).
+**Direction:** ``_IOWR`` — userspace writes the qpair selection and ``flags``; the kernel returns
+the new fd as the ``ioctl()`` return value (not as a struct field).
 
 **Preconditions:**
 
-- ``size`` must cover at least ``flags`` (the trailing input field) — otherwise ``-EINVAL``
-- ``qid`` must refer to an existing, non-empty queue pair
+- ``size`` must cover at least ``flags`` (the trailing input field of the legacy form) — otherwise ``-EINVAL``
+- The selected queue pairs must exist and be non-empty (``qpair_count == 0`` selects the single ``qid``)
+- ``qpair_count`` must not exceed ``SLASH_QDMA_FD_MAX_QPAIRS``
 - ``flags & ~O_CLOEXEC == 0`` (any other bits cause ``-EINVAL``)
-- The queue pair should be in the started state for I/O to work
+- The queue pairs should be in the started state for I/O to work
+- Each bound qpair keeps the per-qpair configuration (``mm_channel``, ring sizes, directions) it was
+  given at ``QPAIR_ADD`` time, so the two channels can be configured independently
 
 **Postconditions:**
 
@@ -729,36 +747,43 @@ as the ``ioctl()`` return value (not as a struct field).
 - ``-ENOMEM`` — allocation failure
 - Other negative errno from ``anon_inode_getfile()`` or ``get_unused_fd_flags()``
 
-``SLASH_QDMA_IOCTL_BUF_REGISTER``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``SLASH_QDMA_IOCTL_BUF_CREATE``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Registers a host buffer for DMA. The ioctl may be issued on either the QDMA control fd or a qpair
-fd derived from that control fd; both resolve to the same client-scoped buffer table. The kernel
-pins the backing pages, builds a scatter-gather list, and DMA-maps it **once**. Subsequent transfers
-reference the buffer by ``buf_id`` and reuse the cached, pre-DMA-mapped SGL instead of pinning and
-mapping per transfer. Registered buffers are owned by the shared client context and are
-auto-released when the final fd referencing that context is closed (including on process exit).
+Creates a kernel-owned DMA buffer and returns a mappable fd for it. The ioctl may be issued on
+either the QDMA control fd or a qpair fd of the same device. The kernel allocates ``length`` bytes
+as a set of 4 KiB base pages (not physically contiguous), builds the transfer scatter-gather list,
+and DMA-maps every page **once** — so the steady-state transfer path only slices the prebuilt SGL,
+syncs the touched pages, and submits. Userspace maps the returned fd with ``mmap`` to obtain a CPU
+pointer and passes the fd in ``struct slash_qdma_subxfer`` to move data. The buffer is bound to the
+fd's QDMA device; transfers must use a qpair fd of that same device.
 
 **Interface:**
 
 .. code-block:: c
 
-    #define SLASH_QDMA_IOCTL_BUF_REGISTER _IOWR('v', 0x54, struct slash_qdma_buf_register)
+    #define SLASH_QDMA_IOCTL_BUF_CREATE _IOWR('v', 0x54, struct slash_qdma_buf_create)
 
-    struct slash_qdma_buf_register {
-        __u32 size;       /* [in/out] ABI version */
-        __u32 flags;      /* [in]  Reserved; must be 0 */
-        __u64 user_addr;  /* [in]  Page-aligned host buffer base */
-        __u64 length;     /* [in]  Buffer length in bytes (page multiple) */
-        __u32 buf_id;     /* [out] Kernel-assigned buffer handle */
+    struct slash_qdma_buf_create {
+        __u32 size;          /* [in/out] ABI version */
+        __u32 flags;         /* [in]  Only O_CLOEXEC is honoured */
+        __u64 length;        /* [in]  Buffer length in bytes (page multiple) */
+        __u32 granule;       /* [out] Bytes per SGL descriptor (host page size) */
         __u32 transfer_hint; /* [out] enum slash_qdma_transfer_hint */
     };
 
-**Direction:** ``_IOWR`` — issued on the control fd or a qpair fd. Userspace writes ``flags``,
-``user_addr``, ``length``; the kernel writes back ``buf_id`` and ``transfer_hint``.
+**Direction:** ``_IOWR`` — issued on the control fd or a qpair fd. Userspace writes ``flags`` and
+``length``; the kernel writes back ``granule`` and ``transfer_hint`` and returns the new buffer fd
+as the ``ioctl()`` return value (same convention as the BAR/queue-pair fd ioctls).
+
+The returned fd:
+
+- is ``mmap``-able (full length, offset 0, ``MAP_SHARED``) for CPU access to the buffer;
+- releases the buffer when it (and any mapping) is closed — there is no explicit unregister ioctl;
+- keeps its pages (and DMA mapping) alive as long as either the fd or any mapping exists.
 
 ``transfer_hint`` is advisory and tells userspace which queue topology the kernel expects to be
-best for this registered buffer on the current hardware. Current SLASH hardware returns
+best for this buffer on the current hardware. Current SLASH hardware returns
 ``SLASH_QDMA_TRANSFER_HINT_V80``; userspace may ignore this value. Known values are:
 
 .. code-block:: c
@@ -778,60 +803,38 @@ traffic on a single queue.
 **Preconditions:**
 
 - ``size`` must cover at least ``length`` (the trailing input field) — otherwise ``-EINVAL``
-- ``flags`` must be 0
-- ``user_addr`` must be page-aligned; ``length`` must be a non-zero multiple of the page size
-- The buffer must be backed by 4 KiB base pages
+- ``flags`` must contain only ``O_CLOEXEC``
+- ``length`` must be a non-zero multiple of the page size
 
 **Postconditions:**
 
-- ``buf_id`` is filled with the client-scoped handle, used in ``SLASH_QDMA_QPAIR_IOCTL_TRANSFER``.
-- ``transfer_hint`` is filled with an advisory transfer topology hint. Current SLASH hardware
-  returns ``SLASH_QDMA_TRANSFER_HINT_V80``.
-- The pages remain pinned and DMA-mapped until the buffer is unregistered or the owning control fd
-  is closed.
+- the ``ioctl()`` return value is the new buffer fd (``>= 0``)
+- ``granule`` is the per-descriptor page size (4 KiB); ``transfer_hint`` is an advisory topology hint
+- the pages stay allocated and DMA-mapped until the fd and all mappings are closed and no transfer
+  is in flight
 
 **Return values:**
 
-- ``0`` — success
+- ``>= 0`` — the new buffer fd (success)
 - ``-EFAULT`` — copy failure
-- ``-EINVAL`` — ``size`` too small, non-zero ``flags``, misaligned/zero ``length`` or ``user_addr``,
-  or a page granule that does not match the transfer data path
-- ``-ENOMEM`` — allocation, pinning, or DMA-mapping failure
-- ``-EBUSY`` — no buffer IDs available
+- ``-EINVAL`` — ``size`` too small, unsupported ``flags`` bits, or misaligned/zero ``length``
+- ``-ENOMEM`` — page allocation or DMA-mapping failure
 - ``-ENODEV`` — device shutting down
+- Other negative errno from ``anon_inode_getfile()`` or ``get_unused_fd_flags()``
 
-``SLASH_QDMA_IOCTL_BUF_UNREGISTER``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Removes a registered buffer from the owning client's table. This ioctl may be issued on the same
-control fd used for registration or on any qpair fd derived from that client context. The pages are
-unpinned and the DMA mapping torn down once no in-flight transfer still references the buffer.
-
-**Interface:**
-
-.. code-block:: c
-
-    #define SLASH_QDMA_IOCTL_BUF_UNREGISTER _IOWR('v', 0x55, struct slash_qdma_buf_unregister)
-
-    struct slash_qdma_buf_unregister {
-        __u32 size;    /* [in/out] ABI version */
-        __u32 buf_id;  /* [in]     Buffer handle from BUF_REGISTER */
-    };
-
-**Return values:**
-
-- ``0`` — success
-- ``-EFAULT`` — copy failure
-- ``-EINVAL`` — ``size`` too small
-- ``-ENOENT`` — ``buf_id`` not found in this client's table
+The ``'v'`` ``0x55`` ioctl number is reserved (it was the removed
+``SLASH_QDMA_IOCTL_BUF_UNREGISTER``; kernel buffers are now released by closing the fd).
 
 ``SLASH_QDMA_QPAIR_IOCTL_TRANSFER``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Performs a DMA transfer using a registered buffer. Unlike ``read``/``write``/``pread``/``pwrite``,
+Performs a DMA transfer batch using kernel buffers. Unlike ``read``/``write``/``pread``/``pwrite``,
 this ioctl is issued on a **queue-pair I/O fd** (from ``SLASH_QDMA_IOCTL_QPAIR_GET_FD``), not the
-control device. No pages are pinned or DMA-mapped on this path — that work was amortised at
-registration time — so it submits the cached, pre-DMA-mapped SGL slice directly.
+control device. The transfer carries an array of per-qpair sub-transfers; sub-transfers that target
+distinct queue pairs are submitted **concurrently** (all but the last asynchronously, the last
+blocking, then awaited), so a single ioctl can drive both NoC channels in parallel. No pages are
+allocated or DMA-mapped on this path — that work was amortised at ``BUF_CREATE`` time — so each
+sub-transfer syncs and submits the cached, pre-DMA-mapped SGL slice directly.
 
 **Interface:**
 
@@ -839,35 +842,50 @@ registration time — so it submits the cached, pre-DMA-mapped SGL slice directl
 
     #define SLASH_QDMA_QPAIR_IOCTL_TRANSFER _IOWR('v', 0x56, struct slash_qdma_transfer)
 
-    struct slash_qdma_transfer {
-        __u32 size;        /* [in/out] ABI version */
-        __u32 buf_id;      /* [in] Registered buffer handle */
-        __u64 buf_offset;  /* [in] Byte offset within the registered buffer */
+    struct slash_qdma_subxfer {
+        __u32 qpair_index; /* [in] Index into the fd's bound qpairs */
+        __u32 direction;   /* [in] 1=H2C (write), 2=C2H (read) */
+        __s32 buf_fd;      /* [in] Kernel buffer fd from BUF_CREATE */
+        __u32 pad0;        /* padding */
+        __u64 buf_offset;  /* [in] Byte offset within the buffer */
         __u64 dev_addr;    /* [in] Device-side (endpoint) address */
         __u64 length;      /* [in] Number of bytes to transfer */
-        __u32 direction;   /* [in] 1=H2C (write), 2=C2H (read) */
-        __u32 pad0;        /* padding */
     };
 
-**Direction:** ``_IOWR`` — userspace writes all input fields; the number of bytes transferred is
-returned as the ``ioctl()`` return value (not as a struct field).
+    struct slash_qdma_transfer {
+        __u32 size;   /* [in/out] ABI version */
+        __u32 count;  /* [in] Number of sub-transfers (1..SLASH_QDMA_FD_MAX_QPAIRS) */
+        struct slash_qdma_subxfer xfers[SLASH_QDMA_FD_MAX_QPAIRS];
+    };
+
+**Direction:** ``_IOWR`` — userspace writes all input fields; the total number of bytes transferred
+across all sub-transfers is returned as the ``ioctl()`` return value (not as a struct field).
 
 **Preconditions:**
 
-- ``size`` must cover at least ``direction`` (the trailing input field) — otherwise ``-EINVAL``
-- ``direction`` must be 1 (H2C) or 2 (C2H) and must be enabled on the queue pair
-- ``buf_id`` must refer to a buffer registered on the same control fd that created this qpair fd
-- ``buf_offset`` and ``length`` must be aligned to the buffer's page granule, ``length`` non-zero,
-  and ``buf_offset + length`` must not exceed the registered length
+- ``size`` must cover at least ``count`` (the trailing header field) — otherwise ``-EINVAL``
+- ``count`` must be in ``[1, SLASH_QDMA_FD_MAX_QPAIRS]``
+- each sub-transfer's ``qpair_index`` must be ``< `` the number of qpairs the fd owns
+- each ``direction`` must be 1 (H2C) or 2 (C2H) and must be enabled on the selected queue pair
+- each ``buf_fd`` must be a buffer fd (from ``BUF_CREATE``) bound to the same device as this qpair fd
+- each ``buf_offset`` and ``length`` must be aligned to the buffer's page granule, ``length`` non-zero
+  and ``<= UINT_MAX``, and ``buf_offset + length`` must not exceed the buffer length
 
 **Return values:**
 
-- ``>= 0`` — number of bytes transferred (success)
+- ``>= 0`` — total number of bytes transferred (success)
 - ``-EFAULT`` — copy failure
-- ``-EINVAL`` — ``size`` too small, bad ``direction``, or an out-of-range / misaligned slice
-- ``-ENOENT`` — ``buf_id`` not found
+- ``-EBADF`` — a ``buf_fd`` is not a valid open fd
+- ``-EINVAL`` — ``size``/``count`` invalid, bad ``qpair_index``/``direction``, a ``buf_fd`` that is not
+  a SLASH buffer or belongs to another device, or an out-of-range / misaligned slice
 - ``-ENODEV`` — device shutting down or the requested direction is not enabled on the qpair
-- Other negative errno from libqdma's ``qdma_request_submit()``
+- Other negative errno from libqdma's ``qdma_request_submit()`` (the first sub-transfer error wins)
+
+An optional asynchronous form of this transfer is exposed via ``io_uring`` ``uring_cmd`` (opcode
+``SLASH_QDMA_URING_CMD_TRANSFER``), available only on kernels built with ``CONFIG_IO_URING`` and
+``uring_cmd`` support. The SQE inline command carries a single ``__u64`` userspace pointer to a
+``struct slash_qdma_transfer``; the completion CQE ``res`` holds the total bytes transferred or a
+negative errno. This lets many buffer transfers be kept in flight from a single thread.
 
 Device resets and hotplugging: ``/dev/slash_hotplug``
 =====================================================

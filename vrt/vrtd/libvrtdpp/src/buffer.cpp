@@ -123,7 +123,7 @@ void *Buffer::data() noexcept
 
 int Buffer::getFd() const noexcept
 {
-    return buffer ? buffer->qpair_fds[0] : -1;
+    return buffer ? buffer->qpair_fd : -1;
 }
 
 int Buffer::releaseFd() noexcept
@@ -131,8 +131,8 @@ int Buffer::releaseFd() noexcept
     if (buffer == nullptr) {
         return -1;
     }
-    int ret = buffer->qpair_fds[0];
-    buffer->qpair_fds[0] = -1;
+    int ret = buffer->qpair_fd;
+    buffer->qpair_fd = -1;
     return ret;
 }
 

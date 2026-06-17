@@ -134,7 +134,7 @@ static int buffer_init(struct buffer *buf,
         .size = 0,
         .qpair_count = 0,
         .qids = {0},
-        .fds = {-1, -1},
+        .fd = -1,
         .allocation_valid = false,
         .qpair_created = false,
     };
@@ -239,13 +239,17 @@ static int buffer_init(struct buffer *buf,
             LOG(LOG_ERR, "Failed to start buffer qpair %u: %m", qpair.qid);
             goto fail;
         }
+    }
 
-        int fd = slash_qdma_qpair_get_fd(qdma, qpair.qid, O_CLOEXEC);
-        if (fd < 0) {
-            LOG(LOG_ERR, "Failed to get fd for buffer qpair %u: %m", qpair.qid);
-            goto fail;
-        }
-        buf->fds[i] = fd;
+    /* Step 5: bind every started qpair into a single transfer fd so one
+     * transfer ioctl can fan across both channels.  The qids array index
+     * becomes the qpair_index used by the client's sub-transfers. */
+    buf->fd = slash_qdma_qpair_get_fd_multi(qdma, buf->qids, buf->qpair_count,
+                                            O_CLOEXEC);
+    if (buf->fd < 0) {
+        LOG(LOG_ERR, "Failed to get combined fd for %u buffer qpairs: %m",
+            (unsigned int)buf->qpair_count);
+        goto fail;
     }
 
     LOG(LOG_DEBUG, "Buffer initialized addr=0x%llx size=%llu qpairs=%u",
@@ -346,7 +350,7 @@ struct buffer *buffer_create_raw(struct slash_qdma *qdma,
         .size = size,
         .qpair_count = 0,
         .qids = {0},
-        .fds = {-1, -1},
+        .fd = -1,
         .allocation_valid = false, /* no allocator reservation to free */
         .qpair_created = false,
     };
@@ -380,14 +384,16 @@ struct buffer *buffer_create_raw(struct slash_qdma *qdma,
             cleanup_buffer(buf);
             return NULL;
         }
+    }
 
-        int fd = slash_qdma_qpair_get_fd(qdma, qpair.qid, O_CLOEXEC);
-        if (fd < 0) {
-            LOG(LOG_ERR, "buffer_create_raw: failed to get fd for qpair %u: %m", qpair.qid);
-            cleanup_buffer(buf);
-            return NULL;
-        }
-        buf->fds[i] = fd;
+    /* Bind every started qpair into a single transfer fd. */
+    buf->fd = slash_qdma_qpair_get_fd_multi(qdma, buf->qids, buf->qpair_count,
+                                            O_CLOEXEC);
+    if (buf->fd < 0) {
+        LOG(LOG_ERR, "buffer_create_raw: failed to get combined fd for %u qpairs: %m",
+            (unsigned int)buf->qpair_count);
+        cleanup_buffer(buf);
+        return NULL;
     }
 
     LOG(LOG_DEBUG, "Raw buffer created phys_addr=0x%llx size=%llu qpairs=%u",
@@ -419,12 +425,10 @@ void cleanup_buffer(struct buffer *buf)
         (unsigned long long)buf->addr, (unsigned long long)buf->size,
         (unsigned int)buf->qpair_count);
 
-    /* Close the QDMA queue fds first, before stopping the queues. */
-    for (uint32_t i = 0; i < VRTD_BUFFER_MAX_QPAIR_FDS; ++i) {
-        if (buf->fds[i] >= 0) {
-            (void) close(buf->fds[i]);
-            buf->fds[i] = -1;
-        }
+    /* Close the combined QDMA transfer fd first, before stopping the queues. */
+    if (buf->fd >= 0) {
+        (void) close(buf->fd);
+        buf->fd = -1;
     }
 
     /* Stop and delete the QDMA queue pairs.  Errors are logged but
@@ -473,9 +477,7 @@ void cleanup_buffer(struct buffer *buf)
     buf->size = 0;
     buf->qpair_count = 0;
     memset(buf->qids, 0, sizeof(buf->qids));
-    for (uint32_t i = 0; i < VRTD_BUFFER_MAX_QPAIR_FDS; ++i) {
-        buf->fds[i] = -1;
-    }
+    buf->fd = -1;
 
     free(buf);
 }

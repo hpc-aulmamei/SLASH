@@ -35,13 +35,8 @@ int slash_qdma_mock_qpair_start(struct slash_qdma *qdma, uint32_t qid);
 int slash_qdma_mock_qpair_stop(struct slash_qdma *qdma, uint32_t qid);
 int slash_qdma_mock_qpair_del(struct slash_qdma *qdma, uint32_t qid);
 int slash_qdma_mock_qpair_get_fd(struct slash_qdma *qdma, uint32_t qid, int flags);
-int slash_qdma_mock_buffer_register(struct slash_qdma *qdma, void *addr,
-                                    uint64_t length, uint32_t *buf_id,
-                                    enum slash_qdma_transfer_hint *transfer_hint);
-int slash_qdma_mock_buffer_unregister(struct slash_qdma *qdma, uint32_t buf_id);
-ssize_t slash_qdma_mock_transfer(struct slash_qdma *qdma, int qpair_fd,
-                                 uint32_t buf_id, uint64_t buf_offset,
-                                 uint64_t dev_addr, uint64_t length,
-                                 uint32_t direction);
+int slash_qdma_mock_qpair_get_fd_multi(struct slash_qdma *qdma,
+                                       const uint32_t *qids,
+                                       uint32_t qpair_count, int flags);
 
 #endif /* LIBSLASH_QDMA_MOCK_H */

@@ -62,6 +62,8 @@ SLASH_QDMA_TIMING ?= 0
 # absent, the legacy form is the unconditional fallback in slash_compat.h.
 SLASH_HAVE_VM_FLAGS_SET ?= n
 SLASH_HAVE_MODULE_IMPORT_NS_TOKEN ?= n
+SLASH_HAVE_URING_CMD ?= n
+SLASH_HAVE_URING_SQE_CMD ?= n
 
 # Set GCOV=1 to instrument the module for kernel gcov coverage.
 # Not set by default — never enable this in production builds.
@@ -92,6 +94,20 @@ endif
 
 ifeq ($(SLASH_HAVE_MODULE_IMPORT_NS_TOKEN),y)
 ccflags-y += -DSLASH_HAVE_MODULE_IMPORT_NS_TOKEN
+endif
+
+# Optional io_uring uring_cmd async transfer path. Probed by kcompat; absent on
+# kernels without CONFIG_IO_URING or uring_cmd support (e.g. RHEL 9, Ubuntu
+# 22.04 GA), where the synchronous transfer ioctl remains the only path.
+ifeq ($(SLASH_HAVE_URING_CMD),y)
+ccflags-y += -DSLASH_HAVE_URING_CMD
+endif
+
+# Selects the io_uring SQE payload accessor: io_uring_sqe_cmd(cmd->sqe) when
+# present (newer kernels + distro backports), else cmd->cmd. Only meaningful
+# when SLASH_HAVE_URING_CMD is also set.
+ifeq ($(SLASH_HAVE_URING_SQE_CMD),y)
+ccflags-y += -DSLASH_HAVE_URING_SQE_CMD
 endif
 
 # Force-include the compat header into every TU (including the pinned libqdma

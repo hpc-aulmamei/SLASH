@@ -36,8 +36,8 @@
  *   - HBM at/above the half-boundary:     channel 1 only.
  *   - HBM spanning the boundary:          split there (below -> ch0, above -> ch1).
  *
- * The fd-to-channel mapping is the wire contract from vrtd: fds[0] is pinned to
- * channel 0 and fds[1] to channel 1 (see vrtd_resp_buffer_open).
+ * The qpair-to-channel mapping is the wire contract from vrtd: qpair_index 0 is
+ * pinned to channel 0 and qpair_index 1 to channel 1 (see vrtd_resp_buffer_open).
  */
 
 #ifndef VRTD_V80_POLICY_H
@@ -60,39 +60,40 @@
 /** @brief Maximum segments a transfer is split into (one per mm-channel). */
 #define VRTD_V80_MAX_SEGS 2u
 
-/** @brief One contiguous sub-transfer routed to a specific qpair fd. */
+/** @brief One contiguous sub-transfer routed to a specific qpair. */
 struct vrtd_xfer_seg {
-    uint32_t fd_index;  /**< Index into the qpair_fds array. */
-    uint64_t offset;    /**< Buffer-relative byte offset. */
-    uint64_t size;      /**< Byte count. */
+    uint32_t qpair_index;  /**< Index into the fd's bound qpairs (== channel). */
+    uint64_t offset;       /**< Buffer-relative byte offset. */
+    uint64_t size;         /**< Byte count. */
 };
 
 /**
  * @brief Compute the V80 transfer plan for a buffer range.
  *
  * Plans the transfer of [@p offset, @p offset + @p size) within a buffer based
- * at device address @p phys_addr across @p qpair_fd_count available queues
- * (fds[0] == channel 0, fds[1] == channel 1).  Split points are aligned down to
- * @p step so every emitted segment stays page-aligned.  With fewer than two
- * queues (or a zero step) the whole range is assigned to fds[0].
+ * at device address @p phys_addr across @p qpair_count available queue pairs
+ * (qpair_index 0 == channel 0, qpair_index 1 == channel 1).  Split points are
+ * aligned down to @p step so every emitted segment stays page-aligned.  With
+ * fewer than two queue pairs (or a zero step) the whole range is assigned to
+ * qpair_index 0.
  *
- * @param phys_addr      Device base address of the buffer.
- * @param offset         Buffer-relative start of the transfer.
- * @param size           Transfer length in bytes (assumed a multiple of step).
- * @param step           Transfer/page granule used to align split points.
- * @param qpair_fd_count Number of available qpair fds (1 or 2).
- * @param segs           [out] Receives up to VRTD_V80_MAX_SEGS segments.
+ * @param phys_addr   Device base address of the buffer.
+ * @param offset      Buffer-relative start of the transfer.
+ * @param size        Transfer length in bytes (assumed a multiple of step).
+ * @param step        Transfer/page granule used to align split points.
+ * @param qpair_count Number of available queue pairs (1 or 2).
+ * @param segs        [out] Receives up to VRTD_V80_MAX_SEGS segments.
  * @return Number of segments written to @p segs (1 or 2).
  */
 static inline uint32_t vrtd_plan_v80(uint64_t phys_addr,
                                      uint64_t offset,
                                      uint64_t size,
                                      uint64_t step,
-                                     uint32_t qpair_fd_count,
+                                     uint32_t qpair_count,
                                      struct vrtd_xfer_seg segs[VRTD_V80_MAX_SEGS])
 {
-    if (qpair_fd_count < 2u || step == 0u) {
-        segs[0].fd_index = 0u;
+    if (qpair_count < 2u || step == 0u) {
+        segs[0].qpair_index = 0u;
         segs[0].offset = offset;
         segs[0].size = size;
         return 1u;
@@ -111,9 +112,9 @@ static inline uint32_t vrtd_plan_v80(uint64_t phys_addr,
         /* HBM: route by the 16 GiB half-memory boundary (NSU split). */
         uint64_t boundary = VRTD_V80_HBM_BASE + VRTD_V80_HBM_HALF;
         if (end <= boundary) {
-            lo_len = size;          /* entirely in the lower half -> ch0 */
+            lo_len = size;             /* entirely in the lower half -> ch0 */
         } else if (start >= boundary) {
-            segs[0].fd_index = 1u;  /* entirely in the upper half -> ch1 */
+            segs[0].qpair_index = 1u;  /* entirely in the upper half -> ch1 */
             segs[0].offset = offset;
             segs[0].size = size;
             return 1u;
@@ -125,16 +126,16 @@ static inline uint32_t vrtd_plan_v80(uint64_t phys_addr,
     lo_len -= lo_len % step;        /* keep both segments page-aligned */
 
     if (lo_len == 0u || lo_len >= size) {
-        segs[0].fd_index = 0u;
+        segs[0].qpair_index = 0u;
         segs[0].offset = offset;
         segs[0].size = size;
         return 1u;
     }
 
-    segs[0].fd_index = 0u;
+    segs[0].qpair_index = 0u;
     segs[0].offset = offset;
     segs[0].size = lo_len;
-    segs[1].fd_index = 1u;
+    segs[1].qpair_index = 1u;
     segs[1].offset = offset + lo_len;
     segs[1].size = size - lo_len;
     return 2u;

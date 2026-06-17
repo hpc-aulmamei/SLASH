@@ -579,8 +579,7 @@ public:
         : qdma_{qdma}, physAddr_{physAddr}, size_{size},
           mmChannel_{mmChannel}, ringSizeIndex_{ringSizeIndex} {
         try {
-            createHostMapping();
-            registerBuffer();
+            createBuffer();
             createQpair();
         } catch (...) {
             cleanup();
@@ -632,40 +631,42 @@ private:
         qid_ = other.qid_;
         qpairCreated_ = other.qpairCreated_;
         qpairStarted_ = other.qpairStarted_;
+        buf_ = other.buf_;
         data_ = other.data_;
         physAddr_ = other.physAddr_;
         size_ = other.size_;
         transferStepSize_ = other.transferStepSize_;
         mmChannel_ = other.mmChannel_;
         ringSizeIndex_ = other.ringSizeIndex_;
-        bufId_ = other.bufId_;
-        bufRegistered_ = other.bufRegistered_;
 
         other.qdma_ = nullptr;
         other.fd_ = -1;
         other.qid_ = 0;
         other.qpairCreated_ = false;
         other.qpairStarted_ = false;
+        other.buf_ = slash_qdma_buffer{};
         other.data_ = nullptr;
         other.physAddr_ = 0;
         other.size_ = 0;
         other.transferStepSize_ = 0;
         other.ringSizeIndex_ = QDMA_RING_SZ_IDX;
-        other.bufId_ = 0;
-        other.bufRegistered_ = false;
     }
 
-    void createHostMapping() {
-        smi::raw::HostMapping mapping = smi::raw::createHostMapping(size_, physAddr_);
-        data_ = mapping.data;
-        transferStepSize_ = mapping.step;
-    }
-
-    void registerBuffer() {
-        if (slash_qdma_buffer_register(qdma_, data_, size_, &bufId_, nullptr) != 0) {
-            throwSystemError("Failed to register raw transfer DMA buffer");
+    void createBuffer() {
+        // The kernel owns the DMA buffer (pages + SGL + DMA map built once at
+        // create time); we mmap it for CPU access via buf_.addr.
+        if (slash_qdma_buffer_create(qdma_, size_, &buf_) != 0) {
+            throwSystemError("Failed to create raw transfer DMA buffer");
         }
-        bufRegistered_ = true;
+        data_ = buf_.addr;
+        transferStepSize_ = smi::raw::BASE_TRANSFER_STEP_SIZE;
+
+        // Pre-fault the mapping so the page-fault cost stays out of the timed
+        // transfer loop.
+        auto* touch = static_cast<volatile uint8_t*>(data_);
+        for (uint64_t off = 0; off < size_; off += transferStepSize_) {
+            touch[off] = 0;
+        }
     }
 
     void createQpair() {
@@ -704,9 +705,19 @@ private:
     }
 
     void transfer(uint64_t offset, uint64_t size, bool toDevice) {
-        const uint32_t dir = toDevice ? SLASH_QDMA_XFER_H2C : SLASH_QDMA_XFER_C2H;
-        ssize_t n = slash_qdma_transfer(qdma_, fd_, bufId_, offset,
-                                        physAddr_ + offset, size, dir);
+        // Issue via the array transfer ioctl with a single sub-transfer on this
+        // buffer's queue pair (qpair_index 0).  Channel parallelism for the
+        // bandwidth test comes from running many buffers concurrently, each
+        // pinned to a channel by mm_channel (see the channel-allocation knobs).
+        struct slash_qdma_subxfer xfer{};
+        xfer.qpair_index = 0;
+        xfer.direction = toDevice ? SLASH_QDMA_XFER_H2C : SLASH_QDMA_XFER_C2H;
+        xfer.buf_fd = buf_.fd;
+        xfer.buf_offset = offset;
+        xfer.dev_addr = physAddr_ + offset;
+        xfer.length = size;
+
+        ssize_t n = slash_qdma_qpair_transfer_batch(fd_, &xfer, 1);
         if (n < 0) {
             throwSystemError(toDevice ? "Raw QDMA write failed"
                                       : "Raw QDMA read failed");
@@ -721,22 +732,19 @@ private:
             (void)close(fd_);
             fd_ = -1;
         }
-        if (qdma_ != nullptr && bufRegistered_) {
-            (void)slash_qdma_buffer_unregister(qdma_, bufId_);
-            bufRegistered_ = false;
-        }
-        if (qdma_ != nullptr && qpairStarted_) {
+        if (qpairStarted_) {
             (void)slash_qdma_qpair_stop(qdma_, qid_);
             qpairStarted_ = false;
         }
-        if (qdma_ != nullptr && qpairCreated_) {
+        if (qpairCreated_) {
             (void)slash_qdma_qpair_del(qdma_, qid_);
             qpairCreated_ = false;
         }
-        if (data_ != nullptr && data_ != MAP_FAILED) {
-            (void)munmap(data_, size_);
-            data_ = nullptr;
+        if (buf_.addr != nullptr) {
+            (void)slash_qdma_buffer_destroy(&buf_);
+            buf_ = slash_qdma_buffer{};
         }
+        data_ = nullptr;
     }
 
     slash_qdma* qdma_ = nullptr;
@@ -744,14 +752,13 @@ private:
     uint32_t qid_ = 0;
     bool qpairCreated_ = false;
     bool qpairStarted_ = false;
+    slash_qdma_buffer buf_{};
     void* data_ = nullptr;
     uint64_t physAddr_ = 0;
     uint64_t size_ = 0;
     uint64_t transferStepSize_ = 0;
     slash_qdma_mm_channel mmChannel_ = SLASH_QDMA_MM_CHANNEL_AUTO;
     uint32_t ringSizeIndex_ = QDMA_RING_SZ_IDX;
-    uint32_t bufId_ = 0;
-    bool bufRegistered_ = false;
 };
 
 /// Fill @p buf with a deterministic pattern seeded by @p seed.

@@ -38,26 +38,23 @@ static constexpr uint64_t       CLIENT_ID        = 42;
 
 static void qpair_fd_round_trip(int fd, uint64_t addr, const uint8_t *src, uint8_t *dst)
 {
-    uint8_t write_buf[XFER_SIZE];
-    uint8_t read_buf[XFER_SIZE]{};
-    std::memcpy(write_buf, src, XFER_SIZE);
-
-    uint32_t write_id = 0;
-    uint32_t read_id = 0;
-    ASSERT_EQ(slash_qdma_qpair_buffer_register(fd, write_buf, XFER_SIZE, &write_id, nullptr), 0);
-    ASSERT_EQ(slash_qdma_qpair_buffer_register(fd, read_buf, XFER_SIZE, &read_id, nullptr), 0);
+    struct slash_qdma_buffer write_buf{};
+    struct slash_qdma_buffer read_buf{};
+    ASSERT_EQ(slash_qdma_qpair_buffer_create(fd, XFER_SIZE, &write_buf), 0);
+    ASSERT_EQ(slash_qdma_qpair_buffer_create(fd, XFER_SIZE, &read_buf), 0);
+    std::memcpy(write_buf.addr, src, XFER_SIZE);
 
     ssize_t written = slash_qdma_qpair_transfer(
-        fd, write_id, 0, addr, XFER_SIZE, SLASH_QDMA_XFER_H2C);
+        fd, write_buf.fd, 0, addr, XFER_SIZE, SLASH_QDMA_XFER_H2C);
     EXPECT_EQ(written, static_cast<ssize_t>(XFER_SIZE));
 
     ssize_t read_bytes = slash_qdma_qpair_transfer(
-        fd, read_id, 0, addr, XFER_SIZE, SLASH_QDMA_XFER_C2H);
+        fd, read_buf.fd, 0, addr, XFER_SIZE, SLASH_QDMA_XFER_C2H);
     EXPECT_EQ(read_bytes, static_cast<ssize_t>(XFER_SIZE));
-    std::memcpy(dst, read_buf, XFER_SIZE);
+    std::memcpy(dst, read_buf.addr, XFER_SIZE);
 
-    EXPECT_EQ(slash_qdma_qpair_buffer_unregister(fd, write_id), 0);
-    EXPECT_EQ(slash_qdma_qpair_buffer_unregister(fd, read_id), 0);
+    EXPECT_EQ(slash_qdma_buffer_destroy(&write_buf), 0);
+    EXPECT_EQ(slash_qdma_buffer_destroy(&read_buf), 0);
 }
 
 // ─── Null / argument validation (no hardware needed, always run) ──────────────
@@ -181,14 +178,14 @@ TEST_P(BufferTest, LifecycleBidirectional) {
                                        XFER_SIZE, 0, CLIENT_ID, SLASH_QDMA_MM_CHANNEL_AUTO, nullptr);
     ASSERT_NE(buf, nullptr);
     ASSERT_GE(buf->qpair_count, 1u);
-    EXPECT_GE(buf->fds[0], 0);
+    EXPECT_GE(buf->fd, 0);
 
     uint8_t src[XFER_SIZE];
     for (size_t i = 0; i < XFER_SIZE; ++i)
         src[i] = static_cast<uint8_t>(i & 0xFF);
 
     uint8_t dst[XFER_SIZE]{};
-    qpair_fd_round_trip(buf->fds[0], buf->addr, src, dst);
+    qpair_fd_round_trip(buf->fd, buf->addr, src, dst);
     EXPECT_EQ(std::memcmp(src, dst, XFER_SIZE), 0);
 
     cleanup_buffer(buf);
@@ -199,14 +196,14 @@ TEST_P(BufferTest, RawCreateAndIO) {
                                            VRTD_ALLOC_DIR_BIDIRECTIONAL, SLASH_QDMA_MM_CHANNEL_AUTO);
     ASSERT_NE(buf, nullptr);
     ASSERT_GE(buf->qpair_count, 1u);
-    EXPECT_GE(buf->fds[0], 0);
+    EXPECT_GE(buf->fd, 0);
     EXPECT_EQ(buf->addr, DDR_START_ADDRESS);
     EXPECT_FALSE(buf->allocation_valid);
 
     uint8_t src[XFER_SIZE];
     std::memset(src, 0xCD, sizeof(src));
     uint8_t dst[XFER_SIZE]{};
-    qpair_fd_round_trip(buf->fds[0], DDR_START_ADDRESS, src, dst);
+    qpair_fd_round_trip(buf->fd, DDR_START_ADDRESS, src, dst);
     EXPECT_EQ(std::memcmp(src, dst, XFER_SIZE), 0);
 
     cleanup_buffer(buf);
