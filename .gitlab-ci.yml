@@ -13,10 +13,10 @@ default:
   before_script:
     - module reset
     - ml fpga xilinx/vivado/25.1
-    - ml lang Python/3.12.3-GCCcore-13.3.0
-    - ml tools UnZip/6.0-GCCcore-13.3.0 gitlab-cli 
-    - ml devel CMake/3.29.3-GCCcore-13.3.0
-    - ml lib JsonCpp/1.9.5-GCCcore-13.3.0 libxml2/2.12.7-GCCcore-13.3.0
+    - ml lang Python/3.13.5-GCCcore-14.3.0
+    - ml tools UnZip/6.0-GCCcore-14.3.0 gitlab-cli 
+    - ml devel CMake/4.0.3-GCCcore-14.3.0
+    - ml lib JsonCpp/1.9.6-GCCcore-14.3.0 CLI11/2.6.2-GCCcore-14.3.0 # lib/libxml2/2.14.3-GCCcore-14.3.0 implicitly loaded
     - export LD_LIBRARY_PATH=$XILINX_VIVADO/lib/lnx64.o/:$LD_LIBRARY_PATH # Set the LD_LIBRARY_PATH for simulation
     - python3 -m venv .venv
     - source .venv/bin/activate

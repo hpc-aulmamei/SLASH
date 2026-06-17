@@ -17,7 +17,7 @@ RUN . /etc/os-release && \
     apt-get update -qq && \
     PKGS="build-essential ca-certificates debhelper devscripts dkms apt-utils pkg-config \
         rsync bash cmake git ninja-build \
-        libinih-dev libjsoncpp-dev libsystemd-dev libxml2-dev libzmq3-dev zlib1g-dev libyaml-dev \
+        libcli11-dev libinih-dev libjsoncpp-dev libsystemd-dev libxml2-dev libzmq3-dev zlib1g-dev libyaml-dev \
         python3 python3-venv python3-jinja2 python3-pip python3-setuptools python3-wheel \
         locales locales-all libc6-dev-i386 libglib2.0-0 libsm6 libxext6 libxrender-dev libpixman-1-0 lsb-release" && \
     if dpkg --compare-versions "$VERSION_ID" ge 24.04; then \

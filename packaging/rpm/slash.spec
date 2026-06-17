@@ -38,6 +38,7 @@ BuildRequires:  gcc
 BuildRequires:  gcc-c++
 BuildRequires:  ninja-build
 BuildRequires:  pkg-config
+BuildRequires:  cli11-devel
 BuildRequires:  cppzmq-devel
 BuildRequires:  inih-devel
 BuildRequires:  jsoncpp-devel
