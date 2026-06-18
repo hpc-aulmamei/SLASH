@@ -7,6 +7,9 @@ on:
         required: true
         type: int
 
+permissions:
+  contents: write
+
 jobs:
   import_pr:
     runs-on: ubuntu-latest
