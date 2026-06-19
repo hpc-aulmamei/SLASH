@@ -2988,7 +2988,7 @@ static int slash_qdma_xfer_done(struct qdma_request *qreq,
  * optional io_uring uring_cmd path.  Resolves the buffer fd named by the
  * descriptor and refs the buffer, validates the slice against the buffer's
  * page granule and length, resolves the queue handle for the requested
- * direction, syncs the slice for the device, and fills the cached,
+ * direction, syncs the pages touched by the slice for the device, and fills the cached,
  * pre-DMA-mapped SGL slice into @xr->qreq (dma_mapped = 1, fp_done = NULL).
  * No pages are allocated or DMA-mapped here; that was amortised at creation.
  *
@@ -3049,10 +3049,12 @@ static int slash_qdma_xfer_prep(struct slash_qdma_dev *qdma_dev,
     slash_qdma_buf_get(buf);
     fput(file);
 
-    /* Validate the requested slice against the buffer's page granule. */
+    /* The buffer offset must be page-aligned because SGL entries are page
+     * based.  The requested byte count may end within the final page; libqdma
+     * uses qreq.count for the exact byte count while sgcnt covers the touched
+     * pages. */
     if (buf->granule == 0 ||
-        (desc->buf_offset % buf->granule) != 0 ||
-        (desc->length % buf->granule) != 0) {
+        (desc->buf_offset % buf->granule) != 0) {
         slash_qdma_buf_put(buf);
         return -EINVAL;
     }
@@ -3063,7 +3065,7 @@ static int slash_qdma_xfer_prep(struct slash_qdma_dev *qdma_dev,
     }
 
     start_entry = desc->buf_offset / buf->granule;
-    n_entries = desc->length / buf->granule;
+    n_entries = (desc->length + buf->granule - 1) / buf->granule;
     if (start_entry + n_entries > buf->pages_nr) {
         slash_qdma_buf_put(buf);
         return -EINVAL;
