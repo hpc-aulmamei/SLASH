@@ -36,8 +36,12 @@ DESTDIR="$1" cmake --build pbuild/smi --target install
 # Install CMake toolchain modules (SlashTools)
 DESTDIR="$1" cmake --build pbuild/cmake-tools --target install
 
-python3 -m pip install --no-deps --root $1 linker/dist/slashkit-*.whl
-if [ -f $1/usr/local/bin/slashkit ]; then
-    mv $1/usr/local/bin/slashkit $1/usr/bin/
-    mv $1/usr/local/lib/python3* $1/usr/lib/
+# --ignore-installed forces pip to write into --root even when the host's
+# system Python already has slashkit installed (e.g. from a prior package
+# install). Without it, pip silently no-ops and dh_install later fails to
+# locate usr/bin/slashkit and usr/lib/python3.10/dist-packages/slashkit/.
+python3 -m pip install --no-deps --ignore-installed --root "$1" linker/dist/slashkit-*.whl
+if [ -f "$1/usr/local/bin/slashkit" ]; then
+    mv "$1/usr/local/bin/slashkit" "$1/usr/bin/"
+    mv "$1"/usr/local/lib/python3* "$1/usr/lib/"
 fi

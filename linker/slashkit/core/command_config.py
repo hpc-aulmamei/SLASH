@@ -360,6 +360,8 @@ Example:
 
 
 class InstallerConfiguration(CommandConfiguration):
+    VALID_STAGES = ("all", "base-shell", "firmware", "rp1-firmware")
+
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         super().populate_argument_parser(ap)
@@ -374,14 +376,24 @@ class InstallerConfiguration(CommandConfiguration):
         ap.add_argument("--out-dir", required=True, type=Path,
                         help="The resource directory to install the artifacts to. "
                         + "If you have checked out the SLASH repository, this would be linker/slashkit/resources")
+        ap.add_argument("--stage", required=False, choices=cls.VALID_STAGES, default="all",
+                        help="Installer stage to run. Default: all. "
+                             "Development-only: use base-shell to build/reuse implementation artifacts, "
+                             "firmware to rebuild AMC+RP1 firmware and repack an existing build-dir, "
+                             "or rp1-firmware to rebuild only RP1 and repack using existing AMC/FPT artifacts.")
 
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)
 
+        self._stage: str = args.stage
+
         self._build_dir: Path = args.build_dir.expanduser().resolve()
-        if self._build_dir.is_dir():
-            shutil.rmtree(self._build_dir)
-        self._build_dir.mkdir(parents=True)
+        if self._stage in ("all", "base-shell"):
+            if self._build_dir.is_dir():
+                shutil.rmtree(self._build_dir)
+            self._build_dir.mkdir(parents=True)
+        elif not self._build_dir.is_dir():
+            raise FileNotFoundError(self._build_dir)
 
         self._aved_repo: str = args.aved_repo
         self._aved_ref: str = args.aved_ref
@@ -409,3 +421,7 @@ class InstallerConfiguration(CommandConfiguration):
     @property
     def out_dir(self) -> Path:
         return self._out_dir
+
+    @property
+    def stage(self) -> str:
+        return self._stage
