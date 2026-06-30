@@ -34,11 +34,6 @@ proc build_project {{proj_name "user"} {jobs 14}} {
   # Parent impl run remains 'impl_1'
   set_property PR_CONFIGURATION config_1 [get_runs impl_1]
   set_property strategy Performance_NetDelay_high [get_runs impl_1]
-  set_property STEPS.OPT_DESIGN.ARGS.DIRECTIVE          Explore            [get_runs impl_1]
-  set_property STEPS.PLACE_DESIGN.ARGS.DIRECTIVE        Default            [get_runs impl_1]
-  set_property STEPS.PLACE_DESIGN.ARGS.NET_DELAY_WEIGHT high               [get_runs impl_1]
-  set_property STEPS.PHYS_OPT_DESIGN.ARGS.DIRECTIVE     AggressiveExplore  [get_runs impl_1]
-  set_property STEPS.ROUTE_DESIGN.ARGS.DIRECTIVE        NoTimingRelaxation [get_runs impl_1]
   set_property STEPS.OPT_DESIGN.TCL.POST         [get_files *opt.post.tcl]                [get_runs impl_1]
   set_property STEPS.PLACE_DESIGN.TCL.PRE        [get_files *place.pre.tcl]               [get_runs impl_1]
   set_property STEPS.WRITE_DEVICE_IMAGE.TCL.PRE  [get_files *write_device_image.pre.tcl]  [get_runs impl_1]
