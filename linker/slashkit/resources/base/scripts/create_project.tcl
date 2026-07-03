@@ -44,6 +44,12 @@ set iprepos $default_iprepos
 set action "all"
 set jobs "14"
 
+# Shell build-ID constants injected into the static-region GPIO register
+# (top.tcl reads these globals). Set from the git commit at build time via
+# SLASH_BUILD_ID_LO/HI; default to 0 so manual/interactive runs still work.
+set ::build_id_lo [expr {[info exists ::env(SLASH_BUILD_ID_LO)] ? $::env(SLASH_BUILD_ID_LO) : 0}]
+set ::build_id_hi [expr {[info exists ::env(SLASH_BUILD_ID_HI)] ? $::env(SLASH_BUILD_ID_HI) : 0}]
+
 if {[llength $argv] > 0} {
   set project_name [lindex $argv 0]
   set remaining_args [lrange $argv 1 end]
