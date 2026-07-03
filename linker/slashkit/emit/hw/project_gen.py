@@ -258,7 +258,8 @@ def _compute_build_id_env() -> Dict[str, str]:
     if dirty:
         hi |= 0x80000000
 
-    logger.info("Shell build-ID: commit %s%s", sha[:14], " (dirty)" if dirty else "")
+    logger.info("Shell build-ID: commit %s%s",
+                sha[:14], " (dirty)" if dirty else "")
     return {"SLASH_BUILD_ID_LO": f"0x{lo:08x}", "SLASH_BUILD_ID_HI": f"0x{hi:08x}"}
 
 
