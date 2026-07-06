@@ -325,10 +325,11 @@ struct slash_qdma_buf_create {
  * Moves \@length bytes between the kernel buffer named by \@buf_fd at
  * \@buf_offset and the device endpoint address \@dev_addr, on the queue pair
  * selected by \@qpair_index (an index into the fd's bound qpairs).
- * \@buf_offset and \@length must be aligned to the buffer's 4 KiB page granule,
- * and \@buf_offset + \@length must not exceed the buffer length.  \@direction
- * must be one of enum slash_qdma_transfer_dir and must be enabled on the
- * selected queue pair.
+ * \@buf_offset must be aligned to the buffer's 4 KiB page granule.  \@length
+ * is an exact, non-zero byte count that may end within the final page, and
+ * \@buf_offset + \@length must not exceed the buffer length.  \@direction must
+ * be one of enum slash_qdma_transfer_dir and must be enabled on the selected
+ * queue pair.
  */
 struct slash_qdma_subxfer {
     __u32 qpair_index; /**< [in] Index into the fd's bound qpairs. */

@@ -426,12 +426,10 @@ All transfers are synchronous and block until the transfer completes or times ou
 **10 seconds**; after expiry the call returns ``-ETIME``. Partial transfers are possible; the
 return value is the number of bytes transferred, and the file position is advanced accordingly.
 
-The userspace buffer address and ``count`` must be page-aligned: the address
-must be 4 KiB-aligned and ``count`` must be a non-zero multiple of 4 KiB. The
-transfer is backed by 4 KiB base pages, one descriptor per page. Transparent
-hugepages are not accepted, so callers using anonymous mappings should apply
-``MADV_NOHUGEPAGE`` before faulting pages when they need deterministic
-base-page transfers.
+The buffer offset must be aligned to the buffer's page granule.  The transfer
+length is an exact byte count: it must be non-zero and may end within the final
+page. The transfer is backed by 4 KiB base pages, with the driver clipping the
+final descriptor when the requested length is not page-multiple.
 
 Multiple fds can be obtained for the same qpair via multiple ``QPAIR_GET_FD`` calls, including
 from different processes. Concurrent ``read()``/``write()`` calls on the same qpair (from any
@@ -451,7 +449,7 @@ The following errno values can be returned by ``read()`` and ``write()`` on the 
    * - ``-ENODEV``
      - Device shutting down, or the required direction is not enabled for this qpair
    * - ``-EINVAL``
-     - Zero-length, unaligned, or non-page-multiple transfer
+     - Zero-length, unaligned, or out-of-range transfer
    * - ``-ENOMEM``
      - SGL allocation failure
    * - ``-EFAULT``
@@ -868,8 +866,9 @@ across all sub-transfers is returned as the ``ioctl()`` return value (not as a s
 - each sub-transfer's ``qpair_index`` must be ``< `` the number of qpairs the fd owns
 - each ``direction`` must be 1 (H2C) or 2 (C2H) and must be enabled on the selected queue pair
 - each ``buf_fd`` must be a buffer fd (from ``BUF_CREATE``) bound to the same device as this qpair fd
-- each ``buf_offset`` and ``length`` must be aligned to the buffer's page granule, ``length`` non-zero
-  and ``<= UINT_MAX``, and ``buf_offset + length`` must not exceed the buffer length
+- each ``buf_offset`` must be aligned to the buffer's page granule; ``length`` is an exact byte count,
+  must be non-zero and ``<= UINT_MAX``, may end within the final page, and ``buf_offset + length``
+  must not exceed the buffer length
 
 **Return values:**
 
