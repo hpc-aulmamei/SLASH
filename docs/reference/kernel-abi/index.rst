@@ -430,6 +430,10 @@ The buffer offset must be aligned to the buffer's page granule.  The transfer
 length is an exact byte count: it must be non-zero and may end within the final
 page. The transfer is backed by 4 KiB base pages, with the driver clipping the
 final descriptor when the requested length is not page-multiple.
+Non-page-multiple transfers are supported for exact byte-stream use cases such
+as PDI programming, but they are not the speed-optimised path. Performance
+critical application buffers should pad transfer lengths to full 4 KiB page
+multiples whenever possible.
 
 Multiple fds can be obtained for the same qpair via multiple ``QPAIR_GET_FD`` calls, including
 from different processes. Concurrent ``read()``/``write()`` calls on the same qpair (from any
