@@ -269,6 +269,20 @@ TEST_P(ParametrizedQdmaTest, BufferCreateTransfer) {
     EXPECT_EQ(slash_qdma_qpair_del(qdma_, qid), 0);
 }
 
+TEST_P(ParametrizedQdmaTest, QpairAddAcceptsKeyholeAperture) {
+    struct slash_qdma_qpair_add req{};
+    req.mode          = 0;   /* QDMA_Q_MODE_MM */
+    req.dir_mask      = 0x1; /* H2C */
+    req.aperture_size = 4096;
+
+    ASSERT_EQ(slash_qdma_qpair_add(qdma_, &req), 0);
+    uint32_t qid = req.qid;
+
+    EXPECT_EQ(slash_qdma_qpair_start(qdma_, qid), 0);
+    EXPECT_EQ(slash_qdma_qpair_stop(qdma_, qid), 0);
+    EXPECT_EQ(slash_qdma_qpair_del(qdma_, qid), 0);
+}
+
 TEST_P(ParametrizedQdmaTest, PartialLengthTransfer) {
     static constexpr size_t BUFFER_SIZE = 4096;
     static constexpr size_t XFER_SIZE = 4096 - 17;

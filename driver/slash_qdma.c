@@ -1832,6 +1832,8 @@ static void slash_qdma_ioctl_info(struct miscdevice *misc,
  *     (completion queues are not yet supported).
  *   - @mode must be MM; streaming mode (ST) is not yet supported.
  *   - Ring size indices must be in [0, 15] (CSR table range).
+ *   - @aperture_size must be zero (linear addressing) or a power-of-two
+ *     libqdma keyhole aperture.
  *
  * On success, the kernel-assigned @qid is written back to userspace.
  *
@@ -1893,6 +1895,10 @@ static int slash_qdma_ioctl_qpair_add_w(struct miscdevice *misc,
     if (req.mm_channel != SLASH_QDMA_MM_CHANNEL_AUTO &&
         req.mm_channel != SLASH_QDMA_MM_CHANNEL_0 &&
         req.mm_channel != SLASH_QDMA_MM_CHANNEL_1)
+        return -EINVAL;
+
+    if (req.aperture_size != 0 &&
+        (req.aperture_size & (req.aperture_size - 1)) != 0)
         return -EINVAL;
 
     mutex_lock(&qdma_dev->lock);
@@ -2033,9 +2039,9 @@ rollback:
  *     (required for poll-mode operation per the reference driver).
  *   - qconf.cmpl_stat_en = 1: enable completion status generation
  *     (required for poll-mode operation per the reference driver).
- *   - qconf.aperture_size = 0: disables libqdma keyhole mode so MM
- *     transfers advance linearly through endpoint memory.  Non-zero
- *     values are keyhole apertures and wrap addresses within that window.
+ *   - qconf.aperture_size: zero disables libqdma keyhole mode so MM
+ *     transfers advance linearly through endpoint memory.  Non-zero values
+ *     enable keyhole mode and wrap addresses within that byte aperture.
  *   - qconf.desc_rng_sz_idx: CSR table index (0-15) selecting the
  *     descriptor ring depth.  Not a raw descriptor count — the actual
  *     count is looked up from the global CSR ring-size table.
@@ -2079,7 +2085,7 @@ static int slash_qdma_ioctl_qpair_add_q(struct miscdevice *misc,
     qconf.cmpl_status_pend_chk = 1;                 /* Check pending completions (poll-mode req) */
     qconf.cmpl_stat_en = 1;                         /* Enable completion status generation */
 
-    qconf.aperture_size = 0;                        /* Linear MM addressing; non-zero enables keyhole mode */
+    qconf.aperture_size = req->aperture_size;       /* 0 = linear MM; non-zero = keyhole aperture */
     /*
      * CPM5 exposes two MM channels.  The per-queue mm_channel selection
      * (validated in slash_qdma_ioctl_qpair_add_w) chooses the channel: AUTO
@@ -2124,9 +2130,9 @@ static int slash_qdma_ioctl_qpair_add_q(struct miscdevice *misc,
     }
 
     SLASH_QDMA_OP_DEV_LOG(&qdma_dev->pdev->dev,
-                          "queue add qid=%u type=%u mode=%u mm_channel=%u (req=%u)\n",
+                          "queue add qid=%u type=%u mode=%u mm_channel=%u (req=%u) aperture_size=%u\n",
                           req->qid, qtype, req->mode, qconf.mm_channel,
-                          req->mm_channel);
+                          req->mm_channel, qconf.aperture_size);
     err = qdma_queue_add(qdma_dev->qdma_handle, &qconf, &qhndl,
                             errbuf, sizeof(errbuf));
     if (err) {

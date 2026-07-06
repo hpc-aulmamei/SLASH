@@ -373,6 +373,34 @@ TEST_F(qdma, qpair_add_cmpt_ring_size_out_of_range)
 	EXPECT_EQ(EINVAL, errno);
 }
 
+TEST_F(qdma, qpair_add_aperture_size_must_be_power_of_two)
+{
+	struct slash_qdma_qpair_add add;
+
+	memset(&add, 0, sizeof(add));
+	add.size = sizeof(add);
+	add.mode = 0;
+	add.dir_mask = 0x1;
+	add.aperture_size = 4097;
+	EXPECT_EQ(-1, ioctl(self->ctl_fd, SLASH_QDMA_IOCTL_QPAIR_ADD, &add));
+	EXPECT_EQ(EINVAL, errno);
+}
+
+TEST_F(qdma, qpair_add_keyhole_aperture)
+{
+	struct slash_qdma_qpair_add add;
+
+	memset(&add, 0, sizeof(add));
+	add.size = sizeof(add);
+	add.mode = 0;
+	add.dir_mask = 0x1;
+	add.aperture_size = 4096;
+
+	ASSERT_EQ(0, ioctl(self->ctl_fd, SLASH_QDMA_IOCTL_QPAIR_ADD, &add));
+	self->qid = add.qid;
+	self->qpair_added = 1;
+}
+
 TEST_F(qdma, q_op_invalid_op)
 {
 	ASSERT_EQ(0, slash_qpair_add(self->ctl_fd, 0, 0x3, &self->qid));

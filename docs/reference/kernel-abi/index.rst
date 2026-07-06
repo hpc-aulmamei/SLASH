@@ -567,10 +567,12 @@ is returned in the struct and is used for all subsequent operations on this queu
         __u32 size;          /* [in/out] ABI version */
         __u32 mode;          /* [in]  Queue mode: 0=MM (Memory Mapped), 1=ST (Streaming, not yet supported) */
         __u32 dir_mask;      /* [in]  Direction bitmask (see below) */
+        __u32 mm_channel;    /* [in]  AXI-MM/NoC channel selection: 0=auto, 1=channel 0, 2=channel 1 */
         __u32 h2c_ring_sz;   /* [in]  H2C descriptor ring CSR table index: 0–15 */
         __u32 c2h_ring_sz;   /* [in]  C2H descriptor ring CSR table index: 0–15 */
         __u32 cmpt_ring_sz;  /* [in]  Completion ring CSR table index: 0–15 */
         __u32 qid;           /* [out] Kernel-assigned queue pair ID */
+        __u32 aperture_size; /* [in]  0=linear MM addressing, non-zero=keyhole aperture size */
     };
 
 Direction bitmask bits:
@@ -595,8 +597,14 @@ Ring size fields are QDMA Control and Status Register (CSR) table indices (0–1
 descriptor counts. Index 0 maps to approximately 2049 descriptors; index 15 to approximately
 16385. The caller does not control the actual descriptor count directly.
 
-**Direction:** ``_IOWR`` — userspace writes ``mode``, ``dir_mask``, and ring size indices; the
-kernel writes back ``qid``.
+``aperture_size`` controls libqdma keyhole mode for memory-mapped queues.  A value of ``0``
+keeps endpoint addressing linear and is the normal setting for DDR/HBM application buffers.
+A non-zero power-of-two value enables keyhole mode: endpoint addresses wrap within that byte
+aperture as the transfer advances.  Keyhole queues are intended for special endpoints such as
+the PDI design-writer ingress path; ordinary application queues should leave this field ``0``.
+
+**Direction:** ``_IOWR`` — userspace writes ``mode``, ``dir_mask``, ``mm_channel``, ring size
+indices, and optionally ``aperture_size``; the kernel writes back ``qid``.
 
 **Preconditions:**
 
@@ -604,7 +612,9 @@ kernel writes back ``qid``.
 - ``dir_mask`` must be non-zero and contain only bits ``[0, 1]``; bit 2 (CMPT) is not yet
   supported
 - ``mode`` must be 0 (MM); streaming mode (1) is not yet supported
+- ``mm_channel`` must be 0 (auto), 1 (channel 0), or 2 (channel 1)
 - All ring size indices must be in ``[0, 15]``
+- ``aperture_size`` must be 0 (linear addressing) or a power-of-two keyhole aperture size
 - At most 256 concurrent queue pairs per device. The actual ceiling is lower in practice and
   depends on how many queues libqdma's resource manager makes available to the calling process
   (the 256-slot pool is shared across all PCI functions of the device).
@@ -730,8 +740,8 @@ the new fd as the ``ioctl()`` return value (not as a struct field).
 - ``qpair_count`` must not exceed ``SLASH_QDMA_FD_MAX_QPAIRS``
 - ``flags & ~O_CLOEXEC == 0`` (any other bits cause ``-EINVAL``)
 - The queue pairs should be in the started state for I/O to work
-- Each bound qpair keeps the per-qpair configuration (``mm_channel``, ring sizes, directions) it was
-  given at ``QPAIR_ADD`` time, so the two channels can be configured independently
+- Each bound qpair keeps the per-qpair configuration (``mm_channel``, ``aperture_size``, ring sizes,
+  directions) it was given at ``QPAIR_ADD`` time, so the two channels can be configured independently
 
 **Postconditions:**
 

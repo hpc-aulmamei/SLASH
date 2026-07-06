@@ -182,6 +182,11 @@ enum slash_qdma_mm_channel {
  * 0–15), not byte or descriptor counts.  Each index selects a
  * pre-configured descriptor-ring depth from the global CSR ring-size
  * table (e.g. index 0 → 2049 descriptors, index 15 → 16385).
+ *
+ * \@aperture_size controls libqdma keyhole mode for memory-mapped queues:
+ * 0 keeps endpoint addressing linear; a non-zero power-of-two value wraps
+ * endpoint addresses within that byte aperture.  Ordinary DDR/HBM queues
+ * should leave this 0.
  */
 struct slash_qdma_qpair_add {
     __u32 size;          /**< Struct size for ABI versioning. */
@@ -197,6 +202,9 @@ struct slash_qdma_qpair_add {
 
     /* Kernel to userspace */
     __u32 qid;           /**< [out] Kernel-assigned queue pair ID. */
+
+    /* Userspace to kernel; appended for ABI compatibility. */
+    __u32 aperture_size; /**< [in]  0 = linear MM addressing, non-zero = keyhole aperture. */
 };
 
 /**
