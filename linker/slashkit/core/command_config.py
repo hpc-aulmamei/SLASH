@@ -67,7 +67,7 @@ class CommandConfiguration(object):
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         ap.formatter_class = argparse.RawTextHelpFormatter
-        ap.add_argument("--vivado", required=False, type=Path, default=None,
+        ap.add_argument("--vivado", required=False, type=Path, default=shutil.which("vivado"),
                         help="Vivado binary to use for linking. If not given, it will be derived from PATH.")
         ap.add_argument("--jobs", required=False, type=int, default=8,
                         help="Number of parallel jobs for Vivado runs.")
@@ -76,9 +76,11 @@ class CommandConfiguration(object):
         self._args = args
 
         # Resolve, if necessary find, and verify the Vivado binary
-        self._vivado_bin: Path = args.vivado if args.vivado is not None else Path(
-            shutil.which("vivado"))
-        self._vivado_bin = self._vivado_bin.expanduser().resolve()
+        if not args.vivado:
+            raise ValueError(
+                "Vivado binary not specified and could not be found on PATH.")
+
+        self._vivado_bin = Path(args.vivado).expanduser().resolve()
         if not self._vivado_bin.is_file():
             raise FileNotFoundError(self._vivado_bin)
 
