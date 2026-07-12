@@ -144,9 +144,11 @@ def require_static_shell_timing_or_confirm(
         )
 
     if sys.stdin.isatty():
-        answer = input("Proceed with install/packaging anyway? [y/N] ").strip().lower()
+        answer = input(
+            "Proceed with install/packaging anyway? [y/N] ").strip().lower()
         if answer in ("y", "yes"):
-            logger.warning("User confirmed install despite static shell timing failure")
+            logger.warning(
+                "User confirmed install despite static shell timing failure")
             return
         raise SystemExit(1)
 
@@ -274,7 +276,8 @@ def apply_timing_frequency_cap(
         )
         return user_clock_hz
 
-    computed_max_hz = compute_max_freq_hz_from_wns(wns_ns, base_freq_hz=base_freq_hz)
+    computed_max_hz = compute_max_freq_hz_from_wns(
+        wns_ns, base_freq_hz=base_freq_hz)
     if computed_max_hz is None:
         logger.warning(
             "Computed max frequency is invalid (WNS=%s ns, base=%d Hz); keeping user clock_hz=%d",

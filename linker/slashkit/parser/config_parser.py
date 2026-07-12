@@ -81,7 +81,8 @@ def _parse_nk_value(val: str) -> NKSpec:
     if len(names) != count:
         # Auto-fill or trim to match 'count'
         base = kernel_type
-        names = (names + [f"{base}_{i}" for i in range(len(names), count)])[:count]
+        names = (
+            names + [f"{base}_{i}" for i in range(len(names), count)])[:count]
 
     return NKSpec(kernel_type=kernel_type, count=count, instance_names=names)
 
@@ -98,7 +99,8 @@ def _parse_stream_connect_value(val: str) -> StreamConnect:
             src_inst.strip(), src_port.strip(), dst_inst.strip(), dst_port.strip()
         )
     except Exception as e:
-        raise ValueError(f"Invalid stream_connect '{val}'. Expected 'a.b:c.d'") from e
+        raise ValueError(
+            f"Invalid stream_connect '{val}'. Expected 'a.b:c.d'") from e
 
 
 def _parse_sp_value(val: str) -> SpMapping:
@@ -109,7 +111,8 @@ def _parse_sp_value(val: str) -> SpMapping:
         left, right = val.split(":")
         inst, port = left.split(".", 1)
     except Exception as e:
-        raise ValueError(f"Invalid sp '{val}'. Expected 'inst.port:TARGET'") from e
+        raise ValueError(
+            f"Invalid sp '{val}'. Expected 'inst.port:TARGET'") from e
     target = _parse_target(right.strip())
     return SpMapping(inst=inst.strip(), port=port.strip(), target=target)
 
@@ -117,7 +120,8 @@ def _parse_sp_value(val: str) -> SpMapping:
 def _parse_debug_net_value(val: str) -> DebugNetSpec:
     m = _RE_DEBUG_NET.match(val)
     if not m:
-        raise ValueError(f"Invalid debug net '{val}'. Expected '<instance>.<port>'.")
+        raise ValueError(
+            f"Invalid debug net '{val}'. Expected '<instance>.<port>'.")
     return DebugNetSpec(inst=m.group(1).strip(), port=m.group(2).strip())
 
 
@@ -200,7 +204,8 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
         elif section == "network":
             # Parse eth_<idx>=<0|1> (nonzero means enabled)
             if "=" not in line:
-                raise ValueError(f"Invalid line in [network] section: '{line}'")
+                raise ValueError(
+                    f"Invalid line in [network] section: '{line}'")
             k, v = [t.strip() for t in line.split("=", 1)]
             m = _RE_ETH_KEY.match(k)
             if not m:
@@ -216,7 +221,8 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
 
         elif section == "user_region":
             if "=" not in line:
-                raise ValueError(f"Invalid line in [user_region] section: '{line}'")
+                raise ValueError(
+                    f"Invalid line in [user_region] section: '{line}'")
             k, v = [t.strip() for t in line.split("=", 1)]
             if k.lower() == "pre_synth":
                 if not v:
@@ -299,7 +305,8 @@ def apply_config_to_instances(
     # 3) Apply explicit sp mappings (store with CANONICAL port names)
     for sp in cfg.sps:
         if sp.inst not in instances:
-            raise KeyError(f"[connectivity] sp refers to unknown instance '{sp.inst}'.")
+            raise KeyError(
+                f"[connectivity] sp refers to unknown instance '{sp.inst}'.")
         inst = instances[sp.inst]
         canon_port = _resolve_port_name_for_kernel(inst.kernel, sp.port)
         if inst.kernel.port(canon_port).ptype != BusType.AXI4FULL:
@@ -307,12 +314,14 @@ def apply_config_to_instances(
                 f"[connectivity] sp '{sp.inst}.{sp.port}' is not an AXI4FULL port on kernel '{inst.kernel.name}'."
             )
         mem_map: Dict[str, dict] = inst.params.setdefault("mem_sp", {})
-        mem_map[canon_port] = {"domain": sp.target.domain, "index": sp.target.index}
+        mem_map[canon_port] = {
+            "domain": sp.target.domain, "index": sp.target.index}
 
     # 4) Per-instance fallback: fill ONLY the missing AXI4FULL ports with MEM (round-robin later)
     for inst in instances.values():
         mem_map: Dict[str, dict] = inst.params.setdefault("mem_sp", {})
-        axi_full_ports = [p.name for p in inst.kernel.ports_of_type(BusType.AXI4FULL)]
+        axi_full_ports = [
+            p.name for p in inst.kernel.ports_of_type(BusType.AXI4FULL)]
         for pname in axi_full_ports:
             if pname not in mem_map:
                 mem_map[pname] = {"domain": "MEM", "index": ""}

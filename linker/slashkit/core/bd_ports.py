@@ -170,7 +170,8 @@ def _parse_ptype(s: str) -> BusType:
     try:
         return _TYPE_MAP[s.strip().upper()]
     except KeyError:
-        raise ValueError(f"Unknown port type '{s}'. Expected one of {list(_TYPE_MAP)}.")
+        raise ValueError(
+            f"Unknown port type '{s}'. Expected one of {list(_TYPE_MAP)}.")
 
 
 def _infer_domain_index(logical_name: str) -> Tuple[Optional[str], Optional[int]]:
@@ -216,11 +217,13 @@ def load_bd_ports_from_lines(lines) -> BlockDesignPorts:
                 f"Expected '<logical>:<rtl> <type> [width]'. Got: {line!r}"
             )
         if ":" not in lhs:
-            raise ValueError(f"Missing ':' in '{lhs}'. Expected '<logical>:<rtl>'.")
+            raise ValueError(
+                f"Missing ':' in '{lhs}'. Expected '<logical>:<rtl>'.")
         logical, rtl = [t.strip() for t in lhs.split(":", 1)]
         parts = rhs.split()
         if len(parts) not in (1, 2):
-            raise ValueError(f"Invalid RHS. Expected '<type> [width]'. Got: {rhs!r}")
+            raise ValueError(
+                f"Invalid RHS. Expected '<type> [width]'. Got: {rhs!r}")
         ptype = _parse_ptype(parts[0])
         width = _parse_width(parts[1]) if len(parts) == 2 else None
         if ptype in (BusType.CLOCK, BusType.RESET, BusType.INTERRUPT):

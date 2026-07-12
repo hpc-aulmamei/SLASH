@@ -119,7 +119,7 @@ def build_hbm_smartconnect_context(
             current = [{"src": s} for s in sources]
             while len(current) > 1:
                 groups = [
-                    current[i : i + max_si] for i in range(0, len(current), max_si)
+                    current[i: i + max_si] for i in range(0, len(current), max_si)
                 ]
                 next_level = []
                 for g_idx, group in enumerate(groups):

@@ -63,7 +63,8 @@ _CROSS_BUILD_ENV_BLOCKLIST = (
 
 
 def _clean_cross_build_env() -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if k not in _CROSS_BUILD_ENV_BLOCKLIST}
+    env = {k: v for k, v in os.environ.items(
+    ) if k not in _CROSS_BUILD_ENV_BLOCKLIST}
     return {k: v for k, v in env.items() if not k.startswith("DEB_")}
 
 
@@ -123,7 +124,8 @@ def _generate_top_wrapper_pdi_with_bootgen(impl_dir: Path) -> Path:
     output_pdi = impl_dir / "top_wrapper.pdi"
 
     _ensure_boot_device_pcie_in_bif(bif_path)
-    logger.info("Running bootgen in %s to generate %s", impl_dir, output_pdi.name)
+    logger.info("Running bootgen in %s to generate %s",
+                impl_dir, output_pdi.name)
     subprocess.run(
         [
             "bootgen",
@@ -140,7 +142,8 @@ def _generate_top_wrapper_pdi_with_bootgen(impl_dir: Path) -> Path:
     )
 
     if not output_pdi.exists():
-        raise FileNotFoundError(f"Expected bootgen output not found: {output_pdi}")
+        raise FileNotFoundError(
+            f"Expected bootgen output not found: {output_pdi}")
     return output_pdi
 
 
@@ -200,7 +203,8 @@ def generate_base_pdi_with_aved(config: CommandConfiguration) -> tuple[Path, Pat
     regenerated_top_wrapper_pdi = _generate_top_wrapper_pdi_with_bootgen(
         static_impl_dir
     )
-    _copy_checked(regenerated_top_wrapper_pdi, aved_build_dir / "top_wrapper.pdi")
+    _copy_checked(regenerated_top_wrapper_pdi,
+                  aved_build_dir / "top_wrapper.pdi")
 
     files_to_copy = [
         ("build_all.sh", aved_hw_dir),
@@ -243,7 +247,8 @@ def create_build_project(
         "slashkit.resources.base.service.scripts", "create_project.tcl"
     ) as tcl_path:
         if not tcl_path.exists():
-            raise FileNotFoundError(f"create_project.tcl not found: {tcl_path}")
+            raise FileNotFoundError(
+                f"create_project.tcl not found: {tcl_path}")
         cmd = [
             config.vivado_bin,
             "-mode",
@@ -396,7 +401,8 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
         ]
         if rm_kind == RM_KIND.SLASH_PROJECT:
             util_report_path = (
-                config.build_dir / f"report_utilization_{config.project_name}.txt"
+                config.build_dir /
+                f"report_utilization_{config.project_name}.txt"
             )
             util_report_path.parent.mkdir(parents=True, exist_ok=True)
             cmd.extend(["--util-report-file", str(util_report_path)])
@@ -490,7 +496,8 @@ def install_static_shell(config: InstallerConfiguration) -> None:
         )
         for src in dcp_sources:
             if not src.exists():
-                raise FileNotFoundError(f"Expected install artifact not found: {src}")
+                raise FileNotFoundError(
+                    f"Expected install artifact not found: {src}")
         _copy_files(list(dcp_sources), static_shell_dir)
 
         for bd_name in ("slash_base", "service_layer"):
@@ -513,7 +520,8 @@ def install_static_shell(config: InstallerConfiguration) -> None:
         )
         for src in dcp_sources:
             if not src.exists():
-                raise FileNotFoundError(f"Expected install artifact not found: {src}")
+                raise FileNotFoundError(
+                    f"Expected install artifact not found: {src}")
         _copy_files(list(dcp_sources), static_shell_dir)
 
         src_dir = bd_src_dir / "slash_base"
@@ -535,9 +543,12 @@ def install_static_shell(config: InstallerConfiguration) -> None:
 
 
 def generate_util_report(config: CommandConfiguration) -> None:
-    report_path = config.build_dir / f"report_utilization_{config.project_name}.txt"
-    xml_path = config.build_dir / f"report_utilization_{config.project_name}.xml"
-    logger.info("Generating utilization report XML for project %s", config.project_name)
+    report_path = config.build_dir / \
+        f"report_utilization_{config.project_name}.txt"
+    xml_path = config.build_dir / \
+        f"report_utilization_{config.project_name}.xml"
+    logger.info("Generating utilization report XML for project %s",
+                config.project_name)
     logger.info("Utilization report input: %s", report_path)
     logger.info("Utilization report output: %s", xml_path)
     if not report_path.exists():

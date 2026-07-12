@@ -72,8 +72,8 @@ def _parse_stream_type(src: str) -> tuple[str, bool] | None:
     if gt < 0:
         return None
 
-    inner = s[lt + 1 : gt]
-    tail = s[gt + 1 :].strip()
+    inner = s[lt + 1: gt]
+    tail = s[gt + 1:].strip()
     is_ref = tail.endswith("&")
 
     # Split stream template args at top-level commas only.
@@ -162,9 +162,11 @@ def _stream_aliases_for_edge(edge, wire_name: str) -> list[str]:
             return
         names.append(f"{prefix}{m.group(1)}")
 
-    _maybe_add(getattr(edge, "src_inst"), getattr(edge, "src_port"), "streamingBuffer_")
+    _maybe_add(getattr(edge, "src_inst"), getattr(
+        edge, "src_port"), "streamingBuffer_")
     _maybe_add(
-        getattr(edge, "dst_inst"), getattr(edge, "dst_port"), "outputStreamingBuffer_"
+        getattr(edge, "dst_inst"), getattr(
+            edge, "dst_port"), "outputStreamingBuffer_"
     )
 
     # preserve order while deduping
@@ -276,7 +278,8 @@ def build_tb_context(
         ctype = get_stream_ctype(e)
         wires.append({"name": wname, "ctype": ctype})
         stream_routes.append(
-            {"wire": wname, "ctype": ctype, "names": _stream_aliases_for_edge(e, wname)}
+            {"wire": wname, "ctype": ctype,
+                "names": _stream_aliases_for_edge(e, wname)}
         )
         endpoint_to_wire[f"{e.src_inst}.{e.src_port}"] = wname
         endpoint_to_wire[f"{e.dst_inst}.{e.dst_port}"] = wname
@@ -382,11 +385,13 @@ def build_tb_context(
             }
         )
 
-        has_axilite = any(True for _ in inst.kernel.ports_of_type(BusType.AXILITE))
+        has_axilite = any(
+            True for _ in inst.kernel.ports_of_type(BusType.AXILITE))
         stream_only = bool(meta["Args"]) and all(
             _is_stream(a["cppType"]) for a in meta["Args"]
         )
-        has_missing_stream = any(arg == "/*MISSING_STREAM*/" for arg in call_args)
+        has_missing_stream = any(
+            arg == "/*MISSING_STREAM*/" for arg in call_args)
         control_mode = _infer_control_mode(
             has_axilite=has_axilite, stream_only=stream_only
         )
@@ -480,7 +485,8 @@ def build_tb_context(
                     prev_value_reg_name = reg_name.rsplit("_", 1)[0]
                     if logical_arg_idx < len(non_stream_args):
                         hi_reg = (
-                            regs[reg_idx + 1] if (reg_idx + 1) < len(regs) else None
+                            regs[reg_idx + 1] if (reg_idx +
+                                                  1) < len(regs) else None
                         )
                         hi_reg_name = (
                             getattr(hi_reg, "name", "") or ""

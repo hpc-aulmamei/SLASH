@@ -136,7 +136,8 @@ def _build_reduction_tree(
     level = 0
     current = [{"src": s} for s in sources]
     while len(current) > max_roots:
-        groups = [current[i : i + max_si] for i in range(0, len(current), max_si)]
+        groups = [current[i: i + max_si]
+                  for i in range(0, len(current), max_si)]
         next_level = []
         for g_idx, group in enumerate(groups):
             name = f"{base_name}_L{level}_{g_idx}"
@@ -178,7 +179,7 @@ def _build_fanout_tree(
     leaves: List[str] = []
     for idx, chunk_start in enumerate(range(0, len(endpoints), max_mi)):
         name = f"{base_name}_L0_{idx}"
-        chunk = endpoints[chunk_start : chunk_start + max_mi]
+        chunk = endpoints[chunk_start: chunk_start + max_mi]
         mi = [
             {"slot_name": _fmt_sc_slot("M", i), "dst_pin": ep}
             for i, ep in enumerate(chunk)
@@ -192,12 +193,13 @@ def _build_fanout_tree(
     while len(current) > 1:
         next_level: List[str] = []
         for g_idx, group_start in enumerate(range(0, len(current), max_mi)):
-            group = current[group_start : group_start + max_mi]
+            group = current[group_start: group_start + max_mi]
             name = f"{base_name}_L{level}_{g_idx}"
             mi = []
             for i, child in enumerate(group):
                 mi.append(
-                    {"slot_name": _fmt_sc_slot("M", i), "dst_pin": f"{child}/S00_AXI"}
+                    {"slot_name": _fmt_sc_slot(
+                        "M", i), "dst_pin": f"{child}/S00_AXI"}
                 )
                 child_parent[child] = (name, i)
             nodes[name] = {"name": name, "num_mi": len(mi), "mi": mi}
@@ -218,7 +220,8 @@ def _build_fanout_tree(
             }
 
     # Stable order: root first, then others by name
-    ordered = [nodes[root]] + [n for k, n in sorted(nodes.items()) if k != root]
+    ordered = [nodes[root]] + \
+        [n for k, n in sorted(nodes.items()) if k != root]
     return ordered
 
 
@@ -270,7 +273,8 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
         }
 
     # 4) Build template context
-    axilite_ports, axifull_ports, clock_ports, reset_ports = _collect_ports(instances)
+    axilite_ports, axifull_ports, clock_ports, reset_ports = _collect_ports(
+        instances)
 
     kernels_ctx = []
     for iname in sorted(instances.keys()):

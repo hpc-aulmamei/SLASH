@@ -148,7 +148,8 @@ def _parse_fields(reg_el: ET.Element) -> List[RegField]:
                 bit_offset=_int(f.find("spirit:bitOffset", NS)) or 0,
                 bit_width=_int(f.find("spirit:bitWidth", NS)) or 1,
                 access=_text(f.find("spirit:access", NS)),
-                modified_write_value=_text(f.find("spirit:modifiedWriteValue", NS)),
+                modified_write_value=_text(
+                    f.find("spirit:modifiedWriteValue", NS)),
                 read_action=_text(f.find("spirit:readAction", NS)),
                 reset_value=_int(f.find("spirit:reset/spirit:value", NS)),
             )

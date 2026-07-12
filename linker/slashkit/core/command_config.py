@@ -278,7 +278,8 @@ class LinkerConfiguration(CommandConfiguration):
             self._out_path.unlink()
 
         # Resolve the build directory, clean up if necessary, and prepare it
-        self._build_dir: Path = self._out_path.with_name(f"{self._out_path.name}.prj")
+        self._build_dir: Path = self._out_path.with_name(
+            f"{self._out_path.name}.prj")
         if self._build_dir.is_dir():
             shutil.rmtree(self._build_dir)
         if self._build_dir.is_file():

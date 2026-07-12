@@ -48,7 +48,8 @@ class Kernel:
         try:
             return self.ports[name]
         except KeyError as e:
-            raise KeyError(f"Kernel '{self.name}' has no port named '{name}'.") from e
+            raise KeyError(
+                f"Kernel '{self.name}' has no port named '{name}'.") from e
 
     def ports_of_type(self, ptype: BusType) -> Iterable[Port]:
         """Iterate over all ports of a given type."""
@@ -59,7 +60,8 @@ class Kernel:
         try:
             return self.buses[name]
         except KeyError as e:
-            raise KeyError(f"Kernel '{self.name}' has no bus named '{name}'.") from e
+            raise KeyError(
+                f"Kernel '{self.name}' has no bus named '{name}'.") from e
 
     def buses_of_type(self, ptype: BusType) -> Iterable[Bus]:
         """Iterate over all buses of a given type."""

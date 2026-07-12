@@ -122,7 +122,8 @@ def build_network_axis_context(
                     f"{s.src_inst}.{src_port} is not AXIS (got {src_p.ptype.name})"
                 )
 
-            eth_idx, lane_name = _parse_eth_endpoint(f"{s.dst_inst}.{s.dst_port}")
+            eth_idx, lane_name = _parse_eth_endpoint(
+                f"{s.dst_inst}.{s.dst_port}")
             if eth_idx not in getattr(net, "enabled_eth", set()):
                 raise ValueError(
                     f"eth_{eth_idx} is not enabled in [network] but is referenced in stream_connect"
@@ -130,7 +131,8 @@ def build_network_axis_context(
 
             lane = 0 if lane_name == "tx0" else 1 if lane_name == "tx1" else None
             if lane is None:
-                raise ValueError(f"Only tx0/tx1 valid on fabric TX, got '{lane_name}'")
+                raise ValueError(
+                    f"Only tx0/tx1 valid on fabric TX, got '{lane_name}'")
 
             dst_pin = _map_eth_tx_pin(eth_idx, lane)
             to_fabric.append(
@@ -154,7 +156,8 @@ def build_network_axis_context(
                     f"{s.dst_inst}.{dst_port} is not AXIS (got {dst_p.ptype.name})"
                 )
 
-            eth_idx, lane_name = _parse_eth_endpoint(f"{s.src_inst}.{s.src_port}")
+            eth_idx, lane_name = _parse_eth_endpoint(
+                f"{s.src_inst}.{s.src_port}")
             if eth_idx not in getattr(net, "enabled_eth", set()):
                 raise ValueError(
                     f"eth_{eth_idx} is not enabled in [network] but is referenced in stream_connect"
@@ -162,7 +165,8 @@ def build_network_axis_context(
 
             lane = 0 if lane_name == "rx0" else 1 if lane_name == "rx1" else None
             if lane is None:
-                raise ValueError(f"Only rx0/rx1 valid on fabric RX, got '{lane_name}'")
+                raise ValueError(
+                    f"Only rx0/rx1 valid on fabric RX, got '{lane_name}'")
 
             src_pin = _map_eth_rx_pin(eth_idx, lane)
             from_fabric.append(

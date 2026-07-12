@@ -157,7 +157,8 @@ def parse_vivado_hierarchical_utilization_table(text: str) -> List[UtilRow]:
         module_col_raw = raw_parts[1]
         pr_attr_col_raw = raw_parts[2]
 
-        depth = (len(instance_col_raw) - len(instance_col_raw.lstrip(" "))) // 2
+        depth = (len(instance_col_raw) -
+                 len(instance_col_raw.lstrip(" "))) // 2
         instance = instance_col_raw.strip()
         module = module_col_raw.strip()
         pr_attr = pr_attr_col_raw.strip()
@@ -264,7 +265,8 @@ def write_cell(
     cell_element = ET.SubElement(
         parent_element, name, instance=node.row.instance, module=node.row.module
     )
-    write_totals_attributes_from_row(ET.SubElement(cell_element, "totals"), node.row)
+    write_totals_attributes_from_row(
+        ET.SubElement(cell_element, "totals"), node.row)
     if not recurse or len(node.children) == 0:
         return
     for child in node.children:
@@ -287,7 +289,8 @@ def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
             continue
         node = nodes[region_name]
         element = ET.SubElement(root, region_name)
-        write_totals_attributes_from_row(ET.SubElement(element, "totals"), node.row)
+        write_totals_attributes_from_row(
+            ET.SubElement(element, "totals"), node.row)
 
     slash_node = nodes["slash"]
     slash_element = ET.SubElement(root, "slash")

@@ -66,7 +66,8 @@ def build_host_smartconnect_context(
         current = [{"src": s} for s in host_sources]
         root_sc_name = None
         while len(current) > 1:
-            groups = [current[i : i + max_si] for i in range(0, len(current), max_si)]
+            groups = [current[i: i + max_si]
+                      for i in range(0, len(current), max_si)]
             next_level = []
             for g_idx, group in enumerate(groups):
                 sc_name = f"{base_name}_{level}_{g_idx}"
@@ -84,7 +85,8 @@ def build_host_smartconnect_context(
             current = next_level
             level += 1
         if root_sc_name:
-            host_smart_roots.append({"sc_name": root_sc_name, "dst_pin": dst_pin})
+            host_smart_roots.append(
+                {"sc_name": root_sc_name, "dst_pin": dst_pin})
 
     return {
         "host_direct": host_direct,
