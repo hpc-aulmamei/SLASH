@@ -98,23 +98,19 @@ def build_service_axilite_ctx(net) -> Dict[str, Any]:
     return {
         # smartconnect presence
         "sl_have_xbar": num_mi > 0,
-
         # properties
         "sl_num_clks": 1,
         "sl_num_si": 1,
         "sl_num_mi": num_mi,
-
         # wiring
         # top-level service_layer AXI-Lite interface
         "sl_si_src_if": "axi_noc_0/M00_AXI",
-        "sl_clk0": "service_clk",            # service_layer clock pins
+        "sl_clk0": "service_clk",  # service_layer clock pins
         "sl_rstn": "ilreduced_logic_0/Res",
-
         # MI endpoints and qsfp blocks for clk/rst tie-off
         # e.g. ["qsfp_0_n_1/s_axi", "qsfp_2_n_3/s_axi"]
         "sl_mi_targets": mi_targets,
-        "sl_qsfp_blocks": qsfp_blocks,     # e.g. ["qsfp_0_n_1", "qsfp_2_n_3"]
-
+        "sl_qsfp_blocks": qsfp_blocks,  # e.g. ["qsfp_0_n_1", "qsfp_2_n_3"]
         # preferred instance names
         "sl_smartconnect_path": "smartconnect_0",
         "sl_smartconnect_name": "sl_xbar",
@@ -140,23 +136,31 @@ def build_service_noc_axis_ctx(net) -> Dict[str, Any]:
     links: List[dict] = []
 
     if 0 in enabled:
-        links.append({  # fabric -> MAC
-            "src_pin": "dummy_noc_0/M00_AXIS",
-            "dst_pin": "qsfp_0_n_1/S_AXIS_0",
-        })
-        links.append({  # MAC -> fabric
-            "src_pin": "qsfp_0_n_1/M_AXIS_0",
-            "dst_pin": "dummy_noc_m_0/S00_AXIS",
-        })
+        links.append(
+            {  # fabric -> MAC
+                "src_pin": "dummy_noc_0/M00_AXIS",
+                "dst_pin": "qsfp_0_n_1/S_AXIS_0",
+            }
+        )
+        links.append(
+            {  # MAC -> fabric
+                "src_pin": "qsfp_0_n_1/M_AXIS_0",
+                "dst_pin": "dummy_noc_m_0/S00_AXIS",
+            }
+        )
 
     if 2 in enabled:
-        links.append({
-            "src_pin": "dummy_noc_4/M00_AXIS",
-            "dst_pin": "qsfp_2_n_3/S_AXIS_0",
-        })
-        links.append({
-            "src_pin": "qsfp_2_n_3/M_AXIS_0",
-            "dst_pin": "dummy_noc_m_4/S00_AXIS",
-        })
+        links.append(
+            {
+                "src_pin": "dummy_noc_4/M00_AXIS",
+                "dst_pin": "qsfp_2_n_3/S_AXIS_0",
+            }
+        )
+        links.append(
+            {
+                "src_pin": "qsfp_2_n_3/M_AXIS_0",
+                "dst_pin": "dummy_noc_m_4/S00_AXIS",
+            }
+        )
 
     return {"sl_axis_noc_links": links}

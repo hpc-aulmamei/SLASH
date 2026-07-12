@@ -88,9 +88,9 @@ class ConnectivityConfig:
     streams: List[StreamConnect] = field(default_factory=list)
     sps: List[SpMapping] = field(default_factory=list)
     clocks: List[ClockSpec] = field(default_factory=list)
-    net: NetworkSpec = field(
-        default_factory=lambda: NetworkSpec(enabled_eth={}))
+    net: NetworkSpec = field(default_factory=lambda: NetworkSpec(enabled_eth={}))
     user_region: UserRegionSpec = field(
-        default_factory=lambda: UserRegionSpec(pre_synth_tcls=[]))
+        default_factory=lambda: UserRegionSpec(pre_synth_tcls=[])
+    )
     debug: DebugSpec = field(default_factory=lambda: DebugSpec(nets=[]))
     shell: str = "compute"

@@ -187,7 +187,9 @@ def _resolve_hls_c_sources(hls_json_path: Path) -> list[Path]:
     return _dedupe_paths(sources)
 
 
-def _collect_user_headers_from_sources(sources: Iterable[Path], include_dirs: Iterable[Path]) -> list[Path]:
+def _collect_user_headers_from_sources(
+    sources: Iterable[Path], include_dirs: Iterable[Path]
+) -> list[Path]:
     """
     Recursively walk local include graphs starting from user C/C++ sources and
     collect reachable user headers. These headers are force-included when
@@ -213,8 +215,7 @@ def _collect_user_headers_from_sources(sources: Iterable[Path], include_dirs: It
         visited_files.add(rp)
 
         try:
-            lines = rp.read_text(
-                encoding="utf-8", errors="ignore").splitlines()
+            lines = rp.read_text(encoding="utf-8", errors="ignore").splitlines()
         except OSError:
             return
 
@@ -240,7 +241,9 @@ def _collect_user_headers_from_sources(sources: Iterable[Path], include_dirs: It
     return header_list
 
 
-def _collect_emu_compile_inputs(config: LinkerConfiguration) -> tuple[list[Path], list[Path], list[Path]]:
+def _collect_emu_compile_inputs(
+    config: LinkerConfiguration,
+) -> tuple[list[Path], list[Path], list[Path]]:
     """
     Returns:
       (user_cpp_sources, user_include_dirs, force_include_headers)
@@ -266,12 +269,10 @@ def _collect_emu_compile_inputs(config: LinkerConfiguration) -> tuple[list[Path]
             include_dirs.extend(_extract_include_dirs_from_cfg(cfg))
 
         include_dirs.extend([p.parent for p in srcs])
-        force_headers.extend(
-            _collect_user_headers_from_sources(srcs, include_dirs))
+        force_headers.extend(_collect_user_headers_from_sources(srcs, include_dirs))
 
     return (
-        _dedupe_paths(cpp_files) or _collect_kernel_cpp(
-            config.kernel_component_paths),
+        _dedupe_paths(cpp_files) or _collect_kernel_cpp(config.kernel_component_paths),
         _dedupe_paths(include_dirs),
         _dedupe_paths(force_headers),
     )
@@ -282,12 +283,10 @@ def build_emu_project(config: LinkerConfiguration) -> None:
     if not tb_path.exists():
         raise FileNotFoundError(f"tb.cpp not found: {tb_path}")
 
-    kernel_cpps, user_include_dirs, force_headers = _collect_emu_compile_inputs(
-        config)
+    kernel_cpps, user_include_dirs, force_headers = _collect_emu_compile_inputs(config)
     cpp_files = [tb_path] + kernel_cpps
     if not cpp_files:
-        raise FileNotFoundError(
-            "No C++ sources found to build emulation executable.")
+        raise FileNotFoundError("No C++ sources found to build emulation executable.")
 
     vitis_include = _find_vitis_include()
     vpp_emu_path = config.build_dir / "vpp_emu"
@@ -305,15 +304,21 @@ def build_emu_project(config: LinkerConfiguration) -> None:
         + include_flags
         + force_include_flags
         + [str(p) for p in cpp_files]
-        + ["-o", str(vpp_emu_path), "-I", str(vitis_include),
-           "-lzmq", "-I", "/usr/include/jsoncpp/", "-ljsoncpp"]
+        + [
+            "-o",
+            str(vpp_emu_path),
+            "-I",
+            str(vitis_include),
+            "-lzmq",
+            "-I",
+            "/usr/include/jsoncpp/",
+            "-ljsoncpp",
+        ]
     )
     if force_headers:
-        logger.info("EMU compile force-including %d user header(s)",
-                    len(force_headers))
+        logger.info("EMU compile force-including %d user header(s)", len(force_headers))
     if user_include_dirs:
-        logger.info("EMU compile adding %d user include dir(s)",
-                    len(user_include_dirs))
+        logger.info("EMU compile adding %d user include dir(s)", len(user_include_dirs))
     logger.info("Building emulation executable: %s", " ".join(cmd))
     subprocess.run(cmd, cwd=str(config.build_dir), check=True)
     logger.info("Emulation build outputs in %s", config.build_dir)

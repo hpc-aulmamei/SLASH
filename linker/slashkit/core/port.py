@@ -26,6 +26,7 @@ from typing import Optional
 
 class BusType(Enum):
     """Enumerates the supported bus/interface types in the design."""
+
     CLOCK = auto()
     RESET = auto()
     AXILITE = auto()
@@ -41,6 +42,7 @@ class Port:
     For AXI/AXIS, width refers to data width (e.g., 32/64/128).
     For CLOCK, RESET, and INTERRUPT, width is forced to 1.
     """
+
     name: str
     ptype: BusType
     width: Optional[int] = None

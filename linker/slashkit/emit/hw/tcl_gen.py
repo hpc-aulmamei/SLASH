@@ -23,7 +23,9 @@ import re
 
 from slashkit.emit.render import render_template, export_package
 from slashkit.emit.hw.user_region.kernel_ctx import build_kernel_add_context
-from slashkit.emit.hw.user_region.smartconnect_ctx import build_axilite_smartconnect_context
+from slashkit.emit.hw.user_region.smartconnect_ctx import (
+    build_axilite_smartconnect_context,
+)
 from slashkit.emit.hw.user_region.hbm_ctx import build_hbm_smartconnect_context
 from slashkit.emit.hw.user_region.ddr_ctx import build_ddr_smartconnect_context
 from slashkit.emit.hw.user_region.mem_ctx import build_mem_smartconnect_context
@@ -38,7 +40,10 @@ from slashkit.emit.hw.service_region.stream_ctx import build_stream_connect_cont
 from slashkit.emit.hw.user_region.host_ctx import build_host_smartconnect_context
 from slashkit.emit.hw.user_region.addr_ctx import build_axilite_address_context
 from slashkit.emit.hw.user_region.param_ctx import build_data_width_param_context
-from slashkit.emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
+from slashkit.emit.metadata.system_map_ctx import (
+    build_system_map_context,
+    resolve_system_map_clock,
+)
 from slashkit.emit.hw.service_region.service_layer_ctx import *
 
 from slashkit.core.command_config import LinkerConfiguration, ShellType
@@ -58,17 +63,17 @@ def _collect_used_targets(ctx: dict) -> set[str]:
 
     # HBM uses BD ports (HBM_AXI_XX) via root MI -> port
     for o in ctx.get("hbm_root_out", []):
-        used.add(o["dst_port"])   # e.g., HBM_AXI_00
+        used.add(o["dst_port"])  # e.g., HBM_AXI_00
 
     # DDR uses NoC pins
     for item in ctx.get("ddr_direct", []):
-        used.add(item["dst_pin"])     # e.g., /ddr_noc_0/S00_AXI
+        used.add(item["dst_pin"])  # e.g., /ddr_noc_0/S00_AXI
     for item in ctx.get("ddr_smart_roots", []):
         used.add(item["dst_pin"])
 
     # MEM (VNOC) uses NoC pins
     for item in ctx.get("mem_direct", []):
-        used.add(item["dst_pin"])     # e.g., /hbm_vnoc_00/S00_AXI
+        used.add(item["dst_pin"])  # e.g., /hbm_vnoc_00/S00_AXI
     for item in ctx.get("mem_smart_roots", []):
         used.add(item["dst_pin"])
 
@@ -102,20 +107,25 @@ def print_memory_maps(k):
             ba = f"0x{ab.base_address:X}"
             rg = f"0x{ab.range:X}"
             print(
-                f"        block {ab.name}: base={ba} range={rg} width={ab.width} usage={ab.usage or '-'} access={ab.access or '-'}")
+                f"        block {ab.name}: base={ba} range={rg} width={ab.width} usage={ab.usage or '-'} access={ab.access or '-'}"
+            )
             if ab.offset_base_param or ab.offset_high_param:
                 print(
-                    f"          params: base_param={ab.offset_base_param or '-'} high_param={ab.offset_high_param or '-'}")
+                    f"          params: base_param={ab.offset_base_param or '-'} high_param={ab.offset_high_param or '-'}"
+                )
             if ab.registers:
                 for r in ab.registers:
                     off = f"0x{r.address_offset:X}"
                     print(
-                        f"          reg {r.name}: off={off} size={r.size} access={r.access or '-'} reset={('0x%X' % r.reset_value) if r.reset_value is not None else '-'}")
+                        f"          reg {r.name}: off={off} size={r.size} access={r.access or '-'} reset={('0x%X' % r.reset_value) if r.reset_value is not None else '-'}"
+                    )
                     if r.fields:
                         for f in r.fields:
                             rng = f"[{f.bit_offset + f.bit_width - 1}:{f.bit_offset}]"
-                            print(f"            - {f.name} {rng} access={f.access or '-'}"
-                                  f" reset={('0x%X' % f.reset_value) if f.reset_value is not None else '-'}")
+                            print(
+                                f"            - {f.name} {rng} access={f.access or '-'}"
+                                f" reset={('0x%X' % f.reset_value) if f.reset_value is not None else '-'}"
+                            )
 
 
 def print_kernel(k):
@@ -137,8 +147,7 @@ def print_cfg(cfg):
     print("\n[connectivity] nk entries:")
     if cfg.nk:
         for nk in cfg.nk:
-            print(
-                f"  - {nk.kernel_type}: count={nk.count}, names={nk.instance_names}")
+            print(f"  - {nk.kernel_type}: count={nk.count}, names={nk.instance_names}")
     else:
         print("  (none)")
 
@@ -152,8 +161,7 @@ def print_cfg(cfg):
     print("\n[connectivity] sp mappings:")
     if cfg.sps:
         for sp in cfg.sps:
-            print(
-                f"  - {sp.inst}.{sp.port} -> {sp.target.domain}{sp.target.index}")
+            print(f"  - {sp.inst}.{sp.port} -> {sp.target.domain}{sp.target.index}")
     else:
         print("  (none)")
 
@@ -195,8 +203,9 @@ def print_instances(instances, stream_edges):
                 for port, tgt in mem_sp.items():
                     idx = "" if tgt.get("index") is None else str(tgt["index"])
                     print(f"      sp: {port} -> {tgt['domain']}{idx}")
-            others = {k: v for k, v in inst.params.items() if k not in {
-                "clock_hz", "mem_sp"}}
+            others = {
+                k: v for k, v in inst.params.items() if k not in {"clock_hz", "mem_sp"}
+            }
             for k, v in others.items():
                 print(f"      {k}: {v}")
 
@@ -224,7 +233,8 @@ def print_bd_ports(bd):
             wid = "" if p.width is None else str(p.width)
             rtl = "" if p.rtl_name is None else p.rtl_name
             print(
-                f"  - {logical:12s} -> rtl={rtl:20s} {p.ptype.name:9s} width={wid:>4s} domain={dom:>4s} index={idx:>2s}")
+                f"  - {logical:12s} -> rtl={rtl:20s} {p.ptype.name:9s} width={wid:>4s} domain={dom:>4s} index={idx:>2s}"
+            )
 
 
 def generate_tcl(config: LinkerConfiguration) -> None:
@@ -237,7 +247,8 @@ def generate_tcl(config: LinkerConfiguration) -> None:
     instances = {kernel.name: kernel for kernel in config.kernel_instances}
     streams = cfg.streams
     kernel_hls_by_type = {
-        kernel.name: kernel.hls_data_path for kernel in config.kernels}
+        kernel.name: kernel.hls_data_path for kernel in config.kernels
+    }
 
     # Early error: VIRT targets are not supported on the compute shell.
     if config.shell_type == ShellType.COMPUTE:
@@ -246,25 +257,27 @@ def generate_tcl(config: LinkerConfiguration) -> None:
                 if str(tgt.get("domain", "")).upper() == "VIRT":
                     raise ValueError(
                         f"sp={inst.name}.{port}:VIRT requires shell=service "
-                        "(compute shell has no virtual memory ports).")
+                        "(compute shell has no virtual memory ports)."
+                    )
 
     ctx = build_kernel_add_context(instances)
     ctx.update(build_data_width_param_context(instances))
     ctx.update(build_axilite_smartconnect_context(instances))
     ctx.update(build_hbm_smartconnect_context(instances, bd, max_si=16))
     ctx.update(build_ddr_smartconnect_context(instances, max_si=16))
-    ctx.update(build_mem_smartconnect_context(
-        instances, num_mem_ports=8, max_si=16))
+    ctx.update(build_mem_smartconnect_context(instances, num_mem_ports=8, max_si=16))
     ctx.update(build_host_smartconnect_context(instances, bd, max_si=16))
     if config.shell_type == ShellType.SERVICE:
         ctx.update(build_virt_smartconnect_context(instances, bd, max_si=16))
         net_ctx = build_network_axis_context(instances, streams, cfg.net)
-        ctx.update({
-            # inst.AXIS -> /dcmac_axis_noc_k/S00_AXIS
-            "axis_to_fabric":   net_ctx["axis_to_fabric"],
-            # /dcmac_axis_noc_s_k/M00_AXIS -> inst.AXIS
-            "axis_from_fabric": net_ctx["axis_from_fabric"],
-        })
+        ctx.update(
+            {
+                # inst.AXIS -> /dcmac_axis_noc_k/S00_AXIS
+                "axis_to_fabric": net_ctx["axis_to_fabric"],
+                # /dcmac_axis_noc_s_k/M00_AXIS -> inst.AXIS
+                "axis_from_fabric": net_ctx["axis_from_fabric"],
+            }
+        )
         used_rx_slots: set[int] = set()
         for e in net_ctx.get("axis_from_fabric", []):
             m = _RX_SRC_PIN_RE.match(str(e.get("src_pin", "")).strip())
@@ -276,8 +289,7 @@ def generate_tcl(config: LinkerConfiguration) -> None:
         ctx["dcmac_rx_tready_tie_pins"] = [
             f"dcmac_axis_noc_s_{i}/M00_AXIS_tready" for i in dcmac_rx_tready_tie_slots
         ]
-        ctx.update(build_stream_connect_context(
-            instances, net_ctx["streams_leftover"]))
+        ctx.update(build_stream_connect_context(instances, net_ctx["streams_leftover"]))
     else:  # COMPUTE — no DCMAC / stream fabric, no VIRT
         ctx["virt_direct"] = []
         ctx["virt_smart_nodes"] = []
@@ -293,15 +305,19 @@ def generate_tcl(config: LinkerConfiguration) -> None:
         used_targets.add(s["dst"])
 
     terms_generic = build_axi_terminators_context(
-        bd, used_targets)  # HBM BD ports only (compute has no VIRT BD ports)
+        bd, used_targets
+    )  # HBM BD ports only (compute has no VIRT BD ports)
     num_ddr = 12 if config.shell_type == ShellType.COMPUTE else 4
     terms_ddr_noc = build_ddr_noc_terminators(
-        used_targets, num_ddr=num_ddr, noc_pin_fmt="/ddr_noc_{index}/S00_AXI")
+        used_targets, num_ddr=num_ddr, noc_pin_fmt="/ddr_noc_{index}/S00_AXI"
+    )
     terms_mem_noc = build_mem_noc_terminators(
-        used_targets, num_mem=8, noc_pin_fmt="/hbm_vnoc_0{index}/S00_AXI")
+        used_targets, num_mem=8, noc_pin_fmt="/hbm_vnoc_0{index}/S00_AXI"
+    )
     if config.shell_type == ShellType.SERVICE:
         terms_virt_noc = build_virt_noc_terminators(
-            used_targets, num_virt=4, noc_pin_fmt="/noc_virt_0{index}/S00_AXI")
+            used_targets, num_virt=4, noc_pin_fmt="/noc_virt_0{index}/S00_AXI"
+        )
     else:
         terms_virt_noc = {"axi_terminators": []}
     terms_host_noc = build_host_noc_terminator(used_targets)
@@ -323,7 +339,9 @@ def generate_tcl(config: LinkerConfiguration) -> None:
     ctx["project_name"] = config.project_name
     ctx["slash_bd_name"] = f"slash_{config.project_name}"
 
-    slash_template = "slash.tcl" if config.shell_type == ShellType.SERVICE else "slash_compute.tcl"
+    slash_template = (
+        "slash.tcl" if config.shell_type == ShellType.SERVICE else "slash_compute.tcl"
+    )
     out_path = config.build_dir / "slash.tcl"
     render_template(
         template=slash_template,

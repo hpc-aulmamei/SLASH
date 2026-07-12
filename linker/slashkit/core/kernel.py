@@ -34,12 +34,13 @@ class Kernel:
     Generic kernel/IP *type* definition.
     Contains bus and port definitions — not instance-specific data.
     """
+
     name: str
     component_xml_path: Path
     ports: Dict[str, Port] = field(default_factory=dict)
     buses: Dict[str, Bus] = field(default_factory=dict)
     vlnv: Optional[str] = None
-    memory_maps: List[MemoryMap] = field(default_factory=list)   # NEW
+    memory_maps: List[MemoryMap] = field(default_factory=list)  # NEW
     hls_data_path: Optional[Path] = None
 
     def port(self, name: str) -> Port:
@@ -47,8 +48,7 @@ class Kernel:
         try:
             return self.ports[name]
         except KeyError as e:
-            raise KeyError(
-                f"Kernel '{self.name}' has no port named '{name}'.") from e
+            raise KeyError(f"Kernel '{self.name}' has no port named '{name}'.") from e
 
     def ports_of_type(self, ptype: BusType) -> Iterable[Port]:
         """Iterate over all ports of a given type."""
@@ -59,21 +59,24 @@ class Kernel:
         try:
             return self.buses[name]
         except KeyError as e:
-            raise KeyError(
-                f"Kernel '{self.name}' has no bus named '{name}'.") from e
+            raise KeyError(f"Kernel '{self.name}' has no bus named '{name}'.") from e
 
     def buses_of_type(self, ptype: BusType) -> Iterable[Bus]:
         """Iterate over all buses of a given type."""
         return (b for b in self.buses.values() if b.ptype == ptype)
 
-    def bus_physical(self, bus_name: str, logical: Optional[str] = None) -> Optional[Port]:
+    def bus_physical(
+        self, bus_name: str, logical: Optional[str] = None
+    ) -> Optional[Port]:
         """Return a physical Port object for a bus (or None if unknown)."""
         bus = self.buses.get(bus_name)
         if bus is None:
             return None
         return bus.physical_port(logical=logical)
 
-    def bus_physical_port(self, bus_name: str, logical: Optional[str] = None) -> Optional[str]:
+    def bus_physical_port(
+        self, bus_name: str, logical: Optional[str] = None
+    ) -> Optional[str]:
         """Return a physical port for a bus (or None if unknown)."""
         p = self.bus_physical(bus_name, logical=logical)
         return p.name if p is not None else None
@@ -85,6 +88,7 @@ class KernelInstance:
     A specific instance of a Kernel (e.g., 'dma_0').
     Holds a pointer to the Kernel type and optional parameters.
     """
+
     name: str
     kernel: Kernel
     params: Dict[str, object] = field(default_factory=dict)

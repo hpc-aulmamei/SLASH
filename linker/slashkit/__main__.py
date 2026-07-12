@@ -38,7 +38,13 @@ from slashkit.emit.sim.project_gen import create_sim_project, build_sim_project
 from slashkit.emit.emu.project_gen import build_emu_project, package_emu_artifacts
 
 from slashkit.emit.metadata.prog_image import build_vbin
-from slashkit.core.command_config import LinkerConfiguration, Platform, InstallerConfiguration, CommandConfiguration, ShellType
+from slashkit.core.command_config import (
+    LinkerConfiguration,
+    Platform,
+    InstallerConfiguration,
+    CommandConfiguration,
+    ShellType,
+)
 
 
 def _format_duration(seconds: float) -> str:
@@ -79,6 +85,7 @@ def run_with_profiling(label: str, func) -> None:
 
     try:
         import resource
+
         start_rusage = resource.getrusage(resource.RUSAGE_SELF)
     except Exception:
         start_rusage = None
@@ -102,6 +109,7 @@ def run_with_profiling(label: str, func) -> None:
         if start_rusage is not None:
             try:
                 import resource
+
                 end_rusage = resource.getrusage(resource.RUSAGE_SELF)
                 # ru_maxrss is in kilobytes on Linux; convert to MB.
                 rss_mb = end_rusage.ru_maxrss / 1024.0
@@ -133,8 +141,9 @@ def link(config: LinkerConfiguration) -> None:
     else:
         run_with_profiling("build_slash", lambda: build_slash_rm(config))
         if config.shell_type == ShellType.SERVICE and config.networking_enabled:
-            run_with_profiling("build_service_layer",
-                               lambda: build_service_layer_rm(config))
+            run_with_profiling(
+                "build_service_layer", lambda: build_service_layer_rm(config)
+            )
 
     if config.platform == Platform.SIMULATION:
         pass
@@ -175,8 +184,12 @@ def main():
         format="%(asctime)s %(levelname)s %(name)s:%(funcName)s: %(message)s",
     )
 
-    ap = argparse.ArgumentParser(description="Utility to link VRT binaries (VBINs) from user IP cores.", conflict_handler="resolve", epilog=MAIN_HELP_EPILOG,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description="Utility to link VRT binaries (VBINs) from user IP cores.",
+        conflict_handler="resolve",
+        epilog=MAIN_HELP_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub_parsers = ap.add_subparsers(required=True)
 
     link_parser = sub_parsers.add_parser("link")
@@ -186,7 +199,8 @@ def main():
     install_parser = sub_parsers.add_parser("install")
     InstallerConfiguration.populate_argument_parser(install_parser)
     install_parser.set_defaults(
-        config_class=InstallerConfiguration, operation=install_static_shell)
+        config_class=InstallerConfiguration, operation=install_static_shell
+    )
 
     static_shell_path_parser = sub_parsers.add_parser(
         "static-shell-path",
