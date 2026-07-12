@@ -703,7 +703,7 @@ proc create_hier_cell_clk_rst_shell { parentCell nameHier } {
 
 
   set_property -dict [ list \
-   CONFIG.APERTURES {{0x204_0000_0000 64M}} \
+   CONFIG.APERTURES {{0x204_0000_0000 512K}} \
    CONFIG.CATEGORY {pl} \
  ] [get_bd_intf_pins /static_region/clk_rst_shell/axi_noc_0/M00_AXI]
 
