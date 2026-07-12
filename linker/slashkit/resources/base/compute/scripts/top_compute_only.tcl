@@ -2057,9 +2057,8 @@ HBM_PC0_WRITE_RATE 25.000 HBM_PC1_WRITE_RATE 25.000 HBM_PC0_PHY_ACTIVE ENABLED H
  ] [get_bd_intf_pins /static_region/noc/axi_noc_cips/S02_INI]
 
   set_property -dict [ list \
-   CONFIG.CONNECTIONS {M00_INI {read_bw {800} write_bw {800} read_avg_burst {64} write_avg_burst {64} initial_boot {true}}} \
+   CONFIG.CONNECTIONS {M00_INI {read_bw {800} write_bw {800} read_avg_burst {64} write_avg_burst {64} initial_boot {false}}} \
    CONFIG.DEST_IDS {} \
-   CONFIG.REMAPS {M04_INI {{0x0_8800_0000 0x0202_0000_0000 0x8000000}}} \
    CONFIG.NOC_PARAMS {} \
    CONFIG.CATEGORY {ps_rpu} \
  ] [get_bd_intf_pins /static_region/noc/axi_noc_cips/S03_AXI]
