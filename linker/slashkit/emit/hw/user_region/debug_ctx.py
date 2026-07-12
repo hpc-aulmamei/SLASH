@@ -29,7 +29,10 @@ from slashkit.core.port import BusType
 
 _AXIS_ILA_NAME = "axis_ila_debug_0"
 _MAX_MONITOR_SLOTS = 16
-def _port_norm(s): return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def _port_norm(s):
+    return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
 def _resolve_port_name(kernel, requested: str) -> str:
@@ -80,13 +83,11 @@ def build_system_ila_debug_context(
         port_name = getattr(net, "port", "")
 
         if inst_name not in instances:
-            raise KeyError(
-                f"[debug] net refers to unknown instance '{inst_name}'.")
+            raise KeyError(f"[debug] net refers to unknown instance '{inst_name}'.")
 
         inst = instances[inst_name]
         canon_port = _resolve_port_name(inst.kernel, port_name)
-        slot_suffix, intf_type = _axis_ila_slot_meta(
-            inst.kernel.port(canon_port).ptype)
+        slot_suffix, intf_type = _axis_ila_slot_meta(inst.kernel.port(canon_port).ptype)
 
         slots.append(
             {

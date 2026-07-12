@@ -36,12 +36,14 @@ def build_vbin(config: LinkerConfiguration) -> Path:
     @return Path to the generated .vbin file.
     """
     images_dir = config.build_dir / "images"
-    service_layer_pdi_path = images_dir / \
-        f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
-    slash_pdi_path = images_dir / \
-        f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
-    util_xml = config.build_dir / \
-        f"report_utilization_{config.project_name}.xml"
+    service_layer_pdi_path = (
+        images_dir
+        / f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
+    )
+    slash_pdi_path = (
+        images_dir / f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
+    )
+    util_xml = config.build_dir / f"report_utilization_{config.project_name}.xml"
     system_map = config.build_dir / "system_map.xml"
 
     files = [slash_pdi_path, util_xml, system_map]

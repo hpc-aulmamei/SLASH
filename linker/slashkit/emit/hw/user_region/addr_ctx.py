@@ -58,8 +58,8 @@ def build_axilite_address_context(
     instances: Dict[str, KernelInstance],
     *,
     addr_space: str = "S_AXILITE_INI",
-    base_offset: int = 0x0202_0000_0000,   # your example
-    min_align: int = 0x0000_0100           # 256Bx alignment
+    base_offset: int = 0x0202_0000_0000,  # your example
+    min_align: int = 0x0000_0100,  # 256Bx alignment
 ) -> dict:
     """
     Returns:
@@ -91,14 +91,16 @@ def build_axilite_address_context(
             align = max(min_align, rg)
             next_off = _align_up(next_off, align)
 
-            items.append({
-                "inst": iname,
-                "busif": p.name,
-                "segment": ab.name,
-                "offset": next_off,
-                "range": rg,
-                "addr_space": addr_space,
-            })
+            items.append(
+                {
+                    "inst": iname,
+                    "busif": p.name,
+                    "segment": ab.name,
+                    "offset": next_off,
+                    "range": rg,
+                    "addr_space": addr_space,
+                }
+            )
             next_off += _align_up(rg, align)
 
     return {"axilite_addr": items}

@@ -72,8 +72,8 @@ def _parse_stream_type(src: str) -> tuple[str, bool] | None:
     if gt < 0:
         return None
 
-    inner = s[lt + 1: gt]
-    tail = s[gt + 1:].strip()
+    inner = s[lt + 1 : gt]
+    tail = s[gt + 1 :].strip()
     is_ref = tail.endswith("&")
 
     # Split stream template args at top-level commas only.
@@ -162,10 +162,10 @@ def _stream_aliases_for_edge(edge, wire_name: str) -> list[str]:
             return
         names.append(f"{prefix}{m.group(1)}")
 
-    _maybe_add(getattr(edge, "src_inst"), getattr(
-        edge, "src_port"), "streamingBuffer_")
-    _maybe_add(getattr(edge, "dst_inst"), getattr(
-        edge, "dst_port"), "outputStreamingBuffer_")
+    _maybe_add(getattr(edge, "src_inst"), getattr(edge, "src_port"), "streamingBuffer_")
+    _maybe_add(
+        getattr(edge, "dst_inst"), getattr(edge, "dst_port"), "outputStreamingBuffer_"
+    )
 
     # preserve order while deduping
     out: list[str] = []
@@ -220,7 +220,11 @@ def parse_sol1_data(sol1_json: Path) -> dict:
     return {"Top": top, "Args": args}
 
 
-def build_tb_context(instances: Dict[str, KernelInstance], streams: List[StreamConnect], kernel_sol1_by_type: dict[str, Path]) -> dict:
+def build_tb_context(
+    instances: Dict[str, KernelInstance],
+    streams: List[StreamConnect],
+    kernel_sol1_by_type: dict[str, Path],
+) -> dict:
     """
     instances: from apply_config_to_instances(), name -> Instance(kernel=KernelType,...)
     streams: list of edges, each with .src_inst .src_port .dst_inst .dst_port (your parser types)
@@ -235,8 +239,8 @@ def build_tb_context(instances: Dict[str, KernelInstance], streams: List[StreamC
     # Prototypes: generated from Top + Args (metadata doesn't store full prototype)
     prototypes = []
     for ktype, meta in hls_meta.items():
-        sig = [f'{a["cppType"]} {a["name"]}' for a in meta["Args"]]
-        prototypes.append(f'void {meta["Top"]}({", ".join(sig)});')
+        sig = [f"{a['cppType']} {a['name']}" for a in meta["Args"]]
+        prototypes.append(f"void {meta['Top']}({', '.join(sig)});")
 
     # Streams: wire name per stream_connect edge
     wires = []
@@ -247,8 +251,14 @@ def build_tb_context(instances: Dict[str, KernelInstance], streams: List[StreamC
             return None
         ktype = instances[inst_name].kernel.name
         meta = hls_meta[ktype]
-        a = next((x for x in meta["Args"] if x["iface"]
-                 == iface and _is_stream(x["cppType"])), None)
+        a = next(
+            (
+                x
+                for x in meta["Args"]
+                if x["iface"] == iface and _is_stream(x["cppType"])
+            ),
+            None,
+        )
         if a is None:
             return None
         return _stream_inner(a["cppType"])
@@ -266,7 +276,8 @@ def build_tb_context(instances: Dict[str, KernelInstance], streams: List[StreamC
         ctype = get_stream_ctype(e)
         wires.append({"name": wname, "ctype": ctype})
         stream_routes.append(
-            {"wire": wname, "ctype": ctype, "names": _stream_aliases_for_edge(e, wname)})
+            {"wire": wname, "ctype": ctype, "names": _stream_aliases_for_edge(e, wname)}
+        )
         endpoint_to_wire[f"{e.src_inst}.{e.src_port}"] = wname
         endpoint_to_wire[f"{e.dst_inst}.{e.dst_port}"] = wname
 
@@ -321,23 +332,28 @@ def build_tb_context(instances: Dict[str, KernelInstance], streams: List[StreamC
                 continue
 
             decode_blocks.append(
-                f'argType = root["args"]["arg{argN}"]["type"].asString();')
+                f'argType = root["args"]["arg{argN}"]["type"].asString();'
+            )
             if _is_ptr(cpp_t):
                 base = cpp_t.split("*", 1)[0].strip()
                 decode_blocks.append('if (argType == "buffer") {')
                 decode_blocks.append(
-                    f'  std::string bufferName = root["args"]["arg{argN}"]["name"].asString();')
+                    f'  std::string bufferName = root["args"]["arg{argN}"]["name"].asString();'
+                )
                 decode_blocks.append(
-                    '  if (buffers.find(bufferName) != buffers.end()) {')
+                    "  if (buffers.find(bufferName) != buffers.end()) {"
+                )
                 decode_blocks.append(
-                    f'    {vname} = static_cast<{base}*>(buffers[bufferName]);')
-                decode_blocks.append('  }')
-                decode_blocks.append('}')
+                    f"    {vname} = static_cast<{base}*>(buffers[bufferName]);"
+                )
+                decode_blocks.append("  }")
+                decode_blocks.append("}")
             else:
                 decode_blocks.append('if (argType == "scalar") {')
                 decode_blocks.append(
-                    f'  assignValue({vname}, root["args"]["arg{argN}"]["value"]);')
-                decode_blocks.append('}')
+                    f'  assignValue({vname}, root["args"]["arg{argN}"]["value"]);'
+                )
+                decode_blocks.append("}")
 
             include_in_manifest_call = True
             if (a.get("direction") or "in") == "out" and not _is_ptr(cpp_t):
@@ -366,14 +382,14 @@ def build_tb_context(instances: Dict[str, KernelInstance], streams: List[StreamC
             }
         )
 
-        has_axilite = any(
-            True for _ in inst.kernel.ports_of_type(BusType.AXILITE))
+        has_axilite = any(True for _ in inst.kernel.ports_of_type(BusType.AXILITE))
         stream_only = bool(meta["Args"]) and all(
-            _is_stream(a["cppType"]) for a in meta["Args"])
-        has_missing_stream = any(
-            arg == "/*MISSING_STREAM*/" for arg in call_args)
+            _is_stream(a["cppType"]) for a in meta["Args"]
+        )
+        has_missing_stream = any(arg == "/*MISSING_STREAM*/" for arg in call_args)
         control_mode = _infer_control_mode(
-            has_axilite=has_axilite, stream_only=stream_only)
+            has_axilite=has_axilite, stream_only=stream_only
+        )
         autostart = stream_only and not has_axilite and not has_missing_stream
         callable_kernel = has_axilite and not has_missing_stream
         scheduling_policy = "autostart" if autostart else "call"
@@ -463,11 +479,13 @@ def build_tb_context(instances: Dict[str, KernelInstance], streams: List[StreamC
                     # following "<name>_ctrl" validity register can be synthesized.
                     prev_value_reg_name = reg_name.rsplit("_", 1)[0]
                     if logical_arg_idx < len(non_stream_args):
-                        hi_reg = regs[reg_idx +
-                                      1] if (reg_idx + 1) < len(regs) else None
+                        hi_reg = (
+                            regs[reg_idx + 1] if (reg_idx + 1) < len(regs) else None
+                        )
                         hi_reg_name = (
-                            getattr(hi_reg, "name",
-                                    "") or "" if hi_reg is not None else ""
+                            getattr(hi_reg, "name", "") or ""
+                            if hi_reg is not None
+                            else ""
                         )
                         hi_reg_off = (
                             int(getattr(hi_reg, "address_offset", 0) or 0)

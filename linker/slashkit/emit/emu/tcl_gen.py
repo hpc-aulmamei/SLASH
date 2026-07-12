@@ -25,7 +25,10 @@ import json
 import logging
 
 from slashkit.emit.render import render_template
-from slashkit.emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
+from slashkit.emit.metadata.system_map_ctx import (
+    build_system_map_context,
+    resolve_system_map_clock,
+)
 from slashkit.emit.hw.user_region.addr_ctx import build_axilite_address_context
 from slashkit.emit.emu.tb_ctx import build_tb_context
 from slashkit.core.command_config import LinkerConfiguration
@@ -39,7 +42,8 @@ def generate_emu_tcl(config: LinkerConfiguration) -> None:
     instances = {kernel.name: kernel for kernel in config.kernel_instances}
     streams = cfg.streams
     kernel_hls_by_type = {
-        kernel.name: kernel.hls_data_path for kernel in config.kernels}
+        kernel.name: kernel.hls_data_path for kernel in config.kernels
+    }
 
     # Build test bench context
     tb_ctx = build_tb_context(instances, streams, kernel_hls_by_type)

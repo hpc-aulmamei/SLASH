@@ -46,8 +46,10 @@ def build_host_smartconnect_context(
     for inst in instances.values():
         mem_sp = inst.params.get("mem_sp", {})
         for k_port, tgt in mem_sp.items():
-            if (str(tgt.get("domain", "")).upper() == "HOST"
-                    and inst.kernel.port(k_port).ptype == BusType.AXI4FULL):
+            if (
+                str(tgt.get("domain", "")).upper() == "HOST"
+                and inst.kernel.port(k_port).ptype == BusType.AXI4FULL
+            ):
                 host_sources.append(f"{inst.name}/{k_port}")
 
     host_direct: List[dict] = []
@@ -64,23 +66,25 @@ def build_host_smartconnect_context(
         current = [{"src": s} for s in host_sources]
         root_sc_name = None
         while len(current) > 1:
-            groups = [current[i:i + max_si]
-                      for i in range(0, len(current), max_si)]
+            groups = [current[i : i + max_si] for i in range(0, len(current), max_si)]
             next_level = []
             for g_idx, group in enumerate(groups):
                 sc_name = f"{base_name}_{level}_{g_idx}"
-                host_smart_nodes.append({
-                    "name": sc_name,
-                    "num_si": len(group),
-                    "si": [{"slot": i, "src": g["src"]} for i, g in enumerate(group)],
-                })
+                host_smart_nodes.append(
+                    {
+                        "name": sc_name,
+                        "num_si": len(group),
+                        "si": [
+                            {"slot": i, "src": g["src"]} for i, g in enumerate(group)
+                        ],
+                    }
+                )
                 next_level.append({"src": f"{sc_name}/M00_AXI"})
                 root_sc_name = sc_name
             current = next_level
             level += 1
         if root_sc_name:
-            host_smart_roots.append(
-                {"sc_name": root_sc_name, "dst_pin": dst_pin})
+            host_smart_roots.append({"sc_name": root_sc_name, "dst_pin": dst_pin})
 
     return {
         "host_direct": host_direct,

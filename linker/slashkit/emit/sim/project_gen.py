@@ -50,8 +50,9 @@ def create_sim_project(config: LinkerConfiguration) -> None:
 
     # Copy all kernels into the IP repository
     for kernel in config.kernels:
-        shutil.copytree(kernel.component_xml_path.parent,
-                        config.ip_repository / kernel.name)
+        shutil.copytree(
+            kernel.component_xml_path.parent, config.ip_repository / kernel.name
+        )
 
     tcl = config.build_dir / "run_pre.tcl"
     if not tcl.exists():
@@ -73,8 +74,7 @@ def create_sim_project(config: LinkerConfiguration) -> None:
 
 
 def build_sim_project(config: LinkerConfiguration) -> None:
-    xsim_dir = config.build_dir / "sim_prj" / \
-        "sim_prj.sim" / "sim_1" / "behav" / "xsim"
+    xsim_dir = config.build_dir / "sim_prj" / "sim_prj.sim" / "sim_1" / "behav" / "xsim"
     if not xsim_dir.exists():
         raise FileNotFoundError(f"XSIM dir not found: {xsim_dir}")
 
@@ -92,8 +92,7 @@ def build_sim_project(config: LinkerConfiguration) -> None:
     sim_src_dir = config.build_dir / "sim_src"
     export_package("slashkit.resources.sim", sim_src_dir)
 
-    subprocess.run(["cmake", str(sim_src_dir)],
-                   cwd=str(cmake_build_dir), check=True)
+    subprocess.run(["cmake", str(sim_src_dir)], cwd=str(cmake_build_dir), check=True)
     jobs = str(os.cpu_count() or 8)
     subprocess.run(["make", "-j", jobs], cwd=str(cmake_build_dir), check=True)
 

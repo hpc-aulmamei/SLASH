@@ -34,7 +34,7 @@ def build_data_width_param_context(
     instances: Dict[str, KernelInstance],
     *,
     domains_of_interest=("HBM", "VIRT"),
-    default_width_by_domain={"HBM": 256, "VIRT": 512}
+    default_width_by_domain={"HBM": 256, "VIRT": 512},
 ) -> dict:
     """
     For every instance and each AXI4FULL port that is mapped (via cfg.sps/defaults)
@@ -68,11 +68,13 @@ def build_data_width_param_context(
                 # If still unknown, skip silently (or raise if you prefer)
                 continue
 
-            out.append({
-                "inst": inst.name,
-                "param": f"CONFIG.{_param_name_for_busif(busif)}",
-                "value": int(width),
-            })
+            out.append(
+                {
+                    "inst": inst.name,
+                    "param": f"CONFIG.{_param_name_for_busif(busif)}",
+                    "value": int(width),
+                }
+            )
 
     # Optional de-dup if multiple entries set the same param for an inst
     dedup = {}

@@ -71,8 +71,7 @@ def build_ddr_smartconnect_context(
         root_sc_name = None
 
         while len(current) > 1:
-            groups = [current[i:i + max_si]
-                      for i in range(0, len(current), max_si)]
+            groups = [current[i : i + max_si] for i in range(0, len(current), max_si)]
             next_level = []
 
             for g_idx, group in enumerate(groups):
@@ -91,8 +90,7 @@ def build_ddr_smartconnect_context(
             level += 1
 
         if root_sc_name:
-            ddr_smart_roots.append(
-                {"sc_name": root_sc_name, "dst_pin": dst_pin})
+            ddr_smart_roots.append({"sc_name": root_sc_name, "dst_pin": dst_pin})
 
     return {
         "ddr_direct": ddr_direct,
