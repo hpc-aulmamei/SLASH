@@ -31,7 +31,8 @@ def build_kernel_add_context(instances: Dict[str, KernelInstance]) -> dict:
       - instances: OrderedDict[name -> KernelInstance]
       - clocks:    [{"src_pin": "<inst>/<pin>"} ...]
     """
-    ordered = OrderedDict((name, instances[name]) for name in sorted(instances.keys()))
+    ordered = OrderedDict((name, instances[name])
+                          for name in sorted(instances.keys()))
 
     clocks = []
     resets = []

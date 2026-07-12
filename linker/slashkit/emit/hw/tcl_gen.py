@@ -147,7 +147,8 @@ def print_cfg(cfg):
     print("\n[connectivity] nk entries:")
     if cfg.nk:
         for nk in cfg.nk:
-            print(f"  - {nk.kernel_type}: count={nk.count}, names={nk.instance_names}")
+            print(
+                f"  - {nk.kernel_type}: count={nk.count}, names={nk.instance_names}")
     else:
         print("  (none)")
 
@@ -161,7 +162,8 @@ def print_cfg(cfg):
     print("\n[connectivity] sp mappings:")
     if cfg.sps:
         for sp in cfg.sps:
-            print(f"  - {sp.inst}.{sp.port} -> {sp.target.domain}{sp.target.index}")
+            print(
+                f"  - {sp.inst}.{sp.port} -> {sp.target.domain}{sp.target.index}")
     else:
         print("  (none)")
 
@@ -265,7 +267,8 @@ def generate_tcl(config: LinkerConfiguration) -> None:
     ctx.update(build_axilite_smartconnect_context(instances))
     ctx.update(build_hbm_smartconnect_context(instances, bd, max_si=16))
     ctx.update(build_ddr_smartconnect_context(instances, max_si=16))
-    ctx.update(build_mem_smartconnect_context(instances, num_mem_ports=8, max_si=16))
+    ctx.update(build_mem_smartconnect_context(
+        instances, num_mem_ports=8, max_si=16))
     ctx.update(build_host_smartconnect_context(instances, bd, max_si=16))
     if config.shell_type == ShellType.SERVICE:
         ctx.update(build_virt_smartconnect_context(instances, bd, max_si=16))
@@ -285,11 +288,13 @@ def generate_tcl(config: LinkerConfiguration) -> None:
                 used_rx_slots.add(int(m.group(1)))
 
         # Tie-off RX NoC tready only for unused RX slots (0..7).
-        dcmac_rx_tready_tie_slots = [i for i in range(8) if i not in used_rx_slots]
+        dcmac_rx_tready_tie_slots = [
+            i for i in range(8) if i not in used_rx_slots]
         ctx["dcmac_rx_tready_tie_pins"] = [
             f"dcmac_axis_noc_s_{i}/M00_AXIS_tready" for i in dcmac_rx_tready_tie_slots
         ]
-        ctx.update(build_stream_connect_context(instances, net_ctx["streams_leftover"]))
+        ctx.update(build_stream_connect_context(
+            instances, net_ctx["streams_leftover"]))
     else:  # COMPUTE — no DCMAC / stream fabric, no VIRT
         ctx["virt_direct"] = []
         ctx["virt_smart_nodes"] = []

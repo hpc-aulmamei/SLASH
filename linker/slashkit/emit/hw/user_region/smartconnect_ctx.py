@@ -50,11 +50,13 @@ def build_axilite_smartconnect_context(
       ]}
     """
     # 1) Collect all AXI-Lite endpoints in a stable order
-    ordered = OrderedDict((name, instances[name]) for name in sorted(instances.keys()))
+    ordered = OrderedDict((name, instances[name])
+                          for name in sorted(instances.keys()))
     endpoints: List[str] = []
     for inst in ordered.values():
         for p in sorted(
-            (pp for pp in inst.kernel.ports.values() if pp.ptype == BusType.AXILITE),
+            (pp for pp in inst.kernel.ports.values()
+             if pp.ptype == BusType.AXILITE),
             key=lambda x: x.name,
         ):
             endpoints.append(f"{inst.name}/{p.name}")
@@ -78,7 +80,7 @@ def build_axilite_smartconnect_context(
             num_mi = len(payload)
         else:
             payload = remaining[: (max_mi - 1)]
-            remaining = remaining[(max_mi - 1) :]
+            remaining = remaining[(max_mi - 1):]
             num_mi = max_mi
 
         sc = {

@@ -86,7 +86,8 @@ def load_hls_metadata(hls_json: Path, *, strict: bool = True) -> dict | None:
         return None
     if not isinstance(data, dict):
         if strict:
-            raise ValueError(f"HLS metadata root must be a JSON object: {hls_json}")
+            raise ValueError(
+                f"HLS metadata root must be a JSON object: {hls_json}")
         return None
     return data
 
