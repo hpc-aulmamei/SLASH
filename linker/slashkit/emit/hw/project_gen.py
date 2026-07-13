@@ -281,11 +281,11 @@ def create_build_project_compute(
     log_path = config.build_dir / "vivado_compute.log"
 
     with resources.path(
-        "slashkit.resources.base.compute.scripts", "create_project_compute_only.tcl"
+        "slashkit.resources.base.compute.scripts", "create_project.tcl"
     ) as tcl_path:
         if not tcl_path.exists():
             raise FileNotFoundError(
-                f"create_project_compute_only.tcl not found: {tcl_path}"
+                f"create_project.tcl not found: {tcl_path}"
             )
         cmd = [
             config.vivado_bin,

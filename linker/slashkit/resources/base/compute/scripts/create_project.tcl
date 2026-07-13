@@ -83,9 +83,9 @@ if {![file exists $proj_exists]} {
   update_ip_catalog
 
   # Base shell / container (compute-only: slash only, no service_layer)
-  source [file normalize [file join $src_dir "slash_base_compute_only.tcl"]]
-  source [file normalize [file join $src_dir "top_compute_only.tcl"]]
-  source [file normalize [file join $src_dir "enable_dfx_bdc_compute.tcl"]]
+  source [file normalize [file join $src_dir "slash_base.tcl"]]
+  source [file normalize [file join $src_dir "top.tcl"]]
+  source [file normalize [file join $src_dir "enable_dfx_bdc.tcl"]]
 
   # Wrapper / XDC / build
   source [file normalize [file join $src_dir ".." ".." "common" "scripts" "make_wrapper.tcl"]]
@@ -103,7 +103,7 @@ if {![file exists $proj_exists]} {
 }
 
 if {$do_build} {
-  source [file normalize [file join $src_dir "build_project_compute_only.tcl"]]
+  source [file normalize [file join $src_dir "build_project.tcl"]]
   build_project $project_name
   puts "INFO: Project build complete."
 } elseif {$do_create} {
