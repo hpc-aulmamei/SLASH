@@ -44,6 +44,7 @@
 #include "reset.hpp"
 #include "validate.hpp"
 #include "version.hpp"
+#include "write_static_shell.hpp"
 
 // Forward declarations
 static int smiMain(int argc, char **argv);
@@ -108,6 +109,25 @@ static int smiMain(int argc, char **argv) {
     auto* resetCommand = app.add_subcommand("reset", "Hardware reset a V80 board");
     Reset::Options resetOptions;
     resetCommand->add_option("-d,--device", resetOptions.bdf, "Board address (e.g. 03:00 or 0000:03:00)")->required();
+
+    // -- write-static-shell (persistent static shell programming) --
+    auto* writeStaticShellCommand = app.add_subcommand("write-static-shell",
+        "Write the static SLASH shell to a V80 board");
+    WriteStaticShell::Options writeStaticShellOptions;
+    bool writeStaticShellFlash{};
+    auto* writeStaticShellFlashFlag = writeStaticShellCommand->add_flag("--flash",
+        writeStaticShellFlash, "Program the flash image via VRTD cfgmem programming (default)");
+    auto* writeStaticShellJtagFlag = writeStaticShellCommand->add_flag("--jtag",
+        writeStaticShellOptions.jtag, "Program the no-FPT PDI over JTAG via xsdb");
+    writeStaticShellFlashFlag->excludes(writeStaticShellJtagFlag);
+    writeStaticShellJtagFlag->excludes(writeStaticShellFlashFlag);
+    writeStaticShellCommand->add_option("-d,--device", writeStaticShellOptions.bdf,
+        "Board address (e.g. 03:00 or 0000:03:00)");
+    writeStaticShellCommand->add_flag("--no-device", writeStaticShellOptions.noDevice,
+        "Skip pre-JTAG PCIe device removal; only valid with --jtag");
+    writeStaticShellCommand->add_option("--bash-source", writeStaticShellOptions.bashSources,
+        "Source this shell script before running xsdb; may be repeated and is only valid with --jtag")
+        ->expected(1);
 
     // -- validate (memory integrity + bandwidth) --
     auto* validateCommand = app.add_subcommand("validate", "Validate board memory (integrity + bandwidth)");
@@ -284,6 +304,8 @@ static int smiMain(int argc, char **argv) {
         return Program::run(programOptions);
     } else if (resetCommand->parsed()) {
         return Reset::run(resetOptions);
+    } else if (writeStaticShellCommand->parsed()) {
+        return WriteStaticShell::run(writeStaticShellOptions);
     } else if (validateCommand->parsed()) {
         return Validate::run(validateOptions);
     } else if (barPokeCommand->parsed()) {
