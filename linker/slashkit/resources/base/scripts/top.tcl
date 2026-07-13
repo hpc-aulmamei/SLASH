@@ -692,7 +692,7 @@ proc create_hier_cell_clk_rst_shell { parentCell nameHier } {
 
 
   set_property -dict [ list \
-   CONFIG.APERTURES {{0x204_0000_0000 512K}} \
+   CONFIG.APERTURES {{0x204_0000_0000 1M}} \
    CONFIG.CATEGORY {pl} \
  ] [get_bd_intf_pins /static_region/clk_rst_shell/axi_noc_0/M00_AXI]
 
@@ -1661,7 +1661,8 @@ proc create_hier_cell_aved { parentCell nameHier } {
       CPM_PCIE1_PF2_BAR3_QDMA_SIZE {4} \
       CPM_PCIE1_PF2_BAR4_QDMA_64BIT {1} \
       CPM_PCIE1_PF2_BAR4_QDMA_ENABLED {1} \
-      CPM_PCIE1_PF2_BAR4_QDMA_SIZE {512} \
+      CPM_PCIE1_PF2_BAR4_QDMA_SCALE {Megabytes} \
+      CPM_PCIE1_PF2_BAR4_QDMA_SIZE {1} \
       CPM_PCIE1_PF2_BASE_CLASS_VALUE {12} \
       CPM_PCIE1_PF2_CFG_DEV_ID {50b6} \
       CPM_PCIE1_PF2_CFG_SUBSYS_ID {000e} \
