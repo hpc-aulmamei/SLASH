@@ -147,6 +147,56 @@ bus reset and rescan (hotplug) sequence.
 
    Board address. **Required.**
 
+write-static-shell
+------------------
+
+Write the installed static SLASH shell PDI to a V80 board.
+
+.. code-block:: text
+
+   v80-smi write-static-shell [--flash] -d <BDF>
+   v80-smi write-static-shell --jtag -d <BDF> [--bash-source <file> ...]
+   v80-smi write-static-shell --jtag --no-device [--bash-source <file> ...]
+
+Modes:
+
+* ``--flash`` is the default. It resolves
+  ``amd_v80_gen5x8_25.1.pdi`` via
+  ``python3 -m slashkit static-shell-path`` and programs it through the VRTD
+  cfgmem programming command.
+* ``--jtag`` resolves ``amd_v80_gen5x8_25.1_nofpt.pdi`` the same way,
+  optionally sources Vivado/Vitis setup scripts, and runs ``xsdb`` with the
+  installed ``versal_flash_pdi.tcl`` script.
+
+.. option:: --flash
+
+   Program the flash-image PDI via VRTD cfgmem programming. This is the
+   default mode.
+
+.. option:: --jtag
+
+   Program the no-FPT PDI over JTAG via ``xsdb``.
+
+.. option:: -d, --device <BDF>
+
+   Board address. Required except with ``--jtag --no-device``.
+
+.. option:: --no-device
+
+   Skip the pre-JTAG PCIe device removal. Valid only with ``--jtag``. PCIe
+   rescan still runs after ``xsdb``.
+
+.. option:: --bash-source <file>
+
+   Source a shell setup script before running ``xsdb``. May be repeated and is
+   valid only with ``--jtag``.
+
+In JTAG mode, ``v80-smi`` removes all V80 PCIe functions through VRTD unless
+``--no-device`` is used, runs ``/bin/bash -c 'source ...; xsdb ...'`` with
+``PDI_PATH`` set to the no-FPT PDI, and always asks VRTD to rescan PCIe after
+the ``xsdb`` step completes. Since PDI resolution uses ``python3 -m slashkit``,
+setting ``PYTHONPATH`` can select an in-repo ``slashkit``.
+
 validate
 --------
 

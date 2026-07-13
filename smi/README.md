@@ -2,7 +2,7 @@
 
 Command-line tool for managing AMD Alveo V80 devices.  v80-smi can
 enumerate boards, inspect vrtbin metadata, program devices, reset
-hardware, and validate memory integrity and bandwidth.
+hardware, write the static shell, and validate memory integrity and bandwidth.
 
 | Command    | Purpose                                           |
 |------------|---------------------------------------------------|
@@ -12,6 +12,7 @@ hardware, and validate memory integrity and bandwidth.
 | `query`    | Display metadata of the vbin loaded on a device   |
 | `program`  | Load a vbin file onto a V80 device                |
 | `reset`    | Hardware-reset a V80 board                        |
+| `write-static-shell` | Write the static SLASH shell to a V80 board |
 | `validate` | Reset board and test memory integrity + bandwidth |
 | `debug`    | Low-level BAR, memory, clock, and hotplug debug utilities |
 
@@ -36,7 +37,8 @@ Requires a C++20 compiler.
 sudo cmake --install build --prefix /usr/local
 ```
 
-This installs the `v80-smi` binary to `<prefix>/bin/`.
+This installs the `v80-smi` binary to `<prefix>/bin/` and the JTAG helper
+script to `<prefix>/share/v80-smi/`.
 
 ## Commands
 
@@ -175,6 +177,32 @@ v80-smi reset -d <BDF>
 
 Requires root access and a running VRTD daemon.  The device must be
 programmed with the static SLASH design.
+
+### write-static-shell
+
+Write the installed static SLASH shell PDI to a V80 board.  The default
+`--flash` mode programs the flash-image PDI through VRTD cfgmem programming.
+The `--jtag` mode programs the no-FPT PDI over JTAG with `xsdb`.
+
+```
+v80-smi write-static-shell --flash -d <BDF>
+v80-smi write-static-shell --jtag -d <BDF> [--bash-source <file> ...]
+v80-smi write-static-shell --jtag --no-device [--bash-source <file> ...]
+```
+
+| Flag              | Description                                          |
+|-------------------|------------------------------------------------------|
+| `--flash`         | Program the flash-image PDI via VRTD cfgmem programming (default) |
+| `--jtag`          | Program the no-FPT PDI over JTAG via `xsdb`          |
+| `-d,--device`     | Board address, required except with `--jtag --no-device` |
+| `--no-device`     | Skip the pre-JTAG PCIe device removal; valid only with `--jtag` |
+| `--bash-source`   | Source a Vivado/Vitis setup script before running `xsdb`; may be repeated and is valid only with `--jtag` |
+
+Both modes resolve their PDI path with `python3 -m slashkit static-shell-path`,
+so setting `PYTHONPATH` can select an in-repo `slashkit`.  JTAG mode removes the
+board's PCIe functions via VRTD unless `--no-device` is given, runs
+`/bin/bash -c 'source ...; xsdb ...'` with `PDI_PATH` set to the no-FPT PDI, and
+rescans PCIe through VRTD afterward.
 
 ### validate
 
@@ -480,6 +508,8 @@ since v80-smi always operates at board granularity.
 | libvrt     | VRT runtime library (device, kernel, vrtbin APIs) |
 | vrtd       | Runtime daemon (sensors, reset, validate, query)  |
 | libslash   | Raw SLASH QDMA backend for `validate --raw-transfer-test` |
+| slashkit   | Static-shell PDI path resolution for `write-static-shell` |
+| xsdb       | JTAG programming backend for `write-static-shell --jtag` |
 | qdma_nl.h  | Optional stock QDMA-driver backend (`SMI_ENABLE_QDMA_DRIVER_BACKEND=ON`) |
 
 ## Project layout
@@ -492,6 +522,7 @@ smi/
     inspect.cpp/hpp   Vbin metadata inspection and device query
     program.cpp/hpp   Device programming
     reset.cpp/hpp     Hardware reset via VRTD
+    write_static_shell.cpp/hpp  Static shell flash/JTAG programming
     validate.cpp/hpp  Memory integrity and bandwidth testing
     raw_transfer.hpp  Shared raw QDMA host mapping and transfer helpers
     qdma_driver_backend.cpp/hpp  Optional stock QDMA-driver validate backend
@@ -501,6 +532,8 @@ smi/
     debug/hotplug.cpp/hpp   PCIe hotplug debug command
     bdf.hpp           BDF address parser
     utils.hpp         Formatting and output utilities
+  resources/
+    versal_flash_pdi.tcl  JTAG PDI programming script installed with v80-smi
 ```
 
 ## License
