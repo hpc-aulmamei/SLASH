@@ -735,7 +735,7 @@ proc create_hier_cell_clk_rst_shell { parentCell nameHier } {
 
 
   # Create instance: build_id_hi, and set properties.
-  # Bits [30:0] = next 31 bits of the git SHA-1; bit [31] = dirty flag.
+  # Bits [27:0] = next 28 bits of the git SHA-1; bits [30:28] reserved; bit [31] = dirty flag.
   # Value injected at build time via ::build_id_hi.
   set build_id_hi [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 build_id_hi ]
   set_property -dict [list \

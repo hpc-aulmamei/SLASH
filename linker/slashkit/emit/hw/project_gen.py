@@ -224,9 +224,10 @@ def _compute_build_id_env() -> Dict[str, str]:
     Derive the shell build-ID constants from the git commit of the SLASH source
     tree and return them as environment variables consumed by create_project.tcl.
 
-    Encoding (63-bit hash + dirty), split across two 32-bit GPIO channels:
+    Encoding (60-bit hash + dirty), split across two 32-bit GPIO channels:
       - SLASH_BUILD_ID_LO = low 32 bits of the SHA-1
-      - SLASH_BUILD_ID_HI = next 31 bits in bits[30:0], dirty flag in bit[31]
+      - SLASH_BUILD_ID_HI = next 28 bits in bits[27:0], bits[30:28] reserved,
+        dirty flag in bit[31]
 
     Falls back to hash 0 with the dirty bit set when git information is
     unavailable (e.g. building from an exported tarball, not a git checkout).
@@ -255,7 +256,7 @@ def _compute_build_id_env() -> Dict[str, str]:
 
     sha_int = int(sha, 16)
     lo = sha_int & 0xFFFFFFFF
-    hi = (sha_int >> 32) & 0x7FFFFFFF
+    hi = (sha_int >> 32) & 0x0FFFFFFF
     if dirty:
         hi |= 0x80000000
 

@@ -58,7 +58,7 @@ BuildId readBuildId(const std::string& bdf) {
 
     BuildId id;
     id.lo = lo;
-    id.hiHash = hi & 0x7FFFFFFF;
+    id.hiHash = hi & 0x0FFFFFFF;
     id.dirty = (hi & 0x80000000u) != 0;
     return id;
 }
