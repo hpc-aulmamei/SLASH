@@ -39,6 +39,51 @@
 #include "reset.h"
 #include "utils.h"
 
+/**
+ * Progress callback for ami_prog_download_pdi().
+ *
+ * AMI runs this from an internal watcher thread for the duration of the PDI
+ * download.  @p data points at AMI's @ref ami_pdi_progress, whose
+ * @c bytes_to_write is pre-populated; on each successful event @p ctr carries
+ * the bytes covered by that event, which we accumulate into @c bytes_written
+ * (matching AMI's own reference handlers).
+ *
+ * The download runs for minutes with no other output, so we journal the
+ * completed percentage to give operators visibility via `journalctl -u vrtd`.
+ * To avoid flooding the journal we only emit a line when the completed
+ * percentage crosses the next 10% mark, using @c reserved (which AMI leaves
+ * for handler use) to carry the last-logged decile across calls.
+ */
+static void cfgmem_program_progress_handler(enum ami_event_status status, uint64_t ctr, void *data)
+{
+    struct ami_pdi_progress *prog = data;
+    if (prog == NULL) {
+        return;
+    }
+
+    if (status == AMI_EVENT_STATUS_OK) {
+        prog->bytes_written += (uint32_t)ctr;
+    }
+
+    if (prog->bytes_to_write == 0) {
+        return;
+    }
+
+    if (prog->bytes_written > prog->bytes_to_write) {
+        prog->bytes_written = prog->bytes_to_write;
+    }
+
+    unsigned int percent = (unsigned int)(((uint64_t)prog->bytes_written * 100ULL) / prog->bytes_to_write);
+    unsigned int decile = percent / 10u;
+    unsigned int last_decile = (unsigned int)prog->reserved;
+
+    if (decile > last_decile) {
+        prog->reserved = decile;
+        LOG(LOG_INFO, "cfgmem_program_with_ami: PDI download %u%% (%u/%u bytes)",
+            percent, (unsigned int)prog->bytes_written, (unsigned int)prog->bytes_to_write);
+    }
+}
+
 uint16_t cfgmem_program_with_ami(
     struct device *device,
     struct device_ptr_array *devices,
@@ -83,7 +128,8 @@ uint16_t cfgmem_program_with_ami(
     LOG(LOG_INFO, "cfgmem_program_with_ami: programming %s boot_device=%u partition=%u",
         pf0_bdf, (unsigned int)boot_device, (unsigned int)partition);
 
-    ret = ami_prog_download_pdi(ami_device, fd_path, boot_device, partition, NULL);
+    ret = ami_prog_download_pdi(ami_device, fd_path, boot_device, partition,
+        cfgmem_program_progress_handler);
     if (ret != AMI_STATUS_OK) {
         LOG(LOG_ERR, "cfgmem_program_with_ami: ami_prog_download_pdi(%s, partition=%u) failed: %s",
             pf0_bdf, (unsigned int)partition, ami_get_last_error());
