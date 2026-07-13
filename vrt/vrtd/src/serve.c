@@ -134,6 +134,7 @@
 #include "clock.h"
 #include "design_writer.h"
 #include "flash.h"
+#include "flash_worker.h"
 #include "hotplug.h"
 #include "reset.h"
 #include "serve.h"
@@ -156,6 +157,10 @@ static int client_handle_in(struct client *client);
 static int client_handle_out(struct client *client);
 static int client_handle_request(struct client *client);
 static int client_finalize_pending_design_write(struct client *client);
+static bool any_design_write_active(struct vrtd *state);
+static void client_deliver_cfgmem_result(struct client *client, uint16_t result);
+static int process_cfgmem_completion(struct vrtd *state);
+static int drain_deferred_requests(struct vrtd *state);
 static uint16_t client_handle_request_get_device_info(
     struct client *client,
     const struct vrtd_req_get_device_info *req_body,
@@ -596,8 +601,17 @@ int on_client_io(sd_event_source *s, int fd, uint32_t revents, void *user)
         PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to handle client input");
     }
 
-    /* Step 2: Dispatch the request synchronously (unless async design write). */
-    if (client->have_request && !client->have_response) {
+    /*
+     * Step 2: Dispatch the request synchronously (unless async design write).
+     *
+     * While a cfgmem program is running on the flash worker, its reset step
+     * mutates the shared device list, so we must not run any other handler
+     * that touches device state.  Leave the request queued (have_request stays
+     * set, EPOLLIN disarmed); on_event_deferred_work() drains it once the
+     * program completes.
+     */
+    if (client->have_request && !client->have_response &&
+        !client->state->cfgmem_program_in_progress) {
         ret = client_handle_request(client);
         PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to handle client request");
     }
@@ -655,6 +669,28 @@ int on_event_deferred_work(sd_event_source *s, uint64_t usec, void *user)
 
     ret = sd_event_source_set_enabled(s, SD_EVENT_ON);
     PROPAGATE_ERROR_SD_LOG(ret, LOG_ERR, "Failed to re-enable deferred work timer");
+
+    /*
+     * A cfgmem program holds the device list exclusively.  While one runs, poll
+     * only for its completion and keep every other client request deferred.
+     * When it finishes, drain the requests that queued up in the meantime.
+     * (Design-write finalization is skipped here because a design write can
+     * never be in flight alongside a cfgmem program -- see the busy checks in
+     * client_handle_request_cfgmem_program().)
+     */
+    if (state->cfgmem_program_in_progress) {
+        ret = process_cfgmem_completion(state);
+        PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to process cfgmem completion");
+
+        if (state->cfgmem_program_in_progress) {
+            return 0;
+        }
+
+        ret = drain_deferred_requests(state);
+        PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to drain deferred requests after cfgmem program");
+
+        return 0;
+    }
 
     /* Check each client for a completed async design write. */
     for (size_t i = 0; i < state->clients.len; i++) {
@@ -1201,12 +1237,12 @@ static int client_handle_request(struct client *client)
     }
 
     /*
-     * DESIGN_WRITE is asynchronous: the handler sets pending_design_write
-     * and the response will be prepared later by
-     * client_finalize_pending_design_write().  Do not transition the state
-     * machine yet.
+     * DESIGN_WRITE and CFGMEM_PROGRAM are asynchronous: the handler hands the
+     * work to a background worker and sets the corresponding pending flag.  The
+     * response is prepared later (by client_finalize_pending_design_write() or
+     * process_cfgmem_completion()), so do not transition the state machine yet.
      */
-    if (client->pending_design_write) {
+    if (client->pending_design_write || client->pending_cfgmem_program) {
         return 0;
     }
 
@@ -1321,6 +1357,162 @@ static int client_finalize_pending_design_write(struct client *client)
     client->have_new_response = true;
 
     return 1;
+}
+
+/* ---- Async cfgmem-program completion ------------------------------------ */
+
+/**
+ * Reports whether any bitstream design write is currently active.
+ *
+ * A design write is considered active if a writer thread is busy on any device
+ * or if any client is still awaiting an async design-write result.  Used to
+ * reject a cfgmem program that would otherwise race a design write on the
+ * shared device state.
+ *
+ * @param state  The daemon state.
+ * @return true if a design write is in flight, false otherwise.
+ */
+static bool any_design_write_active(struct vrtd *state)
+{
+    if (state == NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i < state->devices.len; i++) {
+        struct device *d = state->devices.d[i];
+        if (d != NULL && design_writer_is_busy(d->design_writer)) {
+            return true;
+        }
+    }
+
+    for (size_t i = 0; i < state->clients.len; i++) {
+        struct client *c = state->clients.d[i];
+        if (c != NULL && c->pending_design_write) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Prepares the deferred CFGMEM_PROGRAM response for a client and transitions
+ * its state machine so the response can be sent on the next I/O event.
+ *
+ * @param client  The client awaiting the cfgmem result.
+ * @param result  The VRTD_RET_* code produced by the flash worker.
+ */
+static void client_deliver_cfgmem_result(struct client *client, uint16_t result)
+{
+    struct vrtd_req_header *req_header = CLIENT_IN_HEADER(*client);
+    struct vrtd_resp_header *resp_header = CLIENT_OUT_HEADER(*client);
+    struct vrtd_resp_cfgmem_program *resp_body = CLIENT_OUT_BODY(*client, vrtd_resp_cfgmem_program);
+
+    resp_header->seqno = req_header->seqno;
+    resp_header->ret = result;
+    if (result == VRTD_RET_OK) {
+        resp_body->zero = 0;
+        resp_header->size = sizeof(*resp_body);
+    } else {
+        resp_header->size = 0;
+    }
+
+    client->pending_cfgmem_program = false;
+    client->have_request = false;
+    client->have_response = true;
+    client->have_new_response = true;
+
+    LOG(LOG_INFO, "Cfgmem program completed ret=%u uid=%u conn_id=%llu",
+        (unsigned int)result,
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+}
+
+/**
+ * Polls the flash worker for completion of an in-progress cfgmem program.
+ *
+ * If the worker is still running, this is a no-op and cfgmem_program_in_progress
+ * remains set.  On completion it clears the guard, delivers the response to the
+ * waiting client (if still connected), and re-arms that client's epoll events.
+ * The worker result is delivered regardless of client presence so the guard is
+ * always cleared -- e.g. if the requesting client disconnected mid-program.
+ *
+ * @param state  The daemon state.
+ * @return 0 on success, negative on fatal error.
+ */
+static int process_cfgmem_completion(struct vrtd *state)
+{
+    if (state->flash_worker == NULL) {
+        state->cfgmem_program_in_progress = false;
+        return 0;
+    }
+
+    bool done = false;
+    uint16_t result = 0;
+    int ret = flash_worker_poll_result(state->flash_worker, &done, &result);
+    if (ret != 0) {
+        done = true;
+        result = VRTD_RET_INTERNAL_ERROR;
+    }
+
+    if (!done) {
+        return 0;
+    }
+
+    state->cfgmem_program_in_progress = false;
+
+    for (size_t i = 0; i < state->clients.len; i++) {
+        struct client *client = state->clients.d[i];
+        if (client == NULL || !client->pending_cfgmem_program) {
+            continue;
+        }
+
+        client_deliver_cfgmem_result(client, result);
+
+        ret = client_update_wanted_epoll_events(client, client->event_source);
+        PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to update epoll after cfgmem completion");
+    }
+
+    return 0;
+}
+
+/**
+ * Dispatches requests that were queued while a cfgmem program held the device
+ * list exclusively.
+ *
+ * For each client with a fully-received request awaiting dispatch (and no async
+ * operation pending), runs the handler and re-arms its epoll events so the
+ * response is sent.  If a drained request starts a new cfgmem program, draining
+ * stops so the remaining requests stay queued until that program completes.
+ *
+ * @param state  The daemon state.
+ * @return 0 on success, negative on fatal error.
+ */
+static int drain_deferred_requests(struct vrtd *state)
+{
+    for (size_t i = 0; i < state->clients.len; i++) {
+        struct client *client = state->clients.d[i];
+        if (client == NULL) {
+            continue;
+        }
+        if (!client->have_request || client->have_response) {
+            continue;
+        }
+        if (client->pending_design_write || client->pending_cfgmem_program) {
+            continue;
+        }
+
+        int ret = client_handle_request(client);
+        PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to dispatch deferred request");
+
+        ret = client_update_wanted_epoll_events(client, client->event_source);
+        PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to update epoll for deferred dispatch");
+
+        if (state->cfgmem_program_in_progress) {
+            break;
+        }
+    }
+
+    return 0;
 }
 
 /* ======================================================================== */
@@ -1497,6 +1689,22 @@ static uint16_t client_handle_request_design_write(
  * The client sends a PDI file descriptor via SCM_RIGHTS.  The daemon programs
  * the requested AMI boot-device partition, selects that partition for boot, and
  * runs the vrtd-managed reset sequence.
+ *
+ * Programming is long-running (an AMI PDI download of minutes plus a
+ * tens-of-seconds reset), so it is offloaded to the flash worker thread rather
+ * than run inline: blocking the event loop for that long starves the systemd
+ * watchdog keepalive and gets vrtd killed.  This handler validates the request,
+ * hands the PDI fd and parameters to the worker, and enters the async-waiting
+ * state.  The deferred-work timer prepares the response once the worker
+ * finishes (see process_cfgmem_completion()).
+ *
+ * Only one cfgmem program may run at a time and it must not overlap a design
+ * write (both mutate device state), so the handler returns VRTD_RET_BUSY if
+ * either is already active.
+ *
+ * @return VRTD_RET_OK if the program was successfully submitted, VRTD_RET_BUSY
+ *         if a cfgmem program or design write is already active, or other
+ *         VRTD_RET_* codes on error.
  */
 static uint16_t client_handle_request_cfgmem_program(
     struct client *client,
@@ -1551,6 +1759,25 @@ static uint16_t client_handle_request_cfgmem_program(
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
+    /*
+     * A cfgmem program takes exclusive control of the device list during its
+     * reset step.  Refuse to start one if another is already running or if any
+     * design write is in flight -- letting them overlap would race on the
+     * shared device state.
+     */
+    if (client->state->cfgmem_program_in_progress) {
+        LOG(LOG_NOTICE, "cfgmem_program: another cfgmem program is already in progress");
+        return VRTD_RET_BUSY;
+    }
+    if (any_design_write_active(client->state)) {
+        LOG(LOG_NOTICE, "cfgmem_program: a design write is in progress");
+        return VRTD_RET_BUSY;
+    }
+    if (client->state->flash_worker == NULL) {
+        LOG(LOG_ERR, "cfgmem_program: flash worker unavailable");
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
     LOG(LOG_INFO, "Cfgmem program submitted dev=%u bdf=%s boot_device=%u partition=%u uid=%u conn_id=%llu",
         (unsigned int)req_body->dev_number,
         d->pci_info.bdf,
@@ -1559,19 +1786,38 @@ static uint16_t client_handle_request_cfgmem_program(
         (unsigned int)client->uid,
         (unsigned long long)client->conn_id);
 
-    uint16_t program_ret = cfgmem_program_with_ami(
+    /*
+     * Hand the PDI fd to the worker.  On success it owns the fd and will close
+     * it when done, so mark it consumed to stop client_handle_request() from
+     * closing it out from under the worker.
+     */
+    int submit_ret = flash_worker_submit_async(
+        client->state->flash_worker,
         d,
         &client->state->devices,
         client->in_fd,
         req_body->boot_device,
         req_body->partition
     );
-    if (program_ret != VRTD_RET_OK) {
-        return program_ret;
+    if (submit_ret != 0) {
+        LOG(LOG_NOTICE, "cfgmem_program: flash worker busy");
+        return VRTD_RET_BUSY;
     }
 
-    resp_body->zero = 0;
-    *resp_size = sizeof(*resp_body);
+    client->in_fd = -1;
+    client->have_in_fd = false;
+
+    /*
+     * Enter the async-waiting state.  client_handle_request() sees
+     * pending_cfgmem_program and skips the normal response path;
+     * cfgmem_program_in_progress makes the event loop defer every other
+     * request until the program completes.
+     */
+    client->pending_cfgmem_program = true;
+    client->state->cfgmem_program_in_progress = true;
+
+    (void) resp_body;
+    *resp_size = 0;
     return VRTD_RET_OK;
 }
 

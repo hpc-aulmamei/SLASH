@@ -90,6 +90,8 @@ struct client {
     bool pending_design_write;
     /** @brief The device on which the pending asynchronous design write is running (non-owning). */
     struct device *pending_design_write_device;
+    /** @brief True while an asynchronous cfgmem (flash) program is in progress for this client. */
+    bool pending_cfgmem_program;
 
     /** @brief Bitmask of epoll events currently requested for this client's fd. */
     uint32_t wanted_epoll_events;

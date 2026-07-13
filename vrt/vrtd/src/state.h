@@ -21,11 +21,14 @@
 #ifndef VRTD_STATE_H
 #define VRTD_STATE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "device.h"
 #include "config.h"
 #include "serve.h"
+
+struct flash_worker;
 
 struct vrtd {
     struct config *config;
@@ -34,6 +37,22 @@ struct vrtd {
     uint64_t next_conn_id;
 
     struct device_ptr_array devices;
+
+    /**
+     * @brief Background worker that runs cfgmem (flash) programming off the
+     * event-loop thread (owning, may be NULL).
+     */
+    struct flash_worker *flash_worker;
+
+    /**
+     * @brief True while a cfgmem program is running on @ref flash_worker.
+     *
+     * The cfgmem reset step mutates @ref devices, so while this is set the
+     * event loop defers dispatching every other client request (they stay
+     * queued until the program finishes).  This keeps the loop alive to feed
+     * the systemd watchdog without racing the worker on the device list.
+     */
+    bool cfgmem_program_in_progress;
 };
 
 #endif // VRTD_STATE_H
