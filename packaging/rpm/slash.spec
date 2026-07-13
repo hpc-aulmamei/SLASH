@@ -308,6 +308,7 @@ udevadm control --reload-rules && udevadm trigger 2>/dev/null || :
 
 %files -n v80-smi
 %{_bindir}/v80-smi
+%{_datadir}/v80-smi/versal_flash_pdi.tcl
 
 %files -n slashkit
 %{_bindir}/slashkit
