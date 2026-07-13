@@ -401,20 +401,22 @@ enum vrtd_device_hotplug_op {
     VRTD_DEVICE_HOTPLUG_OP_RESET_SEQUENCE = 4,
 };
 
+#define VRTD_DEVICE_HOTPLUG_FUNCTION_ALL UINT8_MAX
+
 /**
  * @brief Request a PCIe hotplug operation for a device.
  *
- * For board-level operations (RESCAN, RESET_SEQUENCE), only dev_number
- * and op are required; the function field is ignored.
+ * RESCAN is device-independent; dev_number and function are ignored.
+ * For RESET_SEQUENCE, function is ignored.
  *
- * For PF-level operations (REMOVE, TOGGLE_SBR, HOTPLUG), the function
- * field selects the PCI physical function (0-7).  These operations are
- * SLASH-agnostic shortcuts to the kernel hotplug interface.
+ * For REMOVE and HOTPLUG, function selects the PCI physical function (0-7)
+ * or VRTD_DEVICE_HOTPLUG_FUNCTION_ALL for all V80 PFs.  TOGGLE_SBR always
+ * requires a single PCI physical function (0-7).
  */
 struct vrtd_req_device_hotplug_op {
     uint32_t dev_number; ///< Device index (0-based).
     uint8_t op;          ///< One of vrtd_device_hotplug_op.
-    uint8_t function;    ///< PCI function number (0-7) for PF-level ops.
+    uint8_t function;    ///< PCI function number (0-7), or FUNCTION_ALL where allowed.
 } __attribute__((packed));
 
 struct vrtd_resp_device_hotplug_op {

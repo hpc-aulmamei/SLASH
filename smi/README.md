@@ -13,7 +13,7 @@ hardware, and validate memory integrity and bandwidth.
 | `program`  | Load a vbin file onto a V80 device                |
 | `reset`    | Hardware-reset a V80 board                        |
 | `validate` | Reset board and test memory integrity + bandwidth |
-| `debug`    | Low-level BAR, memory, and clock debug utilities   |
+| `debug`    | Low-level BAR, memory, clock, and hotplug debug utilities |
 
 ## Building
 
@@ -418,6 +418,45 @@ achieved_hz=300000000
 
 Requires a running VRTD daemon and clock permission in the user's role.
 
+### debug hotplug-op
+
+Perform low-level PCIe hotplug operations through the vrtd hotplug-op API.
+
+```
+v80-smi debug hotplug-op --op rescan
+v80-smi debug hotplug-op -d <BDF> --op <remove|hotplug> [--function <N>]
+v80-smi debug hotplug-op -d <BDF> --op toggle-sbr --function <N>
+```
+
+| Flag              | Description                                          |
+|-------------------|------------------------------------------------------|
+| `-d,--device`     | Board address, e.g. `03:00` or `0000:03:00`; required except for `rescan` |
+| `--op`            | Operation: `rescan`, `remove`, `toggle-sbr`, or `hotplug` |
+| `--function`      | PCI function number, range `0-7`; defaults to all PFs for `remove` and `hotplug`; required for `toggle-sbr` |
+
+Rules:
+
+- `rescan` is device-independent and rejects both `--device` and `--function`.
+- `remove` and `hotplug` default to all V80 PFs (PF0, PF1, PF2) so vrtd does not leave dangling PFs behind.
+- Passing `--function` to `remove` or `hotplug` targets only that PCI function.
+- `toggle-sbr` requires `--function` because it uses a single PF BDF to find the upstream bridge.
+- `reset-sequence` is not exposed here; use `v80-smi reset` for the full board reset flow.
+- `rescan` is unauthenticated in vrtd.
+- Other operations require `pcie-hotplug` permission in the user's vrtd role.
+
+Examples:
+
+```console
+$ v80-smi debug hotplug-op --op rescan
+hotplug_op=rescan
+
+$ v80-smi debug hotplug-op -d 03:00 --op remove
+hotplug_op=remove bdf=0000:03:00 function=all
+
+$ v80-smi debug hotplug-op -d 03:00 --op remove --function 2
+hotplug_op=remove bdf=0000:03:00 function=2
+```
+
 ## Device addressing
 
 All commands that accept a `-d,--device` option support four BDF
@@ -459,6 +498,7 @@ smi/
     debug/bar_poke.cpp/hpp  BAR read/write debug command
     debug/mem_poke.cpp/hpp  Raw device memory read/write command
     debug/clockwiz.cpp/hpp  Clock read/set debug command
+    debug/hotplug.cpp/hpp   PCIe hotplug debug command
     bdf.hpp           BDF address parser
     utils.hpp         Formatting and output utilities
 ```

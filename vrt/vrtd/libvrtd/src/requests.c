@@ -799,9 +799,9 @@ enum vrtd_ret vrtd_device_hotplug_op(
     return VRTD_RET_OK;
 }
 
-enum vrtd_ret vrtd_device_hotplug_rescan(int fd, uint32_t dev)
+enum vrtd_ret vrtd_device_hotplug_rescan(int fd)
 {
-    return vrtd_device_hotplug_op(fd, dev, VRTD_DEVICE_HOTPLUG_OP_RESCAN, 0);
+    return vrtd_device_hotplug_op(fd, 0, VRTD_DEVICE_HOTPLUG_OP_RESCAN, 0);
 }
 
 enum vrtd_ret vrtd_device_hotplug_remove(int fd, uint32_t dev, uint8_t function)

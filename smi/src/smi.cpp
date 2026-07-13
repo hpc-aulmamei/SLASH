@@ -36,6 +36,7 @@
 
 #include "debug/bar_poke.hpp"
 #include "debug/clockwiz.hpp"
+#include "debug/hotplug.hpp"
 #include "debug/mem_poke.hpp"
 #include "inspect.hpp"
 #include "list.hpp"
@@ -254,6 +255,20 @@ static int smiMain(int argc, char **argv) {
         "With -x: hexdump format (no 0x prefix); without -x: raw binary. "
         "In file mode -W and -c determine the byte count (-W * -c), not word alignment.");
 
+    auto* hotplugOpCommand = debugCommand->add_subcommand("hotplug-op",
+        "Perform a PCIe hotplug operation (rescan/remove/toggle-sbr/hotplug)");
+    Hotplug::Options hotplugOptions;
+    hotplugOpCommand->add_option("-d,--device", hotplugOptions.bdf,
+        "Board address (e.g. 03:00 or 0000:03:00), required except for rescan");
+    hotplugOpCommand->add_option("--op", hotplugOptions.opText,
+        "Hotplug operation: rescan, remove, toggle-sbr, or hotplug")->required();
+    hotplugOpCommand->add_option_function<uint32_t>("--function",
+        [&hotplugOptions](uint32_t value) {
+            hotplugOptions.function = static_cast<uint8_t>(value);
+        },
+        "PCI function number (0-7); defaults to all PFs for remove/hotplug")
+        ->check(CLI::Range(0u, 7u));
+
     CLI11_PARSE(app, argc, argv);
 
     // Route commands
@@ -277,6 +292,8 @@ static int smiMain(int argc, char **argv) {
         return Clockwiz::run(clockwizOptions);
     } else if (memPokeCommand->parsed()) {
         return MemPoke::run(memPokeOptions);
+    } else if (hotplugOpCommand->parsed()) {
+        return Hotplug::run(hotplugOptions);
     } else {
         // No subcommand given - print help and exit with error.
         std::cerr << app.help() << std::endl;

@@ -488,14 +488,16 @@ enum vrtd_ret vrtd_cfgmem_program_file(
 /**
  * @brief Perform a PCIe hotplug operation for a device.
  *
- * For board-level operations (RESCAN, RESET_SEQUENCE), @p function is ignored.
- * For PF-level operations (REMOVE, TOGGLE_SBR, HOTPLUG), @p function selects
- * the PCI physical function (0-7).
+ * For RESET_SEQUENCE, @p function is ignored. Use
+ * vrtd_device_hotplug_rescan() for device-independent bus rescan.
+ * For REMOVE and HOTPLUG, @p function selects the PCI physical function (0-7)
+ * or VRTD_DEVICE_HOTPLUG_FUNCTION_ALL for all V80 PFs. TOGGLE_SBR requires a
+ * single PCI physical function (0-7).
  *
  * @param fd       Connected vrtd socket file descriptor.
  * @param dev      Device index (0-based).
  * @param op       One of vrtd_device_hotplug_op.
- * @param function PCI function number (0-7) for PF-level ops.
+ * @param function PCI function number (0-7), or FUNCTION_ALL where allowed.
  *
  * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
  */
@@ -507,8 +509,7 @@ enum vrtd_ret vrtd_device_hotplug_op(
 );
 
 enum vrtd_ret vrtd_device_hotplug_rescan(
-    int fd,
-    uint32_t dev
+    int fd
 );
 
 enum vrtd_ret vrtd_device_hotplug_remove(

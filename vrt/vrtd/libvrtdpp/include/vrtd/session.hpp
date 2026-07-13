@@ -124,6 +124,16 @@ public:
     Device getDeviceByBdf(std::string_view bdf) const;
 
     /**
+     * @brief Trigger a PCI bus rescan.
+     *
+     * Rescan is a global hotplug operation. It does not target a specific
+     * vrtd device and does not require a Device handle.
+     *
+     * @throws vrtd::Error on error.
+     */
+    void hotplugRescan() const;
+
+    /**
      * @brief Query QDMA capabilities for a device.
      *
      * @param device Device for which to query QDMA info.
@@ -225,13 +235,15 @@ private:
     /**
      * @internal Perform a PCIe hotplug operation.
      *
-     * For board-level operations (Rescan, ResetSequence), @p function is ignored.
-     * For PF-level operations (Remove, ToggleSbr, Hotplug), @p function selects
-     * the PCI physical function (0-7).
+     * For ResetSequence, @p function is ignored. For Remove and Hotplug,
+     * @p function selects the PCI physical function (0-7) or
+     * HotplugFunctionAll for all V80 PFs. ToggleSbr requires a single PCI
+     * physical function (0-7). Use hotplugRescan() for device-independent
+     * bus rescan.
      *
      * @param device   Device target.
      * @param op       One of vrtd::HotplugOp.
-     * @param function PCI function number (0-7) for PF-level ops.
+     * @param function PCI function number (0-7), or HotplugFunctionAll where allowed.
      * @throws vrtd::Error on error.
      */
     void hotplugOp(const Device& device, HotplugOp op,

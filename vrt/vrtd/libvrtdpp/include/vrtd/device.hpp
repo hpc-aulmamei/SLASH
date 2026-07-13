@@ -48,6 +48,8 @@ enum class HotplugOp : uint8_t {
     ResetSequence = VRTD_DEVICE_HOTPLUG_OP_RESET_SEQUENCE,
 };
 
+inline constexpr uint8_t HotplugFunctionAll = VRTD_DEVICE_HOTPLUG_FUNCTION_ALL;
+
 /**
  * @brief A single sensor reading returned by Device::getSensorInfo().
  */
@@ -216,28 +218,22 @@ public:
     /**
      * @brief Perform a PCIe hotplug operation for this device.
      *
-     * For board-level operations (Rescan, ResetSequence), @p function is ignored.
-     * For PF-level operations (Remove, ToggleSbr, Hotplug), @p function selects
-     * the PCI physical function (0-7).
+     * For ResetSequence, @p function is ignored. For Remove and Hotplug,
+     * @p function selects the PCI physical function (0-7) or
+     * HotplugFunctionAll for all V80 PFs. ToggleSbr requires a single PCI
+     * physical function (0-7). Use Session::hotplugRescan() for bus rescan.
      *
      * @param op       One of HotplugOp.
-     * @param function PCI function number (0-7) for PF-level ops.
+     * @param function PCI function number (0-7), or HotplugFunctionAll where allowed.
      * @throws vrtd::Error on error.
      */
     void hotplugOp(HotplugOp op, uint8_t function = 0) const;
 
     /**
-     * @brief Convenience helper for bus rescan.
-     */
-    void hotplugRescan() const {
-        hotplugOp(HotplugOp::Rescan);
-    }
-
-    /**
      * @brief Convenience helper for remove.
-     * @param function PCI function number (0-7). Required.
+     * @param function PCI function number (0-7), or HotplugFunctionAll for all PFs.
      */
-    void hotplugRemove(uint8_t function) const {
+    void hotplugRemove(uint8_t function = HotplugFunctionAll) const {
         hotplugOp(HotplugOp::Remove, function);
     }
 
@@ -251,9 +247,9 @@ public:
 
     /**
      * @brief Convenience helper for a remove+rescan hotplug cycle.
-     * @param function PCI function number (0-7). Required.
+     * @param function PCI function number (0-7), or HotplugFunctionAll for all PFs.
      */
-    void hotplug(uint8_t function) const {
+    void hotplug(uint8_t function = HotplugFunctionAll) const {
         hotplugOp(HotplugOp::Hotplug, function);
     }
 

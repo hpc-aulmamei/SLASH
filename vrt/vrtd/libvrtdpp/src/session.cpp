@@ -378,6 +378,18 @@ void Session::hotplugOp(const Device& device, HotplugOp op,
     }
 }
 
+void Session::hotplugRescan() const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    auto ret = vrtd_device_hotplug_rescan(fd);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
 void Session::designWrite(const Device& device, int input_fd) const {
     if (isClosed()) {
         throw Error(VRTD_RET_BAD_LIB_CALL);

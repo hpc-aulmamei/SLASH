@@ -1585,11 +1585,14 @@ static uint16_t client_handle_request_cfgmem_program(
  *
  *   RESCAN         -- Triggers a PCI bus rescan (all devices) and refreshes
  *                     vrtd's discovered device list.
- *   REMOVE         -- Removes the device from the PCI bus and vrtd's tracked
- *                     device list.
+ *   REMOVE         -- Removes one PF, or all V80 PFs when function is
+ *                     VRTD_DEVICE_HOTPLUG_FUNCTION_ALL, then removes the
+ *                     board from vrtd's tracked device list.
  *   TOGGLE_SBR     -- Toggles Secondary Bus Reset on the device's upstream
  *                     bridge.
- *   HOTPLUG        -- Performs a full hotplug cycle (remove + SBR + rescan).
+ *   HOTPLUG        -- Performs a hotplug cycle (remove + rescan) for one PF,
+ *                     or all V80 PFs when function is
+ *                     VRTD_DEVICE_HOTPLUG_FUNCTION_ALL.
  *   RESET_SEQUENCE -- Performs a reset using the AMI-based reset flow
  *                     (reset_with_ami), which includes SBR, device removal,
  *                     rescan, and re-enumeration.
@@ -1674,6 +1677,59 @@ static uint16_t client_handle_request_device_hotplug_op(
     case VRTD_DEVICE_HOTPLUG_OP_REMOVE:
     case VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR:
     case VRTD_DEVICE_HOTPLUG_OP_HOTPLUG: {
+        if (req_body->function == VRTD_DEVICE_HOTPLUG_FUNCTION_ALL) {
+            if (req_body->op == VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR) {
+                LOG(LOG_ERR, "hotplug_op: toggle_sbr requires a specific function number");
+                return VRTD_RET_INVALID_ARGUMENT;
+            }
+
+            bool any_removed = false;
+            for (uint8_t func = 0; func < 3; func++) {
+                char pf_bdf[VRTD_PCI_BDF_LEN];
+                if (pci_bdf_set_function(d->pci_info.bdf, func, pf_bdf) != 0) {
+                    LOG(LOG_ERR, "hotplug_op: %s: failed to construct PF%u BDF from %s",
+                        vrtd_hotplug_op_to_string(req_body->op),
+                        (unsigned int)func, d->pci_info.bdf);
+                    return VRTD_RET_INTERNAL_ERROR;
+                }
+
+                ret = slash_hotplug_remove(g_hotplug, pf_bdf);
+                if (ret != 0 && errno != ENODEV) {
+                    int err = errno;
+                    LOG(LOG_WARNING, "hotplug_op: %s failed removing PF%u bdf=%s: %m",
+                        vrtd_hotplug_op_to_string(req_body->op),
+                        (unsigned int)func, pf_bdf);
+                    if (any_removed) {
+                        device_ptr_array_rm_by_reference(&client->state->devices, d);
+                        d = NULL;
+                    }
+                    return hotplug_errno_to_vrtd_ret(err);
+                }
+                any_removed = true;
+            }
+
+            device_ptr_array_rm_by_reference(&client->state->devices, d);
+            d = NULL;
+
+            if (req_body->op == VRTD_DEVICE_HOTPLUG_OP_HOTPLUG) {
+                ret = slash_hotplug_rescan(g_hotplug);
+                if (ret != 0) {
+                    LOG(LOG_WARNING, "hotplug_op: hotplug rescan failed: %m");
+                    return hotplug_errno_to_vrtd_ret(errno);
+                }
+
+                usleep(5000000);
+
+                ret = devices_discover_and_open(&client->state->devices);
+                if (ret != 0) {
+                    LOG(LOG_WARNING, "hotplug_op: failed to refresh devices after hotplug");
+                }
+            }
+
+            ret = 0;
+            break;
+        }
+
         /* Individual hotplug operations are PCI-function-level (the hotplug
          * interface is SLASH-agnostic).  Construct a full DDDD:BB:DD.F BDF
          * from the device's board-level address and the requested function. */
