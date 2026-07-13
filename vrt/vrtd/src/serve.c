@@ -1583,8 +1583,10 @@ static uint16_t client_handle_request_cfgmem_program(
  * Dispatches one of several PCIe topology-management operations on the
  * specified device:
  *
- *   RESCAN         -- Triggers a PCI bus rescan (all devices).
- *   REMOVE         -- Removes the device from the PCI bus.
+ *   RESCAN         -- Triggers a PCI bus rescan (all devices) and refreshes
+ *                     vrtd's discovered device list.
+ *   REMOVE         -- Removes the device from the PCI bus and vrtd's tracked
+ *                     device list.
  *   TOGGLE_SBR     -- Toggles Secondary Bus Reset on the device's upstream
  *                     bridge.
  *   HOTPLUG        -- Performs a full hotplug cycle (remove + SBR + rescan).
@@ -1592,8 +1594,9 @@ static uint16_t client_handle_request_cfgmem_program(
  *                     (reset_with_ami), which includes SBR, device removal,
  *                     rescan, and re-enumeration.
  *
- * Auth: auth_request_device_hotplug_op (typically requires elevated
- *       privileges, as these operations can disrupt other users).
+ * Auth: RESCAN is unauthenticated and ignores dev_number. Other operations use
+ *       auth_request_device_hotplug_op (typically requires elevated privileges,
+ *       as these operations can disrupt other users).
  * FD passing: none.
  *
  * Wire format:
@@ -1611,18 +1614,44 @@ static uint16_t client_handle_request_device_hotplug_op(
     uint16_t *resp_size
 )
 {
-    int ret = auth_request_device_hotplug_op(client, req_body);
-    if (ret == -1) {
-        return VRTD_RET_INTERNAL_ERROR;
-    } else if (ret == 0) {
-        return VRTD_RET_AUTH_ERROR;
-    }
-
     *resp_size = 0;
 
     if (req_size < sizeof(*req_body)) {
         LOG(LOG_WARNING, "hotplug_op: malformed request");
         return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->op == VRTD_DEVICE_HOTPLUG_OP_RESCAN) {
+        LOG(LOG_INFO, "Hotplug op=rescan(%u) uid=%u conn_id=%llu",
+            (unsigned int)req_body->op,
+            (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
+        int ret = slash_hotplug_rescan(g_hotplug);
+        if (ret != 0) {
+            LOG(LOG_WARNING, "hotplug_op: rescan failed: %m");
+            return hotplug_errno_to_vrtd_ret(errno);
+        }
+
+        /* Device nodes appear asynchronously after PCI rescan.
+         * TODO(vserbu): Move this wait and device discovery to a background
+         * thread so rescan does not block the daemon event loop. */
+        usleep(5000000);
+
+        ret = devices_discover_and_open(&client->state->devices);
+        if (ret != 0) {
+            LOG(LOG_WARNING, "hotplug_op: failed to refresh devices after rescan");
+        }
+
+        resp_body->zero = 0;
+        *resp_size = sizeof(*resp_body);
+        return VRTD_RET_OK;
+    }
+
+    int ret = auth_request_device_hotplug_op(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
     }
 
     if (req_body->dev_number >= client->state->devices.len) {
@@ -1642,9 +1671,6 @@ static uint16_t client_handle_request_device_hotplug_op(
         (unsigned int)client->uid, (unsigned long long)client->conn_id);
 
     switch (req_body->op) {
-    case VRTD_DEVICE_HOTPLUG_OP_RESCAN:
-        ret = slash_hotplug_rescan(g_hotplug);
-        break;
     case VRTD_DEVICE_HOTPLUG_OP_REMOVE:
     case VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR:
     case VRTD_DEVICE_HOTPLUG_OP_HOTPLUG: {
@@ -1669,6 +1695,10 @@ static uint16_t client_handle_request_device_hotplug_op(
         switch (req_body->op) {
         case VRTD_DEVICE_HOTPLUG_OP_REMOVE:
             ret = slash_hotplug_remove(g_hotplug, pf_bdf);
+            if (ret == 0) {
+                device_ptr_array_rm_by_reference(&client->state->devices, d);
+                d = NULL;
+            }
             break;
         case VRTD_DEVICE_HOTPLUG_OP_TOGGLE_SBR:
             ret = slash_hotplug_toggle_sbr(g_hotplug, pf_bdf);
