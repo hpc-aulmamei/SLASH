@@ -720,6 +720,60 @@ enum vrtd_ret vrtd_design_write_file(
     return ret;
 }
 
+enum vrtd_ret vrtd_cfgmem_program(
+    int fd,
+    uint32_t dev,
+    int input_fd,
+    uint8_t boot_device,
+    uint32_t partition
+)
+{
+    if (input_fd < 0) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    struct vrtd_req_cfgmem_program req = {
+        .dev_number = dev,
+        .boot_device = boot_device,
+        .reserved = {0},
+        .partition = partition,
+    };
+    struct vrtd_resp_cfgmem_program resp = {0};
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_CFGMEM_PROGRAM,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL, &input_fd);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    return VRTD_RET_OK;
+}
+
+enum vrtd_ret vrtd_cfgmem_program_file(
+    int fd,
+    uint32_t dev,
+    const char *path,
+    uint8_t boot_device,
+    uint32_t partition
+)
+{
+    if (path == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    int input_fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (input_fd < 0) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    enum vrtd_ret ret = vrtd_cfgmem_program(fd, dev, input_fd,
+                                            boot_device, partition);
+    (void) close(input_fd);
+    return ret;
+}
+
 enum vrtd_ret vrtd_device_hotplug_op(
     int fd,
     uint32_t dev,

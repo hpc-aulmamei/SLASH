@@ -256,6 +256,38 @@ private:
     void designWriteFile(const Device& device, std::string_view path) const;
 
     /**
+     * @internal Program a PDI into cfgmem using an input FD.
+     *
+     * @param device     Device to program.
+     * @param input_fd   Input PDI file descriptor.
+     * @param bootDevice AMI boot device selector.
+     * @param partition  Flash partition to program and boot.
+     * @throws vrtd::Error on error.
+     */
+    void cfgmemProgram(
+        const Device& device,
+        int input_fd,
+        uint8_t bootDevice,
+        uint32_t partition
+    ) const;
+
+    /**
+     * @internal Program a PDI into cfgmem using a file path.
+     *
+     * @param device     Device to program.
+     * @param path       Input PDI file path.
+     * @param bootDevice AMI boot device selector.
+     * @param partition  Flash partition to program and boot.
+     * @throws vrtd::Error on error.
+     */
+    void cfgmemProgramFile(
+        const Device& device,
+        std::string_view path,
+        uint8_t bootDevice,
+        uint32_t partition
+    ) const;
+
+    /**
      * @internal Get clock rate for a region.
      *
      * @param device Device owning the clock.

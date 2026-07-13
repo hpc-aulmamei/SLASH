@@ -1,6 +1,6 @@
 /**
  * The MIT License (MIT)
- * Copyright (c) 2025-2026 Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
  * and associated documentation files (the "Software"), to deal in the Software without restriction,
@@ -18,19 +18,20 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef VRTD_RESET_H
-#define VRTD_RESET_H
+#ifndef VRTD_FLASH_H
+#define VRTD_FLASH_H
 
 #include <stdint.h>
 
 struct device;
 struct device_ptr_array;
 
-uint16_t reset_with_ami(struct device *device, struct device_ptr_array *devices);
-uint16_t reset_with_ami_partition(
+uint16_t cfgmem_program_with_ami(
     struct device *device,
     struct device_ptr_array *devices,
+    int input_fd,
+    uint8_t boot_device,
     uint32_t partition
 );
 
-#endif /* VRTD_RESET_H */
+#endif /* VRTD_FLASH_H */

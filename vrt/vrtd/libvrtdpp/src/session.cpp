@@ -141,6 +141,12 @@ Device Session::getDevice(size_t i) const {
         [&](const Device& device, HotplugOp op, uint8_t function) { return hotplugOp(device, op, function); },
         [&](const Device& device, int input_fd) { return designWrite(device, input_fd); },
         [&](const Device& device, std::string_view path) { return designWriteFile(device, path); },
+        [&](const Device& device, int input_fd, uint8_t bootDevice, uint32_t partition) {
+            return cfgmemProgram(device, input_fd, bootDevice, partition);
+        },
+        [&](const Device& device, std::string_view path, uint8_t bootDevice, uint32_t partition) {
+            return cfgmemProgramFile(device, path, bootDevice, partition);
+        },
         [&](const Device& device, ClockRegion region) { return getClockRate(device, region); },
         [&](const Device& device, ClockRegion region, uint32_t rate_hz) { return setClockRate(device, region, rate_hz); },
         [&](const Device& device) { return getSensorInfo(device); }
@@ -206,6 +212,12 @@ Device Session::getDeviceByBdf(std::string_view bdf) const {
         [&](const Device& device, HotplugOp op, uint8_t function) { return hotplugOp(device, op, function); },
         [&](const Device& device, int input_fd) { return designWrite(device, input_fd); },
         [&](const Device& device, std::string_view path) { return designWriteFile(device, path); },
+        [&](const Device& device, int input_fd, uint8_t bootDevice, uint32_t partition) {
+            return cfgmemProgram(device, input_fd, bootDevice, partition);
+        },
+        [&](const Device& device, std::string_view path, uint8_t bootDevice, uint32_t partition) {
+            return cfgmemProgramFile(device, path, bootDevice, partition);
+        },
         [&](const Device& device, ClockRegion region) { return getClockRate(device, region); },
         [&](const Device& device, ClockRegion region, uint32_t rate_hz) { return setClockRate(device, region, rate_hz); },
         [&](const Device& device) { return getSensorInfo(device); }
@@ -386,6 +398,43 @@ void Session::designWriteFile(const Device& device, std::string_view path) const
 
     std::string path_str(path);
     auto ret = vrtd_design_write_file(fd, device.getNum(), path_str.c_str());
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
+void Session::cfgmemProgram(
+    const Device& device,
+    int input_fd,
+    uint8_t bootDevice,
+    uint32_t partition
+) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    auto ret = vrtd_cfgmem_program(fd, device.getNum(), input_fd,
+                                   bootDevice, partition);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
+void Session::cfgmemProgramFile(
+    const Device& device,
+    std::string_view path,
+    uint8_t bootDevice,
+    uint32_t partition
+) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    std::string path_str(path);
+    auto ret = vrtd_cfgmem_program_file(fd, device.getNum(), path_str.c_str(),
+                                        bootDevice, partition);
     if (ret != VRTD_RET_OK) {
         throw Error(ret);
     }

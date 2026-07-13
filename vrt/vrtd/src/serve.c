@@ -133,6 +133,7 @@
 #include "auth.h"
 #include "clock.h"
 #include "design_writer.h"
+#include "flash.h"
 #include "hotplug.h"
 #include "reset.h"
 #include "serve.h"
@@ -146,6 +147,7 @@
  * asynchronous design writes have completed.
  */
 #define VRTD_DEFERRED_WORK_INTERVAL_USEC (20ULL * 1000ULL)
+#define VRTD_CFGMEM_MAX_PARTITION 15
 
 /* ---- Forward declarations ------------------------------------------------ */
 
@@ -253,6 +255,13 @@ static uint16_t client_handle_request_design_write(
     struct vrtd_resp_design_write *resp_body,
     uint16_t *resp_size
 );
+static uint16_t client_handle_request_cfgmem_program(
+    struct client *client,
+    const struct vrtd_req_cfgmem_program *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_cfgmem_program *resp_body,
+    uint16_t *resp_size
+);
 static uint16_t client_handle_request_device_hotplug_op(
     struct client *client,
     const struct vrtd_req_device_hotplug_op *req_body,
@@ -300,11 +309,13 @@ static const char *vrtd_opcode_to_string(uint16_t opcode)
     case VRTD_REQ_QDMA_QPAIR_OP:    return "QDMA_QPAIR_OP";
     case VRTD_REQ_QDMA_QPAIR_GET_FD:return "QDMA_QPAIR_GET_FD";
     case VRTD_REQ_DESIGN_WRITE:      return "DESIGN_WRITE";
+    case VRTD_REQ_CFGMEM_PROGRAM:    return "CFGMEM_PROGRAM";
     case VRTD_REQ_CLOCK_OP:          return "CLOCK_OP";
     case VRTD_REQ_BUFFER_OPEN:       return "BUFFER_OPEN";
     case VRTD_REQ_BUFFER_CLOSE:      return "BUFFER_CLOSE";
     case VRTD_REQ_DEVICE_HOTPLUG_OP: return "DEVICE_HOTPLUG_OP";
     case VRTD_REQ_GET_SENSOR_INFO:   return "GET_SENSOR_INFO";
+    case VRTD_REQ_BUFFER_OPEN_RAW:   return "BUFFER_OPEN_RAW";
     default:                         return "UNKNOWN";
     }
 }
@@ -1138,6 +1149,16 @@ static int client_handle_request(struct client *client)
                 &size
             );
         break;
+    case VRTD_REQ_CFGMEM_PROGRAM:
+        resp_header->ret =
+            client_handle_request_cfgmem_program(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_cfgmem_program),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_cfgmem_program),
+                &size
+            );
+        break;
     case VRTD_REQ_CLOCK_OP:
         resp_header->ret =
             client_handle_request_clock_op(
@@ -1465,6 +1486,92 @@ static uint16_t client_handle_request_design_write(
         (unsigned int)client->uid, (unsigned long long)client->conn_id);
 
     *resp_size = 0;
+    return VRTD_RET_OK;
+}
+
+/* ---- CFGMEM_PROGRAM ----------------------------------------------------- */
+
+/**
+ * Handles VRTD_REQ_CFGMEM_PROGRAM -- programs cfgmem through AMI.
+ *
+ * The client sends a PDI file descriptor via SCM_RIGHTS.  The daemon programs
+ * the requested AMI boot-device partition, selects that partition for boot, and
+ * runs the vrtd-managed reset sequence.
+ */
+static uint16_t client_handle_request_cfgmem_program(
+    struct client *client,
+    const struct vrtd_req_cfgmem_program *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_cfgmem_program *resp_body,
+    uint16_t *resp_size
+)
+{
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "cfgmem_program: malformed request");
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    int ret = auth_request_cfgmem_program(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "cfgmem_program: device %u does not exist", (unsigned int)req_body->dev_number);
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL) {
+        LOG(LOG_NOTICE, "cfgmem_program: device %u is null", (unsigned int)req_body->dev_number);
+        return VRTD_RET_NOEXIST;
+    }
+
+    if (!client->have_in_fd || client->in_fd < 0) {
+        LOG(LOG_WARNING, "cfgmem_program: no input fd provided");
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    if (req_body->boot_device >= AMI_BOOT_DEVICES_MAX) {
+        LOG(LOG_WARNING, "cfgmem_program: invalid boot device %u", (unsigned int)req_body->boot_device);
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    if (req_body->partition > VRTD_CFGMEM_MAX_PARTITION) {
+        LOG(LOG_WARNING, "cfgmem_program: invalid partition %u", (unsigned int)req_body->partition);
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    if (req_body->reserved[0] != 0 || req_body->reserved[1] != 0 || req_body->reserved[2] != 0) {
+        LOG(LOG_WARNING, "cfgmem_program: reserved fields must be zero");
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    LOG(LOG_INFO, "Cfgmem program submitted dev=%u bdf=%s boot_device=%u partition=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number,
+        d->pci_info.bdf,
+        (unsigned int)req_body->boot_device,
+        (unsigned int)req_body->partition,
+        (unsigned int)client->uid,
+        (unsigned long long)client->conn_id);
+
+    uint16_t program_ret = cfgmem_program_with_ami(
+        d,
+        &client->state->devices,
+        client->in_fd,
+        req_body->boot_device,
+        req_body->partition
+    );
+    if (program_ret != VRTD_RET_OK) {
+        return program_ret;
+    }
+
+    resp_body->zero = 0;
+    *resp_size = sizeof(*resp_body);
     return VRTD_RET_OK;
 }
 

@@ -439,6 +439,53 @@ enum vrtd_ret vrtd_design_write_file(
 );
 
 /**
+ * @brief Program a PDI into cfgmem and reset into the programmed partition.
+ *
+ * The input FD is sent to the daemon via SCM_RIGHTS.  On success the daemon
+ * programs @p partition on @p boot_device through AMI, selects that partition,
+ * and performs the vrtd-managed reset sequence.
+ *
+ * @param fd          Connected vrtd socket file descriptor.
+ * @param dev         Device index (0-based).
+ * @param input_fd    Input PDI file descriptor to read from.
+ * @param boot_device AMI boot device selector.
+ * @param partition   Flash partition to program and boot.
+ *
+ * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
+ * @pre @p input_fd must be a valid, readable file descriptor.
+ */
+enum vrtd_ret vrtd_cfgmem_program(
+    int fd,
+    uint32_t dev,
+    int input_fd,
+    uint8_t boot_device,
+    uint32_t partition
+);
+
+/**
+ * @brief Open a PDI file and program it into cfgmem.
+ *
+ * Convenience helper that opens @p path read-only and passes the FD to the
+ * daemon via vrtd_cfgmem_program(). The FD is closed before returning.
+ *
+ * @param fd          Connected vrtd socket file descriptor.
+ * @param dev         Device index (0-based).
+ * @param path        Path to the PDI file to program.
+ * @param boot_device AMI boot device selector.
+ * @param partition   Flash partition to program and boot.
+ *
+ * @return #VRTD_RET_OK on success; otherwise a #vrtd_ret error code.
+ * @pre @p path must not be NULL.
+ */
+enum vrtd_ret vrtd_cfgmem_program_file(
+    int fd,
+    uint32_t dev,
+    const char *path,
+    uint8_t boot_device,
+    uint32_t partition
+);
+
+/**
  * @brief Perform a PCIe hotplug operation for a device.
  *
  * For board-level operations (RESCAN, RESET_SEQUENCE), @p function is ignored.

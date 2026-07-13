@@ -60,8 +60,8 @@
  *   2. Remove the device from vrtd's tracked device list (it is about to
  *      disappear from the bus).
  *   3. Open the AMI device on PF0, request access.
- *   4. Issue AMI_IOC_DEVICE_BOOT ioctl to tell the AMC firmware to boot
- *      from partition 0 on the next reset.
+ *   4. Issue AMI_IOC_DEVICE_BOOT ioctl to tell the AMC firmware which
+ *      partition to boot from on the next reset.
  *   5. Write a trigger value to BAR0 offset 0x1040000 to initiate the
  *      firmware-level reconfiguration.
  *      TODO(vserbu): explain what BAR0 register 0x1040000 controls in AMI
@@ -117,7 +117,11 @@
  *                 the newly-discovered device is added back.
  * @return VRTD_RET_OK on success, or a VRTD_RET_* error code on failure.
  */
-uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices)
+uint16_t reset_with_ami_partition(
+    struct device *device,
+    struct device_ptr_array *devices,
+    uint32_t partition
+)
 {
     /*
      * Step 1: Compute BDF (Bus:Device.Function) strings for all three PFs.
@@ -178,7 +182,7 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     }
 
     /*
-     * Step 4: Issue AMI_IOC_DEVICE_BOOT ioctl to select boot partition 0.
+     * Step 4: Issue AMI_IOC_DEVICE_BOOT ioctl to select the boot partition.
      *
      * We issue AMI_IOC_DEVICE_BOOT directly rather than calling
      * ami_prog_device_boot(), even though the latter is the intended public
@@ -209,7 +213,7 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
      */
     {
         struct ami_ioc_data_payload boot_payload = { 0 };
-        boot_payload.partition = 0;
+        boot_payload.partition = partition;
         boot_payload.cap_override = ami_device->cap_override;
 
         if (ami_open_cdev(ami_device) != AMI_STATUS_OK) {
@@ -226,7 +230,8 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
             return VRTD_RET_INTERNAL_ERROR;
         }
     }
-    LOG(LOG_INFO, "reset_with_ami: AMI_IOC_DEVICE_BOOT(%s) OK", pf0_bdf);
+    LOG(LOG_INFO, "reset_with_ami: AMI_IOC_DEVICE_BOOT(%s, partition=%u) OK",
+        pf0_bdf, (unsigned int)partition);
 
     /*
      * Step 5: Write a trigger value to BAR0 register at offset 0x1040000
@@ -388,4 +393,9 @@ uint16_t reset_with_ami(struct device *device, struct device_ptr_array  *devices
     }
 
     return VRTD_RET_OK;
+}
+
+uint16_t reset_with_ami(struct device *device, struct device_ptr_array *devices)
+{
+    return reset_with_ami_partition(device, devices, 0);
 }

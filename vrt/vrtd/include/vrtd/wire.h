@@ -109,6 +109,9 @@ enum vrtd_opcode {
 
     /** Open a raw buffer (QDMA qpair at caller-specified device address, bypassing allocator). */
     VRTD_REQ_BUFFER_OPEN_RAW,
+
+    /** Program a PDI into cfgmem via AMI and reset into the programmed partition. */
+    VRTD_REQ_CFGMEM_PROGRAM,
 };
 
 /**
@@ -369,6 +372,24 @@ struct vrtd_req_design_write {
 } __attribute__((packed));
 
 struct vrtd_resp_design_write {
+    uint8_t zero; ///< Placeholder; all data is carried via SCM_RIGHTS.
+} __attribute__((packed));
+
+/**
+ * @brief Request cfgmem programming through AMI.
+ *
+ * The PDI file descriptor is sent out-of-band via SCM_RIGHTS.  On success, the
+ * daemon programs @ref partition on @ref boot_device, selects that partition
+ * for boot, and performs the vrtd-managed reset sequence.
+ */
+struct vrtd_req_cfgmem_program {
+    uint32_t dev_number; ///< Device index (0-based).
+    uint8_t boot_device; ///< AMI boot device selector (primary/secondary).
+    uint8_t reserved[3]; ///< Reserved, must be zero.
+    uint32_t partition;  ///< Flash partition to program and boot.
+} __attribute__((packed));
+
+struct vrtd_resp_cfgmem_program {
     uint8_t zero; ///< Placeholder; all data is carried via SCM_RIGHTS.
 } __attribute__((packed));
 

@@ -276,6 +276,26 @@ public:
     void designWriteFile(std::string_view path) const;
 
     /**
+     * @brief Program a PDI into cfgmem and reset into the programmed partition.
+     *
+     * The daemon reads @p input_fd, programs @p partition on @p bootDevice
+     * through AMI, selects that partition for boot, and performs the vrtd-managed
+     * reset sequence.
+     *
+     * @throws vrtd::Error on error.
+     */
+    void cfgmemProgram(int input_fd, uint8_t bootDevice, uint32_t partition) const;
+
+    /**
+     * @brief Program a PDI file into cfgmem.
+     *
+     * Convenience helper that opens @p path and passes the FD to the daemon.
+     *
+     * @throws vrtd::Error on error.
+     */
+    void cfgmemProgramFile(std::string_view path, uint8_t bootDevice, uint32_t partition) const;
+
+    /**
      * @brief Get the clock rate for a region.
      *
      * @param region Clock region.
@@ -363,6 +383,8 @@ private:
            std::function<void(const Device&, HotplugOp, uint8_t)> fHotplugOp,
            std::function<void(const Device&, int)> fDesignWrite,
            std::function<void(const Device&, std::string_view)> fDesignWriteFile,
+           std::function<void(const Device&, int, uint8_t, uint32_t)> fCfgmemProgram,
+           std::function<void(const Device&, std::string_view, uint8_t, uint32_t)> fCfgmemProgramFile,
            std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate,
            std::function<uint32_t(const Device&, ClockRegion, uint32_t)> fSetClockRate,
            std::function<std::vector<SensorEntry>(const Device&)> fGetSensorInfo);
@@ -382,6 +404,8 @@ private:
     std::function<void(const Device&, HotplugOp, uint8_t)> fHotplugOp;
     std::function<void(const Device&, int)> fDesignWrite;
     std::function<void(const Device&, std::string_view)> fDesignWriteFile;
+    std::function<void(const Device&, int, uint8_t, uint32_t)> fCfgmemProgram;
+    std::function<void(const Device&, std::string_view, uint8_t, uint32_t)> fCfgmemProgramFile;
     std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate;
     std::function<uint32_t(const Device&, ClockRegion, uint32_t)> fSetClockRate;
     std::function<std::vector<SensorEntry>(const Device&)> fGetSensorInfo;
