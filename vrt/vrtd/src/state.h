@@ -53,6 +53,12 @@ struct vrtd {
      * the systemd watchdog without racing the worker on the device list.
      */
     bool cfgmem_program_in_progress;
+
+    /**
+     * @brief Client connection IDs whose buffer cleanup is deferred while a
+     * cfgmem program owns @ref devices from the worker thread.
+     */
+    struct uint64_array deferred_buffer_cleanup_conn_ids;
 };
 
 #endif // VRTD_STATE_H

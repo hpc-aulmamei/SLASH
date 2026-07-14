@@ -305,7 +305,9 @@ static uint16_t client_handle_request_get_sensor_info(
 );
 
 static uint16_t device_refresh_pf2_after_design_write(struct device *d);
+static void cleanup_buffers_for_conn_id(struct vrtd *state, uint64_t conn_id);
 static void cleanup_client_buffers(struct client *client);
+static void drain_deferred_buffer_cleanups(struct vrtd *state);
 
 /* ---- Helper: opcode / hotplug-op to human-readable string --------------- */
 
@@ -488,27 +490,42 @@ static uint16_t device_refresh_pf2_after_design_write(struct device *d)
 
 /* ---- Client cleanup ----------------------------------------------------- */
 
-/**
- * Releases all buffers owned by a disconnecting client.
- *
- * When a client disconnects (gracefully or not), any QDMA buffers it opened
- * via BUFFER_OPEN must be freed so that device memory is not leaked.  This
- * function iterates over all devices and removes buffers whose client_id
- * matches the disconnecting client's conn_id.
- *
- * @param client  The client being torn down.  May be NULL (no-op).
- */
-static void cleanup_client_buffers(struct client *client)
+/* Buffer cleanup can be deferred while cfgmem owns the device list. */
+static bool buffer_cleanup_is_deferred(struct vrtd *state, uint64_t conn_id)
 {
-    if (client == NULL || client->state == NULL || client->conn_id == 0) {
+    if (state == NULL || conn_id == 0) {
+        return false;
+    }
+
+    for (size_t i = 0; i < state->deferred_buffer_cleanup_conn_ids.len; i++) {
+        if (state->deferred_buffer_cleanup_conn_ids.d[i] == conn_id) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static int defer_buffer_cleanup(struct vrtd *state, uint64_t conn_id)
+{
+    if (state == NULL || conn_id == 0) {
+        return 0;
+    }
+    if (buffer_cleanup_is_deferred(state, conn_id)) {
+        return 0;
+    }
+
+    return uint64_array_push(&state->deferred_buffer_cleanup_conn_ids, conn_id);
+}
+
+static void cleanup_buffers_for_conn_id(struct vrtd *state, uint64_t conn_id)
+{
+    if (state == NULL || conn_id == 0) {
         return;
     }
 
-    LOG(LOG_DEBUG, "Cleaning up buffers for disconnecting client uid=%u conn_id=%llu",
-        (unsigned int)client->uid, (unsigned long long)client->conn_id);
-
-    for (size_t dev_idx = 0; dev_idx < client->state->devices.len; ++dev_idx) {
-        struct device *d = client->state->devices.d[dev_idx];
+    for (size_t dev_idx = 0; dev_idx < state->devices.len; ++dev_idx) {
+        struct device *d = state->devices.d[dev_idx];
         if (d == NULL) {
             continue;
         }
@@ -516,7 +533,7 @@ static void cleanup_client_buffers(struct client *client)
         size_t i = 0;
         while (i < d->buffers.len) {
             struct buffer *buf = d->buffers.d[i];
-            if (buf == NULL || buf->client_id != client->conn_id) {
+            if (buf == NULL || buf->client_id != conn_id) {
                 i++;
                 continue;
             }
@@ -529,6 +546,43 @@ static void cleanup_client_buffers(struct client *client)
             buffer_ptr_array_rm_by_reference(&d->buffers, buf);
         }
     }
+}
+
+static void cleanup_client_buffers(struct client *client)
+{
+    if (client == NULL || client->state == NULL || client->conn_id == 0) {
+        return;
+    }
+
+    LOG(LOG_DEBUG, "Cleaning up buffers for disconnecting client uid=%u conn_id=%llu",
+        (unsigned int)client->uid, (unsigned long long)client->conn_id);
+
+    if (client->state->cfgmem_program_in_progress) {
+        int ret = defer_buffer_cleanup(client->state, client->conn_id);
+        if (ret != 0) {
+            LOG(LOG_ERR, "Failed to defer buffer cleanup for conn_id=%llu while cfgmem is active",
+                (unsigned long long)client->conn_id);
+        }
+        return;
+    }
+
+    cleanup_buffers_for_conn_id(client->state, client->conn_id);
+}
+
+static void drain_deferred_buffer_cleanups(struct vrtd *state)
+{
+    if (state == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < state->deferred_buffer_cleanup_conn_ids.len; i++) {
+        uint64_t conn_id = state->deferred_buffer_cleanup_conn_ids.d[i];
+        LOG(LOG_DEBUG, "Draining deferred buffer cleanup for conn_id=%llu",
+            (unsigned long long)conn_id);
+        cleanup_buffers_for_conn_id(state, conn_id);
+    }
+
+    state->deferred_buffer_cleanup_conn_ids.len = 0;
 }
 
 /**
@@ -1507,6 +1561,7 @@ static int process_cfgmem_completion(struct vrtd *state)
     }
 
     state->cfgmem_program_in_progress = false;
+    drain_deferred_buffer_cleanups(state);
 
     for (size_t i = 0; i < state->clients.len; i++) {
         struct client *client = state->clients.d[i];

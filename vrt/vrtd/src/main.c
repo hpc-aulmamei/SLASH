@@ -163,6 +163,7 @@ int main(void)
 
     cleanup_flash_worker(state.flash_worker);
     state.flash_worker = NULL;
+    uint64_array_free(&state.deferred_buffer_cleanup_conn_ids);
 
     globals_destroy();
 
