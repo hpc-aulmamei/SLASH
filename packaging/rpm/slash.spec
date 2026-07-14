@@ -158,6 +158,7 @@ VRT Runtime (development files)
 Summary:        V80 System Management Interface
 Requires:       libvrt = %{version}-%{release}
 Requires:       libslash = %{version}-%{release}
+Requires:       slashkit = %{version}-%{release}
 
 %description -n v80-smi
 V80 System Management Interface
