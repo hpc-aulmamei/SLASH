@@ -115,6 +115,17 @@ std::string resolveStaticShellPdi(bool nofpt) {
     return path;
 }
 
+std::string resolvePdiPath(const WriteStaticShell::Options& options, bool nofpt) {
+    if (!options.pdiPath.empty()) {
+        if (!fileExists(options.pdiPath)) {
+            throw std::runtime_error("PDI path does not exist: " + options.pdiPath);
+        }
+        return options.pdiPath;
+    }
+
+    return resolveStaticShellPdi(nofpt);
+}
+
 std::string resolveVersalFlashTcl() {
     if (const char *overridePath = std::getenv("SMI_VERSAL_FLASH_TCL")) {
         if (overridePath[0] != '\0') {
@@ -191,7 +202,7 @@ void validateOptions(const WriteStaticShell::Options& options) {
 
 int runFlashMode(const WriteStaticShell::Options& options) {
     const std::string bdf = resolveBoardBdf(options.bdf, "write-static-shell");
-    const std::string pdiPath = resolveStaticShellPdi(false);
+    const std::string pdiPath = resolvePdiPath(options, false);
 
     vrtd::Session session;
     auto device = session.getDeviceByBdf(bdf);
@@ -220,7 +231,7 @@ void rethrowXsdbAndRescanErrors(std::exception_ptr xsdbError,
 }
 
 int runJtagMode(const WriteStaticShell::Options& options) {
-    const std::string pdiPath = resolveStaticShellPdi(true);
+    const std::string pdiPath = resolvePdiPath(options, true);
     const std::string tclPath = resolveVersalFlashTcl();
     if (!fileExists(tclPath)) {
         throw std::runtime_error("versal_flash_pdi.tcl path does not exist: " + tclPath);

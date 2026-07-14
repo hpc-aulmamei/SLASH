@@ -154,9 +154,9 @@ Write the installed static SLASH shell PDI to a V80 board.
 
 .. code-block:: text
 
-   v80-smi write-static-shell [--flash] -d <BDF>
-   v80-smi write-static-shell --jtag -d <BDF> [--bash-source <file> ...]
-   v80-smi write-static-shell --jtag --no-device [--bash-source <file> ...]
+   v80-smi write-static-shell [--flash] -d <BDF> [--pdi <file>]
+   v80-smi write-static-shell --jtag -d <BDF> [--pdi <file>] [--bash-source <file> ...]
+   v80-smi write-static-shell --jtag --no-device [--pdi <file>] [--bash-source <file> ...]
 
 Modes:
 
@@ -167,6 +167,9 @@ Modes:
 * ``--jtag`` resolves ``amd_v80_gen5x8_25.1_nofpt.pdi`` the same way,
   optionally sources Vivado/Vitis setup scripts, and runs ``xsdb`` with the
   installed ``versal_flash_pdi.tcl`` script.
+* ``--pdi`` bypasses static-shell path resolution for active development. The
+  file must match the selected mode: use a flash-image PDI with ``--flash`` and
+  a no-FPT/JTAG-bootable PDI with ``--jtag``.
 
 .. option:: --flash
 
@@ -181,6 +184,10 @@ Modes:
 
    Board address. Required except with ``--jtag --no-device``.
 
+.. option:: --pdi <file>
+
+   Use this PDI file instead of resolving the installed static shell PDI.
+
 .. option:: --no-device
 
    Skip the pre-JTAG PCIe device removal. Valid only with ``--jtag``. PCIe
@@ -193,9 +200,10 @@ Modes:
 
 In JTAG mode, ``v80-smi`` removes all V80 PCIe functions through VRTD unless
 ``--no-device`` is used, runs ``/bin/bash -c 'source ...; xsdb ...'`` with
-``PDI_PATH`` set to the no-FPT PDI, and always asks VRTD to rescan PCIe after
-the ``xsdb`` step completes. Since PDI resolution uses ``python3 -m slashkit``,
-setting ``PYTHONPATH`` can select an in-repo ``slashkit``.
+``PDI_PATH`` set to the selected PDI, and always asks VRTD to rescan PCIe after
+the ``xsdb`` step completes. Since default PDI resolution uses
+``python3 -m slashkit``, setting ``PYTHONPATH`` can select an in-repo
+``slashkit``.
 
 validate
 --------

@@ -38,6 +38,7 @@ public:
     struct Options {
         bool jtag = false;                  ///< Use JTAG/xsdb instead of cfgmem flash.
         std::string bdf;                    ///< Target board address, unless noDevice is set.
+        std::string pdiPath;                ///< Override PDI path for active development.
         bool noDevice = false;              ///< Skip pre-JTAG PCIe remove; JTAG mode only.
         std::vector<std::string> bashSources; ///< Environment setup scripts for JTAG mode.
     };

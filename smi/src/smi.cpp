@@ -123,6 +123,8 @@ static int smiMain(int argc, char **argv) {
     writeStaticShellJtagFlag->excludes(writeStaticShellFlashFlag);
     writeStaticShellCommand->add_option("-d,--device", writeStaticShellOptions.bdf,
         "Board address (e.g. 03:00 or 0000:03:00)");
+    writeStaticShellCommand->add_option("--pdi", writeStaticShellOptions.pdiPath,
+        "Use this PDI file instead of resolving the installed static shell PDI");
     writeStaticShellCommand->add_flag("--no-device", writeStaticShellOptions.noDevice,
         "Skip pre-JTAG PCIe device removal; only valid with --jtag");
     writeStaticShellCommand->add_option("--bash-source", writeStaticShellOptions.bashSources,

@@ -185,9 +185,9 @@ Write the installed static SLASH shell PDI to a V80 board.  The default
 The `--jtag` mode programs the no-FPT PDI over JTAG with `xsdb`.
 
 ```
-v80-smi write-static-shell --flash -d <BDF>
-v80-smi write-static-shell --jtag -d <BDF> [--bash-source <file> ...]
-v80-smi write-static-shell --jtag --no-device [--bash-source <file> ...]
+v80-smi write-static-shell --flash -d <BDF> [--pdi <file>]
+v80-smi write-static-shell --jtag -d <BDF> [--pdi <file>] [--bash-source <file> ...]
+v80-smi write-static-shell --jtag --no-device [--pdi <file>] [--bash-source <file> ...]
 ```
 
 | Flag              | Description                                          |
@@ -195,14 +195,17 @@ v80-smi write-static-shell --jtag --no-device [--bash-source <file> ...]
 | `--flash`         | Program the flash-image PDI via VRTD cfgmem programming (default) |
 | `--jtag`          | Program the no-FPT PDI over JTAG via `xsdb`          |
 | `-d,--device`     | Board address, required except with `--jtag --no-device` |
+| `--pdi`           | Use this PDI file instead of resolving the installed static shell PDI |
 | `--no-device`     | Skip the pre-JTAG PCIe device removal; valid only with `--jtag` |
 | `--bash-source`   | Source a Vivado/Vitis setup script before running `xsdb`; may be repeated and is valid only with `--jtag` |
 
 Both modes resolve their PDI path with `python3 -m slashkit static-shell-path`,
-so setting `PYTHONPATH` can select an in-repo `slashkit`.  JTAG mode removes the
-board's PCIe functions via VRTD unless `--no-device` is given, runs
-`/bin/bash -c 'source ...; xsdb ...'` with `PDI_PATH` set to the no-FPT PDI, and
-rescans PCIe through VRTD afterward.
+so setting `PYTHONPATH` can select an in-repo `slashkit`.  Use `--pdi` to bypass
+that resolution during active development; the file must match the selected
+mode (`--flash` expects a flash-image PDI, `--jtag` expects a no-FPT/JTAG-bootable
+PDI).  JTAG mode removes the board's PCIe functions via VRTD unless `--no-device`
+is given, runs `/bin/bash -c 'source ...; xsdb ...'` with `PDI_PATH` set to the
+selected PDI, and rescans PCIe through VRTD afterward.
 
 ### validate
 
