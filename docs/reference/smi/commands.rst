@@ -205,6 +205,10 @@ the ``xsdb`` step completes. Since default PDI resolution uses
 ``python3 -m slashkit``, setting ``PYTHONPATH`` can select an in-repo
 ``slashkit``.
 
+Progress is printed to stderr. Flash mode polls VRTD for cfgmem job status and
+prints phase changes plus interval-based PDI download progress. JTAG mode prints
+local stages such as PCIe removal, ``xsdb`` execution, and PCIe rescan.
+
 validate
 --------
 

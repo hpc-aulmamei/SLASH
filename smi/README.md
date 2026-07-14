@@ -207,6 +207,10 @@ PDI).  JTAG mode removes the board's PCIe functions via VRTD unless `--no-device
 is given, runs `/bin/bash -c 'source ...; xsdb ...'` with `PDI_PATH` set to the
 selected PDI, and rescans PCIe through VRTD afterward.
 
+The command prints progress to stderr.  Flash mode reports VRTD cfgmem phases
+and interval-based PDI download progress, while JTAG mode reports local stages
+such as PCIe removal, `xsdb`, and PCIe rescan.
+
 ### validate
 
 Optionally reset a board, then test HBM and DDR memory for data integrity and

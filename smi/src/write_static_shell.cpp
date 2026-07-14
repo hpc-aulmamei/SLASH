@@ -25,11 +25,13 @@
 
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <fstream>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <sys/wait.h>
@@ -47,6 +49,78 @@ namespace {
 
 constexpr uint8_t StaticShellBootDevice = 0;
 constexpr uint32_t StaticShellPartition = 0;
+
+const char* cfgmemPhaseName(vrtd::CfgmemProgramPhase phase) {
+    switch (phase) {
+    case vrtd::CfgmemProgramPhase::Queued:
+        return "Queued";
+    case vrtd::CfgmemProgramPhase::OpeningAmi:
+        return "Opening AMI device";
+    case vrtd::CfgmemProgramPhase::DownloadingPdi:
+        return "Downloading PDI";
+    case vrtd::CfgmemProgramPhase::SelectingPartition:
+        return "Selecting boot partition";
+    case vrtd::CfgmemProgramPhase::ResetPreparing:
+        return "Preparing reset";
+    case vrtd::CfgmemProgramPhase::RemovingPcie:
+        return "Removing PCIe functions";
+    case vrtd::CfgmemProgramPhase::TogglingSbr:
+        return "Toggling secondary bus reset";
+    case vrtd::CfgmemProgramPhase::RescanningPcie:
+        return "Rescanning PCIe";
+    case vrtd::CfgmemProgramPhase::RediscoveringDevice:
+        return "Rediscovering device";
+    case vrtd::CfgmemProgramPhase::Done:
+        return "Done";
+    case vrtd::CfgmemProgramPhase::Failed:
+        return "Failed";
+    }
+
+    return "Unknown";
+}
+
+class StatusReporter {
+public:
+    void stage(const std::string& message) const {
+        std::cerr << message << "...\n";
+    }
+
+    void progress(const vrtd::CfgmemProgramStatus& status) {
+        const uint32_t percent = status.bytesTotal == 0 ? 0 :
+            static_cast<uint32_t>((status.bytesWritten * 100ULL) / status.bytesTotal);
+
+        if (status.phase == lastPhase &&
+            percent == lastPercent &&
+            status.state == lastState) {
+            return;
+        }
+
+        lastPhase = status.phase;
+        lastPercent = percent;
+        lastState = status.state;
+
+        std::cerr << cfgmemPhaseName(status.phase);
+        if (status.phase == vrtd::CfgmemProgramPhase::DownloadingPdi) {
+            std::cerr << ": " << percent << "%";
+            if (status.bytesTotal != 0) {
+                std::cerr << " (" << status.bytesWritten << "/" << status.bytesTotal << " bytes)";
+            }
+        }
+        std::cerr << '\n';
+    }
+
+    void done(const std::string& message) const {
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+        const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
+        std::cerr << message << " (" << seconds << "s)\n";
+    }
+
+private:
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    vrtd::CfgmemProgramPhase lastPhase = vrtd::CfgmemProgramPhase::Queued;
+    uint32_t lastPercent = UINT32_MAX;
+    vrtd::CfgmemProgramState lastState = vrtd::CfgmemProgramState::Queued;
+};
 
 bool fileExists(const std::string& path) {
     std::ifstream f(path);
@@ -201,12 +275,27 @@ void validateOptions(const WriteStaticShell::Options& options) {
 }
 
 int runFlashMode(const WriteStaticShell::Options& options) {
+    StatusReporter reporter;
+    reporter.stage("Resolving device address");
     const std::string bdf = resolveBoardBdf(options.bdf, "write-static-shell");
+    reporter.stage("Resolving PDI path");
     const std::string pdiPath = resolvePdiPath(options, false);
 
+    reporter.stage("Connecting to VRTD");
     vrtd::Session session;
+    reporter.stage("Resolving VRTD device");
     auto device = session.getDeviceByBdf(bdf);
-    device.cfgmemProgramFile(pdiPath, StaticShellBootDevice, StaticShellPartition);
+    reporter.stage("Submitting flash program");
+    session.cfgmemProgramFileProgress(
+        device,
+        pdiPath,
+        StaticShellBootDevice,
+        StaticShellPartition,
+        [&](const vrtd::CfgmemProgramStatus& status) {
+            reporter.progress(status);
+        }
+    );
+    reporter.done("Flash programming complete");
 
     return 0;
 }
@@ -231,21 +320,29 @@ void rethrowXsdbAndRescanErrors(std::exception_ptr xsdbError,
 }
 
 int runJtagMode(const WriteStaticShell::Options& options) {
+    StatusReporter reporter;
+    reporter.stage("Resolving PDI path");
     const std::string pdiPath = resolvePdiPath(options, true);
+    reporter.stage("Resolving xsdb Tcl script");
     const std::string tclPath = resolveVersalFlashTcl();
     if (!fileExists(tclPath)) {
         throw std::runtime_error("versal_flash_pdi.tcl path does not exist: " + tclPath);
     }
 
+    reporter.stage("Connecting to VRTD");
     vrtd::Session session;
     if (!options.noDevice) {
+        reporter.stage("Resolving device address");
         const std::string bdf = resolveBoardBdf(options.bdf, "write-static-shell");
+        reporter.stage("Resolving VRTD device");
         auto device = session.getDeviceByBdf(bdf);
+        reporter.stage("Removing PCIe functions");
         device.hotplugOp(vrtd::HotplugOp::Remove, vrtd::HotplugFunctionAll);
     }
 
     std::exception_ptr xsdbError;
     try {
+        reporter.stage("Running xsdb");
         runBashCommandWithPdiPath(
             buildXsdbCommand(options.bashSources, tclPath), pdiPath);
     } catch (...) {
@@ -253,6 +350,7 @@ int runJtagMode(const WriteStaticShell::Options& options) {
     }
 
     try {
+        reporter.stage("Rescanning PCIe");
         session.hotplugRescan();
     } catch (const std::exception& e) {
         rethrowXsdbAndRescanErrors(xsdbError, e);
@@ -262,6 +360,7 @@ int runJtagMode(const WriteStaticShell::Options& options) {
         std::rethrow_exception(xsdbError);
     }
 
+    reporter.done("JTAG programming complete");
     return 0;
 }
 
