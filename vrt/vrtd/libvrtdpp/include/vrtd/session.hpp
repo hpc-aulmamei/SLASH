@@ -29,12 +29,46 @@
 #include <vrtd/buffer.hpp>
 #include <vrtd/qdma_qpair.hpp>
 
+#include <functional>
 #include <mutex>
 #include <memory>
+#include <string>
 #include <string_view>
 
 namespace vrtd {
 
+enum class CfgmemProgramState : uint32_t {
+    Queued = VRTD_CFGMEM_PROGRAM_STATE_QUEUED,
+    Running = VRTD_CFGMEM_PROGRAM_STATE_RUNNING,
+    Done = VRTD_CFGMEM_PROGRAM_STATE_DONE,
+    Failed = VRTD_CFGMEM_PROGRAM_STATE_FAILED,
+};
+
+enum class CfgmemProgramPhase : uint32_t {
+    Queued = VRTD_CFGMEM_PROGRAM_PHASE_QUEUED,
+    OpeningAmi = VRTD_CFGMEM_PROGRAM_PHASE_OPENING_AMI,
+    DownloadingPdi = VRTD_CFGMEM_PROGRAM_PHASE_DOWNLOADING_PDI,
+    SelectingPartition = VRTD_CFGMEM_PROGRAM_PHASE_SELECTING_PARTITION,
+    ResetPreparing = VRTD_CFGMEM_PROGRAM_PHASE_RESET_PREPARING,
+    RemovingPcie = VRTD_CFGMEM_PROGRAM_PHASE_REMOVING_PCIE,
+    TogglingSbr = VRTD_CFGMEM_PROGRAM_PHASE_TOGGLING_SBR,
+    RescanningPcie = VRTD_CFGMEM_PROGRAM_PHASE_RESCANNING_PCIE,
+    RediscoveringDevice = VRTD_CFGMEM_PROGRAM_PHASE_REDISCOVERING_DEVICE,
+    Done = VRTD_CFGMEM_PROGRAM_PHASE_DONE,
+    Failed = VRTD_CFGMEM_PROGRAM_PHASE_FAILED,
+};
+
+struct CfgmemProgramStatus {
+    uint64_t jobId = 0;
+    CfgmemProgramState state = CfgmemProgramState::Queued;
+    CfgmemProgramPhase phase = CfgmemProgramPhase::Queued;
+    uint64_t bytesWritten = 0;
+    uint64_t bytesTotal = 0;
+    uint64_t elapsedMsec = 0;
+    enum vrtd_ret result = VRTD_RET_OK;
+};
+
+using CfgmemProgressCallback = std::function<void(const CfgmemProgramStatus&)>;
 
 /**
  * @brief Owning session/connection to the V Runtime Daemon (vrtd).
@@ -132,6 +166,24 @@ public:
      * @throws vrtd::Error on error.
      */
     void hotplugRescan() const;
+
+    uint64_t cfgmemProgramStart(
+        const Device& device,
+        int input_fd,
+        uint8_t bootDevice,
+        uint32_t partition
+    ) const;
+
+    CfgmemProgramStatus cfgmemProgramStatus(uint64_t jobId) const;
+
+    void cfgmemProgramFileProgress(
+        const Device& device,
+        std::string_view path,
+        uint8_t bootDevice,
+        uint32_t partition,
+        CfgmemProgressCallback progressCallback,
+        uint64_t pollIntervalMsec = 10000
+    ) const;
 
     /**
      * @brief Query QDMA capabilities for a device.

@@ -26,12 +26,21 @@
 struct device;
 struct device_ptr_array;
 
+typedef void (*cfgmem_progress_callback)(
+    void *ctx,
+    uint32_t phase,
+    uint64_t bytes_written,
+    uint64_t bytes_total
+);
+
 uint16_t cfgmem_program_with_ami(
     struct device *device,
     struct device_ptr_array *devices,
     int input_fd,
     uint8_t boot_device,
-    uint32_t partition
+    uint32_t partition,
+    cfgmem_progress_callback progress_cb,
+    void *progress_ctx
 );
 
 #endif /* VRTD_FLASH_H */

@@ -52,6 +52,33 @@
 
 namespace vrtd {
 
+namespace {
+
+CfgmemProgramStatus convertCfgmemStatus(const struct vrtd_cfgmem_program_status& raw) {
+    CfgmemProgramStatus status;
+    status.jobId = raw.job_id;
+    status.state = static_cast<CfgmemProgramState>(raw.state);
+    status.phase = static_cast<CfgmemProgramPhase>(raw.phase);
+    status.bytesWritten = raw.bytes_written;
+    status.bytesTotal = raw.bytes_total;
+    status.elapsedMsec = raw.elapsed_msec;
+    status.result = static_cast<enum vrtd_ret>(raw.result);
+    return status;
+}
+
+void cfgmemProgressThunk(const struct vrtd_cfgmem_program_status *raw, void *ctx) {
+    if (raw == nullptr || ctx == nullptr) {
+        return;
+    }
+
+    auto *callback = static_cast<CfgmemProgressCallback *>(ctx);
+    if (*callback) {
+        (*callback)(convertCfgmemStatus(*raw));
+    }
+}
+
+} // namespace
+
 Session::Session(const char *socketPath)
 : m(std::make_unique<std::mutex>()) {
     fd = vrtd_connect(socketPath);
@@ -385,6 +412,71 @@ void Session::hotplugRescan() const {
     std::lock_guard<std::mutex> lk(*m);
 
     auto ret = vrtd_device_hotplug_rescan(fd);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
+uint64_t Session::cfgmemProgramStart(
+    const Device& device,
+    int input_fd,
+    uint8_t bootDevice,
+    uint32_t partition
+) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    uint64_t jobId = 0;
+    auto ret = vrtd_cfgmem_program_start(fd, device.getNum(), input_fd,
+                                         bootDevice, partition, &jobId);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    return jobId;
+}
+
+CfgmemProgramStatus Session::cfgmemProgramStatus(uint64_t jobId) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    struct vrtd_cfgmem_program_status raw = {};
+    auto ret = vrtd_cfgmem_program_status(fd, jobId, &raw);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+
+    return convertCfgmemStatus(raw);
+}
+
+void Session::cfgmemProgramFileProgress(
+    const Device& device,
+    std::string_view path,
+    uint8_t bootDevice,
+    uint32_t partition,
+    CfgmemProgressCallback progressCallback,
+    uint64_t pollIntervalMsec
+) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    std::string path_str(path);
+    auto ret = vrtd_cfgmem_program_file_progress(
+        fd,
+        device.getNum(),
+        path_str.c_str(),
+        bootDevice,
+        partition,
+        pollIntervalMsec,
+        cfgmemProgressThunk,
+        &progressCallback
+    );
     if (ret != VRTD_RET_OK) {
         throw Error(ret);
     }

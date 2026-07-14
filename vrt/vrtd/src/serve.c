@@ -158,6 +158,7 @@ static int client_handle_out(struct client *client);
 static int client_handle_request(struct client *client);
 static int client_finalize_pending_design_write(struct client *client);
 static bool any_design_write_active(struct vrtd *state);
+static bool client_request_is_cfgmem_status(struct client *client);
 static void client_deliver_cfgmem_result(struct client *client, uint16_t result);
 static int process_cfgmem_completion(struct vrtd *state);
 static int drain_deferred_requests(struct vrtd *state);
@@ -267,6 +268,20 @@ static uint16_t client_handle_request_cfgmem_program(
     struct vrtd_resp_cfgmem_program *resp_body,
     uint16_t *resp_size
 );
+static uint16_t client_handle_request_cfgmem_program_start(
+    struct client *client,
+    const struct vrtd_req_cfgmem_program_start *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_cfgmem_program_start *resp_body,
+    uint16_t *resp_size
+);
+static uint16_t client_handle_request_cfgmem_program_status(
+    struct client *client,
+    const struct vrtd_req_cfgmem_program_status *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_cfgmem_program_status *resp_body,
+    uint16_t *resp_size
+);
 static uint16_t client_handle_request_device_hotplug_op(
     struct client *client,
     const struct vrtd_req_device_hotplug_op *req_body,
@@ -315,6 +330,8 @@ static const char *vrtd_opcode_to_string(uint16_t opcode)
     case VRTD_REQ_QDMA_QPAIR_GET_FD:return "QDMA_QPAIR_GET_FD";
     case VRTD_REQ_DESIGN_WRITE:      return "DESIGN_WRITE";
     case VRTD_REQ_CFGMEM_PROGRAM:    return "CFGMEM_PROGRAM";
+    case VRTD_REQ_CFGMEM_PROGRAM_START: return "CFGMEM_PROGRAM_START";
+    case VRTD_REQ_CFGMEM_PROGRAM_STATUS: return "CFGMEM_PROGRAM_STATUS";
     case VRTD_REQ_CLOCK_OP:          return "CLOCK_OP";
     case VRTD_REQ_BUFFER_OPEN:       return "BUFFER_OPEN";
     case VRTD_REQ_BUFFER_CLOSE:      return "BUFFER_CLOSE";
@@ -611,7 +628,8 @@ int on_client_io(sd_event_source *s, int fd, uint32_t revents, void *user)
      * program completes.
      */
     if (client->have_request && !client->have_response &&
-        !client->state->cfgmem_program_in_progress) {
+        (!client->state->cfgmem_program_in_progress ||
+         client_request_is_cfgmem_status(client))) {
         ret = client_handle_request(client);
         PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to handle client request");
     }
@@ -1195,6 +1213,26 @@ static int client_handle_request(struct client *client)
                 &size
             );
         break;
+    case VRTD_REQ_CFGMEM_PROGRAM_START:
+        resp_header->ret =
+            client_handle_request_cfgmem_program_start(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_cfgmem_program_start),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_cfgmem_program_start),
+                &size
+            );
+        break;
+    case VRTD_REQ_CFGMEM_PROGRAM_STATUS:
+        resp_header->ret =
+            client_handle_request_cfgmem_program_status(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_cfgmem_program_status),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_cfgmem_program_status),
+                &size
+            );
+        break;
     case VRTD_REQ_CLOCK_OP:
         resp_header->ret =
             client_handle_request_clock_op(
@@ -1393,6 +1431,16 @@ static bool any_design_write_active(struct vrtd *state)
     }
 
     return false;
+}
+
+static bool client_request_is_cfgmem_status(struct client *client)
+{
+    if (client == NULL || !client->have_request) {
+        return false;
+    }
+
+    struct vrtd_req_header *req_header = CLIENT_IN_HEADER(*client);
+    return req_header->opcode == VRTD_REQ_CFGMEM_PROGRAM_STATUS;
 }
 
 /**
@@ -1683,59 +1731,37 @@ static uint16_t client_handle_request_design_write(
 
 /* ---- CFGMEM_PROGRAM ----------------------------------------------------- */
 
-/**
- * Handles VRTD_REQ_CFGMEM_PROGRAM -- programs cfgmem through AMI.
- *
- * The client sends a PDI file descriptor via SCM_RIGHTS.  The daemon programs
- * the requested AMI boot-device partition, selects that partition for boot, and
- * runs the vrtd-managed reset sequence.
- *
- * Programming is long-running (an AMI PDI download of minutes plus a
- * tens-of-seconds reset), so it is offloaded to the flash worker thread rather
- * than run inline: blocking the event loop for that long starves the systemd
- * watchdog keepalive and gets vrtd killed.  This handler validates the request,
- * hands the PDI fd and parameters to the worker, and enters the async-waiting
- * state.  The deferred-work timer prepares the response once the worker
- * finishes (see process_cfgmem_completion()).
- *
- * Only one cfgmem program may run at a time and it must not overlap a design
- * write (both mutate device state), so the handler returns VRTD_RET_BUSY if
- * either is already active.
- *
- * @return VRTD_RET_OK if the program was successfully submitted, VRTD_RET_BUSY
- *         if a cfgmem program or design write is already active, or other
- *         VRTD_RET_* codes on error.
- */
-static uint16_t client_handle_request_cfgmem_program(
+static uint16_t client_submit_cfgmem_program(
     struct client *client,
-    const struct vrtd_req_cfgmem_program *req_body,
-    uint16_t req_size,
-    struct vrtd_resp_cfgmem_program *resp_body,
-    uint16_t *resp_size
+    uint32_t dev_number,
+    uint8_t boot_device,
+    const uint8_t reserved[3],
+    uint32_t partition,
+    uint64_t *job_id_out
 )
 {
-    *resp_size = 0;
+    struct vrtd_req_cfgmem_program auth_req = {
+        .dev_number = dev_number,
+        .boot_device = boot_device,
+        .reserved = { reserved[0], reserved[1], reserved[2] },
+        .partition = partition,
+    };
 
-    if (req_size < sizeof(*req_body)) {
-        LOG(LOG_WARNING, "cfgmem_program: malformed request");
-        return VRTD_RET_BAD_REQUEST;
-    }
-
-    int ret = auth_request_cfgmem_program(client, req_body);
+    int ret = auth_request_cfgmem_program(client, &auth_req);
     if (ret == -1) {
         return VRTD_RET_INTERNAL_ERROR;
     } else if (ret == 0) {
         return VRTD_RET_AUTH_ERROR;
     }
 
-    if (req_body->dev_number >= client->state->devices.len) {
-        LOG(LOG_NOTICE, "cfgmem_program: device %u does not exist", (unsigned int)req_body->dev_number);
+    if (dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "cfgmem_program: device %u does not exist", (unsigned int)dev_number);
         return VRTD_RET_NOEXIST;
     }
 
-    struct device *d = client->state->devices.d[req_body->dev_number];
+    struct device *d = client->state->devices.d[dev_number];
     if (d == NULL) {
-        LOG(LOG_NOTICE, "cfgmem_program: device %u is null", (unsigned int)req_body->dev_number);
+        LOG(LOG_NOTICE, "cfgmem_program: device %u is null", (unsigned int)dev_number);
         return VRTD_RET_NOEXIST;
     }
 
@@ -1744,17 +1770,17 @@ static uint16_t client_handle_request_cfgmem_program(
         return VRTD_RET_BAD_REQUEST;
     }
 
-    if (req_body->boot_device >= AMI_BOOT_DEVICES_MAX) {
-        LOG(LOG_WARNING, "cfgmem_program: invalid boot device %u", (unsigned int)req_body->boot_device);
+    if (boot_device >= AMI_BOOT_DEVICES_MAX) {
+        LOG(LOG_WARNING, "cfgmem_program: invalid boot device %u", (unsigned int)boot_device);
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
-    if (req_body->partition > VRTD_CFGMEM_MAX_PARTITION) {
-        LOG(LOG_WARNING, "cfgmem_program: invalid partition %u", (unsigned int)req_body->partition);
+    if (partition > VRTD_CFGMEM_MAX_PARTITION) {
+        LOG(LOG_WARNING, "cfgmem_program: invalid partition %u", (unsigned int)partition);
         return VRTD_RET_INVALID_ARGUMENT;
     }
 
-    if (req_body->reserved[0] != 0 || req_body->reserved[1] != 0 || req_body->reserved[2] != 0) {
+    if (reserved[0] != 0 || reserved[1] != 0 || reserved[2] != 0) {
         LOG(LOG_WARNING, "cfgmem_program: reserved fields must be zero");
         return VRTD_RET_INVALID_ARGUMENT;
     }
@@ -1779,10 +1805,10 @@ static uint16_t client_handle_request_cfgmem_program(
     }
 
     LOG(LOG_INFO, "Cfgmem program submitted dev=%u bdf=%s boot_device=%u partition=%u uid=%u conn_id=%llu",
-        (unsigned int)req_body->dev_number,
+        (unsigned int)dev_number,
         d->pci_info.bdf,
-        (unsigned int)req_body->boot_device,
-        (unsigned int)req_body->partition,
+        (unsigned int)boot_device,
+        (unsigned int)partition,
         (unsigned int)client->uid,
         (unsigned long long)client->conn_id);
 
@@ -1796,8 +1822,9 @@ static uint16_t client_handle_request_cfgmem_program(
         d,
         &client->state->devices,
         client->in_fd,
-        req_body->boot_device,
-        req_body->partition
+        boot_device,
+        partition,
+        job_id_out
     );
     if (submit_ret != 0) {
         LOG(LOG_NOTICE, "cfgmem_program: flash worker busy");
@@ -1806,6 +1833,45 @@ static uint16_t client_handle_request_cfgmem_program(
 
     client->in_fd = -1;
     client->have_in_fd = false;
+    client->state->cfgmem_program_in_progress = true;
+
+    return VRTD_RET_OK;
+}
+
+/**
+ * Handles VRTD_REQ_CFGMEM_PROGRAM -- programs cfgmem through AMI.
+ *
+ * This is the legacy blocking request: it submits the worker job and keeps the
+ * client request pending until process_cfgmem_completion() delivers the final
+ * result.
+ */
+static uint16_t client_handle_request_cfgmem_program(
+    struct client *client,
+    const struct vrtd_req_cfgmem_program *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_cfgmem_program *resp_body,
+    uint16_t *resp_size
+)
+{
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "cfgmem_program: malformed request");
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    uint64_t job_id = 0;
+    uint16_t ret = client_submit_cfgmem_program(
+        client,
+        req_body->dev_number,
+        req_body->boot_device,
+        req_body->reserved,
+        req_body->partition,
+        &job_id
+    );
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
 
     /*
      * Enter the async-waiting state.  client_handle_request() sees
@@ -1814,10 +1880,72 @@ static uint16_t client_handle_request_cfgmem_program(
      * request until the program completes.
      */
     client->pending_cfgmem_program = true;
-    client->state->cfgmem_program_in_progress = true;
 
     (void) resp_body;
+    (void) job_id;
     *resp_size = 0;
+    return VRTD_RET_OK;
+}
+
+static uint16_t client_handle_request_cfgmem_program_start(
+    struct client *client,
+    const struct vrtd_req_cfgmem_program_start *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_cfgmem_program_start *resp_body,
+    uint16_t *resp_size
+)
+{
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "cfgmem_program_start: malformed request");
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    uint64_t job_id = 0;
+    uint16_t ret = client_submit_cfgmem_program(
+        client,
+        req_body->dev_number,
+        req_body->boot_device,
+        req_body->reserved,
+        req_body->partition,
+        &job_id
+    );
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    resp_body->job_id = job_id;
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
+static uint16_t client_handle_request_cfgmem_program_status(
+    struct client *client,
+    const struct vrtd_req_cfgmem_program_status *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_cfgmem_program_status *resp_body,
+    uint16_t *resp_size
+)
+{
+    *resp_size = 0;
+
+    if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "cfgmem_program_status: malformed request");
+        return VRTD_RET_BAD_REQUEST;
+    }
+    if (client->state->flash_worker == NULL) {
+        LOG(LOG_ERR, "cfgmem_program_status: flash worker unavailable");
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    errno = 0;
+    int ret = flash_worker_poll_status(client->state->flash_worker, req_body->job_id, &resp_body->status);
+    if (ret != 0) {
+        return errno == ENOENT ? VRTD_RET_NOEXIST : VRTD_RET_INTERNAL_ERROR;
+    }
+
+    *resp_size = sizeof(*resp_body);
     return VRTD_RET_OK;
 }
 

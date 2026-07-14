@@ -112,6 +112,12 @@ enum vrtd_opcode {
 
     /** Program a PDI into cfgmem via AMI and reset into the programmed partition. */
     VRTD_REQ_CFGMEM_PROGRAM,
+
+    /** Start a cfgmem program job and return a job identifier immediately. */
+    VRTD_REQ_CFGMEM_PROGRAM_START,
+
+    /** Query progress for a cfgmem program job. */
+    VRTD_REQ_CFGMEM_PROGRAM_STATUS,
 };
 
 /**
@@ -391,6 +397,59 @@ struct vrtd_req_cfgmem_program {
 
 struct vrtd_resp_cfgmem_program {
     uint8_t zero; ///< Placeholder; all data is carried via SCM_RIGHTS.
+} __attribute__((packed));
+
+enum vrtd_cfgmem_program_state {
+    VRTD_CFGMEM_PROGRAM_STATE_QUEUED = 0,
+    VRTD_CFGMEM_PROGRAM_STATE_RUNNING = 1,
+    VRTD_CFGMEM_PROGRAM_STATE_DONE = 2,
+    VRTD_CFGMEM_PROGRAM_STATE_FAILED = 3,
+};
+
+enum vrtd_cfgmem_program_phase {
+    VRTD_CFGMEM_PROGRAM_PHASE_QUEUED = 0,
+    VRTD_CFGMEM_PROGRAM_PHASE_OPENING_AMI = 1,
+    VRTD_CFGMEM_PROGRAM_PHASE_DOWNLOADING_PDI = 2,
+    VRTD_CFGMEM_PROGRAM_PHASE_SELECTING_PARTITION = 3,
+    VRTD_CFGMEM_PROGRAM_PHASE_RESET_PREPARING = 4,
+    VRTD_CFGMEM_PROGRAM_PHASE_REMOVING_PCIE = 5,
+    VRTD_CFGMEM_PROGRAM_PHASE_TOGGLING_SBR = 6,
+    VRTD_CFGMEM_PROGRAM_PHASE_RESCANNING_PCIE = 7,
+    VRTD_CFGMEM_PROGRAM_PHASE_REDISCOVERING_DEVICE = 8,
+    VRTD_CFGMEM_PROGRAM_PHASE_DONE = 9,
+    VRTD_CFGMEM_PROGRAM_PHASE_FAILED = 10,
+};
+
+/**
+ * @brief Progress snapshot for a cfgmem programming job.
+ */
+struct vrtd_cfgmem_program_status {
+    uint64_t job_id;          ///< Job identifier returned by CFGMEM_PROGRAM_START.
+    uint32_t state;           ///< One of enum vrtd_cfgmem_program_state.
+    uint32_t phase;           ///< One of enum vrtd_cfgmem_program_phase.
+    uint64_t bytes_written;   ///< PDI bytes written so far, if known.
+    uint64_t bytes_total;     ///< Total PDI bytes to write, if known.
+    uint64_t elapsed_msec;    ///< Milliseconds since job submission.
+    uint16_t result;          ///< Final VRTD_RET_* when done/failed, otherwise VRTD_RET_OK.
+} __attribute__((packed));
+
+struct vrtd_req_cfgmem_program_start {
+    uint32_t dev_number; ///< Device index (0-based).
+    uint8_t boot_device; ///< AMI boot device selector (primary/secondary).
+    uint8_t reserved[3]; ///< Reserved, must be zero.
+    uint32_t partition;  ///< Flash partition to program and boot.
+} __attribute__((packed));
+
+struct vrtd_resp_cfgmem_program_start {
+    uint64_t job_id; ///< Job identifier to use with CFGMEM_PROGRAM_STATUS.
+} __attribute__((packed));
+
+struct vrtd_req_cfgmem_program_status {
+    uint64_t job_id; ///< Job identifier returned by CFGMEM_PROGRAM_START.
+} __attribute__((packed));
+
+struct vrtd_resp_cfgmem_program_status {
+    struct vrtd_cfgmem_program_status status;
 } __attribute__((packed));
 
 enum vrtd_device_hotplug_op {

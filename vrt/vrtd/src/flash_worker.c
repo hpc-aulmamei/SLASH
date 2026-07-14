@@ -49,7 +49,9 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/syslog.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <vrtd/wire.h>
@@ -91,9 +93,82 @@ struct flash_worker {
     /** @brief Flash partition for the pending job. */
     uint32_t partition;
 
+    /** @brief Next monotonically increasing cfgmem job id. */
+    uint64_t next_job_id;
+    /** @brief Current/last cfgmem job id. */
+    uint64_t job_id;
+    /** @brief Monotonic timestamp when the current/last job was submitted. */
+    uint64_t started_msec;
+    /** @brief Current/last progress snapshot. */
+    struct vrtd_cfgmem_program_status status;
+
     /** @brief VRTD_RET_* result of the most recently completed job. */
     uint16_t result;
 };
+
+static uint64_t monotonic_msec(void)
+{
+    struct timespec ts = {0};
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        return 0;
+    }
+
+    return ((uint64_t)ts.tv_sec * 1000ULL) + ((uint64_t)ts.tv_nsec / 1000000ULL);
+}
+
+static uint64_t elapsed_msec_since(uint64_t started_msec)
+{
+    uint64_t now = monotonic_msec();
+    if (now == 0 || started_msec == 0 || now < started_msec) {
+        return 0;
+    }
+
+    return now - started_msec;
+}
+
+static void flash_worker_update_status_locked(
+    struct flash_worker *worker,
+    uint32_t state,
+    uint32_t phase,
+    uint64_t bytes_written,
+    uint64_t bytes_total,
+    uint16_t result
+)
+{
+    worker->status.job_id = worker->job_id;
+    worker->status.state = state;
+    worker->status.phase = phase;
+    worker->status.bytes_written = bytes_written;
+    worker->status.bytes_total = bytes_total;
+    worker->status.elapsed_msec = elapsed_msec_since(worker->started_msec);
+    worker->status.result = result;
+}
+
+static void flash_worker_progress_callback(
+    void *ctx,
+    uint32_t phase,
+    uint64_t bytes_written,
+    uint64_t bytes_total
+)
+{
+    struct flash_worker *worker = ctx;
+    if (worker == NULL) {
+        return;
+    }
+
+    (void) pthread_mutex_lock(&worker->mutex);
+    if (!worker->stop && worker->busy) {
+        flash_worker_update_status_locked(
+            worker,
+            VRTD_CFGMEM_PROGRAM_STATE_RUNNING,
+            phase,
+            bytes_written,
+            bytes_total,
+            VRTD_RET_OK
+        );
+    }
+    (void) pthread_mutex_unlock(&worker->mutex);
+}
 
 /**
  * Cleanup helper for _cleanup_ attribute: unlock a mutex pointer-to-pointer.
@@ -159,7 +234,21 @@ static void *flash_worker_thread(void *arg)
         (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
         LOG(LOG_INFO, "Cfgmem program starting on worker thread");
         if (input_fd >= 0) {
-            result = cfgmem_program_with_ami(device, devices, input_fd, boot_device, partition);
+            flash_worker_progress_callback(
+                worker,
+                VRTD_CFGMEM_PROGRAM_PHASE_OPENING_AMI,
+                0,
+                0
+            );
+            result = cfgmem_program_with_ami(
+                device,
+                devices,
+                input_fd,
+                boot_device,
+                partition,
+                flash_worker_progress_callback,
+                worker
+            );
             (void) close(input_fd);
         }
         (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
@@ -170,6 +259,14 @@ static void *flash_worker_thread(void *arg)
         worker->devices = NULL;
         worker->busy = false;
         worker->result = result;
+        flash_worker_update_status_locked(
+            worker,
+            result == VRTD_RET_OK ? VRTD_CFGMEM_PROGRAM_STATE_DONE : VRTD_CFGMEM_PROGRAM_STATE_FAILED,
+            result == VRTD_RET_OK ? VRTD_CFGMEM_PROGRAM_PHASE_DONE : VRTD_CFGMEM_PROGRAM_PHASE_FAILED,
+            worker->status.bytes_written,
+            worker->status.bytes_total,
+            result
+        );
         (void) pthread_cond_broadcast(&worker->cond);
         (void) pthread_mutex_unlock(&worker->mutex);
     }
@@ -256,6 +353,15 @@ static int flash_worker_init(struct flash_worker *worker)
         .devices = NULL,
         .boot_device = 0,
         .partition = 0,
+        .next_job_id = 1,
+        .job_id = 0,
+        .started_msec = 0,
+        .status = {
+            .job_id = 0,
+            .state = VRTD_CFGMEM_PROGRAM_STATE_DONE,
+            .phase = VRTD_CFGMEM_PROGRAM_PHASE_DONE,
+            .result = VRTD_RET_OK,
+        },
         .result = VRTD_RET_INTERNAL_ERROR,
         .mutex_initialized = false,
         .cond_initialized = false,
@@ -304,12 +410,14 @@ int flash_worker_submit_async(
     struct device_ptr_array *devices,
     int input_fd,
     uint8_t boot_device,
-    uint32_t partition
+    uint32_t partition,
+    uint64_t *job_id_out
 )
 {
     PROPAGATE_ERROR_NULL_LOG(worker, LOG_ERR, "flash_worker_submit_async called with null worker");
     PROPAGATE_ERROR_NULL_LOG(device, LOG_ERR, "flash_worker_submit_async called with null device");
     PROPAGATE_ERROR_NULL_LOG(devices, LOG_ERR, "flash_worker_submit_async called with null devices");
+    PROPAGATE_ERROR_NULL_LOG(job_id_out, LOG_ERR, "flash_worker_submit_async called with null job_id_out");
     PROPAGATE_ERROR_LOG(
         (input_fd >= 0) ? 0 : -1,
         LOG_ERR,
@@ -333,7 +441,21 @@ int flash_worker_submit_async(
     worker->boot_device = boot_device;
     worker->partition = partition;
     worker->busy = true;
+    worker->job_id = worker->next_job_id++;
+    if (worker->next_job_id == 0) {
+        worker->next_job_id = 1;
+    }
+    worker->started_msec = monotonic_msec();
     worker->result = VRTD_RET_INTERNAL_ERROR;
+    flash_worker_update_status_locked(
+        worker,
+        VRTD_CFGMEM_PROGRAM_STATE_QUEUED,
+        VRTD_CFGMEM_PROGRAM_PHASE_QUEUED,
+        0,
+        0,
+        VRTD_RET_OK
+    );
+    *job_id_out = worker->job_id;
     (void) pthread_cond_signal(&worker->cond);
 
     return 0;
@@ -357,6 +479,37 @@ int flash_worker_poll_result(struct flash_worker *worker, bool *done, uint16_t *
         *result = VRTD_RET_INTERNAL_ERROR;
     } else {
         *result = worker->result;
+    }
+
+    return 0;
+}
+
+int flash_worker_poll_status(
+    struct flash_worker *worker,
+    uint64_t job_id,
+    struct vrtd_cfgmem_program_status *status
+)
+{
+    PROPAGATE_ERROR_NULL_LOG(worker, LOG_ERR, "flash_worker_poll_status called with null worker");
+    PROPAGATE_ERROR_NULL_LOG(status, LOG_ERR, "flash_worker_poll_status called with null status pointer");
+
+    int pthread_ret = pthread_mutex_lock(&worker->mutex);
+    int ret = pthread_ret == 0 ? 0 : -1;
+    PROPAGATE_ERROR_LOG(ret, LOG_ERR, "Failed to lock flash worker mutex (code=%d)", pthread_ret);
+    _cleanup_(cleanup_mutex_unlockp)
+    pthread_mutex_t *locked_mutex = &worker->mutex;
+
+    if (job_id == 0 || job_id != worker->job_id) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    *status = worker->status;
+    status->elapsed_msec = elapsed_msec_since(worker->started_msec);
+    if (worker->stop && status->state != VRTD_CFGMEM_PROGRAM_STATE_DONE) {
+        status->state = VRTD_CFGMEM_PROGRAM_STATE_FAILED;
+        status->phase = VRTD_CFGMEM_PROGRAM_PHASE_FAILED;
+        status->result = VRTD_RET_INTERNAL_ERROR;
     }
 
     return 0;

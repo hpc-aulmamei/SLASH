@@ -23,6 +23,8 @@
 
 #include <stdint.h>
 
+#include "flash.h"
+
 struct device;
 struct device_ptr_array;
 
@@ -31,6 +33,13 @@ uint16_t reset_with_ami_partition(
     struct device *device,
     struct device_ptr_array *devices,
     uint32_t partition
+);
+uint16_t reset_with_ami_partition_progress(
+    struct device *device,
+    struct device_ptr_array *devices,
+    uint32_t partition,
+    cfgmem_progress_callback progress_cb,
+    void *progress_ctx
 );
 
 #endif /* VRTD_RESET_H */

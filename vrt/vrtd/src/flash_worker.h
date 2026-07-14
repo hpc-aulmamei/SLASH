@@ -50,6 +50,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <vrtd/wire.h>
+
 struct device;
 struct device_ptr_array;
 
@@ -79,6 +81,7 @@ struct flash_worker *flash_worker_create(void);
  * @param input_fd     Open file descriptor of the PDI to program.
  * @param boot_device  AMI boot-device selector.
  * @param partition    Flash partition to program and boot.
+ * @param job_id_out   Output: job identifier for status polling.
  * @return 0 on success (job enqueued), -1 if the worker is busy/stopping or on
  *         invalid arguments.
  */
@@ -88,7 +91,22 @@ int flash_worker_submit_async(
     struct device_ptr_array *devices,
     int input_fd,
     uint8_t boot_device,
-    uint32_t partition
+    uint32_t partition,
+    uint64_t *job_id_out
+);
+
+/**
+ * @brief Poll the latest progress snapshot for a cfgmem program.
+ *
+ * @param worker  The flash worker instance.
+ * @param job_id  Job identifier returned by flash_worker_submit_async().
+ * @param status  Output progress snapshot.
+ * @return 0 on success, -1 on invalid arguments, mutex error, or unknown job.
+ */
+int flash_worker_poll_status(
+    struct flash_worker *worker,
+    uint64_t job_id,
+    struct vrtd_cfgmem_program_status *status
 );
 
 /**

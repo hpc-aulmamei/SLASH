@@ -27,17 +27,47 @@
 
 #include "flash.h"
 
+#include <pthread.h>
 #include <stdio.h>
 #include <sys/syslog.h>
 
 #include <ami.h>
 #include <ami_device.h>
 #include <ami_program.h>
+#include <vrtd/wire.h>
 
 #include "device.h"
 #include "hotplug.h"
 #include "reset.h"
 #include "utils.h"
+
+static pthread_mutex_t g_progress_mutex = PTHREAD_MUTEX_INITIALIZER;
+static cfgmem_progress_callback g_progress_cb;
+static void *g_progress_ctx;
+
+static void cfgmem_set_progress_sink(cfgmem_progress_callback progress_cb, void *progress_ctx)
+{
+    (void) pthread_mutex_lock(&g_progress_mutex);
+    g_progress_cb = progress_cb;
+    g_progress_ctx = progress_ctx;
+    (void) pthread_mutex_unlock(&g_progress_mutex);
+}
+
+static void cfgmem_emit_progress(
+    uint32_t phase,
+    uint64_t bytes_written,
+    uint64_t bytes_total
+)
+{
+    (void) pthread_mutex_lock(&g_progress_mutex);
+    cfgmem_progress_callback progress_cb = g_progress_cb;
+    void *progress_ctx = g_progress_ctx;
+    (void) pthread_mutex_unlock(&g_progress_mutex);
+
+    if (progress_cb != NULL) {
+        progress_cb(progress_ctx, phase, bytes_written, bytes_total);
+    }
+}
 
 /**
  * Progress callback for ami_prog_download_pdi().
@@ -77,6 +107,12 @@ static void cfgmem_program_progress_handler(enum ami_event_status status, uint64
     unsigned int decile = percent / 10u;
     unsigned int last_decile = (unsigned int)prog->reserved;
 
+    cfgmem_emit_progress(
+        VRTD_CFGMEM_PROGRAM_PHASE_DOWNLOADING_PDI,
+        prog->bytes_written,
+        prog->bytes_to_write
+    );
+
     if (decile > last_decile) {
         prog->reserved = decile;
         LOG(LOG_INFO, "cfgmem_program_with_ami: PDI download %u%% (%u/%u bytes)",
@@ -89,7 +125,9 @@ uint16_t cfgmem_program_with_ami(
     struct device_ptr_array *devices,
     int input_fd,
     uint8_t boot_device,
-    uint32_t partition
+    uint32_t partition,
+    cfgmem_progress_callback progress_cb,
+    void *progress_ctx
 )
 {
     if (device == NULL || devices == NULL || input_fd < 0) {
@@ -104,6 +142,15 @@ uint16_t cfgmem_program_with_ami(
     }
 
     struct ami_device *ami_device = NULL;
+    if (progress_cb != NULL) {
+        progress_cb(
+            progress_ctx,
+            VRTD_CFGMEM_PROGRAM_PHASE_OPENING_AMI,
+            0,
+            0
+        );
+    }
+
     ret = ami_dev_find(pf0_bdf, &ami_device);
     if (ret != AMI_STATUS_OK) {
         LOG(LOG_ERR, "cfgmem_program_with_ami: ami_dev_find(%s) failed: %s", pf0_bdf, ami_get_last_error());
@@ -128,8 +175,10 @@ uint16_t cfgmem_program_with_ami(
     LOG(LOG_INFO, "cfgmem_program_with_ami: programming %s boot_device=%u partition=%u",
         pf0_bdf, (unsigned int)boot_device, (unsigned int)partition);
 
+    cfgmem_set_progress_sink(progress_cb, progress_ctx);
     ret = ami_prog_download_pdi(ami_device, fd_path, boot_device, partition,
         cfgmem_program_progress_handler);
+    cfgmem_set_progress_sink(NULL, NULL);
     if (ret != AMI_STATUS_OK) {
         LOG(LOG_ERR, "cfgmem_program_with_ami: ami_prog_download_pdi(%s, partition=%u) failed: %s",
             pf0_bdf, (unsigned int)partition, ami_get_last_error());
@@ -142,5 +191,5 @@ uint16_t cfgmem_program_with_ami(
     LOG(LOG_INFO, "cfgmem_program_with_ami: programming complete for %s, resetting into partition %u",
         pf0_bdf, (unsigned int)partition);
 
-    return reset_with_ami_partition(device, devices, partition);
+    return reset_with_ami_partition_progress(device, devices, partition, progress_cb, progress_ctx);
 }

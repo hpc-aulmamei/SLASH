@@ -485,6 +485,54 @@ enum vrtd_ret vrtd_cfgmem_program_file(
     uint32_t partition
 );
 
+typedef void (*vrtd_cfgmem_progress_callback)(
+    const struct vrtd_cfgmem_program_status *status,
+    void *ctx
+);
+
+enum vrtd_ret vrtd_cfgmem_program_start(
+    int fd,
+    uint32_t dev,
+    int input_fd,
+    uint8_t boot_device,
+    uint32_t partition,
+    uint64_t *job_id_out
+);
+
+enum vrtd_ret vrtd_cfgmem_program_file_start(
+    int fd,
+    uint32_t dev,
+    const char *path,
+    uint8_t boot_device,
+    uint32_t partition,
+    uint64_t *job_id_out
+);
+
+enum vrtd_ret vrtd_cfgmem_program_status(
+    int fd,
+    uint64_t job_id,
+    struct vrtd_cfgmem_program_status *status_out
+);
+
+enum vrtd_ret vrtd_cfgmem_program_wait(
+    int fd,
+    uint64_t job_id,
+    uint64_t poll_interval_msec,
+    vrtd_cfgmem_progress_callback progress_cb,
+    void *progress_ctx
+);
+
+enum vrtd_ret vrtd_cfgmem_program_file_progress(
+    int fd,
+    uint32_t dev,
+    const char *path,
+    uint8_t boot_device,
+    uint32_t partition,
+    uint64_t poll_interval_msec,
+    vrtd_cfgmem_progress_callback progress_cb,
+    void *progress_ctx
+);
+
 /**
  * @brief Perform a PCIe hotplug operation for a device.
  *
