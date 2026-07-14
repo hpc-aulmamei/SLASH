@@ -99,6 +99,7 @@ public:
         lastPercent = percent;
         lastState = status.state;
 
+        std::cerr << '\r';
         std::cerr << cfgmemPhaseName(status.phase);
         if (status.phase == vrtd::CfgmemProgramPhase::DownloadingPdi) {
             std::cerr << ": " << percent << "%";
@@ -106,6 +107,10 @@ public:
                 std::cerr << " (" << status.bytesWritten << "/" << status.bytesTotal << " bytes)";
             }
         }
+        std::cerr << std::flush;
+    }
+
+    void endProgress() const {
         std::cerr << '\n';
     }
 
@@ -295,6 +300,7 @@ int runFlashMode(const WriteStaticShell::Options& options) {
             reporter.progress(status);
         }
     );
+    reporter.endProgress();
     reporter.done("Flash programming complete");
 
     return 0;
