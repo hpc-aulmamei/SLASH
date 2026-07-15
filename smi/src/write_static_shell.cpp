@@ -226,7 +226,8 @@ std::string buildXsdbCommand(const std::vector<std::string>& bashSources,
 }
 
 void runBashCommandWithPdiPath(const std::string& command,
-                               const std::string& pdiPath) {
+                               const std::string& pdiPath,
+                               const std::string& xsdbTargetId) {
     const pid_t pid = fork();
     if (pid == -1) {
         throw std::runtime_error("fork failed: " + std::string(std::strerror(errno)));
@@ -235,6 +236,11 @@ void runBashCommandWithPdiPath(const std::string& command,
     if (pid == 0) {
         if (setenv("PDI_PATH", pdiPath.c_str(), 1) != 0) {
             std::perror("setenv PDI_PATH");
+            _exit(127);
+        }
+        if (!xsdbTargetId.empty() &&
+            setenv("V80_TARGET_ID", xsdbTargetId.c_str(), 1) != 0) {
+            std::perror("setenv V80_TARGET_ID");
             _exit(127);
         }
         execl("/bin/bash", "/bin/bash", "-c", command.c_str(),
@@ -267,6 +273,9 @@ void validateOptions(const WriteStaticShell::Options& options) {
         }
         if (!options.bashSources.empty()) {
             throw std::invalid_argument("--bash-source is only valid with --jtag");
+        }
+        if (!options.xsdbTargetId.empty()) {
+            throw std::invalid_argument("--xsdb-target-id is only valid with --jtag");
         }
         return;
     }
@@ -350,7 +359,7 @@ int runJtagMode(const WriteStaticShell::Options& options) {
     try {
         reporter.stage("Running xsdb");
         runBashCommandWithPdiPath(
-            buildXsdbCommand(options.bashSources, tclPath), pdiPath);
+            buildXsdbCommand(options.bashSources, tclPath), pdiPath, options.xsdbTargetId);
     } catch (...) {
         xsdbError = std::current_exception();
     }

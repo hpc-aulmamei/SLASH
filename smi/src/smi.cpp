@@ -130,6 +130,8 @@ static int smiMain(int argc, char **argv) {
     writeStaticShellCommand->add_option("--bash-source", writeStaticShellOptions.bashSources,
         "Source this shell script before running xsdb; may be repeated and is only valid with --jtag")
         ->expected(1);
+    writeStaticShellCommand->add_option("--xsdb-target-id", writeStaticShellOptions.xsdbTargetId,
+        "XSDB target_id of the Versal xcv80 device to program; only valid with --jtag");
 
     // -- validate (memory integrity + bandwidth) --
     auto* validateCommand = app.add_subcommand("validate", "Validate board memory (integrity + bandwidth)");

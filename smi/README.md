@@ -186,8 +186,8 @@ The `--jtag` mode programs the no-FPT PDI over JTAG with `xsdb`.
 
 ```
 v80-smi write-static-shell --flash -d <BDF> [--pdi <file>]
-v80-smi write-static-shell --jtag -d <BDF> [--pdi <file>] [--bash-source <file> ...]
-v80-smi write-static-shell --jtag --no-device [--pdi <file>] [--bash-source <file> ...]
+v80-smi write-static-shell --jtag -d <BDF> [--pdi <file>] [--xsdb-target-id <id>] [--bash-source <file> ...]
+v80-smi write-static-shell --jtag --no-device [--pdi <file>] [--xsdb-target-id <id>] [--bash-source <file> ...]
 ```
 
 | Flag              | Description                                          |
@@ -198,6 +198,7 @@ v80-smi write-static-shell --jtag --no-device [--pdi <file>] [--bash-source <fil
 | `--pdi`           | Use this PDI file instead of resolving the installed static shell PDI |
 | `--no-device`     | Skip the pre-JTAG PCIe device removal; valid only with `--jtag` |
 | `--bash-source`   | Source a Vivado/Vitis setup script before running `xsdb`; may be repeated and is valid only with `--jtag` |
+| `--xsdb-target-id` | Select the `Versal xcv80` XSDB `target_id`; valid only with `--jtag` |
 
 Both modes resolve their PDI path with `python3 -m slashkit static-shell-path`,
 so setting `PYTHONPATH` can select an in-repo `slashkit`.  Use `--pdi` to bypass
@@ -205,7 +206,8 @@ that resolution during active development; the file must match the selected
 mode (`--flash` expects a flash-image PDI, `--jtag` expects a no-FPT/JTAG-bootable
 PDI).  JTAG mode removes the board's PCIe functions via VRTD unless `--no-device`
 is given, runs `/bin/bash -c 'source ...; xsdb ...'` with `PDI_PATH` set to the
-selected PDI, and rescans PCIe through VRTD afterward.
+selected PDI, optionally sets `V80_TARGET_ID` from `--xsdb-target-id`, and
+rescans PCIe through VRTD afterward.
 
 The command prints progress to stderr.  Flash mode reports VRTD cfgmem phases
 and interval-based PDI download progress, while JTAG mode reports local stages

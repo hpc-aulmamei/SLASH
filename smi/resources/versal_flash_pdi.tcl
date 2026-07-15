@@ -43,6 +43,9 @@
 #
 # Usage:
 #   PDI_PATH=/path/to/boot.pdi xsdb versal_flash_pdi.tcl
+#
+# Optional:
+#   V80_TARGET_ID=<xsdb-target-id> PDI_PATH=/path/to/boot.pdi xsdb versal_flash_pdi.tcl
 
 if {![info exists ::env(PDI_PATH)]} {
     error "PDI_PATH environment variable must be set to the PDI file to program"
@@ -53,7 +56,94 @@ if {![file exists $pdi_path]} {
     error "PDI_PATH does not exist: $pdi_path"
 }
 
+proc describe_targets {targets} {
+    set descriptions {}
+    foreach target $targets {
+        set fields {}
+        foreach field {target_id target_ctx jtag_cable_name jtag_cable_serial} {
+            if {[dict exists $target $field]} {
+                lappend fields "$field=[dict get $target $field]"
+            }
+        }
+        lappend descriptions [join $fields ", "]
+    }
+    return [join $descriptions "; "]
+}
+
+proc resolve_v80_targets {} {
+    set target_properties [targets -target-properties]
+
+    if {[info exists ::env(V80_TARGET_ID)] && ![string is integer -strict $::env(V80_TARGET_ID)]} {
+        error "V80_TARGET_ID must be a numeric XSDB target_id"
+    }
+
+    set versal_targets {}
+    foreach target $target_properties {
+        if {![dict exists $target name] || [dict get $target name] ne "Versal xcv80"} {
+            continue
+        }
+        if {![dict exists $target target_id]} {
+            continue
+        }
+        if {[info exists ::env(V80_TARGET_ID)] && [dict get $target target_id] ne $::env(V80_TARGET_ID)} {
+            continue
+        }
+        lappend versal_targets $target
+    }
+
+    if {[llength $versal_targets] == 0} {
+        if {[info exists ::env(V80_TARGET_ID)]} {
+            error "no Versal xcv80 target found with target_id=$::env(V80_TARGET_ID)"
+        }
+        error "no Versal xcv80 target found"
+    }
+    if {[info exists ::env(V80_TARGET_ID)] && [llength $versal_targets] != 1} {
+        error "multiple Versal xcv80 targets found with target_id=$::env(V80_TARGET_ID): [describe_targets $versal_targets]"
+    }
+    if {[llength $versal_targets] != 1} {
+        error "multiple Versal xcv80 targets found: [describe_targets $versal_targets]"
+    }
+
+    set versal_target [lindex $versal_targets 0]
+    set versal_target_id [dict get $versal_target target_id]
+    set versal_target_ctx [dict get $versal_target target_ctx]
+
+    set pmc_targets {}
+    foreach target $target_properties {
+        if {![dict exists $target name] || [dict get $target name] ne "PMC"} {
+            continue
+        }
+        if {![dict exists $target parent_ctx] || [dict get $target parent_ctx] ne $versal_target_ctx} {
+            continue
+        }
+        lappend pmc_targets $target
+    }
+
+    if {[llength $pmc_targets] == 0} {
+        error "no PMC target found under Versal xcv80 target_ctx=$versal_target_ctx"
+    }
+    if {[llength $pmc_targets] != 1} {
+        error "multiple PMC targets found under Versal xcv80 target_ctx=$versal_target_ctx: [describe_targets $pmc_targets]"
+    }
+
+    set pmc_target [lindex $pmc_targets 0]
+    set pmc_target_id [dict get $pmc_target target_id]
+
+    return [list $versal_target_id $pmc_target_id]
+}
+
+proc select_target_id {target_id} {
+    targets -set -filter "target_id == $target_id"
+}
+
 connect
+set target_error [catch {
+    lassign [resolve_v80_targets] versal_target_id pmc_target_id
+} target_error_message]
+if {$target_error} {
+    disconnect
+    error "versal_flash_pdi: target discovery failed: $target_error_message"
+}
 
 # Steps 1-2 are wrapped in catch so failure can restore the boot-mode override.
 # On success, the override intentionally remains set to JTAG: users of this
@@ -62,24 +152,24 @@ connect
 # would strand PMC ROM waiting for a debugger on later resets.
 set flash_error [catch {
     # 1. Force JTAG boot mode.
-    targets -set -filter {name =~ "Versal *"}
+    select_target_id $versal_target_id
     mwr 0xf1260200 0x0100
     mwr -force 0xF1110004 0x0
 
-    targets -set -filter {name =~ "PMC"}
+    select_target_id $pmc_target_id
     rst
 
     # 2. Program the PDI over JTAG.
-    targets -set -filter {name =~ "PMC"}
+    select_target_id $pmc_target_id
     device program $pdi_path
 } flash_error_message]
 
 if {$flash_error} {
     # Restore the board's normal (pin-strapped) boot mode on failure.
-    targets -set -filter {name =~ "Versal *"}
+    select_target_id $versal_target_id
     mwr 0xf1260200 0x00000000
 
-    targets -set -filter {name =~ "PMC"}
+    select_target_id $pmc_target_id
     rst
 }
 
