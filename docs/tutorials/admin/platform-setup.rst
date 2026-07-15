@@ -334,59 +334,6 @@ The following table summarises what each package provides:
      - Metapackage: pulls in development packages for simulation and
        emulation.
 
-Program the Board
-=================
-
-.. note::
-
-   This step assumes the AMI driver is already bound to PF0
-   (``10ee:50b4``). If your V80 has never been programmed with AVED — for
-   example, a brand-new board — first complete :doc:`bootstrap-aved` to
-   install AVED via JTAG.
-
-After installing the packages, the board's flash memory must be programmed
-with the static shell before the system can be used. This step is required:
-
-- on the **first install** of SLASH, and
-- when **upgrading** to a version that changes the static shell (noted in
-  the release notes).
-
-It is **not** required after crashes, daemon restarts, or other normal
-operations — SLASH reads from flash but never writes to it during regular use.
-
-Program the primary flash partition (replace ``<BDF>`` with the bus address
-from ``lspci -d 10ee:``, e.g. ``03:00``):
-
-.. tab-set::
-
-   .. tab-item:: Ubuntu
-
-      .. code-block:: bash
-
-         sudo ami_tool cfgmem_program -d <BDF> -t primary -p 0 \
-            -i /usr/lib/python3.10/dist-packages/slashkit/resources/static_shell/amd_v80_gen5x8_25.1.pdi
-
-   .. tab-item:: RHEL 9 / Rocky Linux 9 / AlmaLinux 9
-
-      .. code-block:: bash
-
-         sudo ami_tool cfgmem_program -d <BDF> -t primary -p 0 \
-            -i /usr/lib/python3.9/site-packages/slashkit/resources/static_shell/amd_v80_gen5x8_25.1.pdi
-
-   .. tab-item:: RHEL 10 / Rocky Linux 10 / AlmaLinux 10
-
-      .. code-block:: bash
-
-         sudo ami_tool cfgmem_program -d <BDF> -t primary -p 0 \
-            -i /usr/lib/python3.12/site-packages/slashkit/resources/static_shell/amd_v80_gen5x8_25.1.pdi
-
-After programming completes, reboot the system for the new flash contents
-to take effect:
-
-.. code-block:: bash
-
-   sudo reboot
-
 Verify the Kernel Module
 ========================
 
@@ -448,6 +395,37 @@ Verify the daemon is reachable:
 
 Each board should show all four readiness checks passing (PF0, PF1, PF2,
 VRTD).
+
+Program the Board
+=================
+
+.. note::
+
+   This step assumes the AMI driver is already bound to PF0
+   (``10ee:50b4``). If your V80 has never been programmed with AVED — for
+   example, a brand-new board — first complete :doc:`bootstrap-aved` to
+   install AVED via JTAG.
+
+After installing the packages and starting ``vrtd``, the board's flash memory
+must be programmed with the static shell before the system can be used. This
+step is required:
+
+- on the **first install** of SLASH, and
+- when **upgrading** to a version that changes the static shell (noted in
+  the release notes).
+
+It is **not** required after crashes, daemon restarts, or other normal
+operations — SLASH reads from flash but never writes to it during regular use.
+
+Program the primary flash partition (replace ``<BDF>`` with the bus address
+shown by ``v80-smi list``, e.g. ``03:00``):
+
+.. code-block:: bash
+
+   sudo v80-smi write-static-shell --flash -d <BDF>
+
+The command resolves the packaged static shell PDI, programs it through VRTD,
+and resets the board into the programmed partition.
 
 Validate the Board
 ==================

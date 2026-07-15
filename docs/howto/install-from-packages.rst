@@ -254,8 +254,9 @@ Program the Board
    example, a brand-new board — first complete
    :doc:`/tutorials/admin/bootstrap-aved` to install AVED via JTAG.
 
-After installing the packages, the board's flash memory must be programmed
-with the static shell before the system can be used. This step is required:
+After installing the packages and starting ``vrtd``, the board's flash memory
+must be programmed with the static shell before the system can be used. This
+step is required:
 
 - on the **first install** of SLASH, and
 - when **upgrading** to a version that changes the static shell (noted in
@@ -269,20 +270,10 @@ from ``v80-smi list``, e.g. ``03:00``):
 
 .. code-block:: bash
 
-   # For Ubuntu 22.04
-   sudo ami_tool cfgmem_program -d <BDF> -t primary -p 0 \
-      -i /usr/lib/python3.10/dist-packages/slashkit/resources/static_shell/amd_v80_gen5x8_25.1.pdi
-      
-   # For Rocky 9
-   sudo ami_tool cfgmem_program -d <BDF> -t primary -p 0 \
-      -i /usr/lib/python3.9/site-packages/slashkit/resources/static_shell/amd_v80_gen5x8_25.1.pdi
+   sudo v80-smi write-static-shell --flash -d <BDF>
 
-After programming completes, reboot the system for the new flash contents
-to take effect:
-
-.. code-block:: bash
-
-   sudo reboot
+The command resolves the packaged static shell PDI, programs it through VRTD,
+and resets the board into the programmed partition.
 
 Install Development Packages
 ==============================
