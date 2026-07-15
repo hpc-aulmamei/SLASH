@@ -81,6 +81,7 @@ struct flash_worker *flash_worker_create(void);
  * @param input_fd     Open file descriptor of the PDI to program.
  * @param boot_device  AMI boot-device selector.
  * @param partition    Flash partition to program and boot.
+ * @param owner_conn_id Client connection ID that owns status polling for this job.
  * @param job_id_out   Output: job identifier for status polling.
  * @return 0 on success (job enqueued), -1 if the worker is busy/stopping or on
  *         invalid arguments.
@@ -92,6 +93,7 @@ int flash_worker_submit_async(
     int input_fd,
     uint8_t boot_device,
     uint32_t partition,
+    uint64_t owner_conn_id,
     uint64_t *job_id_out
 );
 
@@ -106,6 +108,23 @@ int flash_worker_submit_async(
 int flash_worker_poll_status(
     struct flash_worker *worker,
     uint64_t job_id,
+    struct vrtd_cfgmem_program_status *status
+);
+
+/**
+ * @brief Poll the latest progress snapshot for an owner-scoped cfgmem job.
+ *
+ * @param worker        The flash worker instance.
+ * @param job_id        Job identifier returned by flash_worker_submit_async().
+ * @param owner_conn_id Client connection ID that submitted the job.
+ * @param status        Output progress snapshot.
+ * @return 0 on success, -1 on invalid arguments, mutex error, unknown job
+ *         (errno=ENOENT), or wrong owner (errno=EACCES).
+ */
+int flash_worker_poll_status_for_owner(
+    struct flash_worker *worker,
+    uint64_t job_id,
+    uint64_t owner_conn_id,
     struct vrtd_cfgmem_program_status *status
 );
 

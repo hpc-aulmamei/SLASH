@@ -19,10 +19,13 @@
  */
 
 #include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <gtest/gtest.h>
 
 extern "C" {
+#include "device.h"
 #include "flash_worker.h"
 }
 
@@ -36,4 +39,48 @@ TEST(FlashWorkerTest, UnknownJobReturnsEnoent) {
     EXPECT_EQ(errno, ENOENT);
 
     cleanup_flash_worker(worker);
+}
+
+TEST(FlashWorkerTest, WrongOwnerStatusReturnsEacces) {
+    struct flash_worker *worker = flash_worker_create();
+    ASSERT_NE(worker, nullptr);
+
+    struct device device {};
+    struct device_ptr_array devices = device_ptr_array_init();
+    int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+    ASSERT_GE(fd, 0);
+
+    uint64_t job_id = 0;
+    ASSERT_EQ(flash_worker_submit_async(
+        worker,
+        &device,
+        &devices,
+        fd,
+        0,
+        0,
+        111,
+        &job_id
+    ), 0);
+    fd = -1; // Worker owns the fd after successful submit.
+
+    struct vrtd_cfgmem_program_status status {};
+    errno = 0;
+    EXPECT_EQ(flash_worker_poll_status_for_owner(worker, job_id, 222, &status), -1);
+    EXPECT_EQ(errno, EACCES);
+
+    bool terminal = false;
+    for (int i = 0; i < 1000; i++) {
+        errno = 0;
+        ASSERT_EQ(flash_worker_poll_status_for_owner(worker, job_id, 111, &status), 0);
+        if (status.state == VRTD_CFGMEM_PROGRAM_STATE_DONE ||
+            status.state == VRTD_CFGMEM_PROGRAM_STATE_FAILED) {
+            terminal = true;
+            break;
+        }
+        usleep(1000);
+    }
+    EXPECT_TRUE(terminal);
+
+    cleanup_flash_worker(worker);
+    device_ptr_array_free(&devices);
 }

@@ -1879,6 +1879,7 @@ static uint16_t client_submit_cfgmem_program(
         client->in_fd,
         boot_device,
         partition,
+        client->conn_id,
         job_id_out
     );
     if (submit_ret != 0) {
@@ -1995,9 +1996,20 @@ static uint16_t client_handle_request_cfgmem_program_status(
     }
 
     errno = 0;
-    int ret = flash_worker_poll_status(client->state->flash_worker, req_body->job_id, &resp_body->status);
+    int ret = flash_worker_poll_status_for_owner(
+        client->state->flash_worker,
+        req_body->job_id,
+        client->conn_id,
+        &resp_body->status
+    );
     if (ret != 0) {
-        return errno == ENOENT ? VRTD_RET_NOEXIST : VRTD_RET_INTERNAL_ERROR;
+        if (errno == ENOENT) {
+            return VRTD_RET_NOEXIST;
+        }
+        if (errno == EACCES) {
+            return VRTD_RET_AUTH_ERROR;
+        }
+        return VRTD_RET_INTERNAL_ERROR;
     }
 
     *resp_size = sizeof(*resp_body);

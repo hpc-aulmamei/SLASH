@@ -66,17 +66,6 @@ CfgmemProgramStatus convertCfgmemStatus(const struct vrtd_cfgmem_program_status&
     return status;
 }
 
-void cfgmemProgressThunk(const struct vrtd_cfgmem_program_status *raw, void *ctx) {
-    if (raw == nullptr || ctx == nullptr) {
-        return;
-    }
-
-    auto *callback = static_cast<CfgmemProgressCallback *>(ctx);
-    if (*callback) {
-        (*callback)(convertCfgmemStatus(*raw));
-    }
-}
-
 } // namespace
 
 Session::Session(const char *socketPath)
@@ -464,21 +453,54 @@ void Session::cfgmemProgramFileProgress(
     if (isClosed()) {
         throw Error(VRTD_RET_BAD_LIB_CALL);
     }
-    std::lock_guard<std::mutex> lk(*m);
 
     std::string path_str(path);
-    auto ret = vrtd_cfgmem_program_file_progress(
-        fd,
-        device.getNum(),
-        path_str.c_str(),
-        bootDevice,
-        partition,
-        pollIntervalMsec,
-        cfgmemProgressThunk,
-        &progressCallback
-    );
-    if (ret != VRTD_RET_OK) {
-        throw Error(ret);
+    uint64_t jobId = 0;
+    {
+        std::lock_guard<std::mutex> lk(*m);
+        auto ret = vrtd_cfgmem_program_file_start(
+            fd,
+            device.getNum(),
+            path_str.c_str(),
+            bootDevice,
+            partition,
+            &jobId
+        );
+        if (ret != VRTD_RET_OK) {
+            throw Error(ret);
+        }
+    }
+
+    const uint64_t sleepMsec = pollIntervalMsec == 0 ? 10000ULL : pollIntervalMsec;
+    for (;;) {
+        CfgmemProgramStatus status;
+        {
+            if (isClosed()) {
+                throw Error(VRTD_RET_BAD_LIB_CALL);
+            }
+            std::lock_guard<std::mutex> lk(*m);
+
+            struct vrtd_cfgmem_program_status raw = {};
+            auto ret = vrtd_cfgmem_program_status(fd, jobId, &raw);
+            if (ret != VRTD_RET_OK) {
+                throw Error(ret);
+            }
+            status = convertCfgmemStatus(raw);
+        }
+
+        if (progressCallback) {
+            progressCallback(status);
+        }
+
+        if (status.state == CfgmemProgramState::Done ||
+            status.state == CfgmemProgramState::Failed) {
+            if (status.result != VRTD_RET_OK) {
+                throw Error(status.result);
+            }
+            return;
+        }
+
+        usleep((useconds_t)(sleepMsec * 1000ULL));
     }
 }
 

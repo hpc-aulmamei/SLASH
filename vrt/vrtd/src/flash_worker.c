@@ -97,6 +97,8 @@ struct flash_worker {
     uint64_t next_job_id;
     /** @brief Current/last cfgmem job id. */
     uint64_t job_id;
+    /** @brief Client connection ID that owns status polling for current/last job. */
+    uint64_t owner_conn_id;
     /** @brief Monotonic timestamp when the current/last job was submitted. */
     uint64_t started_msec;
     /** @brief Current/last progress snapshot. */
@@ -355,6 +357,7 @@ static int flash_worker_init(struct flash_worker *worker)
         .partition = 0,
         .next_job_id = 1,
         .job_id = 0,
+        .owner_conn_id = 0,
         .started_msec = 0,
         .status = {
             .job_id = 0,
@@ -411,6 +414,7 @@ int flash_worker_submit_async(
     int input_fd,
     uint8_t boot_device,
     uint32_t partition,
+    uint64_t owner_conn_id,
     uint64_t *job_id_out
 )
 {
@@ -445,6 +449,7 @@ int flash_worker_submit_async(
     if (worker->next_job_id == 0) {
         worker->next_job_id = 1;
     }
+    worker->owner_conn_id = owner_conn_id;
     worker->started_msec = monotonic_msec();
     worker->result = VRTD_RET_INTERNAL_ERROR;
     flash_worker_update_status_locked(
@@ -490,6 +495,16 @@ int flash_worker_poll_status(
     struct vrtd_cfgmem_program_status *status
 )
 {
+    return flash_worker_poll_status_for_owner(worker, job_id, 0, status);
+}
+
+int flash_worker_poll_status_for_owner(
+    struct flash_worker *worker,
+    uint64_t job_id,
+    uint64_t owner_conn_id,
+    struct vrtd_cfgmem_program_status *status
+)
+{
     PROPAGATE_ERROR_NULL_LOG(worker, LOG_ERR, "flash_worker_poll_status called with null worker");
     PROPAGATE_ERROR_NULL_LOG(status, LOG_ERR, "flash_worker_poll_status called with null status pointer");
 
@@ -501,6 +516,10 @@ int flash_worker_poll_status(
 
     if (job_id == 0 || job_id != worker->job_id) {
         errno = ENOENT;
+        return -1;
+    }
+    if (owner_conn_id != 0 && owner_conn_id != worker->owner_conn_id) {
+        errno = EACCES;
         return -1;
     }
 
