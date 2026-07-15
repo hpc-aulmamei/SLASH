@@ -45,18 +45,19 @@ struct vrtd {
     struct flash_worker *flash_worker;
 
     /**
-     * @brief True while a cfgmem program is running on @ref flash_worker.
+     * @brief True while a long-running device operation is running on @ref flash_worker.
      *
-     * The cfgmem reset step mutates @ref devices, so while this is set the
-     * event loop defers dispatching every other client request (they stay
-     * queued until the program finishes).  This keeps the loop alive to feed
-     * the systemd watchdog without racing the worker on the device list.
+     * Cfgmem programming and standalone reset both mutate @ref devices, so
+     * while this is set the event loop defers dispatching every other client
+     * request (they stay queued until the operation finishes).  This keeps the
+     * loop alive to feed the systemd watchdog without racing the worker on the
+     * device list.
      */
-    bool cfgmem_program_in_progress;
+    bool async_device_op_in_progress;
 
     /**
-     * @brief Client connection IDs whose buffer cleanup is deferred while a
-     * cfgmem program owns @ref devices from the worker thread.
+     * @brief Client connection IDs whose buffer cleanup is deferred while an
+     * async device operation owns @ref devices from the worker thread.
      */
     struct uint64_array deferred_buffer_cleanup_conn_ids;
 };

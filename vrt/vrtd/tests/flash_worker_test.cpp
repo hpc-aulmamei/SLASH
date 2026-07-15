@@ -84,3 +84,38 @@ TEST(FlashWorkerTest, WrongOwnerStatusReturnsEacces) {
     cleanup_flash_worker(worker);
     device_ptr_array_free(&devices);
 }
+
+TEST(FlashWorkerTest, ResetJobCompletesWithoutInputFd) {
+    struct flash_worker *worker = flash_worker_create();
+    ASSERT_NE(worker, nullptr);
+
+    struct device device {};
+    struct device_ptr_array devices = device_ptr_array_init();
+
+    uint64_t job_id = 0;
+    ASSERT_EQ(flash_worker_submit_reset_async(
+        worker,
+        &device,
+        &devices,
+        0,
+        111,
+        &job_id
+    ), 0);
+    EXPECT_NE(job_id, 0u);
+
+    bool done = false;
+    uint16_t result = VRTD_RET_OK;
+    for (int i = 0; i < 1000; i++) {
+        ASSERT_EQ(flash_worker_poll_result(worker, &done, &result), 0);
+        if (done) {
+            break;
+        }
+        usleep(1000);
+    }
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(result, VRTD_RET_INTERNAL_ERROR);
+
+    cleanup_flash_worker(worker);
+    device_ptr_array_free(&devices);
+}

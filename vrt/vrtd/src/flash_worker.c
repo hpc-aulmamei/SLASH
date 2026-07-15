@@ -20,25 +20,25 @@
 
 /**
  * @file flash_worker.c
- * @brief Background-thread execution of cfgmem programming for vrtd.
+ * @brief Background-thread execution of cfgmem programming and reset for vrtd.
  *
  * Threading model
  * ---------------
  * A single dedicated worker thread runs for the lifetime of the flash_worker.
- * The event-loop thread submits one job at a time via
- * flash_worker_submit_async(); the worker performs the long-running
- * cfgmem_program_with_ami() (AMI PDI download + SBR reset sequence) in the
- * background and publishes a VRTD_RET_* result that the event loop retrieves
- * with flash_worker_poll_result().
+ * The event-loop thread submits one job at a time via flash_worker_submit_async()
+ * or flash_worker_submit_reset_async(); the worker performs the long-running
+ * cfgmem_program_with_ami() (AMI PDI download + SBR reset sequence) or a
+ * standalone reset in the background and publishes a VRTD_RET_* result that the
+ * event loop retrieves with flash_worker_poll_result().
  *
  * The interaction follows the same single-slot producer-consumer protocol as
  * the design writer, protected by a mutex + condition variable:
  *
- *   1. Submit stores the job parameters, takes ownership of the PDI fd, sets
- *      busy, and signals the condvar.
+ *   1. Submit stores the job parameters, takes ownership of the PDI fd when
+ *      present, sets busy/queued, and signals the condvar.
  *   2. The worker wakes, runs the job (with cancellation enabled so teardown
- *      can interrupt a stuck program), closes the fd, then publishes the
- *      result, clears busy, and broadcasts the condvar.
+ *      can interrupt a stuck program/reset), closes the fd when present, then
+ *      publishes the result, clears busy, and broadcasts the condvar.
  *   3. poll_result snapshots busy + result under the mutex.
  */
 
@@ -57,10 +57,17 @@
 #include <vrtd/wire.h>
 
 #include "flash.h"
+#include "reset.h"
 #include "utils.h"
 
+enum flash_worker_job_kind {
+    FLASH_WORKER_JOB_NONE = 0,
+    FLASH_WORKER_JOB_PROGRAM,
+    FLASH_WORKER_JOB_RESET,
+};
+
 /**
- * @brief State for the asynchronous cfgmem programming worker.
+ * @brief State for the asynchronous cfgmem programming/reset worker.
  */
 struct flash_worker {
     /** @brief Background worker thread handle. */
@@ -81,8 +88,12 @@ struct flash_worker {
     bool stop;
     /** @brief True while a job is queued or running. */
     bool busy;
+    /** @brief True when the worker thread should consume the stored job. */
+    bool queued;
+    /** @brief Kind of the queued/running job. */
+    enum flash_worker_job_kind job_kind;
 
-    /** @brief PDI file descriptor for the pending job (owned; -1 when idle). */
+    /** @brief PDI file descriptor for program jobs (owned; -1 when absent/idle). */
     int input_fd;
     /** @brief Device to program for the pending job (non-owning). */
     struct device *device;
@@ -216,7 +227,7 @@ static void *flash_worker_thread(void *arg)
 
     for (;;) {
         (void) pthread_mutex_lock(&worker->mutex);
-        while (!worker->stop && worker->input_fd < 0) {
+        while (!worker->stop && !worker->queued) {
             (void) pthread_cond_wait(&worker->cond, &worker->mutex);
         }
         if (worker->stop) {
@@ -224,18 +235,21 @@ static void *flash_worker_thread(void *arg)
             break;
         }
 
+        enum flash_worker_job_kind job_kind = worker->job_kind;
         int input_fd = worker->input_fd;
         struct device *device = worker->device;
         struct device_ptr_array *devices = worker->devices;
         uint8_t boot_device = worker->boot_device;
         uint32_t partition = worker->partition;
+        worker->queued = false;
         (void) pthread_mutex_unlock(&worker->mutex);
 
         uint16_t result = VRTD_RET_INTERNAL_ERROR;
 
         (void) pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-        LOG(LOG_INFO, "Cfgmem program starting on worker thread");
-        if (input_fd >= 0) {
+        switch (job_kind) {
+        case FLASH_WORKER_JOB_PROGRAM:
+            LOG(LOG_INFO, "Cfgmem program starting on worker thread");
             flash_worker_progress_callback(
                 worker,
                 VRTD_CFGMEM_PROGRAM_PHASE_OPENING_AMI,
@@ -252,6 +266,22 @@ static void *flash_worker_thread(void *arg)
                 worker
             );
             (void) close(input_fd);
+            input_fd = -1;
+            break;
+        case FLASH_WORKER_JOB_RESET:
+            LOG(LOG_INFO, "Device reset starting on worker thread");
+            result = reset_with_ami_partition_progress(
+                device,
+                devices,
+                partition,
+                flash_worker_progress_callback,
+                worker
+            );
+            break;
+        case FLASH_WORKER_JOB_NONE:
+        default:
+            LOG(LOG_ERR, "Flash worker woke with no valid job kind");
+            break;
         }
         (void) pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
 
@@ -259,6 +289,7 @@ static void *flash_worker_thread(void *arg)
         worker->input_fd = -1;
         worker->device = NULL;
         worker->devices = NULL;
+        worker->job_kind = FLASH_WORKER_JOB_NONE;
         worker->busy = false;
         worker->result = result;
         flash_worker_update_status_locked(
@@ -350,6 +381,8 @@ static int flash_worker_init(struct flash_worker *worker)
         .thread_started = false,
         .stop = false,
         .busy = false,
+        .queued = false,
+        .job_kind = FLASH_WORKER_JOB_NONE,
         .input_fd = -1,
         .device = NULL,
         .devices = NULL,
@@ -407,27 +440,34 @@ struct flash_worker *flash_worker_create(void)
     return result;
 }
 
-int flash_worker_submit_async(
+static int flash_worker_submit_job_async(
     struct flash_worker *worker,
     struct device *device,
     struct device_ptr_array *devices,
+    enum flash_worker_job_kind job_kind,
     int input_fd,
     uint8_t boot_device,
     uint32_t partition,
     uint64_t owner_conn_id,
-    uint64_t *job_id_out
+    uint64_t *job_id_out,
+    const char *caller
 )
 {
-    PROPAGATE_ERROR_NULL_LOG(worker, LOG_ERR, "flash_worker_submit_async called with null worker");
-    PROPAGATE_ERROR_NULL_LOG(device, LOG_ERR, "flash_worker_submit_async called with null device");
-    PROPAGATE_ERROR_NULL_LOG(devices, LOG_ERR, "flash_worker_submit_async called with null devices");
-    PROPAGATE_ERROR_NULL_LOG(job_id_out, LOG_ERR, "flash_worker_submit_async called with null job_id_out");
-    PROPAGATE_ERROR_LOG(
-        (input_fd >= 0) ? 0 : -1,
-        LOG_ERR,
-        "flash_worker_submit_async called with invalid fd %d",
-        input_fd
-    );
+    PROPAGATE_ERROR_NULL_LOG(worker, LOG_ERR, "%s called with null worker", caller);
+    PROPAGATE_ERROR_NULL_LOG(device, LOG_ERR, "%s called with null device", caller);
+    PROPAGATE_ERROR_NULL_LOG(devices, LOG_ERR, "%s called with null devices", caller);
+    PROPAGATE_ERROR_NULL_LOG(job_id_out, LOG_ERR, "%s called with null job_id_out", caller);
+    if (job_kind == FLASH_WORKER_JOB_PROGRAM) {
+        PROPAGATE_ERROR_LOG(
+            (input_fd >= 0) ? 0 : -1,
+            LOG_ERR,
+            "%s called with invalid fd %d",
+            caller,
+            input_fd
+        );
+    } else if (job_kind != FLASH_WORKER_JOB_RESET) {
+        PROPAGATE_ERROR_LOG(-1, LOG_ERR, "%s called with invalid job kind %d", caller, (int)job_kind);
+    }
 
     int pthread_ret = pthread_mutex_lock(&worker->mutex);
     int ret = pthread_ret == 0 ? 0 : -1;
@@ -436,9 +476,10 @@ int flash_worker_submit_async(
     pthread_mutex_t *locked_mutex = &worker->mutex;
 
     /* Reject if busy, stopping, or already holding a pending job. */
-    ret = (worker->stop || worker->busy || worker->input_fd >= 0) ? -1 : 0;
+    ret = (worker->stop || worker->busy || worker->queued) ? -1 : 0;
     PROPAGATE_ERROR_LOG(ret, LOG_WARNING, "Flash worker is busy or stopping");
 
+    worker->job_kind = job_kind;
     worker->input_fd = input_fd;
     worker->device = device;
     worker->devices = devices;
@@ -452,6 +493,7 @@ int flash_worker_submit_async(
     worker->owner_conn_id = owner_conn_id;
     worker->started_msec = monotonic_msec();
     worker->result = VRTD_RET_INTERNAL_ERROR;
+    worker->queued = true;
     flash_worker_update_status_locked(
         worker,
         VRTD_CFGMEM_PROGRAM_STATE_QUEUED,
@@ -464,6 +506,54 @@ int flash_worker_submit_async(
     (void) pthread_cond_signal(&worker->cond);
 
     return 0;
+}
+
+int flash_worker_submit_async(
+    struct flash_worker *worker,
+    struct device *device,
+    struct device_ptr_array *devices,
+    int input_fd,
+    uint8_t boot_device,
+    uint32_t partition,
+    uint64_t owner_conn_id,
+    uint64_t *job_id_out
+)
+{
+    return flash_worker_submit_job_async(
+        worker,
+        device,
+        devices,
+        FLASH_WORKER_JOB_PROGRAM,
+        input_fd,
+        boot_device,
+        partition,
+        owner_conn_id,
+        job_id_out,
+        "flash_worker_submit_async"
+    );
+}
+
+int flash_worker_submit_reset_async(
+    struct flash_worker *worker,
+    struct device *device,
+    struct device_ptr_array *devices,
+    uint32_t partition,
+    uint64_t owner_conn_id,
+    uint64_t *job_id_out
+)
+{
+    return flash_worker_submit_job_async(
+        worker,
+        device,
+        devices,
+        FLASH_WORKER_JOB_RESET,
+        -1,
+        0,
+        partition,
+        owner_conn_id,
+        job_id_out,
+        "flash_worker_submit_reset_async"
+    );
 }
 
 int flash_worker_poll_result(struct flash_worker *worker, bool *done, uint16_t *result)

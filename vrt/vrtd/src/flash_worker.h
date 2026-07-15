@@ -20,27 +20,28 @@
 
 /**
  * @file flash_worker.h
- * @brief Asynchronous cfgmem (flash) programming for SLASH devices.
+ * @brief Asynchronous cfgmem programming and reset execution for SLASH devices.
  *
- * Programming a device's configuration memory takes a long time: the AMI PDI
- * download runs for minutes and the subsequent SBR-based reset sequence adds
- * tens of seconds of settle/rescan waits.  Running that work directly inside
- * the single-threaded sd-event loop would freeze the loop for the whole
- * duration, which starves the systemd watchdog keepalive (sent at half of
- * WatchdogSec) and gets vrtd killed with SIGABRT.
+ * Programming a device's configuration memory and resetting a board both take
+ * long enough to block the daemon's single-threaded sd-event loop.  The AMI
+ * PDI download runs for minutes, and the subsequent SBR-based reset sequence
+ * adds tens of seconds of settle/rescan waits.  Running that work directly
+ * inside the event loop would starve the systemd watchdog keepalive (sent at
+ * half of WatchdogSec) and gets vrtd killed with SIGABRT.
  *
- * The flash_worker offloads @ref cfgmem_program_with_ami to a dedicated
- * background thread and exposes an async polling API, mirroring the design
- * writer:
+ * The flash_worker offloads @ref cfgmem_program_with_ami and standalone
+ * reset jobs to a dedicated background thread and exposes an async polling API,
+ * mirroring the design writer:
  *
- *   1. @c flash_worker_submit_async -- hand off the PDI fd and job parameters
- *      to the background thread.  Returns immediately.
- *   2. @c flash_worker_poll_result -- non-blocking check: has the program
+ *   1. @c flash_worker_submit_async / @c flash_worker_submit_reset_async --
+ *      hand off the job parameters to the background thread.  Return
+ *      immediately.
+ *   2. @c flash_worker_poll_result -- non-blocking check: has the job
  *      finished?  If yes, retrieves the VRTD_RET_* result code.
  *
- * Only one cfgmem program may run at a time: the reset step mutates the
- * daemon's shared device list, so the caller must also ensure no other
- * request that touches device state runs concurrently.
+ * Only one job may run at a time: reset mutates the daemon's shared device
+ * list, so the caller must also ensure no other request that touches device
+ * state runs concurrently.
  */
 
 #ifndef VRTD_FLASH_WORKER_H
@@ -98,7 +99,32 @@ int flash_worker_submit_async(
 );
 
 /**
- * @brief Poll the latest progress snapshot for a cfgmem program.
+ * @brief Submit a reset job for asynchronous execution.
+ *
+ * Runs the same AMI/SBR reset flow used after cfgmem programming, without
+ * programming a PDI first.  Only one job may be in flight at a time.
+ *
+ * @param worker        The flash worker instance.
+ * @param device        The device to reset (non-owning; consumed by the reset
+ *                      step when removed from @p devices).
+ * @param devices       The daemon's tracked device array (non-owning).
+ * @param partition     Flash partition to select and boot.
+ * @param owner_conn_id Client connection ID that owns this job.
+ * @param job_id_out    Output: job identifier for result/status bookkeeping.
+ * @return 0 on success (job enqueued), -1 if the worker is busy/stopping or on
+ *         invalid arguments.
+ */
+int flash_worker_submit_reset_async(
+    struct flash_worker *worker,
+    struct device *device,
+    struct device_ptr_array *devices,
+    uint32_t partition,
+    uint64_t owner_conn_id,
+    uint64_t *job_id_out
+);
+
+/**
+ * @brief Poll the latest progress snapshot for a worker job.
  *
  * @param worker  The flash worker instance.
  * @param job_id  Job identifier returned by flash_worker_submit_async().
@@ -112,7 +138,7 @@ int flash_worker_poll_status(
 );
 
 /**
- * @brief Poll the latest progress snapshot for an owner-scoped cfgmem job.
+ * @brief Poll the latest progress snapshot for an owner-scoped worker job.
  *
  * @param worker        The flash worker instance.
  * @param job_id        Job identifier returned by flash_worker_submit_async().
@@ -129,7 +155,7 @@ int flash_worker_poll_status_for_owner(
 );
 
 /**
- * @brief Poll for the result of an asynchronous cfgmem program.
+ * @brief Poll for the result of an asynchronous worker job.
  *
  * @param worker  The flash worker instance.
  * @param done    Output: true if no job is in progress (completed or never
@@ -141,7 +167,7 @@ int flash_worker_poll_status_for_owner(
 int flash_worker_poll_result(struct flash_worker *worker, bool *done, uint16_t *result);
 
 /**
- * @brief Query whether a cfgmem program is currently in progress.
+ * @brief Query whether a worker job is currently in progress.
  *
  * @param worker  The flash worker instance (NULL-safe: returns false).
  * @return true if a job is in flight, false otherwise.
