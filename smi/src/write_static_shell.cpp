@@ -381,6 +381,12 @@ int runJtagMode(const WriteStaticShell::Options& options) {
     }
 
     reporter.done("JTAG programming complete");
+
+    std::cerr
+        << "The board is now booted from the JTAG-loaded image.\n"
+        << "The next 'v80-smi reset' will boot the board from flash.\n"
+        << "To reset the board in JTAG mode, re-run 'v80-smi write-static-shell --jtag'.\n";
+
     return 0;
 }
 

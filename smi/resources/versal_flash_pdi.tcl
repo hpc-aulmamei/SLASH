@@ -30,10 +30,9 @@
 #      JTAG (same registers as
 #      submodules/AVED/hw/*/scripts/versal_change_boot_mode.tcl).
 #   2. Programs the PDI over the JTAG debug interface.
-#   3. Leaves the boot-mode override set on success, so the board continues
-#      to run from the JTAG-loaded image for the rest of the test.
-#      Tests that use this flow must avoid AMI-triggered resets unless they
-#      also re-run this JTAG programming step afterward.
+#   3. Restores the normal pin-strapped boot mode without resetting again. The
+#      board keeps running from the JTAG-loaded image, while the next reset
+#      boots from flash instead of waiting for another JTAG-supplied image.
 #
 # PDI_PATH must point to a JTAG-bootable boot PDI (boot header at offset 0),
 # not a flash image. In particular the SLASH static-shell PDI
@@ -145,11 +144,10 @@ if {$target_error} {
     error "versal_flash_pdi: target discovery failed: $target_error_message"
 }
 
-# Steps 1-2 are wrapped in catch so failure can restore the boot-mode override.
-# On success, the override intentionally remains set to JTAG: users of this
-# flow want the board to keep running from the JTAG-loaded image. On failure,
-# restoring is safer because a half-programmed board left in JTAG boot mode
-# would strand PMC ROM waiting for a debugger on later resets.
+# Steps 1-3 are wrapped in catch so failure can restore the boot-mode override.
+# On success, clear the override without resetting again: users of this flow
+# want the board to keep running from the JTAG-loaded image, but later AMI/SBR
+# resets must boot from flash rather than waiting for another JTAG image.
 set flash_error [catch {
     # 1. Force JTAG boot mode.
     select_target_id $versal_target_id
@@ -162,6 +160,10 @@ set flash_error [catch {
     # 2. Program the PDI over JTAG.
     select_target_id $pmc_target_id
     device program $pdi_path
+
+    # 3. Restore normal boot-mode strap sampling for later resets.
+    select_target_id $versal_target_id
+    mwr 0xf1260200 0x00000000
 } flash_error_message]
 
 if {$flash_error} {
