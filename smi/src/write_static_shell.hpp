@@ -36,10 +36,11 @@ class WriteStaticShell {
 public:
     /// @brief Options parsed from the CLI for the write-static-shell command.
     struct Options {
+        bool flash = false;                 ///< Use VRTD cfgmem flash programming.
         bool jtag = false;                  ///< Use JTAG/xsdb instead of cfgmem flash.
-        std::string bdf;                    ///< Target board address, unless noDevice is set.
+        std::string bdf;                    ///< Target board address, unless noRemoveDevice is set.
         std::string pdiPath;                ///< Override PDI path for active development.
-        bool noDevice = false;              ///< Skip pre-JTAG PCIe remove; JTAG mode only.
+        bool noRemoveDevice = false;        ///< Skip pre-JTAG PCIe remove; JTAG mode only.
         std::vector<std::string> bashSources; ///< Environment setup scripts for JTAG mode.
         std::string xsdbTargetId;           ///< Optional Versal xcv80 XSDB target_id.
     };

@@ -154,14 +154,13 @@ Write the installed static SLASH shell PDI to a V80 board.
 
 .. code-block:: text
 
-   v80-smi write-static-shell [--flash] -d <BDF> [--pdi <file>]
-   v80-smi write-static-shell --jtag -d <BDF> [--pdi <file>] [--bash-source <file> ...]
-   v80-smi write-static-shell --jtag --no-device [--pdi <file>] [--bash-source <file> ...]
+   v80-smi write-static-shell --flash -d <BDF> [--pdi <file>]
+   v80-smi write-static-shell --jtag -d <BDF> [--pdi <file>] [--xsdb-target-id <id>] [--bash-source <file> ...]
+   v80-smi write-static-shell --jtag --no-remove-device [--pdi <file>] [--xsdb-target-id <id>] [--bash-source <file> ...]
 
 Modes:
 
-* ``--flash`` is the default. It resolves
-  ``amd_v80_gen5x8_25.1.pdi`` via
+* ``--flash`` resolves ``amd_v80_gen5x8_25.1.pdi`` via
   ``python3 -m slashkit static-shell-path`` and programs it through the VRTD
   cfgmem programming command.
 * ``--jtag`` resolves ``amd_v80_gen5x8_25.1_nofpt.pdi`` the same way,
@@ -173,8 +172,7 @@ Modes:
 
 .. option:: --flash
 
-   Program the flash-image PDI via VRTD cfgmem programming. This is the
-   default mode.
+   Program the flash-image PDI via VRTD cfgmem programming.
 
 .. option:: --jtag
 
@@ -182,16 +180,20 @@ Modes:
 
 .. option:: -d, --device <BDF>
 
-   Board address. Required except with ``--jtag --no-device``.
+   Board address. Required except with ``--jtag --no-remove-device``.
 
 .. option:: --pdi <file>
 
    Use this PDI file instead of resolving the installed static shell PDI.
 
-.. option:: --no-device
+.. option:: --no-remove-device
 
    Skip the pre-JTAG PCIe device removal. Valid only with ``--jtag``. PCIe
    rescan still runs after ``xsdb``.
+
+.. option:: --xsdb-target-id <id>
+
+   Select the ``Versal xcv80`` XSDB ``target_id``. Valid only with ``--jtag``.
 
 .. option:: --bash-source <file>
 
@@ -199,8 +201,9 @@ Modes:
    valid only with ``--jtag``.
 
 In JTAG mode, ``v80-smi`` removes all V80 PCIe functions through VRTD unless
-``--no-device`` is used, runs ``/bin/bash -c 'source ...; xsdb ...'`` with
-``PDI_PATH`` set to the selected PDI, and always asks VRTD to rescan PCIe after
+``--no-remove-device`` is used, runs ``/bin/bash -c 'source ...; xsdb ...'``
+with ``PDI_PATH`` set to the selected PDI, optionally sets ``V80_TARGET_ID``
+from ``--xsdb-target-id``, and always asks VRTD to rescan PCIe after
 the ``xsdb`` step completes. Since default PDI resolution uses
 ``python3 -m slashkit``, setting ``PYTHONPATH`` can select an in-repo
 ``slashkit``.

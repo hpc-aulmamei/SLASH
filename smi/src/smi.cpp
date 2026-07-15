@@ -114,9 +114,8 @@ static int smiMain(int argc, char **argv) {
     auto* writeStaticShellCommand = app.add_subcommand("write-static-shell",
         "Write the static SLASH shell to a V80 board");
     WriteStaticShell::Options writeStaticShellOptions;
-    bool writeStaticShellFlash{};
     auto* writeStaticShellFlashFlag = writeStaticShellCommand->add_flag("--flash",
-        writeStaticShellFlash, "Program the flash image via VRTD cfgmem programming (default)");
+        writeStaticShellOptions.flash, "Program the flash image via VRTD cfgmem programming");
     auto* writeStaticShellJtagFlag = writeStaticShellCommand->add_flag("--jtag",
         writeStaticShellOptions.jtag, "Program the no-FPT PDI over JTAG via xsdb");
     writeStaticShellFlashFlag->excludes(writeStaticShellJtagFlag);
@@ -125,7 +124,7 @@ static int smiMain(int argc, char **argv) {
         "Board address (e.g. 03:00 or 0000:03:00)");
     writeStaticShellCommand->add_option("--pdi", writeStaticShellOptions.pdiPath,
         "Use this PDI file instead of resolving the installed static shell PDI");
-    writeStaticShellCommand->add_flag("--no-device", writeStaticShellOptions.noDevice,
+    writeStaticShellCommand->add_flag("--no-remove-device", writeStaticShellOptions.noRemoveDevice,
         "Skip pre-JTAG PCIe device removal; only valid with --jtag");
     writeStaticShellCommand->add_option("--bash-source", writeStaticShellOptions.bashSources,
         "Source this shell script before running xsdb; may be repeated and is only valid with --jtag")

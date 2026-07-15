@@ -264,12 +264,16 @@ void runBashCommandWithPdiPath(const std::string& command,
 }
 
 void validateOptions(const WriteStaticShell::Options& options) {
-    if (!options.jtag) {
+    if (!options.flash && !options.jtag) {
+        throw std::invalid_argument("either --flash or --jtag must be specified");
+    }
+
+    if (options.flash) {
         if (options.bdf.empty()) {
             throw std::invalid_argument("-d/--device is required for --flash");
         }
-        if (options.noDevice) {
-            throw std::invalid_argument("--no-device is only valid with --jtag");
+        if (options.noRemoveDevice) {
+            throw std::invalid_argument("--no-remove-device is only valid with --jtag");
         }
         if (!options.bashSources.empty()) {
             throw std::invalid_argument("--bash-source is only valid with --jtag");
@@ -280,11 +284,12 @@ void validateOptions(const WriteStaticShell::Options& options) {
         return;
     }
 
-    if (options.noDevice && !options.bdf.empty()) {
-        throw std::invalid_argument("--no-device cannot be used with -d/--device");
+    if (options.noRemoveDevice && !options.bdf.empty()) {
+        throw std::invalid_argument("--no-remove-device cannot be used with -d/--device");
     }
-    if (!options.noDevice && options.bdf.empty()) {
-        throw std::invalid_argument("-d/--device is required for --jtag unless --no-device is used");
+    if (!options.noRemoveDevice && options.bdf.empty()) {
+        throw std::invalid_argument(
+            "-d/--device is required for --jtag unless --no-remove-device is used");
     }
 }
 
@@ -346,7 +351,7 @@ int runJtagMode(const WriteStaticShell::Options& options) {
 
     reporter.stage("Connecting to VRTD");
     vrtd::Session session;
-    if (!options.noDevice) {
+    if (!options.noRemoveDevice) {
         reporter.stage("Resolving device address");
         const std::string bdf = resolveBoardBdf(options.bdf, "write-static-shell");
         reporter.stage("Resolving VRTD device");
@@ -384,9 +389,9 @@ int runJtagMode(const WriteStaticShell::Options& options) {
 int WriteStaticShell::run(const Options& options) {
     validateOptions(options);
 
-    if (options.jtag) {
-        return runJtagMode(options);
+    if (options.flash) {
+        return runFlashMode(options);
     }
 
-    return runFlashMode(options);
+    return runJtagMode(options);
 }
