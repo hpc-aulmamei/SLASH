@@ -42,6 +42,7 @@
 #include "state.h"
 #include "accept.h"
 #include "device.h"
+#include "flash_worker.h"
 #include "signals.h"
 #include "hotplug.h"
 
@@ -93,6 +94,17 @@ int main(void)
     }
 
     LOG(LOG_INFO, "Discovered %zu device(s)", state.devices.len);
+
+    /*
+     * The flash worker runs long cfgmem programming jobs (AMI PDI download +
+     * reset) off the event-loop thread so the loop stays responsive enough to
+     * feed the systemd watchdog while a device is being reprogrammed.
+     */
+    state.flash_worker = flash_worker_create();
+    if (state.flash_worker == NULL) {
+        LOG(LOG_CRIT, "Failed to create flash worker");
+        exit(EXIT_FAILURE);
+    }
 
     _cleanup_(sd_event_unrefp)
     sd_event *ev = NULL;
@@ -148,6 +160,10 @@ int main(void)
     }
 
     (void) sd_notify(0, "STOPPING=1");
+
+    cleanup_flash_worker(state.flash_worker);
+    state.flash_worker = NULL;
+    uint64_array_free(&state.deferred_buffer_cleanup_conn_ids);
 
     globals_destroy();
 
