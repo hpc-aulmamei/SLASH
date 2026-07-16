@@ -36,10 +36,12 @@ _MAX_MONITOR_SLOTS = 16
 # host debug tooling can reach it at one known location across all RM configs.
 _DBG_HUB_NAME = "axi_dbg_hub_0"
 _DBG_HUB_DST_PIN = f"{_DBG_HUB_NAME}/S_AXI"      # SmartConnect MI target
-_DBG_HUB_BUSIF = "S_AXI_DBG_HUB"                 # address-segment bus interface
+# address-segment bus interface
+_DBG_HUB_BUSIF = "S_AXI_DBG_HUB"
 _DBG_HUB_SEGMENT = "Mem0"                        # address-segment name
 _DBG_HUB_RANGE = 0x0020_0000                     # 2 MiB
-_DBG_HUB_OFFSET = 0x0202_0060_0000               # FIXED - must match slash_base.tcl
+# FIXED - must match slash_base.tcl
+_DBG_HUB_OFFSET = 0x0202_0060_0000
 
 
 def _port_norm(s): return re.sub(r"[^a-z0-9]", "", s.lower())
