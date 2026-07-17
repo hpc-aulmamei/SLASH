@@ -132,6 +132,15 @@ static int smiMain(int argc, char **argv) {
         "Board address (e.g. 03:00 or 0000:03:00)");
     writeStaticShellCommand->add_option("--pdi", writeStaticShellOptions.pdiPath,
         "Use this PDI file instead of resolving the installed static shell PDI");
+    const std::map<std::string, std::string> writeStaticShellTypeMap{
+        {"service", "service"},
+        {"compute", "compute"},
+        {"all", "all"},
+    };
+    writeStaticShellCommand->add_option("--shelltype", writeStaticShellOptions.shellType,
+        "Shell to program: all (both flash partitions), service (partition 0), or compute (partition 1)")
+        ->transform(CLI::CheckedTransformer(writeStaticShellTypeMap, CLI::ignore_case))
+        ->default_str("all for --flash without --pdi, service otherwise");
     writeStaticShellCommand->add_flag("--no-remove-device", writeStaticShellOptions.noRemoveDevice,
         "Skip pre-JTAG PCIe device removal; only valid with --jtag");
     writeStaticShellCommand->add_option("--bash-source", writeStaticShellOptions.bashSources,

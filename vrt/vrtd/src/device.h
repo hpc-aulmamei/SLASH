@@ -79,6 +79,8 @@ struct device {
     struct vrtd_pci_info pci_info;
     /** @brief Shell that vrtd believes is currently booted. In-memory only. */
     enum vrtd_shell_type current_shell;
+    /** @brief Whether vrtd believes this device was booted from a JTAG-loaded image. */
+    bool jtag;
 };
 
 /**

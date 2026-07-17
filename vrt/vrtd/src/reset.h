@@ -33,6 +33,11 @@ struct device_ptr_array;
 
 int shell_boot_partition(enum vrtd_shell_type shell, uint32_t *partition_out);
 bool shell_reset_required(enum vrtd_shell_type current_shell, enum vrtd_shell_type required_shell);
+bool shell_switch_blocked_by_jtag(
+    enum vrtd_shell_type current_shell,
+    enum vrtd_shell_type required_shell,
+    bool jtag
+);
 uint16_t reset_with_ami(
     struct device *device,
     struct device_ptr_array *devices,

@@ -146,6 +146,8 @@ Device Session::getDevice(size_t i) const {
         info.pci.device_id,
         info.pci.subsystem_vendor_id,
         info.pci.subsystem_device_id,
+        static_cast<ShellType>(info.shell_type),
+        info.jtag != 0,
         [&](const Device& device, uint8_t num) { return getBar(device, num); },
         [&](const Device& device, const slash_qdma_qpair_add& cfg) { return createQdmaQpair(device, cfg); },
         [&](const Device& device, BufferAllocType type, uint64_t size, uint64_t arg, BufferAllocDir dir, MmChannel mm) {
@@ -156,6 +158,7 @@ Device Session::getDevice(size_t i) const {
         },
         [&](const Device& device, HotplugOp op, uint8_t function) { return hotplugOp(device, op, function); },
         [&](const Device& device, ShellType shellType) { return resetSequence(device, shellType); },
+        [&](const Device& device, ShellType shellType, bool jtag) { return setShellState(device, shellType, jtag); },
         [&](const Device& device, int input_fd, ShellType requiredShell) { return designWrite(device, input_fd, requiredShell); },
         [&](const Device& device, std::string_view path, ShellType requiredShell) {
             return designWriteFile(device, path, requiredShell);
@@ -220,6 +223,8 @@ Device Session::getDeviceByBdf(std::string_view bdf) const {
         info.pci.device_id,
         info.pci.subsystem_vendor_id,
         info.pci.subsystem_device_id,
+        static_cast<ShellType>(info.shell_type),
+        info.jtag != 0,
         [&](const Device& device, uint8_t num) { return getBar(device, num); },
         [&](const Device& device, const slash_qdma_qpair_add& cfg) { return createQdmaQpair(device, cfg); },
         [&](const Device& device, BufferAllocType type, uint64_t size, uint64_t arg, BufferAllocDir dir, MmChannel mm) {
@@ -230,6 +235,7 @@ Device Session::getDeviceByBdf(std::string_view bdf) const {
         },
         [&](const Device& device, HotplugOp op, uint8_t function) { return hotplugOp(device, op, function); },
         [&](const Device& device, ShellType shellType) { return resetSequence(device, shellType); },
+        [&](const Device& device, ShellType shellType, bool jtag) { return setShellState(device, shellType, jtag); },
         [&](const Device& device, int input_fd, ShellType requiredShell) { return designWrite(device, input_fd, requiredShell); },
         [&](const Device& device, std::string_view path, ShellType requiredShell) {
             return designWriteFile(device, path, requiredShell);
@@ -518,6 +524,20 @@ void Session::resetSequence(const Device& device, ShellType shellType) const {
 
     auto ret = vrtd_device_reset_sequence(fd, device.getNum(),
                                           static_cast<uint8_t>(shellType));
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+}
+
+void Session::setShellState(const Device& device, ShellType shellType, bool jtag) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    auto ret = vrtd_set_shell_state(fd, device.getNum(),
+                                    static_cast<uint8_t>(shellType),
+                                    jtag ? 1 : 0);
     if (ret != VRTD_RET_OK) {
         throw Error(ret);
     }

@@ -723,6 +723,31 @@ enum vrtd_ret vrtd_design_write_file(
     return ret;
 }
 
+enum vrtd_ret vrtd_set_shell_state(
+    int fd,
+    uint32_t dev,
+    uint8_t shell_type,
+    uint8_t jtag
+)
+{
+    struct vrtd_req_set_shell_state req = {
+        .dev_number = dev,
+        .shell_type = shell_type,
+        .jtag = jtag,
+    };
+    struct vrtd_resp_set_shell_state resp = {0};
+
+    int ret = vrtd_raw_request(fd, VRTD_REQ_SET_SHELL_STATE,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL, NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    return VRTD_RET_OK;
+}
+
 enum vrtd_ret vrtd_cfgmem_program(
     int fd,
     uint32_t dev,

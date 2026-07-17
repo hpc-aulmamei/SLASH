@@ -311,6 +311,16 @@ private:
     void resetSequence(const Device& device, ShellType shellType) const;
 
     /**
+     * @internal Set vrtd's in-memory shell/JTAG state for a device.
+     *
+     * @param device    Device target.
+     * @param shellType Hardware shell believed to be booted.
+     * @param jtag      Whether the device was booted from JTAG.
+     * @throws vrtd::Error on error.
+     */
+    void setShellState(const Device& device, ShellType shellType, bool jtag) const;
+
+    /**
      * @internal Perform a design writer transfer using an input FD.
      *
      * @param device   Device owning the design writer.

@@ -54,3 +54,15 @@ TEST(ResetShellTest, ShellResetNotRequiredForMatch) {
     EXPECT_FALSE(shell_reset_required(VRTD_SHELL_SERVICE, VRTD_SHELL_SERVICE));
     EXPECT_FALSE(shell_reset_required(VRTD_SHELL_COMPUTE, VRTD_SHELL_COMPUTE));
 }
+
+TEST(ResetShellTest, JtagBlocksShellSwitchResetOnlyWhenResetWouldBeRequired) {
+    EXPECT_TRUE(shell_switch_blocked_by_jtag(
+        VRTD_SHELL_SERVICE, VRTD_SHELL_COMPUTE, true));
+    EXPECT_TRUE(shell_switch_blocked_by_jtag(
+        VRTD_SHELL_UNKNOWN, VRTD_SHELL_SERVICE, true));
+
+    EXPECT_FALSE(shell_switch_blocked_by_jtag(
+        VRTD_SHELL_SERVICE, VRTD_SHELL_SERVICE, true));
+    EXPECT_FALSE(shell_switch_blocked_by_jtag(
+        VRTD_SHELL_SERVICE, VRTD_SHELL_COMPUTE, false));
+}

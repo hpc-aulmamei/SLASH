@@ -134,6 +134,15 @@ bool shell_reset_required(enum vrtd_shell_type current_shell, enum vrtd_shell_ty
     return current_shell == VRTD_SHELL_UNKNOWN || current_shell != required_shell;
 }
 
+bool shell_switch_blocked_by_jtag(
+    enum vrtd_shell_type current_shell,
+    enum vrtd_shell_type required_shell,
+    bool jtag
+)
+{
+    return jtag && shell_reset_required(current_shell, required_shell);
+}
+
 /**
  * Perform a full device reset using AMI firmware commands and PCIe hotplug.
  *

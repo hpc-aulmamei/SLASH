@@ -392,6 +392,8 @@ struct V80Board {
     PfStatus    pf1;        ///< Status of PF1 (QDMA).
     PfStatus    pf2;        ///< Status of PF2 (control).
     VrtdStatus  vrtd;       ///< Status of VRTD daemon registration.
+    vrtd::ShellType shellType = vrtd::ShellType::Unknown; ///< Shell state reported by VRTD.
+    bool        jtag{};      ///< True if VRTD reports the board as JTAG-booted.
     bool        longPrinting{};  ///< If true, include detailed sysfs info per PF.
 
     /// Detailed sysfs snapshot for each PF (populated only when longPrinting).
@@ -447,13 +449,17 @@ static std::vector<V80Board> discoverBoards(bool longPrinting, bool sensors) {
             board.pf2Device = tryReadDevice(pf2Bdf, true);
         }
 
-        if (sensors && board.vrtd.ok) {
+        if (board.vrtd.ok) {
             try {
                 vrtd::Session session;
                 auto device = session.getDeviceByBdf(base);
-                board.sensors = device.getSensorInfo();
+                board.shellType = device.getShellType();
+                board.jtag = device.isJtag();
+                if (sensors) {
+                    board.sensors = device.getSensorInfo();
+                }
             } catch (...) {
-                // Sensor query failed — leave sensors empty, don't fail the command.
+                // Runtime state/sensor queries are best-effort for list output.
             }
         }
 
@@ -513,6 +519,23 @@ static void printVrtdStatus(std::ostream& out, const VrtdStatus& vrtd) {
         out << "NOT READY: " << vrtd.reason;
     }
     out << ")";
+}
+
+static const char *shellTypeName(vrtd::ShellType shellType) {
+    switch (shellType) {
+    case vrtd::ShellType::Service: return "service";
+    case vrtd::ShellType::Compute: return "compute";
+    case vrtd::ShellType::Unknown: return "unknown";
+    }
+
+    return "unknown";
+}
+
+static void printShellState(std::ostream& out, vrtd::ShellType shellType, bool jtag) {
+    out << "Shell: " << shellTypeName(shellType);
+    if (jtag) {
+        out << " (JTAG)";
+    }
 }
 
 /// Returns a human-readable name for a sensor type bitmask.
@@ -611,6 +634,10 @@ std::ostream& operator<<(std::ostream& out, const V80Board& board) {
     printPfStatus(out, board.pf2);
     out << " ";
     printVrtdStatus(out, board.vrtd);
+    if (board.vrtd.ok) {
+        out << " ";
+        printShellState(out, board.shellType, board.jtag);
+    }
     out << "\n";
 
     if (board.longPrinting) {
@@ -624,6 +651,11 @@ std::ostream& operator<<(std::ostream& out, const V80Board& board) {
             out << "NOT READY: " << board.vrtd.reason;
         }
         out << "\n";
+        if (board.vrtd.ok) {
+            out << INDENT2;
+            printShellState(out, board.shellType, board.jtag);
+            out << "\n";
+        }
     }
 
     if (!board.sensors.empty()) {
@@ -684,6 +716,9 @@ Json::Value toJson(const V80Board& board) {
     vrtdJson["status"] = board.vrtd.ok ? "OK" : "NOT READY";
     if (!board.vrtd.ok) {
         vrtdJson["reason"] = board.vrtd.reason;
+    } else {
+        vrtdJson["shell_type"] = shellTypeName(board.shellType);
+        vrtdJson["jtag"] = board.jtag;
     }
     j["vrtd"] = vrtdJson;
 

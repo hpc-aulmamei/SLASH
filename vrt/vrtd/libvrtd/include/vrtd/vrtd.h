@@ -588,6 +588,13 @@ enum vrtd_ret vrtd_device_reset_sequence(
     uint8_t shell_type
 );
 
+enum vrtd_ret vrtd_set_shell_state(
+    int fd,
+    uint32_t dev,
+    uint8_t shell_type,
+    uint8_t jtag
+);
+
 /**
  * @brief Get the clock rate for a device region.
  *

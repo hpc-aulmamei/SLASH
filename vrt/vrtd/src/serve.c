@@ -261,6 +261,13 @@ static uint16_t client_handle_request_design_write(
     struct vrtd_resp_design_write *resp_body,
     uint16_t *resp_size
 );
+static uint16_t client_handle_request_set_shell_state(
+    struct client *client,
+    const struct vrtd_req_set_shell_state *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_set_shell_state *resp_body,
+    uint16_t *resp_size
+);
 static uint16_t client_handle_request_cfgmem_program(
     struct client *client,
     const struct vrtd_req_cfgmem_program *req_body,
@@ -340,6 +347,7 @@ static const char *vrtd_opcode_to_string(uint16_t opcode)
     case VRTD_REQ_DEVICE_HOTPLUG_OP: return "DEVICE_HOTPLUG_OP";
     case VRTD_REQ_GET_SENSOR_INFO:   return "GET_SENSOR_INFO";
     case VRTD_REQ_BUFFER_OPEN_RAW:   return "BUFFER_OPEN_RAW";
+    case VRTD_REQ_SET_SHELL_STATE:   return "SET_SHELL_STATE";
     default:                         return "UNKNOWN";
     }
 }
@@ -1272,6 +1280,16 @@ static int client_handle_request(struct client *client)
                 &size
             );
         break;
+    case VRTD_REQ_SET_SHELL_STATE:
+        resp_header->ret =
+            client_handle_request_set_shell_state(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_set_shell_state),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_set_shell_state),
+                &size
+            );
+        break;
     case VRTD_REQ_CFGMEM_PROGRAM:
         resp_header->ret =
             client_handle_request_cfgmem_program(
@@ -1796,6 +1814,14 @@ static uint16_t client_handle_request_design_write(
         return VRTD_RET_BUSY;
     }
 
+    if (shell_switch_blocked_by_jtag(d->current_shell, required_shell, d->jtag)) {
+        LOG(LOG_NOTICE,
+            "design_write: refusing automatic shell reset for JTAG-booted device dev=%u bdf=%s current=%u required=%u",
+            (unsigned int)req_body->dev_number, d->pci_info.bdf,
+            (unsigned int)d->current_shell, (unsigned int)required_shell);
+        return VRTD_RET_SHELL_LOCKED;
+    }
+
     if (shell_reset_required(d->current_shell, required_shell)) {
         char target_bdf[VRTD_PCI_BDF_LEN] = {0};
         strncpy(target_bdf, d->pci_info.bdf, sizeof(target_bdf) - 1);
@@ -1849,6 +1875,79 @@ static uint16_t client_handle_request_design_write(
         (unsigned int)client->uid, (unsigned long long)client->conn_id);
 
     *resp_size = 0;
+    return VRTD_RET_OK;
+}
+
+/* ---- SET_SHELL_STATE ---------------------------------------------------- */
+
+static uint16_t client_handle_request_set_shell_state(
+    struct client *client,
+    const struct vrtd_req_set_shell_state *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_set_shell_state *resp_body,
+    uint16_t *resp_size
+)
+{
+    if (req_size < sizeof(*req_body)) {
+        LOG(LOG_WARNING, "set_shell_state: malformed request");
+        return VRTD_RET_BAD_REQUEST;
+    }
+
+    int ret = auth_request_set_shell_state(client, req_body);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+
+    *resp_size = 0;
+
+    if (req_body->dev_number >= client->state->devices.len) {
+        LOG(LOG_NOTICE, "set_shell_state: device %u does not exist",
+            (unsigned int)req_body->dev_number);
+        return VRTD_RET_NOEXIST;
+    }
+
+    struct device *d = client->state->devices.d[req_body->dev_number];
+    if (d == NULL) {
+        LOG(LOG_NOTICE, "set_shell_state: device %u is null",
+            (unsigned int)req_body->dev_number);
+        return VRTD_RET_NOEXIST;
+    }
+
+    enum vrtd_shell_type shell_type = (enum vrtd_shell_type)req_body->shell_type;
+    uint32_t unused_partition = 0;
+    if (shell_boot_partition(shell_type, &unused_partition) != 0) {
+        LOG(LOG_WARNING, "set_shell_state: invalid shell type %u",
+            (unsigned int)req_body->shell_type);
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    if (d->current_shell != VRTD_SHELL_UNKNOWN && d->current_shell != shell_type) {
+        LOG(LOG_NOTICE,
+            "set_shell_state: refusing to change known shell state dev=%u current=%u requested=%u",
+            (unsigned int)req_body->dev_number,
+            (unsigned int)d->current_shell, (unsigned int)shell_type);
+        return VRTD_RET_BUSY;
+    }
+
+    if (req_body->jtag == 0 && d->jtag) {
+        LOG(LOG_NOTICE, "set_shell_state: refusing to clear JTAG flag for dev=%u",
+            (unsigned int)req_body->dev_number);
+        return VRTD_RET_BUSY;
+    }
+
+    d->current_shell = shell_type;
+    d->jtag = req_body->jtag != 0;
+
+    memset(resp_body, 0, sizeof(*resp_body));
+    *resp_size = sizeof(*resp_body);
+
+    LOG(LOG_INFO, "set_shell_state: dev=%u shell=%u jtag=%u uid=%u conn_id=%llu",
+        (unsigned int)req_body->dev_number, (unsigned int)d->current_shell,
+        (unsigned int)d->jtag, (unsigned int)client->uid,
+        (unsigned long long)client->conn_id);
+
     return VRTD_RET_OK;
 }
 
@@ -3280,6 +3379,8 @@ static uint16_t client_handle_request_get_device_info(
     memset(resp_body, 0, sizeof(*resp_body));
     snprintf(resp_body->info.name, sizeof(resp_body->info.name), "%s", basename(path));
     memcpy(&resp_body->info.pci, &d->pci_info, sizeof(struct vrtd_pci_info));
+    resp_body->info.shell_type = (uint8_t)d->current_shell;
+    resp_body->info.jtag = d->jtag ? 1 : 0;
 
     *resp_size = sizeof(*resp_body);
 
