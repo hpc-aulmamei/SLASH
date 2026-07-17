@@ -34,8 +34,9 @@ Device::Device(uint32_t num,
                std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir, MmChannel)> fOpenBuffer,
                std::function<Buffer(const Device&, uint64_t, uint64_t, BufferAllocDir, MmChannel)> fOpenBufferRaw,
                std::function<void(const Device&, HotplugOp, uint8_t)> fHotplugOp,
-               std::function<void(const Device&, int)> fDesignWrite,
-               std::function<void(const Device&, std::string_view)> fDesignWriteFile,
+               std::function<void(const Device&, ShellType)> fResetSequence,
+               std::function<void(const Device&, int, ShellType)> fDesignWrite,
+               std::function<void(const Device&, std::string_view, ShellType)> fDesignWriteFile,
                std::function<void(const Device&, int, uint8_t, uint32_t)> fCfgmemProgram,
                std::function<void(const Device&, std::string_view, uint8_t, uint32_t)> fCfgmemProgramFile,
                std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate,
@@ -53,6 +54,7 @@ Device::Device(uint32_t num,
     this->fOpenBuffer = fOpenBuffer;
     this->fOpenBufferRaw = fOpenBufferRaw;
     this->fHotplugOp = fHotplugOp;
+    this->fResetSequence = fResetSequence;
     this->fDesignWrite = fDesignWrite;
     this->fDesignWriteFile = fDesignWriteFile;
     this->fCfgmemProgram = fCfgmemProgram;
@@ -117,12 +119,16 @@ void Device::hotplugOp(HotplugOp op, uint8_t function) const {
     fHotplugOp(*this, op, function);
 }
 
-void Device::designWrite(int input_fd) const {
-    fDesignWrite(*this, input_fd);
+void Device::resetSequence(ShellType shellType) const {
+    fResetSequence(*this, shellType);
 }
 
-void Device::designWriteFile(std::string_view path) const {
-    fDesignWriteFile(*this, path);
+void Device::designWrite(int input_fd, ShellType requiredShell) const {
+    fDesignWrite(*this, input_fd, requiredShell);
+}
+
+void Device::designWriteFile(std::string_view path, ShellType requiredShell) const {
+    fDesignWriteFile(*this, path, requiredShell);
 }
 
 void Device::cfgmemProgram(int input_fd, uint8_t bootDevice, uint32_t partition) const {

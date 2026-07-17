@@ -109,6 +109,14 @@ static int smiMain(int argc, char **argv) {
     auto* resetCommand = app.add_subcommand("reset", "Hardware reset a V80 board");
     Reset::Options resetOptions;
     resetCommand->add_option("-d,--device", resetOptions.bdf, "Board address (e.g. 03:00 or 0000:03:00)")->required();
+    const std::map<std::string, std::string> shellTypeMap{
+        {"service", "service"},
+        {"compute", "compute"},
+    };
+    resetCommand->add_option("--shelltype", resetOptions.shellType,
+        "Shell to boot after reset: service (partition 0) or compute (partition 1)")
+        ->transform(CLI::CheckedTransformer(shellTypeMap, CLI::ignore_case))
+        ->default_str("service");
 
     // -- write-static-shell (persistent static shell programming) --
     auto* writeStaticShellCommand = app.add_subcommand("write-static-shell",

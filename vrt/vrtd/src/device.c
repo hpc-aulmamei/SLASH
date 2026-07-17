@@ -313,6 +313,8 @@ static int device_open(struct device **out, const char *path)
     struct device *d = calloc(1, sizeof *d);
     PROPAGATE_ERROR_NULL_STDC_LOG(d, LOG_ERR, "Failed to allocate memory for device data");
 
+    d->current_shell = VRTD_SHELL_UNKNOWN;
+
     d->path = strdup(path);
     PROPAGATE_ERROR_NULL_STDC_LOG(d->path, LOG_ERR, "Failed to allocate memory for device data");
 

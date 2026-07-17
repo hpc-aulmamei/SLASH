@@ -18,46 +18,39 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/// @file reset.cpp
-/// @brief Implementation of the Reset command.
+#include <gtest/gtest.h>
 
-#include "reset.hpp"
+#include <cstdint>
 
-#include <vrtd/session.hpp>
-
-#include <algorithm>
-#include <cctype>
-#include <stdexcept>
-#include <string_view>
-
-#include "bdf.hpp"
-
-namespace {
-
-vrtd::ShellType parseShellType(std::string_view text) {
-    std::string normalized(text);
-    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-    if (normalized == "service") {
-        return vrtd::ShellType::Service;
-    }
-    if (normalized == "compute") {
-        return vrtd::ShellType::Compute;
-    }
-
-    throw std::invalid_argument("shelltype must be one of: service, compute");
+extern "C" {
+#include "reset.h"
 }
 
-}  // namespace
+TEST(ResetShellTest, ShellBootPartitionMapsKnownShells) {
+    uint32_t partition = UINT32_MAX;
 
-int Reset::run(const Options& options) {
-    std::string bdf = resolveBoardBdf(options.bdf, "reset");
+    EXPECT_EQ(shell_boot_partition(VRTD_SHELL_SERVICE, &partition), 0);
+    EXPECT_EQ(partition, 0u);
 
-    // We use vrtd manually here, since vrt does not implement reset operations.
-    vrtd::Session session;
-    auto device = session.getDeviceByBdf(bdf);
-    device.resetSequence(parseShellType(options.shellType));
+    partition = UINT32_MAX;
+    EXPECT_EQ(shell_boot_partition(VRTD_SHELL_COMPUTE, &partition), 0);
+    EXPECT_EQ(partition, 1u);
+}
 
-    return 0;
+TEST(ResetShellTest, ShellBootPartitionRejectsUnknownShell) {
+    uint32_t partition = UINT32_MAX;
+
+    EXPECT_NE(shell_boot_partition(VRTD_SHELL_UNKNOWN, &partition), 0);
+    EXPECT_EQ(partition, UINT32_MAX);
+}
+
+TEST(ResetShellTest, ShellResetRequiredForUnknownOrMismatch) {
+    EXPECT_TRUE(shell_reset_required(VRTD_SHELL_UNKNOWN, VRTD_SHELL_SERVICE));
+    EXPECT_TRUE(shell_reset_required(VRTD_SHELL_SERVICE, VRTD_SHELL_COMPUTE));
+    EXPECT_TRUE(shell_reset_required(VRTD_SHELL_COMPUTE, VRTD_SHELL_SERVICE));
+}
+
+TEST(ResetShellTest, ShellResetNotRequiredForMatch) {
+    EXPECT_FALSE(shell_reset_required(VRTD_SHELL_SERVICE, VRTD_SHELL_SERVICE));
+    EXPECT_FALSE(shell_reset_required(VRTD_SHELL_COMPUTE, VRTD_SHELL_COMPUTE));
 }

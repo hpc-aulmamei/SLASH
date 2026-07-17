@@ -84,6 +84,7 @@
 
 #include <errno.h>
 #include <stddef.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <sys/ioctl.h>
@@ -110,6 +111,27 @@ static void reset_emit_progress(
     if (progress_cb != NULL) {
         progress_cb(progress_ctx, phase, 0, 0);
     }
+}
+
+int shell_boot_partition(enum vrtd_shell_type shell, uint32_t *partition_out)
+{
+    PROPAGATE_ERROR_NULL_LOG(partition_out, LOG_ERR, "Internal error: null partition_out");
+
+    switch (shell) {
+    case VRTD_SHELL_SERVICE:
+        *partition_out = 0;
+        return 0;
+    case VRTD_SHELL_COMPUTE:
+        *partition_out = 1;
+        return 0;
+    default:
+        return -1;
+    }
+}
+
+bool shell_reset_required(enum vrtd_shell_type current_shell, enum vrtd_shell_type required_shell)
+{
+    return current_shell == VRTD_SHELL_UNKNOWN || current_shell != required_shell;
 }
 
 /**
@@ -451,7 +473,34 @@ uint16_t reset_with_ami_partition(
     return reset_with_ami_partition_progress(device, devices, partition, NULL, NULL);
 }
 
-uint16_t reset_with_ami(struct device *device, struct device_ptr_array *devices)
+uint16_t reset_with_ami(
+    struct device *device,
+    struct device_ptr_array *devices,
+    enum vrtd_shell_type target_shell
+)
 {
-    return reset_with_ami_partition(device, devices, 0);
+    uint32_t boot_partition = 0;
+    if (shell_boot_partition(target_shell, &boot_partition) != 0) {
+        LOG(LOG_ERR, "reset_with_ami: invalid target shell %u", (unsigned int)target_shell);
+        return VRTD_RET_INVALID_ARGUMENT;
+    }
+
+    char target_bdf[VRTD_PCI_BDF_LEN] = {0};
+    strncpy(target_bdf, device->pci_info.bdf, sizeof(target_bdf) - 1);
+
+    uint16_t ret = reset_with_ami_partition(device, devices, boot_partition);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    for (size_t i = 0; i < devices->len; i++) {
+        struct device *new_device = devices->d[i];
+        if (new_device != NULL && strcmp(new_device->pci_info.bdf, target_bdf) == 0) {
+            new_device->current_shell = target_shell;
+            return VRTD_RET_OK;
+        }
+    }
+
+    LOG(LOG_ERR, "reset_with_ami: reset device %s not found after rediscovery", target_bdf);
+    return VRTD_RET_INTERNAL_ERROR;
 }

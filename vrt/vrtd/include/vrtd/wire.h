@@ -368,6 +368,12 @@ struct vrtd_resp_buffer_open_raw {
     uint32_t qpair_count;
 } __attribute__((packed));
 
+enum vrtd_shell_type {
+    VRTD_SHELL_UNKNOWN = 0,
+    VRTD_SHELL_SERVICE = 1,
+    VRTD_SHELL_COMPUTE = 2,
+};
+
 /**
  * @brief Request a design writer transfer.
  *
@@ -375,6 +381,7 @@ struct vrtd_resp_buffer_open_raw {
  */
 struct vrtd_req_design_write {
     uint32_t dev_number; ///< Device index (0-based).
+    uint8_t required_shell; ///< One of vrtd_shell_type.
 } __attribute__((packed));
 
 struct vrtd_resp_design_write {
@@ -466,7 +473,8 @@ enum vrtd_device_hotplug_op {
  * @brief Request a PCIe hotplug operation for a device.
  *
  * RESCAN is device-independent; dev_number and function are ignored.
- * For RESET_SEQUENCE, function is ignored.
+ * For RESET_SEQUENCE, shell_type selects the shell partition to boot and
+ * function is ignored.
  *
  * For REMOVE and HOTPLUG, function selects the PCI physical function (0-7)
  * or VRTD_DEVICE_HOTPLUG_FUNCTION_ALL for all V80 PFs.  TOGGLE_SBR always
@@ -476,6 +484,7 @@ struct vrtd_req_device_hotplug_op {
     uint32_t dev_number; ///< Device index (0-based).
     uint8_t op;          ///< One of vrtd_device_hotplug_op.
     uint8_t function;    ///< PCI function number (0-7), or FUNCTION_ALL where allowed.
+    uint8_t shell_type;  ///< One of vrtd_shell_type for RESET_SEQUENCE.
 } __attribute__((packed));
 
 struct vrtd_resp_device_hotplug_op {

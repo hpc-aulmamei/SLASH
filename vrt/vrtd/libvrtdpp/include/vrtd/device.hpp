@@ -50,6 +50,12 @@ enum class HotplugOp : uint8_t {
 
 inline constexpr uint8_t HotplugFunctionAll = VRTD_DEVICE_HOTPLUG_FUNCTION_ALL;
 
+enum class ShellType : uint8_t {
+    Unknown = VRTD_SHELL_UNKNOWN,
+    Service = VRTD_SHELL_SERVICE,
+    Compute = VRTD_SHELL_COMPUTE,
+};
+
 /**
  * @brief A single sensor reading returned by Device::getSensorInfo().
  */
@@ -254,13 +260,19 @@ public:
     }
 
     /**
+     * @brief Reset the board and boot the requested shell.
+     * @param shellType Hardware shell to boot.
+     */
+    void resetSequence(ShellType shellType = ShellType::Service) const;
+
+    /**
      * @brief Perform a design writer transfer using an input file descriptor.
      *
      * The daemon takes ownership of the FD and blocks until the transfer completes.
      *
      * @throws vrtd::Error on error.
      */
-    void designWrite(int input_fd) const;
+    void designWrite(int input_fd, ShellType requiredShell = ShellType::Service) const;
 
     /**
      * @brief Perform a design writer transfer from a file path.
@@ -269,7 +281,8 @@ public:
      *
      * @throws vrtd::Error on error.
      */
-    void designWriteFile(std::string_view path) const;
+    void designWriteFile(std::string_view path,
+                         ShellType requiredShell = ShellType::Service) const;
 
     /**
      * @brief Program a PDI into cfgmem and reset into the programmed partition.
@@ -377,8 +390,9 @@ private:
            std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir, MmChannel)> fOpenBuffer,
            std::function<Buffer(const Device&, uint64_t, uint64_t, BufferAllocDir, MmChannel)> fOpenBufferRaw,
            std::function<void(const Device&, HotplugOp, uint8_t)> fHotplugOp,
-           std::function<void(const Device&, int)> fDesignWrite,
-           std::function<void(const Device&, std::string_view)> fDesignWriteFile,
+           std::function<void(const Device&, ShellType)> fResetSequence,
+           std::function<void(const Device&, int, ShellType)> fDesignWrite,
+           std::function<void(const Device&, std::string_view, ShellType)> fDesignWriteFile,
            std::function<void(const Device&, int, uint8_t, uint32_t)> fCfgmemProgram,
            std::function<void(const Device&, std::string_view, uint8_t, uint32_t)> fCfgmemProgramFile,
            std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate,
@@ -398,8 +412,9 @@ private:
     std::function<Buffer(const Device&, BufferAllocType, uint64_t, uint64_t, BufferAllocDir, MmChannel)> fOpenBuffer;
     std::function<Buffer(const Device&, uint64_t, uint64_t, BufferAllocDir, MmChannel)> fOpenBufferRaw;
     std::function<void(const Device&, HotplugOp, uint8_t)> fHotplugOp;
-    std::function<void(const Device&, int)> fDesignWrite;
-    std::function<void(const Device&, std::string_view)> fDesignWriteFile;
+    std::function<void(const Device&, ShellType)> fResetSequence;
+    std::function<void(const Device&, int, ShellType)> fDesignWrite;
+    std::function<void(const Device&, std::string_view, ShellType)> fDesignWriteFile;
     std::function<void(const Device&, int, uint8_t, uint32_t)> fCfgmemProgram;
     std::function<void(const Device&, std::string_view, uint8_t, uint32_t)> fCfgmemProgramFile;
     std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate;
