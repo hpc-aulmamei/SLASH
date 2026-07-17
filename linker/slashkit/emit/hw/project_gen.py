@@ -265,8 +265,6 @@ def create_build_project(
         if action:
             cmd.append(action)
 
-        cmd.append(str(config.n_jobs))
-
         subprocess.run(
             cmd,
             cwd=str(config.build_dir),
