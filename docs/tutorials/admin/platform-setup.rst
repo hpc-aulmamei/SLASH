@@ -367,11 +367,11 @@ Each V80 board exposes three PCI functions:
      - ``ami``
      - AVED management interface
    * - PF1
-     - ``0x50B5``
+     - ``0x50C1``
      - ``slash_qdma``
      - Queue-based DMA subsystem
    * - PF2
-     - ``0x50B6``
+     - ``0x50C2``
      - ``slash_ctl``
      - BAR MMIO access (register reads/writes)
 
