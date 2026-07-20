@@ -27,8 +27,10 @@
 
 #include "list.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <initializer_list>
 #include <limits>
 #include <filesystem>
 #include <fstream>
@@ -57,6 +59,14 @@ constexpr unsigned int SLASH_PF1_DEVICE_ID{0x50C1};
 
 /// PCI device ID for the V80 control function (PF2).
 constexpr unsigned int SLASH_PF2_DEVICE_ID{0x50C2};
+
+/// Legacy PCI device ID for PF1, accepted as a fallback for
+/// pre-compute-platform bitstreams.
+constexpr unsigned int SLASH_PF1_DEVICE_ID_LEGACY{0x50B5};
+
+/// Legacy PCI device ID for PF2, accepted as a fallback for
+/// pre-compute-platform bitstreams.
+constexpr unsigned int SLASH_PF2_DEVICE_ID_LEGACY{0x50B6};
 
 /// Expected driver for PF0 (AMI management function).
 constexpr char PF0_EXPECTED_DRIVER[] = "ami";
@@ -125,16 +135,16 @@ struct PfStatus {
     std::string reason;      ///< Empty when ok; describes the failure otherwise.
 };
 
-/// Checks whether a given PCI physical function exists, has the expected
-/// device ID, and has the expected driver bound.
+/// Checks whether a given PCI physical function exists, reports one of the
+/// accepted device IDs, and has the expected driver bound.
 ///
-/// @param bdf              Full BDF string, e.g. "0000:03:00.1".
-/// @param pfNumber         PF index (0, 1, or 2).
-/// @param expectedDeviceId PCI device ID this PF should report.
-/// @param expectedDriver   Kernel driver name that should be bound.
+/// @param bdf               Full BDF string, e.g. "0000:03:00.1".
+/// @param pfNumber          PF index (0, 1, or 2).
+/// @param expectedDeviceIds PCI device IDs this PF may report (current or legacy).
+/// @param expectedDriver    Kernel driver name that should be bound.
 /// @return PfStatus with ok=true if all checks pass, or ok=false with reason.
 static PfStatus checkPf(const std::string& bdf, int pfNumber,
-                         unsigned int expectedDeviceId,
+                         std::initializer_list<unsigned int> expectedDeviceIds,
                          const char* expectedDriver) {
     std::filesystem::path devPath = PCI_DEVICES_PATH / bdf;
 
@@ -143,7 +153,8 @@ static PfStatus checkPf(const std::string& bdf, int pfNumber,
     }
 
     auto deviceId = readNumFile<unsigned int>(devPath / "device");
-    if (deviceId != expectedDeviceId) {
+    if (std::find(expectedDeviceIds.begin(), expectedDeviceIds.end(), deviceId) ==
+        expectedDeviceIds.end()) {
         return {.pfNumber = pfNumber, .bdf = bdf, .ok = false, .reason = "bad device ID"};
     }
 
@@ -436,9 +447,11 @@ static std::vector<V80Board> discoverBoards(bool longPrinting, bool sensors) {
 
         V80Board board{
             .bdfBase = base,
-            .pf0 = checkPf(pf0Dev.bdf, 0, SLASH_DEVICE_ID, PF0_EXPECTED_DRIVER),
-            .pf1 = checkPf(pf1Bdf, 1, SLASH_PF1_DEVICE_ID, PF1_EXPECTED_DRIVER),
-            .pf2 = checkPf(pf2Bdf, 2, SLASH_PF2_DEVICE_ID, PF2_EXPECTED_DRIVER),
+            .pf0 = checkPf(pf0Dev.bdf, 0, {SLASH_DEVICE_ID}, PF0_EXPECTED_DRIVER),
+            .pf1 = checkPf(pf1Bdf, 1, {SLASH_PF1_DEVICE_ID, SLASH_PF1_DEVICE_ID_LEGACY},
+                           PF1_EXPECTED_DRIVER),
+            .pf2 = checkPf(pf2Bdf, 2, {SLASH_PF2_DEVICE_ID, SLASH_PF2_DEVICE_ID_LEGACY},
+                           PF2_EXPECTED_DRIVER),
             .vrtd = checkVrtd(base),
             .longPrinting = longPrinting,
         };

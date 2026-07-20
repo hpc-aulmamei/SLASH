@@ -375,6 +375,9 @@ Each V80 board exposes three PCI functions:
      - ``slash_ctl``
      - BAR MMIO access (register reads/writes)
 
+The legacy device IDs ``0x50B5`` (PF1) and ``0x50B6`` (PF2) are still accepted
+as a fallback for cards carrying a pre-compute-platform bitstream.
+
 For boards already visible over PCIe, check that all three functions appear
 with their drivers bound:
 
