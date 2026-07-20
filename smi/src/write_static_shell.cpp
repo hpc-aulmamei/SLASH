@@ -134,19 +134,31 @@ public:
         lastPercent = percent;
         lastState = status.state;
 
-        std::cerr << '\r';
-        std::cerr << cfgmemPhaseName(status.phase);
+        /* Only the download percentage animates in place; every other phase
+         * transition gets its own line. */
         if (status.phase == vrtd::CfgmemProgramPhase::DownloadingPdi) {
-            std::cerr << ": " << percent << "%";
+            std::cerr << '\r' << cfgmemPhaseName(status.phase) << ": " << percent << "%";
             if (status.bytesTotal != 0) {
                 std::cerr << " (" << status.bytesWritten << "/" << status.bytesTotal << " bytes)";
             }
+            /* \r only rewinds; erase to end of line so a shorter update
+             * doesn't inherit the tail of a longer one. */
+            std::cerr << "\033[K" << std::flush;
+            lineOpen = true;
+        } else {
+            if (lineOpen) {
+                std::cerr << '\n';
+                lineOpen = false;
+            }
+            std::cerr << cfgmemPhaseName(status.phase) << '\n';
         }
-        std::cerr << std::flush;
     }
 
-    void endProgress() const {
-        std::cerr << '\n';
+    void endProgress() {
+        if (lineOpen) {
+            std::cerr << '\n';
+            lineOpen = false;
+        }
     }
 
     void done(const std::string& message) const {
@@ -160,6 +172,7 @@ private:
     vrtd::CfgmemProgramPhase lastPhase = vrtd::CfgmemProgramPhase::Queued;
     uint32_t lastPercent = UINT32_MAX;
     vrtd::CfgmemProgramState lastState = vrtd::CfgmemProgramState::Queued;
+    bool lineOpen = false;  ///< True while an in-place download line awaits its newline.
 };
 
 bool fileExists(const std::string& path) {
@@ -361,15 +374,22 @@ int runFlashMode(const WriteStaticShell::Options& options) {
         reporter.stage("Resolving VRTD device");
         auto device = session.getDeviceByBdf(bdf);
         reporter.stage("Submitting " + shell + " flash program");
-        session.cfgmemProgramFileProgress(
-            device,
-            pdiPath,
-            StaticShellBootDevice,
-            partition,
-            [&](const vrtd::CfgmemProgramStatus& status) {
-                reporter.progress(status);
-            }
-        );
+        try {
+            session.cfgmemProgramFileProgress(
+                device,
+                pdiPath,
+                StaticShellBootDevice,
+                partition,
+                [&](const vrtd::CfgmemProgramStatus& status) {
+                    reporter.progress(status);
+                }
+            );
+        } catch (...) {
+            /* Close the open progress line so the error message that unwinds
+             * to main() starts on its own line instead of after "Failed". */
+            reporter.endProgress();
+            throw;
+        }
         reporter.endProgress();
     }
 
