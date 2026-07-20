@@ -113,7 +113,7 @@ static int smiMain(int argc, char **argv) {
         {"service", "service"},
         {"compute", "compute"},
     };
-    resetCommand->add_option("--shelltype", resetOptions.shellType,
+    resetCommand->add_option("--shell-type", resetOptions.shellType,
         "Shell to boot after reset: service (partition 0) or compute (partition 1)")
         ->transform(CLI::CheckedTransformer(shellTypeMap, CLI::ignore_case))
         ->default_str("service");
@@ -137,7 +137,7 @@ static int smiMain(int argc, char **argv) {
         {"compute", "compute"},
         {"all", "all"},
     };
-    writeStaticShellCommand->add_option("--shelltype", writeStaticShellOptions.shellType,
+    writeStaticShellCommand->add_option("--shell-type", writeStaticShellOptions.shellType,
         "Shell to program: all (both flash partitions), service (partition 0), or compute (partition 1)")
         ->transform(CLI::CheckedTransformer(writeStaticShellTypeMap, CLI::ignore_case))
         ->default_str("all for --flash without --pdi, service otherwise");

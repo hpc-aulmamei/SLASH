@@ -71,7 +71,7 @@ vrtd::ShellType parseShellType(const std::string& shellType) {
         return vrtd::ShellType::Compute;
     }
 
-    throw std::invalid_argument("shelltype must be one of: service, compute");
+    throw std::invalid_argument("shell-type must be one of: service, compute");
 }
 
 uint32_t shellPartition(vrtd::ShellType shellType) {
@@ -81,7 +81,7 @@ uint32_t shellPartition(vrtd::ShellType shellType) {
     case vrtd::ShellType::Compute:
         return 1;
     default:
-        throw std::invalid_argument("shelltype must be one of: service, compute");
+        throw std::invalid_argument("shell-type must be one of: service, compute");
     }
 }
 
@@ -204,7 +204,7 @@ std::string shellQuote(const std::string& text) {
 
 std::string resolveStaticShellPdi(bool nofpt, const std::string& shellType) {
     std::string command = "python3 -m slashkit static-shell-path";
-    command += " --shelltype " + shellQuote(shellType);
+    command += " --shell-type " + shellQuote(shellType);
     if (nofpt) {
         command += " --nofpt";
     }
@@ -335,13 +335,13 @@ void validateOptions(const WriteStaticShell::Options& options) {
             throw std::invalid_argument("--xsdb-target-id is only valid with --jtag");
         }
         if (shellTypeAll(shellType) && !options.pdiPath.empty()) {
-            throw std::invalid_argument("--shelltype all cannot be used with --pdi");
+            throw std::invalid_argument("--shell-type all cannot be used with --pdi");
         }
         return;
     }
 
     if (shellTypeAll(shellType)) {
-        throw std::invalid_argument("--shelltype all is only valid with --flash without --pdi");
+        throw std::invalid_argument("--shell-type all is only valid with --flash without --pdi");
     }
     if (options.noRemoveDevice && !options.bdf.empty()) {
         throw std::invalid_argument("--no-remove-device cannot be used with -d/--device");

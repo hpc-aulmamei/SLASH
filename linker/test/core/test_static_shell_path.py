@@ -56,7 +56,7 @@ def _run_static_shell_path(monkeypatch, capsys, *, shelltype="service", nofpt=Fa
     )
 
     slashkit_main.static_shell_path(
-        argparse.Namespace(shelltype=shelltype, nofpt=nofpt)
+        argparse.Namespace(shell_type=shelltype, nofpt=nofpt)
     )
 
     return packages, capsys.readouterr().out.strip()

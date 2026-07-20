@@ -158,7 +158,7 @@ def static_shell_path(args) -> None:
     file_name = "amd_v80_gen5x8_25.1_nofpt.pdi" if args.nofpt else \
         "amd_v80_gen5x8_25.1.pdi"
     package = "slashkit.resources.static_shell_compute" \
-        if args.shelltype == "compute" else "slashkit.resources.static_shell"
+        if args.shell_type == "compute" else "slashkit.resources.static_shell"
     traversable = resources.files(package) / file_name
 
     with resources.as_file(traversable) as path:
@@ -210,7 +210,7 @@ def main():
         "--nofpt", action="store_true",
         help="Print the no-FPT PDI path used for JTAG programming")
     static_shell_path_parser.add_argument(
-        "--shelltype", choices=("service", "compute"), default="service",
+        "--shell-type", choices=("service", "compute"), default="service",
         help="Shell type to resolve (default: service)")
     static_shell_path_parser.set_defaults(
         config_class=None, operation=static_shell_path)

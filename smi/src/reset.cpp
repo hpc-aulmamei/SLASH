@@ -46,7 +46,7 @@ vrtd::ShellType parseShellType(std::string_view text) {
         return vrtd::ShellType::Compute;
     }
 
-    throw std::invalid_argument("shelltype must be one of: service, compute");
+    throw std::invalid_argument("shell-type must be one of: service, compute");
 }
 
 }  // namespace
