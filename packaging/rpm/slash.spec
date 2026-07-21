@@ -158,6 +158,7 @@ VRT Runtime (development files)
 Summary:        V80 System Management Interface
 Requires:       libvrt = %{version}-%{release}
 Requires:       libslash = %{version}-%{release}
+Requires:       slashkit = %{version}-%{release}
 
 %description -n v80-smi
 V80 System Management Interface
@@ -183,6 +184,9 @@ bash scripts/pbuild.sh
 
 %install
 bash scripts/pinstall.sh %{buildroot}
+
+install -d %{buildroot}%{_prefix}/lib/vrt
+mv %{buildroot}%{_bindir}/vrtd* %{buildroot}%{_prefix}/lib/vrt/
 
 # systemd units (mirrors debian/rules rsync lines)
 install -D -m 0644 vrt/vrtd/systemd/vrtd.service \
@@ -276,8 +280,8 @@ udevadm control --reload-rules && udevadm trigger 2>/dev/null || :
 udevadm control --reload-rules && udevadm trigger 2>/dev/null || :
 
 %files -n vrtd
-%{_bindir}/vrtd
-%{_bindir}/vrtd-*
+%{_prefix}/lib/vrt/vrtd
+%{_prefix}/lib/vrt/vrtd-*
 %{_unitdir}/vrtd.service
 %{_unitdir}/vrtd.socket
 %{_udevrulesdir}/99-vrtd.rules
@@ -305,6 +309,7 @@ udevadm control --reload-rules && udevadm trigger 2>/dev/null || :
 
 %files -n v80-smi
 %{_bindir}/v80-smi
+%{_datadir}/v80-smi/versal_flash_pdi.tcl
 
 %files -n slashkit
 %{_bindir}/slashkit
