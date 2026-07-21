@@ -400,16 +400,20 @@ def install_static_shell(config: InstallerConfiguration) -> None:
     )
 
     impl_dir = config.build_dir / "slash.runs" / "impl_1"
-    dcp_sources = (
+    # debug_nets.ltx is auto-emitted by Vivado because the base shell instantiates the
+    # debug hub. It is the full debug probe file (FULL_PROBES.FILE) that must be loaded
+    # before a user region's partial probe file in the Vivado Hardware Manager.
+    install_sources = (
         impl_dir / "top_wrapper_routed_bb.dcp",
         impl_dir / "static_shell_slash.dcp",
         impl_dir / "static_shell_service_layer.dcp",
+        impl_dir / "debug_nets.ltx",
     )
-    for src in dcp_sources:
+    for src in install_sources:
         if not src.exists():
             raise FileNotFoundError(
                 f"Expected install artifact not found: {src}")
-    _copy_files(list(dcp_sources), static_shell_dir)
+    _copy_files(list(install_sources), static_shell_dir)
 
     src_dirs = config.build_dir / "slash.srcs" / "sources_1" / "bd"
     for src_dir in (src_dirs / "slash_base", src_dirs / "service_layer"):
