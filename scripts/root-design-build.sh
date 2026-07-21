@@ -28,7 +28,8 @@ cd "$(dirname "$0")/.."
 make -C linker/slashkit/resources/base/iprepo
 
 pushd linker
-python3 -m slashkit install --out-dir slashkit/resources
+python3 -m slashkit install --shell-type service --build-dir install.prj --out-dir slashkit/resources
+python3 -m slashkit install --shell-type compute --build-dir install.prj.compute --out-dir slashkit/resources
 popd
 
 # Vivado IP/synth logs capture the full environment (including RPM_BUILD_ROOT

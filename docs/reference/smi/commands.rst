@@ -141,11 +141,16 @@ bus reset and rescan (hotplug) sequence.
 
 .. code-block:: text
 
-   v80-smi reset -d <BDF>
+   v80-smi reset -d <BDF> [--shell-type <service|compute>]
 
 .. option:: -d, --device <BDF>
 
    Board address. **Required.**
+
+.. option:: --shell-type <service|compute>
+
+   Shell to boot after reset. ``service`` selects boot partition 0 and
+   ``compute`` selects boot partition 1. Defaults to ``service``.
 
 write-static-shell
 ------------------
