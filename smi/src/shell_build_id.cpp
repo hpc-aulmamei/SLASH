@@ -23,15 +23,17 @@
 
 #include "shell_build_id.hpp"
 
+#include <cinttypes>
 #include <cstdio>
 #include <stdexcept>
 
 #include <vrtd/session.hpp>
 
 std::string BuildId::commitHex() const {
-    // 63-bit prefix: 31 high hash bits followed by the 32 low bits.
+    // 60-bit commit prefix: 28 high hash bits followed by the 32 low bits.
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "0x%08x%08x", hiHash, lo);
+    const uint64_t commit = (static_cast<uint64_t>(hiHash) << 32) | lo;
+    std::snprintf(buf, sizeof(buf), "0x%015" PRIx64, commit);
     return std::string(buf);
 }
 

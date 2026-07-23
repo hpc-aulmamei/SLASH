@@ -48,7 +48,7 @@ struct BuildId {
     uint32_t hiHash{};    ///< Next 31 bits of the git SHA-1 (bits[30:0]).
     bool     dirty{};     ///< True if the shell was built from a dirty tree.
 
-    /// Returns the 63-bit commit prefix as a "0x"-prefixed hex string.
+    /// Returns the 60-bit commit prefix as a "0x"-prefixed hex string.
     std::string commitHex() const;
 };
 
