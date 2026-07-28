@@ -88,3 +88,5 @@ driver/kcompat/.scratch/
 
 # Project-local scratch space
 /tmp/
+tmp/
+**/build-host/
