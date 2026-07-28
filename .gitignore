@@ -90,3 +90,7 @@ driver/kcompat/.scratch/
 /tmp/
 tmp/
 **/build-host/
+
+# Claude Code files
+/CLAUDE.md
+/.claude/
