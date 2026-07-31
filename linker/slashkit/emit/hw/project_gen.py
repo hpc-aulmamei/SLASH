@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from enum import Enum
 from pathlib import Path
 import logging
@@ -283,8 +284,9 @@ def create_build_project(
         if not tcl_path.exists():
             raise FileNotFoundError(
                 f"create_project.tcl not found: {tcl_path}")
-        cmd = [
-            config.vivado_bin,
+        launcher = shlex.split(os.environ.get("SLASH_VIVADO_LAUNCHER", ""))
+        cmd = launcher + [
+            str(config.vivado_bin),
             "-mode",
             "batch",
             "-nojournal",
@@ -294,7 +296,7 @@ def create_build_project(
             str(tcl_path),
             "-tclargs",
             config.project_name,
-            config.ip_repository
+            str(config.ip_repository),
         ]
         if action:
             cmd.append(action)
