@@ -23,9 +23,9 @@
  * to provide queue-pair-based DMA transfers between host memory and the
  * FPGA fabric.
  *
- * The QDMA subsystem binds to PF1 (PCI device ID 0x50B5, or 0x50BD on
- * AVED/V80P designs), while the control device (slash_ctldev) binds to
- * PF2 (device ID 0x50B6).
+ * The QDMA subsystem binds to PF1 (PCI device ID 0x50C1, or the legacy
+ * 0x50B5 / AVED 0x50BD), while the control device (slash_ctldev) binds to
+ * PF2 (device ID 0x50C2, or the legacy 0x50B6).
  *
  * Queue pair lifecycle:
  *   add -> start -> I/O (via anon_inode fd) -> stop -> del
@@ -723,11 +723,13 @@ static void slash_qdma_ioctl_info(struct slash_qdma_dev *qdma_dev,
 /**
  * slash_qdma_ids - PCI device ID table for the QDMA PF.
  *
- * Matches PF1 QDMA functions on AMD/Xilinx V80 cards, including the
- * AVED/V80P device ID.
+ * Matches the PF1 QDMA function on AMD/Xilinx V80 cards: the current
+ * 0x50C1, the legacy 0x50B5 used by pre-compute-platform designs, and
+ * the AVED/V80P 0x50BD.
  */
 static const struct pci_device_id slash_qdma_ids[] = {
     {PCI_DEVICE(SLASH_QDMA_PCI_VENDOR_ID, SLASH_QDMA_PCI_DEVICE_ID)},
+    {PCI_DEVICE(SLASH_QDMA_PCI_VENDOR_ID, SLASH_QDMA_PCI_DEVICE_ID_LEGACY)},
     {PCI_DEVICE(SLASH_QDMA_PCI_VENDOR_ID, SLASH_AVED_QDMA_PCI_DEVICE_ID)},
     {0,}
 };

@@ -27,8 +27,21 @@ set cwd     [pwd]
 set ::build_id_lo [expr {[info exists ::env(SLASH_BUILD_ID_LO)] ? $::env(SLASH_BUILD_ID_LO) : 0}]
 set ::build_id_hi [expr {[info exists ::env(SLASH_BUILD_ID_HI)] ? $::env(SLASH_BUILD_ID_HI) : 0}]
 
-if {[llength $argv] > 0} {
-  set project_name [lindex $argv 0]
+# Optional parallel job count via -tclargs: an integer in the trailing
+# position. Popped off first so the positional parsing below is unaffected by
+# whether the caller passed it.
+set jobs "14"
+set args $argv
+if {[llength $args] > 0} {
+  set last_arg [lindex $args end]
+  if {[string is integer -strict $last_arg]} {
+    set jobs $last_arg
+    set args [lrange $args 0 end-1]
+  }
+}
+
+if {[llength $args] > 0} {
+  set project_name [lindex $args 0]
 }
 
 # Optional IP repository path(s) via -tclargs; defaults to ../../common/iprepo
@@ -38,9 +51,9 @@ set iprepos $default_iprepos
 # Optional action via -tclargs: create | build | all (default: all)
 set action "all"
 
-if {[llength $argv] >= 2} {
-  set arg1 [lindex $argv 1]
-  if {[llength $argv] == 2} {
+if {[llength $args] >= 2} {
+  set arg1 [lindex $args 1]
+  if {[llength $args] == 2} {
     if {[lsearch -exact {create build all} $arg1] >= 0} {
       set action $arg1
     } else {
@@ -51,8 +64,8 @@ if {[llength $argv] >= 2} {
   }
 }
 
-if {[llength $argv] >= 3} {
-  set action [lindex $argv 2]
+if {[llength $args] >= 3} {
+  set action [lindex $args 2]
 }
 
 set do_create 0
@@ -119,7 +132,7 @@ if {![file exists $proj_exists]} {
 
 if {$do_build} {
   source [file normalize [file join $src_dir "build_project.tcl"]]
-  build_project $project_name
+  build_project $project_name $jobs
   puts "INFO: Project build complete."
 } elseif {$do_create} {
   puts "INFO: Project creation complete (build skipped)."
