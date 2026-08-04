@@ -21,10 +21,13 @@
 set src_dir [file dirname [file normalize [info script]]]
 set cwd     [pwd]
 
-if {[llength $argv] < 1} {
-  puts "INFO: No project_name provided via -tclargs; defaulting to 'user'."
-  set project_name "user"
-} else {
+# Shell build-ID constants injected into the static-region GPIO register
+# (top.tcl reads these globals). Set from the git commit at build time via
+# SLASH_BUILD_ID_LO/HI; default to 0 so manual/interactive runs still work.
+set ::build_id_lo [expr {[info exists ::env(SLASH_BUILD_ID_LO)] ? $::env(SLASH_BUILD_ID_LO) : 0}]
+set ::build_id_hi [expr {[info exists ::env(SLASH_BUILD_ID_HI)] ? $::env(SLASH_BUILD_ID_HI) : 0}]
+
+if {[llength $argv] > 0} {
   set project_name [lindex $argv 0]
 }
 
@@ -71,6 +74,16 @@ puts "IP REPOS:       $iprepos"
 puts "ACTION:         $action"
 puts "BUILD DIR:      $cwd"
 
+proc safe_source {tcl_path} {
+  puts "INFO: Sourcing $tcl_path ..."
+  set result [ source $tcl_path ]
+  puts "INFO: Finished sourcing $tcl_path"
+
+  if {[string is integer -strict $result] && $result != 0} {
+    puts "EXIT: '$tcl_path' returned $result"
+    exit 1
+  }
+}
 
 set proj_exists [file normalize [file join $cwd "${design_name}.xpr"]]
 if {![file exists $proj_exists]} {
