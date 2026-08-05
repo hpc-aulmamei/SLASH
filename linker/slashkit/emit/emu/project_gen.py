@@ -187,9 +187,7 @@ def _resolve_hls_c_sources(hls_json_path: Path) -> list[Path]:
     return _dedupe_paths(sources)
 
 
-def _collect_user_headers_from_sources(
-    sources: Iterable[Path], include_dirs: Iterable[Path]
-) -> list[Path]:
+def _collect_user_headers_from_sources(sources: Iterable[Path], include_dirs: Iterable[Path]) -> list[Path]:
     """
     Recursively walk local include graphs starting from user C/C++ sources and
     collect reachable user headers. These headers are force-included when
@@ -242,9 +240,7 @@ def _collect_user_headers_from_sources(
     return header_list
 
 
-def _collect_emu_compile_inputs(
-    config: LinkerConfiguration,
-) -> tuple[list[Path], list[Path], list[Path]]:
+def _collect_emu_compile_inputs(config: LinkerConfiguration) -> tuple[list[Path], list[Path], list[Path]]:
     """
     Returns:
       (user_cpp_sources, user_include_dirs, force_include_headers)
@@ -309,16 +305,8 @@ def build_emu_project(config: LinkerConfiguration) -> None:
         + include_flags
         + force_include_flags
         + [str(p) for p in cpp_files]
-        + [
-            "-o",
-            str(vpp_emu_path),
-            "-I",
-            str(vitis_include),
-            "-lzmq",
-            "-I",
-            "/usr/include/jsoncpp/",
-            "-ljsoncpp",
-        ]
+        + ["-o", str(vpp_emu_path), "-I", str(vitis_include),
+           "-lzmq", "-I", "/usr/include/jsoncpp/", "-ljsoncpp"]
     )
     if force_headers:
         logger.info("EMU compile force-including %d user header(s)",

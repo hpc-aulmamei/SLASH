@@ -87,9 +87,7 @@ def design_timing_met(wns_ns: float, whs_ns: float) -> bool:
     return wns_ns >= 0 and whs_ns >= 0
 
 
-def find_static_shell_timing_report(
-    build_dir: Path, project_name: str
-) -> Optional[Path]:
+def find_static_shell_timing_report(build_dir: Path, project_name: str) -> Optional[Path]:
     path = build_dir / f"report_timing_{project_name}.txt"
     if path.is_file():
         return path
@@ -158,9 +156,7 @@ def require_static_shell_timing_or_confirm(
     )
 
 
-def compute_max_freq_hz_from_wns(
-    wns_ns: float, base_freq_hz: int = 400_000_000
-) -> Optional[int]:
+def compute_max_freq_hz_from_wns(wns_ns: float, base_freq_hz: int = 400_000_000) -> Optional[int]:
     if base_freq_hz <= 0:
         return None
 
@@ -243,16 +239,13 @@ def apply_timing_frequency_cap(
     user_clock_hz = read_system_map_clock_hz(system_map_path)
     if user_clock_hz is None:
         logger.warning(
-            "ClockFrequency missing or invalid in system_map.xml: %s", system_map_path
-        )
+            "ClockFrequency missing or invalid in system_map.xml: %s", system_map_path)
         return None
 
     resolved_hw_build_dir = _resolve_hw_build_dir(hw_build_dir)
     if resolved_hw_build_dir is None:
         logger.warning(
-            "HW build directory env var is unset; keeping user clock_hz=%d",
-            user_clock_hz,
-        )
+            "HW build directory env var is unset; keeping user clock_hz=%d", user_clock_hz)
         return user_clock_hz
 
     timing_report = _find_timing_report(project_name, resolved_hw_build_dir)
@@ -270,10 +263,7 @@ def apply_timing_frequency_cap(
     wns_ns = extract_design_wns_ns(report_text)
     if wns_ns is None:
         logger.warning(
-            "Could not parse WNS(ns) from timing report %s; keeping user clock_hz=%d",
-            timing_report,
-            user_clock_hz,
-        )
+            "Could not parse WNS(ns) from timing report %s; keeping user clock_hz=%d", timing_report, user_clock_hz)
         return user_clock_hz
 
     computed_max_hz = compute_max_freq_hz_from_wns(
@@ -299,16 +289,10 @@ def apply_timing_frequency_cap(
 
     if final_clock_hz != user_clock_hz:
         write_system_map_clock_hz(system_map_path, final_clock_hz)
-        logger.info(
-            "Updated system_map ClockFrequency to %d: %s",
-            final_clock_hz,
-            system_map_path,
-        )
+        logger.info("Updated system_map ClockFrequency to %d: %s",
+                    final_clock_hz, system_map_path)
     else:
-        logger.info(
-            "Keeping user ClockFrequency=%d in system_map: %s",
-            user_clock_hz,
-            system_map_path,
-        )
+        logger.info("Keeping user ClockFrequency=%d in system_map: %s",
+                    user_clock_hz, system_map_path)
 
     return final_clock_hz

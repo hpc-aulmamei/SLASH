@@ -48,11 +48,9 @@ def build_virt_smartconnect_context(
     for inst in instances.values():
         mem_sp = inst.params.get("mem_sp", {})
         for k_port, tgt in mem_sp.items():
-            if (
-                tgt.get("domain") == "VIRT"
+            if (tgt.get("domain") == "VIRT"
                 and tgt.get("index") is not None
-                and 0 <= int(tgt["index"]) < num_virt
-            ):
+                    and 0 <= int(tgt["index"]) < num_virt):
                 if inst.kernel.port(k_port).ptype == BusType.AXI4FULL:
                     by_virt[int(tgt["index"])].append(f"{inst.name}/{k_port}")
 
@@ -75,20 +73,16 @@ def build_virt_smartconnect_context(
         root_sc_name = None
 
         while len(current) > 1:
-            groups = [current[i: i + max_si]
+            groups = [current[i:i + max_si]
                       for i in range(0, len(current), max_si)]
             next_level = []
             for g_idx, group in enumerate(groups):
                 sc_name = f"{base_name}_{v_idx:02d}_{level}_{g_idx}"
-                virt_smart_nodes.append(
-                    {
-                        "name": sc_name,
-                        "num_si": len(group),
-                        "si": [
-                            {"slot": i, "src": g["src"]} for i, g in enumerate(group)
-                        ],
-                    }
-                )
+                virt_smart_nodes.append({
+                    "name": sc_name,
+                    "num_si": len(group),
+                    "si": [{"slot": i, "src": g["src"]} for i, g in enumerate(group)],
+                })
                 next_level.append({"src": f"{sc_name}/M00_AXI"})
                 root_sc_name = sc_name
             current = next_level

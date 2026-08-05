@@ -45,7 +45,7 @@ def build_hbm_smartconnect_context(
     bd: BlockDesignPorts,
     *,
     max_si: int = 16,
-    base_name: str = "hbm_sc",
+    base_name: str = "hbm_sc"
 ) -> dict:
     """
     Instantiate per-HBM-channel SmartConnect ONLY if that channel has ≥1 AXI4FULL writers.
@@ -76,9 +76,9 @@ def build_hbm_smartconnect_context(
             by_hbm[idx].append(f"{inst.name}/{k_port}")
 
     hbm_reduce_nodes: List[dict] = []
-    hbm_root_create: List[dict] = []
-    hbm_root_in: List[dict] = []
-    hbm_root_out: List[dict] = []
+    hbm_root_create:  List[dict] = []
+    hbm_root_in:      List[dict] = []
+    hbm_root_out:     List[dict] = []
 
     for h_idx in sorted(by_hbm.keys()):
         sources = by_hbm[h_idx]
@@ -95,69 +95,55 @@ def build_hbm_smartconnect_context(
         clk1 = "[get_bd_ports static_region_clk]"
         rst = "ilreduced_logic_0/Res"
 
-        hbm_root_create.append(
-            {
-                "name": root_name,
-                "idx": h_idx,
-                "clk0": clk0,
-                "clk1": clk1,
-                "rst": rst,
-            }
-        )
+        hbm_root_create.append({
+            "name": root_name,
+            "idx":  h_idx,
+            "clk0": clk0,
+            "clk1": clk1,
+            "rst":  rst,
+        })
 
         if len(sources) == 1:
             # Single writer → feed root directly
-            hbm_root_in.append(
-                {
-                    "src_pin": sources[0],
-                    "dst_pin": f"{root_name}/S00_AXI",
-                }
-            )
+            hbm_root_in.append({
+                "src_pin": sources[0],
+                "dst_pin": f"{root_name}/S00_AXI",
+            })
         else:
             # Reduction tree → last MI feeds root
             level = 0
             current = [{"src": s} for s in sources]
             while len(current) > 1:
-                groups = [
-                    current[i: i + max_si] for i in range(0, len(current), max_si)
-                ]
+                groups = [current[i:i+max_si]
+                          for i in range(0, len(current), max_si)]
                 next_level = []
                 for g_idx, group in enumerate(groups):
                     scn = f"{base_name}_{h_idx:02d}_L{level}_{g_idx}"
-                    hbm_reduce_nodes.append(
-                        {
-                            "name": scn,
-                            "num_si": len(group),
-                            "si": [
-                                {"slot": i, "src": g["src"]}
-                                for i, g in enumerate(group)
-                            ],
-                            "clk": clk0,
-                            "rst": rst,
-                        }
-                    )
+                    hbm_reduce_nodes.append({
+                        "name": scn,
+                        "num_si": len(group),
+                        "si": [{"slot": i, "src": g["src"]} for i, g in enumerate(group)],
+                        "clk": clk0,
+                        "rst": rst,
+                    })
                     next_level.append({"src": f"{scn}/M00_AXI"})
                 current = next_level
                 level += 1
 
-            hbm_root_in.append(
-                {
-                    "src_pin": current[0]["src"],
-                    "dst_pin": f"{root_name}/S00_AXI",
-                }
-            )
+            hbm_root_in.append({
+                "src_pin": current[0]["src"],
+                "dst_pin": f"{root_name}/S00_AXI",
+            })
 
         # Root MI -> real HBM port
-        hbm_root_out.append(
-            {
-                "src_pin": f"{root_name}/M00_AXI",
-                "dst_port": dst_port,
-            }
-        )
+        hbm_root_out.append({
+            "src_pin": f"{root_name}/M00_AXI",
+            "dst_port": dst_port,
+        })
 
     return {
         "hbm_reduce_nodes": hbm_reduce_nodes,
-        "hbm_root_create": hbm_root_create,
-        "hbm_root_in": hbm_root_in,
-        "hbm_root_out": hbm_root_out,
+        "hbm_root_create":  hbm_root_create,
+        "hbm_root_in":      hbm_root_in,
+        "hbm_root_out":     hbm_root_out,
     }

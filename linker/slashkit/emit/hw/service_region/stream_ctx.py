@@ -25,10 +25,7 @@ from slashkit.core.kernel import KernelInstance
 from slashkit.core.port import BusType
 
 _ETH_EP_RE = re.compile(r"^eth_(\d+)\.(tx0|tx1|rx0|rx1)$", re.IGNORECASE)
-
-
-def _port_norm(s):
-    return re.sub(r"[^a-z0-9]", "", s.lower())
+def _port_norm(s): return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
 def _resolve_port_name(kernel, requested: str) -> str:
@@ -61,9 +58,7 @@ def build_stream_connect_context(
 
     for s in streams:
         # prevent accidental eth_* usage here
-        if _ETH_EP_RE.match(f"{s.src_inst}.{s.src_port}") or _ETH_EP_RE.match(
-            f"{s.dst_inst}.{s.dst_port}"
-        ):
+        if _ETH_EP_RE.match(f"{s.src_inst}.{s.src_port}") or _ETH_EP_RE.match(f"{s.dst_inst}.{s.dst_port}"):
             raise ValueError(
                 "eth_* endpoint seen in generic builder. "
                 "Call build_network_axis_context() first and pass only its 'streams_leftover' here."
@@ -85,18 +80,14 @@ def build_stream_connect_context(
 
         if src_p.ptype != BusType.AXIS:
             raise ValueError(
-                f"stream_connect: {s.src_inst}.{src_port} is not AXIS (got {src_p.ptype.name})"
-            )
+                f"stream_connect: {s.src_inst}.{src_port} is not AXIS (got {src_p.ptype.name})")
         if dst_p.ptype != BusType.AXIS:
             raise ValueError(
-                f"stream_connect: {s.dst_inst}.{dst_port} is not AXIS (got {dst_p.ptype.name})"
-            )
+                f"stream_connect: {s.dst_inst}.{dst_port} is not AXIS (got {dst_p.ptype.name})")
 
-        out.append(
-            {
-                "src_pin": f"{s.src_inst}/{src_port}",
-                "dst_pin": f"{s.dst_inst}/{dst_port}",
-            }
-        )
+        out.append({
+            "src_pin": f"{s.src_inst}/{src_port}",
+            "dst_pin": f"{s.dst_inst}/{dst_port}",
+        })
 
     return {"axis_streams": out}

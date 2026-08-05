@@ -87,18 +87,15 @@ def _port_maps(busif: ET.Element) -> Dict[str, str]:
     return mapping
 
 
-def _logical_to_ports(
-    logical_to_name: Dict[str, str], ptype: BusType
-) -> Dict[str, Port]:
+def _logical_to_ports(logical_to_name: Dict[str, str], ptype: BusType) -> Dict[str, Port]:
     mapped: Dict[str, Port] = {}
     for logical, physical in logical_to_name.items():
         mapped[logical] = Port(name=physical, ptype=ptype)
     return mapped
 
 
-def _to_port_type(
-    bus_vendor: str, bus_lib: str, bus_name: str, params: Dict[str, str], is_slave: bool
-) -> Optional[BusType]:
+def _to_port_type(bus_vendor: str, bus_lib: str, bus_name: str,
+                  params: Dict[str, str], is_slave: bool) -> Optional[BusType]:
     key = (bus_vendor, bus_lib, bus_name)
 
     if key == ("xilinx.com", "interface", "axis"):
@@ -134,44 +131,39 @@ def _aximm_width_from_params(params: Dict[str, str]) -> Optional[int]:
         return int(dw)
     return None
 
-
 # ---------- memory map parsing ----------
 
 
 def _parse_fields(reg_el: ET.Element) -> List[RegField]:
     fields: List[RegField] = []
     for f in reg_el.findall("spirit:field", NS):
-        fields.append(
-            RegField(
-                name=_text(f.find("spirit:name", NS)) or "",
-                description=_text(f.find("spirit:description", NS)),
-                bit_offset=_int(f.find("spirit:bitOffset", NS)) or 0,
-                bit_width=_int(f.find("spirit:bitWidth", NS)) or 1,
-                access=_text(f.find("spirit:access", NS)),
-                modified_write_value=_text(
-                    f.find("spirit:modifiedWriteValue", NS)),
-                read_action=_text(f.find("spirit:readAction", NS)),
-                reset_value=_int(f.find("spirit:reset/spirit:value", NS)),
-            )
-        )
+        fields.append(RegField(
+            name=_text(f.find("spirit:name", NS)) or "",
+            description=_text(f.find("spirit:description", NS)),
+            bit_offset=_int(f.find("spirit:bitOffset", NS)) or 0,
+            bit_width=_int(f.find("spirit:bitWidth", NS)) or 1,
+            access=_text(f.find("spirit:access", NS)),
+            modified_write_value=_text(
+                f.find("spirit:modifiedWriteValue", NS)),
+            read_action=_text(f.find("spirit:readAction", NS)),
+            reset_value=_int(f.find("spirit:reset/spirit:value", NS)),
+        ))
     return fields
 
 
 def _parse_registers(ab_el: ET.Element) -> List[Register]:
     regs: List[Register] = []
     for r in ab_el.findall("spirit:register", NS):
-        regs.append(
-            Register(
-                name=_text(r.find("spirit:name", NS)) or "",
-                display_name=_text(r.find("spirit:displayName", NS)),
-                description=_text(r.find("spirit:description", NS)),
-                address_offset=_int(r.find("spirit:addressOffset", NS)) or 0,
-                size=_int(r.find("spirit:size", NS)) or 32,
-                access=_text(r.find("spirit:access", NS)),
-                reset_value=_int(r.find("spirit:reset/spirit:value", NS)),
-                fields=_parse_fields(r),
-            )
-        )
+        regs.append(Register(
+            name=_text(r.find("spirit:name", NS)) or "",
+            display_name=_text(r.find("spirit:displayName", NS)),
+            description=_text(r.find("spirit:description", NS)),
+            address_offset=_int(r.find("spirit:addressOffset", NS)) or 0,
+            size=_int(r.find("spirit:size", NS)) or 32,
+            access=_text(r.find("spirit:access", NS)),
+            reset_value=_int(r.find("spirit:reset/spirit:value", NS)),
+            fields=_parse_fields(r),
+        ))
     return regs
 
 
@@ -189,33 +181,28 @@ def _parse_address_blocks(mm_el: ET.Element) -> List[AddressBlock]:
             elif pname == "OFFSET_HIGH_PARAM":
                 ohp = pval
 
-        blocks.append(
-            AddressBlock(
-                name=_text(ab.find("spirit:name", NS)) or "unnamed",
-                base_address=_int(ab.find("spirit:baseAddress", NS)) or 0,
-                range=_int(ab.find("spirit:range", NS)) or 0,
-                width=_int(ab.find("spirit:width", NS)) or 32,
-                usage=_text(ab.find("spirit:usage", NS)),
-                access=_text(ab.find("spirit:access", NS)),
-                offset_base_param=obp,
-                offset_high_param=ohp,
-                registers=_parse_registers(ab),
-            )
-        )
+        blocks.append(AddressBlock(
+            name=_text(ab.find("spirit:name", NS)) or "unnamed",
+            base_address=_int(ab.find("spirit:baseAddress", NS)) or 0,
+            range=_int(ab.find("spirit:range", NS)) or 0,
+            width=_int(ab.find("spirit:width", NS)) or 32,
+            usage=_text(ab.find("spirit:usage", NS)),
+            access=_text(ab.find("spirit:access", NS)),
+            offset_base_param=obp,
+            offset_high_param=ohp,
+            registers=_parse_registers(ab),
+        ))
     return blocks
 
 
 def _parse_memory_maps(root: ET.Element) -> List[MemoryMap]:
     maps: List[MemoryMap] = []
     for mm in root.findall("spirit:memoryMaps/spirit:memoryMap", NS):
-        maps.append(
-            MemoryMap(
-                name=_text(mm.find("spirit:name", NS)) or "unnamed",
-                address_blocks=_parse_address_blocks(mm),
-            )
-        )
+        maps.append(MemoryMap(
+            name=_text(mm.find("spirit:name", NS)) or "unnamed",
+            address_blocks=_parse_address_blocks(mm),
+        ))
     return maps
-
 
 # ---------- main entry ----------
 
@@ -291,5 +278,5 @@ def parse_component_xml(path: str | Path) -> Kernel:
         buses=buses,
         vlnv=vlnv,
         memory_maps=memory_maps,
-        hls_data_path=hls_data_path,
+        hls_data_path=hls_data_path
     )
