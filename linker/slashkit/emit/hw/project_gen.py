@@ -363,10 +363,11 @@ class RM_KIND(Enum):
 
 def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
     # Copy all base IP cores into the ip repository
-    config.ip_repository.mkdir(parents=True)
-    export_package(
-        "slashkit.resources.base.common.iprepo", config.ip_repository / "slash_base"
-    )
+    config.ip_repository.mkdir(parents=True, exist_ok=True)
+    base_ip_repository = config.ip_repository / "slash_base"
+    if not base_ip_repository.exists():
+        export_package("slashkit.resources.base.common.iprepo",
+                       base_ip_repository)
 
     if rm_kind == RM_KIND.SLASH_PROJECT:
         # Copy all user kernels into the ip repository
@@ -554,6 +555,13 @@ def install_static_shell(config: InstallerConfiguration) -> None:
         static_shell_dir.mkdir(parents=True, exist_ok=True)
 
         create_build_project_compute(config)
+
+        require_static_shell_timing_or_confirm(
+            build_dir=config.build_dir,
+            project_name=config.project_name,
+            ignore_failure=config.ignore_timing_failure,
+            noninteractive=config.noninteractive,
+        )
 
         dcp_sources = (
             impl_dir / "top_wrapper_routed_bb.dcp",
