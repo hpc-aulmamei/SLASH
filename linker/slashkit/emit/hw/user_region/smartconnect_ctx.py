@@ -55,11 +55,7 @@ def build_axilite_smartconnect_context(
                           for name in sorted(instances.keys()))
     endpoints: List[str] = []
     for inst in ordered.values():
-        for p in sorted(
-            (pp for pp in inst.kernel.ports.values()
-             if pp.ptype == BusType.AXILITE),
-            key=lambda x: x.name,
-        ):
+        for p in sorted((pp for pp in inst.kernel.ports.values() if pp.ptype == BusType.AXILITE), key=lambda x: x.name):
             endpoints.append(f"{inst.name}/{p.name}")
 
     # Append non-kernel AXI-Lite slaves (e.g. the debug hub S_AXI) last so they
@@ -95,8 +91,7 @@ def build_axilite_smartconnect_context(
             "num_mi": num_mi,
             "chain_slot": chain_slot,
             "si_from": (
-                {"type": "bd_port", "name": si_bd_port}
-                if prev_name is None
+                {"type": "bd_port", "name": si_bd_port} if prev_name is None
                 else {"type": "smartconnect", "prev": prev_name}
             ),
             "mi": [{"slot": slot, "dst_pin": dst} for slot, dst in enumerate(payload)],

@@ -45,7 +45,7 @@ def build_mem_smartconnect_context(
     num_mem_ports: int = 8,
     max_si: int = 16,
     base_name: str = "sc_mem",
-    noc_pin_fmt: str = "/hbm_vnoc_0{index}/S00_AXI",
+    noc_pin_fmt: str = "/hbm_vnoc_0{index}/S00_AXI"
 ) -> dict:
     """
     Map all AXI4FULL masters targeting MEM to 8 VNOC slaves using round-robin,
@@ -76,8 +76,7 @@ def build_mem_smartconnect_context(
                     idx = _coerce_optional_int(tgt.get("index"))
                     if idx is not None and not (0 <= idx < num_mem_ports):
                         raise ValueError(
-                            f"MEM index {idx} out of range (0..{num_mem_ports - 1}) for {src_pin}"
-                        )
+                            f"MEM index {idx} out of range (0..{num_mem_ports-1}) for {src_pin}")
                     mem_sources.append((src_pin, idx))
 
     if not mem_sources:
@@ -113,7 +112,7 @@ def build_mem_smartconnect_context(
         root_sc_name = None
 
         while len(current) > 1:
-            groups = [current[i: i + max_si]
+            groups = [current[i:i + max_si]
                       for i in range(0, len(current), max_si)]
             next_level: List[dict] = []
 

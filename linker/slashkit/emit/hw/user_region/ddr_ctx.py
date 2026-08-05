@@ -71,7 +71,7 @@ def build_ddr_smartconnect_context(
         root_sc_name = None
 
         while len(current) > 1:
-            groups = [current[i: i + max_si]
+            groups = [current[i:i + max_si]
                       for i in range(0, len(current), max_si)]
             next_level = []
 

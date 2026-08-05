@@ -50,9 +50,8 @@ def create_sim_project(config: LinkerConfiguration) -> None:
 
     # Copy all kernels into the IP repository
     for kernel in config.kernels:
-        shutil.copytree(
-            kernel.component_xml_path.parent, config.ip_repository / kernel.name
-        )
+        shutil.copytree(kernel.component_xml_path.parent,
+                        config.ip_repository / kernel.name)
 
     tcl = config.build_dir / "run_pre.tcl"
     if not tcl.exists():

@@ -44,8 +44,7 @@ _DBG_HUB_RANGE = 0x0020_0000                     # 2 MiB
 _DBG_HUB_OFFSET = 0x0202_0060_0000
 
 
-def _port_norm(s):
-    return re.sub(r"[^a-z0-9]", "", s.lower())
+def _port_norm(s): return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
 def build_debug_hub_slaves(debug_spec) -> list[dict]:

@@ -30,7 +30,6 @@ class Bus:
     """
     Represents a bus interface, including a logical->physical port map.
     """
-
     name: str
     ptype: BusType
     width: Optional[int] = None
