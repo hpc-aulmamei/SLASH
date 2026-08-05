@@ -160,8 +160,7 @@ def _build_functional_args_from_hls(
         return []
 
     reg_by_name = {
-        str(r.name): r for r in reg_block.registers if getattr(r, "name", None)
-    }
+        str(r.name): r for r in reg_block.registers if getattr(r, "name", None)}
     out: List[tuple[int, int, dict]] = []
 
     for order_idx, arg in enumerate(parse_hls_args(hls_data)):
@@ -215,8 +214,7 @@ def _build_functional_args_from_hls(
         src_size = arg.get("src_size")
         reg_bits = sum(int(getattr(reg, "size", 32) or 32) for reg in refs)
         has_address_ref = any(
-            str(ref.get("usage", "")).lower() == "address"
-            for ref in (arg.get("hw_refs", []) or [])
+            str(ref.get("usage", "")).lower() == "address" for ref in (arg.get("hw_refs", []) or [])
         )
         arg_type = "buffer" if (
             "*" in src_type or has_address_ref) else "scalar"
@@ -248,11 +246,7 @@ def _build_functional_args_from_hls(
             "w": int(w_flag),
         }
 
-        if (
-            arg_type == "buffer"
-            and kernel is not None
-            and connected_axi_ports is not None
-        ):
+        if arg_type == "buffer" and kernel is not None and connected_axi_ports is not None:
             resolved_port = None
             for iface_name in interface_refs:
                 canonical_port = _resolve_axi4full_port_name(

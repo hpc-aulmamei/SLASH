@@ -64,8 +64,8 @@ _CROSS_BUILD_ENV_BLOCKLIST = (
 
 
 def _clean_cross_build_env() -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items(
-    ) if k not in _CROSS_BUILD_ENV_BLOCKLIST}
+    env = {k: v for k, v in os.environ.items()
+           if k not in _CROSS_BUILD_ENV_BLOCKLIST}
     return {k: v for k, v in env.items() if not k.startswith("DEB_")}
 
 
@@ -85,9 +85,7 @@ def _copy_files(src_files: list[Path], destination: Path) -> None:
             try:
                 if src.samefile(dst):
                     logger.info(
-                        "Skipping copy because source and destination are the same file: %s",
-                        src,
-                    )
+                        "Skipping copy because source and destination are the same file: %s", src)
                     continue
             except FileNotFoundError:
                 pass
@@ -175,14 +173,12 @@ def _environment_with_udev_ld_preload() -> Dict[str, str]:
     """
     env = dict(os.environ)
     libudev = _first_existing(
-        ["/lib/x86_64-linux-gnu/libudev.so.1", "/lib64/libudev.so.1"]
-    )
+        ["/lib/x86_64-linux-gnu/libudev.so.1", "/lib64/libudev.so.1"])
     if libudev is None:
         return env
     preload = [libudev]
     libcap = _first_existing(
-        ["/lib/x86_64-linux-gnu/libcap.so.2", "/lib64/libcap.so.2"]
-    )
+        ["/lib/x86_64-linux-gnu/libcap.so.2", "/lib64/libcap.so.2"])
     if libcap is not None:
         preload.append(libcap)
     env["LD_PRELOAD"] = ":".join(preload)
@@ -195,26 +191,22 @@ def generate_base_pdi_with_aved(config: CommandConfiguration) -> tuple[Path, Pat
     aved_hw_dir = aved_dir / "hw" / AVED_DESIGN_NAME
     aved_build_dir = aved_hw_dir / "build"
     aved_fpt_dir = aved_hw_dir / "fpt"
-    aved_fw_profile_dir = aved_dir / "fw" / "AMC" / "src" / "profiles" / "v80"
+    aved_fw_profile_dir = aved_dir / "fw" / "AMC" / \
+        "src" / "profiles" / "v80"
 
     logger.info("Starting AVED base build for %s", config.project_name)
     aved_build_dir.mkdir(parents=True, exist_ok=True)
 
     static_impl_dir = config.build_dir / "slash.runs" / "impl_1"
     regenerated_top_wrapper_pdi = _generate_top_wrapper_pdi_with_bootgen(
-        static_impl_dir
-    )
+        static_impl_dir)
     _copy_checked(regenerated_top_wrapper_pdi,
                   aved_build_dir / "top_wrapper.pdi")
 
-    files_to_copy = [
-        ("build_all.sh", aved_hw_dir),
-        ("profile_hal.h", aved_fw_profile_dir),
-        ("pdi_combine.bif", aved_fpt_dir),
-        (f"{AVED_DESIGN_NAME}.xsa", aved_build_dir),
-    ]
+    files_to_copy = [("build_all.sh", aved_hw_dir), ("profile_hal.h", aved_fw_profile_dir),
+                     ("pdi_combine.bif", aved_fpt_dir), (f"{AVED_DESIGN_NAME}.xsa", aved_build_dir)]
 
-    for file_name, target_dir in files_to_copy:
+    for (file_name, target_dir) in files_to_copy:
         with resources.path("slashkit.resources.aved", file_name) as in_path:
             _copy_checked(in_path, target_dir / file_name)
 
@@ -288,7 +280,8 @@ def _compute_build_id_env() -> Dict[str, str]:
 
 
 def create_build_project(
-    config: CommandConfiguration, action: Optional[str] = None
+    config: CommandConfiguration,
+    action: Optional[str] = None
 ) -> None:
     log_path = config.build_dir / "vivado.log"
 
@@ -471,28 +464,19 @@ def _run_rm_build(config: LinkerConfiguration, rm_kind: RM_KIND) -> None:
             )
             cmd.extend(["--opt-post-tcl", str(opt_post_tcl)])
 
-        subprocess.run(
-            cmd,
-            cwd=str(config.build_dir),
-            check=True,
-            env=_environment_with_udev_ld_preload(),
-        )
+        subprocess.run(cmd, cwd=str(config.build_dir), check=True,
+                       env=_environment_with_udev_ld_preload())
 
     if rm_kind == RM_KIND.SLASH_PROJECT:
-        pdi_out_path = (
-            image_out_dir
-            / f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
-        )
+        pdi_out_path = image_out_dir / \
+            f"top_i_slash_slash_{config.project_name}_inst_0_partial.pdi"
     else:
-        pdi_out_path = (
-            image_out_dir
-            / f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
-        )
+        pdi_out_path = image_out_dir / \
+            f"top_i_service_layer_service_layer_{config.project_name}_inst_0_partial.pdi"
 
     if not pdi_out_path.is_file():
         raise FileNotFoundError(
-            f"{str(pdi_out_path)} is missing! Check {str(log_path)} for errors!"
-        )
+            f"{str(pdi_out_path)} is missing! Check {str(log_path)} for errors!")
 
 
 def build_service_layer_rm(config: LinkerConfiguration) -> None:
@@ -584,8 +568,7 @@ def install_static_shell(config: InstallerConfiguration) -> None:
         src_dir = bd_src_dir / "slash_base"
         if not src_dir.is_dir():
             raise FileNotFoundError(
-                f"Expected install BD directory not found: {src_dir}"
-            )
+                f"Expected install BD directory not found: {src_dir}")
         _copy_tree(src_dir, static_shell_dir)
 
     aved_pdi_path, aved_nofpt_pdi_path = generate_base_pdi_with_aved(
@@ -611,6 +594,5 @@ def generate_util_report(config: CommandConfiguration) -> None:
     if not report_path.exists():
         raise FileNotFoundError(report_path)
     convert_report_utilization_to_xml(report_path, xml_path)
-    logger.info(
-        "Utilization report XML generation complete for %s", config.project_name
-    )
+    logger.info("Utilization report XML generation complete for %s",
+                config.project_name)

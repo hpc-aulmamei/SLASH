@@ -29,10 +29,7 @@ import importlib.resources as resources
 from slashkit.emit.render import render_template
 from slashkit.emit.hw.user_region.addr_ctx import build_axilite_address_context
 from slashkit.emit.hw.service_region.stream_ctx import build_stream_connect_context
-from slashkit.emit.metadata.system_map_ctx import (
-    build_system_map_context,
-    resolve_system_map_clock,
-)
+from slashkit.emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from slashkit.core.command_config import LinkerConfiguration
 
 from slashkit.core.kernel import KernelInstance
@@ -58,10 +55,7 @@ def _find_sim_checkpoint_dcp(component_xml: Path) -> str | None:
     """
     root = ET.parse(component_xml).getroot()
     for fs in root.findall("spirit:fileSets/spirit:fileSet", _IPXACT_NS):
-        if (
-            _xml_text(fs.find("spirit:name", _IPXACT_NS))
-            != "xilinx_simulationcheckpoint_view_fileset"
-        ):
+        if _xml_text(fs.find("spirit:name", _IPXACT_NS)) != "xilinx_simulationcheckpoint_view_fileset":
             continue
         for f in fs.findall("spirit:file", _IPXACT_NS):
             rel = _xml_text(f.find("spirit:name", _IPXACT_NS))
@@ -78,12 +72,7 @@ def _find_sim_checkpoint_dcp(component_xml: Path) -> str | None:
 
 def _collect_ports(
     instances: dict[str, KernelInstance],
-) -> tuple[
-    List[Tuple[str, str]],
-    List[Tuple[str, str]],
-    List[Tuple[str, str]],
-    List[Tuple[str, str]],
-]:
+) -> tuple[List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
     axilite: List[Tuple[str, str]] = []
     axifull: List[Tuple[str, str]] = []
     clocks: List[Tuple[str, str]] = []
@@ -136,8 +125,7 @@ def _build_reduction_tree(
     level = 0
     current = [{"src": s} for s in sources]
     while len(current) > max_roots:
-        groups = [current[i: i + max_si]
-                  for i in range(0, len(current), max_si)]
+        groups = [current[i:i+max_si] for i in range(0, len(current), max_si)]
         next_level = []
         for g_idx, group in enumerate(groups):
             name = f"{base_name}_L{level}_{g_idx}"
@@ -179,11 +167,9 @@ def _build_fanout_tree(
     leaves: List[str] = []
     for idx, chunk_start in enumerate(range(0, len(endpoints), max_mi)):
         name = f"{base_name}_L0_{idx}"
-        chunk = endpoints[chunk_start: chunk_start + max_mi]
-        mi = [
-            {"slot_name": _fmt_sc_slot("M", i), "dst_pin": ep}
-            for i, ep in enumerate(chunk)
-        ]
+        chunk = endpoints[chunk_start:chunk_start + max_mi]
+        mi = [{"slot_name": _fmt_sc_slot("M", i), "dst_pin": ep}
+              for i, ep in enumerate(chunk)]
         nodes[name] = {"name": name, "num_mi": len(mi), "mi": mi}
         leaves.append(name)
 
@@ -193,14 +179,12 @@ def _build_fanout_tree(
     while len(current) > 1:
         next_level: List[str] = []
         for g_idx, group_start in enumerate(range(0, len(current), max_mi)):
-            group = current[group_start: group_start + max_mi]
+            group = current[group_start:group_start + max_mi]
             name = f"{base_name}_L{level}_{g_idx}"
             mi = []
             for i, child in enumerate(group):
-                mi.append(
-                    {"slot_name": _fmt_sc_slot(
-                        "M", i), "dst_pin": f"{child}/S00_AXI"}
-                )
+                mi.append({"slot_name": _fmt_sc_slot("M", i),
+                          "dst_pin": f"{child}/S00_AXI"})
                 child_parent[child] = (name, i)
             nodes[name] = {"name": name, "num_mi": len(mi), "mi": mi}
             next_level.append(name)
@@ -213,11 +197,8 @@ def _build_fanout_tree(
             n["si_from"] = {"type": "bd_port", "name": si_bd_port}
         else:
             parent, slot = child_parent[n["name"]]
-            n["si_from"] = {
-                "type": "smartconnect",
-                "prev": parent,
-                "prev_slot_name": _fmt_sc_slot("M", slot),
-            }
+            n["si_from"] = {"type": "smartconnect", "prev": parent,
+                            "prev_slot_name": _fmt_sc_slot("M", slot)}
 
     # Stable order: root first, then others by name
     ordered = [nodes[root]] + \
@@ -225,9 +206,7 @@ def _build_fanout_tree(
     return ordered
 
 
-def _classify_mem_targets(
-    instances: dict[str, KernelInstance],
-) -> tuple[List[str], List[str]]:
+def _classify_mem_targets(instances: dict[str, KernelInstance]) -> tuple[List[str], List[str]]:
     mem0: List[str] = []
     mem1: List[str] = []
     for iname in sorted(instances.keys()):
@@ -250,8 +229,7 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
     instances = {kernel.name: kernel for kernel in config.kernel_instances}
     streams = cfg.streams
     kernel_hls_by_type = {
-        kernel.name: kernel.hls_data_path for kernel in config.kernels
-    }
+        kernel.name: kernel.hls_data_path for kernel in config.kernels}
 
     kernel_sim_meta: dict[str, dict] = {}
     for kernel in config.kernels:
@@ -267,9 +245,7 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
                 )
         kernel_sim_meta[kernel.name] = {
             "component_xml": str(kpath),
-            "sim_checkpoint_dcp": str(sim_checkpoint_abs)
-            if sim_checkpoint_abs
-            else None,
+            "sim_checkpoint_dcp": str(sim_checkpoint_abs) if sim_checkpoint_abs else None,
         }
 
     # 4) Build template context
@@ -291,15 +267,13 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
         if not dcp_path:
             continue
         top_mod = f"top_{iname}_0"
-        sim_checkpoint_netlists_ctx.append(
-            {
-                "inst": iname,
-                "dcp_path": dcp_path,
-                "funcsim_v_path": str((sim_ckpt_out_dir / f"{top_mod}.v").resolve()),
-                "rename_top": top_mod,
-                "rename_prefix": f"{top_mod}_",
-            }
-        )
+        sim_checkpoint_netlists_ctx.append({
+            "inst": iname,
+            "dcp_path": dcp_path,
+            "funcsim_v_path": str((sim_ckpt_out_dir / f"{top_mod}.v").resolve()),
+            "rename_top": top_mod,
+            "rename_prefix": f"{top_mod}_",
+        })
 
     axilite_endpoints = [f"{iname}/{pname}" for iname, pname in axilite_ports]
     axilite_sc_ctx = _build_fanout_tree(
@@ -324,13 +298,11 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
     stream_ctx = build_stream_connect_context(instances, streams)
     axis_streams_ctx = []
     for s in stream_ctx.get("axis_streams", []):
-        axis_streams_ctx.append(
-            {
-                "src_pin": s["src_pin"],
-                "dst_pin": s["dst_pin"],
-                "net_name": s["src_pin"].replace("/", "_"),
-            }
-        )
+        axis_streams_ctx.append({
+            "src_pin": s["src_pin"],
+            "dst_pin": s["dst_pin"],
+            "net_name": s["src_pin"].replace("/", "_"),
+        })
 
     axilite_ctx = build_axilite_address_context(
         instances,
@@ -340,22 +312,19 @@ def generate_sim_tcl(config: LinkerConfiguration) -> None:
     )
     axilite_addr_ctx = []
     for item in axilite_ctx.get("axilite_addr", []):
-        axilite_addr_ctx.append(
-            {
-                "inst": item["inst"],
-                "busif": item["busif"],
-                "segment": item["segment"],
-                "offset_hex": f"0x{item['offset']:X}",
-                "range_hex": f"0x{item['range']:X}",
-            }
-        )
+        axilite_addr_ctx.append({
+            "inst": item["inst"],
+            "busif": item["busif"],
+            "segment": item["segment"],
+            "offset_hex": f"0x{item['offset']:X}",
+            "range_hex": f"0x{item['range']:X}",
+        })
 
     # 5) Render sim_prj.tcl template
     sim_out = config.build_dir / "run_pre.tcl"
 
     sim_mem_src = resources.read_text(
-        "slashkit.resources.sim", "sim_mem.v", encoding="utf-8"
-    )
+        "slashkit.resources.sim", "sim_mem.v", encoding="utf-8")
     sim_mem_dst = config.build_dir / "sim_mem.v"
     sim_mem_dst.write_text(sim_mem_src)
 

@@ -23,9 +23,7 @@ import re
 
 from slashkit.emit.render import render_template, export_package
 from slashkit.emit.hw.user_region.kernel_ctx import build_kernel_add_context
-from slashkit.emit.hw.user_region.smartconnect_ctx import (
-    build_axilite_smartconnect_context,
-)
+from slashkit.emit.hw.user_region.smartconnect_ctx import build_axilite_smartconnect_context
 from slashkit.emit.hw.user_region.hbm_ctx import build_hbm_smartconnect_context
 from slashkit.emit.hw.user_region.ddr_ctx import build_ddr_smartconnect_context
 from slashkit.emit.hw.user_region.mem_ctx import build_mem_smartconnect_context
@@ -41,10 +39,7 @@ from slashkit.emit.hw.service_region.stream_ctx import build_stream_connect_cont
 from slashkit.emit.hw.user_region.host_ctx import build_host_smartconnect_context
 from slashkit.emit.hw.user_region.addr_ctx import build_axilite_address_context
 from slashkit.emit.hw.user_region.param_ctx import build_data_width_param_context
-from slashkit.emit.metadata.system_map_ctx import (
-    build_system_map_context,
-    resolve_system_map_clock,
-)
+from slashkit.emit.metadata.system_map_ctx import build_system_map_context, resolve_system_map_clock
 from slashkit.emit.hw.service_region.service_layer_ctx import *
 
 from slashkit.core.command_config import LinkerConfiguration, ShellType
@@ -64,17 +59,17 @@ def _collect_used_targets(ctx: dict) -> set[str]:
 
     # HBM uses BD ports (HBM_AXI_XX) via root MI -> port
     for o in ctx.get("hbm_root_out", []):
-        used.add(o["dst_port"])  # e.g., HBM_AXI_00
+        used.add(o["dst_port"])   # e.g., HBM_AXI_00
 
     # DDR uses NoC pins
     for item in ctx.get("ddr_direct", []):
-        used.add(item["dst_pin"])  # e.g., /ddr_noc_0/S00_AXI
+        used.add(item["dst_pin"])     # e.g., /ddr_noc_0/S00_AXI
     for item in ctx.get("ddr_smart_roots", []):
         used.add(item["dst_pin"])
 
     # MEM (VNOC) uses NoC pins
     for item in ctx.get("mem_direct", []):
-        used.add(item["dst_pin"])  # e.g., /hbm_vnoc_00/S00_AXI
+        used.add(item["dst_pin"])     # e.g., /hbm_vnoc_00/S00_AXI
     for item in ctx.get("mem_smart_roots", []):
         used.add(item["dst_pin"])
 
@@ -108,25 +103,20 @@ def print_memory_maps(k):
             ba = f"0x{ab.base_address:X}"
             rg = f"0x{ab.range:X}"
             print(
-                f"        block {ab.name}: base={ba} range={rg} width={ab.width} usage={ab.usage or '-'} access={ab.access or '-'}"
-            )
+                f"        block {ab.name}: base={ba} range={rg} width={ab.width} usage={ab.usage or '-'} access={ab.access or '-'}")
             if ab.offset_base_param or ab.offset_high_param:
                 print(
-                    f"          params: base_param={ab.offset_base_param or '-'} high_param={ab.offset_high_param or '-'}"
-                )
+                    f"          params: base_param={ab.offset_base_param or '-'} high_param={ab.offset_high_param or '-'}")
             if ab.registers:
                 for r in ab.registers:
                     off = f"0x{r.address_offset:X}"
                     print(
-                        f"          reg {r.name}: off={off} size={r.size} access={r.access or '-'} reset={('0x%X' % r.reset_value) if r.reset_value is not None else '-'}"
-                    )
+                        f"          reg {r.name}: off={off} size={r.size} access={r.access or '-'} reset={('0x%X' % r.reset_value) if r.reset_value is not None else '-'}")
                     if r.fields:
                         for f in r.fields:
                             rng = f"[{f.bit_offset + f.bit_width - 1}:{f.bit_offset}]"
-                            print(
-                                f"            - {f.name} {rng} access={f.access or '-'}"
-                                f" reset={('0x%X' % f.reset_value) if f.reset_value is not None else '-'}"
-                            )
+                            print(f"            - {f.name} {rng} access={f.access or '-'}"
+                                  f" reset={('0x%X' % f.reset_value) if f.reset_value is not None else '-'}")
 
 
 def print_kernel(k):
@@ -206,9 +196,8 @@ def print_instances(instances, stream_edges):
                 for port, tgt in mem_sp.items():
                     idx = "" if tgt.get("index") is None else str(tgt["index"])
                     print(f"      sp: {port} -> {tgt['domain']}{idx}")
-            others = {
-                k: v for k, v in inst.params.items() if k not in {"clock_hz", "mem_sp"}
-            }
+            others = {k: v for k, v in inst.params.items() if k not in {
+                "clock_hz", "mem_sp"}}
             for k, v in others.items():
                 print(f"      {k}: {v}")
 
@@ -236,8 +225,7 @@ def print_bd_ports(bd):
             wid = "" if p.width is None else str(p.width)
             rtl = "" if p.rtl_name is None else p.rtl_name
             print(
-                f"  - {logical:12s} -> rtl={rtl:20s} {p.ptype.name:9s} width={wid:>4s} domain={dom:>4s} index={idx:>2s}"
-            )
+                f"  - {logical:12s} -> rtl={rtl:20s} {p.ptype.name:9s} width={wid:>4s} domain={dom:>4s} index={idx:>2s}")
 
 
 def generate_tcl(config: LinkerConfiguration) -> None:

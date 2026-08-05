@@ -30,7 +30,6 @@ from slashkit.core.port import BusType
 # Data classes
 # -----------------------------
 
-
 @dataclass(frozen=True)
 class BdPort:
     """
@@ -45,7 +44,6 @@ class BdPort:
         index:     Optional index for memory groups (e.g., HBM0..63 → 0..63, DDR0..3 → 0..3, VIRT0..3 → 0..3).
                    For MEM lines, usually None (MEM acts as a multi-entry wildcard).
     """
-
     name: str
     ptype: BusType
     rtl_name: Optional[str] = None
@@ -60,7 +58,6 @@ class BlockDesignPorts:
     Registry of BD ports with support for multiple RTL endpoints per logical name
     (e.g., a single logical 'MEM' mapping to multiple vNOC INI ports).
     """
-
     ports: Dict[str, List[BdPort]] = field(default_factory=dict)
 
     # ---- registration ----
@@ -87,8 +84,7 @@ class BlockDesignPorts:
             raise KeyError(f"BD port '{name}' not found.")
         if len(lst) > 1:
             raise ValueError(
-                f"Multiple BD ports registered for '{name}'. Use get_all('{name}')."
-            )
+                f"Multiple BD ports registered for '{name}'. Use get_all('{name}').")
         return lst[0]
 
     def get_all(self, name: str) -> List[BdPort]:
@@ -127,8 +123,7 @@ class BlockDesignPorts:
                 return mems
             if not (0 <= index < len(mems)):
                 raise IndexError(
-                    f"MEM index {index} out of range (0..{len(mems) - 1})."
-                )
+                    f"MEM index {index} out of range (0..{len(mems)-1}).")
             return [mems[index]]
         if d == "HOST":
             # single logical endpoint named 'HOST' in bd_ports.txt
@@ -155,10 +150,10 @@ class BlockDesignPorts:
 
 _TYPE_MAP = {
     "AXI4FULL": BusType.AXI4FULL,
-    "AXILITE": BusType.AXILITE,
-    "AXIS": BusType.AXIS,
-    "CLOCK": BusType.CLOCK,
-    "RESET": BusType.RESET,
+    "AXILITE":  BusType.AXILITE,
+    "AXIS":     BusType.AXIS,
+    "CLOCK":    BusType.CLOCK,
+    "RESET":    BusType.RESET,
     "INTERRUPT": BusType.INTERRUPT,
 }
 
@@ -274,20 +269,17 @@ def load_bd_ports_from_file(path: str) -> BlockDesignPorts:
                 lhs, rhs = line.split(None, 1)
             except ValueError:
                 raise ValueError(
-                    f"{path}:{ln}: Expected '<logical>:<rtl> <type> [width]'. Got: {line!r}"
-                )
+                    f"{path}:{ln}: Expected '<logical>:<rtl> <type> [width]'. Got: {line!r}")
 
             if ":" not in lhs:
                 raise ValueError(
-                    f"{path}:{ln}: Missing ':' in '{lhs}'. Expected '<logical>:<rtl>'."
-                )
+                    f"{path}:{ln}: Missing ':' in '{lhs}'. Expected '<logical>:<rtl>'.")
 
             logical, rtl = [t.strip() for t in lhs.split(":", 1)]
             parts = rhs.split()
             if len(parts) not in (1, 2):
                 raise ValueError(
-                    f"{path}:{ln}: Invalid RHS. Expected '<type> [width]'. Got: {rhs!r}"
-                )
+                    f"{path}:{ln}: Invalid RHS. Expected '<type> [width]'. Got: {rhs!r}")
 
             ptype = _parse_ptype(parts[0])
             width = _parse_width(parts[1]) if len(parts) == 2 else None
@@ -297,16 +289,14 @@ def load_bd_ports_from_file(path: str) -> BlockDesignPorts:
                 width = 1
 
             domain, index = _infer_domain_index(logical)
-            bd.add(
-                BdPort(
-                    name=logical,
-                    ptype=ptype,
-                    rtl_name=rtl,
-                    width=width,
-                    domain=domain,
-                    index=index,
-                )
-            )
+            bd.add(BdPort(
+                name=logical,
+                ptype=ptype,
+                rtl_name=rtl,
+                width=width,
+                domain=domain,
+                index=index
+            ))
 
     return bd
 
@@ -314,7 +304,6 @@ def load_bd_ports_from_file(path: str) -> BlockDesignPorts:
 # -----------------------------
 # Optional helpers
 # -----------------------------
-
 
 def generate_bd_port_lines(
     num_hbm: int = 64,

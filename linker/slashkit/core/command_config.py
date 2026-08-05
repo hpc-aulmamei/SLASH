@@ -35,10 +35,7 @@ from slashkit.core.bd_ports import (
 )
 from slashkit.core.kernel import Kernel, KernelInstance
 from slashkit.core.connectivity import ConnectivityConfig
-from slashkit.parser.config_parser import (
-    parse_connectivity_file,
-    apply_config_to_instances,
-)
+from slashkit.parser.config_parser import parse_connectivity_file, apply_config_to_instances
 from slashkit.parser.component_parser import parse_component_xml
 
 
@@ -80,20 +77,10 @@ class CommandConfiguration(object):
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         ap.formatter_class = argparse.RawTextHelpFormatter
-        ap.add_argument(
-            "--vivado",
-            required=False,
-            type=Path,
-            default=shutil.which("vivado"),
-            help="Vivado binary to use for linking. If not given, it will be derived from PATH.",
-        )
-        ap.add_argument(
-            "--jobs",
-            required=False,
-            type=int,
-            default=8,
-            help="Number of parallel jobs for Vivado runs.",
-        )
+        ap.add_argument("--vivado", required=False, type=Path, default=shutil.which("vivado"),
+                        help="Vivado binary to use for linking. If not given, it will be derived from PATH.")
+        ap.add_argument("--jobs", required=False, type=int, default=8,
+                        help="Number of parallel jobs for Vivado runs.")
 
     def __init__(self, args: argparse.Namespace):
         self._args = args
@@ -101,8 +88,7 @@ class CommandConfiguration(object):
         # Resolve, if necessary find, and verify the Vivado binary
         if not args.vivado:
             raise ValueError(
-                "Vivado binary not specified and could not be found on PATH."
-            )
+                "Vivado binary not specified and could not be found on PATH.")
 
         self._vivado_bin = Path(args.vivado).expanduser().resolve()
         if not self._vivado_bin.is_file():
@@ -203,54 +189,24 @@ Build Artifacts:
 
 
 class LinkerConfiguration(CommandConfiguration):
+
     @classmethod
     def populate_argument_parser(cls, ap: argparse.ArgumentParser):
         super().populate_argument_parser(ap)
         ap.description = "Link kernel IP cores into a complete design and build a VBIN archive for emulation, simulation, or hardware execution."
         ap.epilog = LINK_HELP_EPILOG
-        ap.add_argument(
-            "-c",
-            "--config",
-            required=True,
-            type=Path,
-            help="Path to the connectivity configuration file (e.g. config.cfg).",
-        )
-        ap.add_argument(
-            "-k",
-            "--kernels",
-            required=True,
-            type=Path,
-            nargs="+",
-            help="List of component.xml files to load as kernel IP cores.",
-        )
-        ap.add_argument(
-            "-o",
-            "--out",
-            required=True,
-            type=Path,
-            help="Path to the final VBIN archive.",
-        )
-        ap.add_argument(
-            "-p",
-            "--platform",
-            choices=["emu", "sim", "hw"],
-            default="emu",
-            help="Target platform (hw, sim, or emu). Default: emu",
-        )
-        ap.add_argument(
-            "--pre-synth-tcls",
-            type=Path,
-            nargs="*",
-            default=[],
-            help="Paths to TCL scripts to run before synthesis (applies to hardware builds only).",
-        )
-        ap.add_argument(
-            "--clock-hz",
-            required=False,
-            type=int,
-            default=None,
-            help="Target clock frequency in MHz.",
-        )
+        ap.add_argument("-c", "--config", required=True, type=Path,
+                        help="Path to the connectivity configuration file (e.g. config.cfg).")
+        ap.add_argument("-k", "--kernels", required=True, type=Path, nargs="+",
+                        help="List of component.xml files to load as kernel IP cores.")
+        ap.add_argument("-o", "--out", required=True, type=Path,
+                        help="Path to the final VBIN archive.")
+        ap.add_argument("-p", "--platform", choices=["emu", "sim", "hw"],
+                        default="emu", help="Target platform (hw, sim, or emu). Default: emu")
+        ap.add_argument("--pre-synth-tcls", type=Path, nargs="*", default=[],
+                        help="Paths to TCL scripts to run before synthesis (applies to hardware builds only).")
+        ap.add_argument("--clock-hz", required=False,
+                        type=int, default=None, help="Target clock frequency in MHz.")
 
     def __init__(self, args: argparse.Namespace):
         super().__init__(args)
@@ -266,8 +222,7 @@ class LinkerConfiguration(CommandConfiguration):
 
         # Resolve and verify the kernel component files
         self._kernel_component_paths: List[Path] = [
-            path.expanduser().resolve() for path in args.kernels
-        ]
+            path.expanduser().resolve() for path in args.kernels]
         for kernel in self._kernel_component_paths:
             if not kernel.is_file():
                 raise FileNotFoundError(kernel)
@@ -325,18 +280,15 @@ class LinkerConfiguration(CommandConfiguration):
                 )
 
         self._kernel_instances: List[KernelInstance] = apply_config_to_instances(
-            self.configuration, self.kernels
-        )
+            self.configuration, self.kernels)
 
         # merge config [user_region] pre_synth= entries with the --pre-synth-tcls
         # flag. config entries source first, then CLI ones, with duplicates
         # dropped at their first occurrence.
         self._pre_synth_tcls: List[Path] = []
         seen: Set[Path] = set()
-        for raw in [
-            *self._configuration.user_region.pre_synth_tcls,
-            *args.pre_synth_tcls,
-        ]:
+        for raw in [*self._configuration.user_region.pre_synth_tcls,
+                    *args.pre_synth_tcls]:
             path = Path(raw).expanduser().resolve()
             if not path.is_file():
                 raise FileNotFoundError(path)

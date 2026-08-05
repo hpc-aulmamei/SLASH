@@ -43,13 +43,11 @@ def _parse_target(s: str) -> MemoryTarget:
     m = _RE_TARGET.match(s)
     if not m:
         raise ValueError(
-            f"Invalid memory target '{s}'. Expected e.g. HBM0, DDR3, MEM, HOST."
-        )
+            f"Invalid memory target '{s}'. Expected e.g. HBM0, DDR3, MEM, HOST.")
     domain, idx_str = m.group(1).upper(), m.group(2)
     if domain not in {"HBM", "DDR", "MEM", "VIRT", "HOST"}:
         raise ValueError(
-            f"Unsupported memory domain '{domain}'. Use HBM, DDR, MEM, VIRT or HOST."
-        )
+            f"Unsupported memory domain '{domain}'. Use HBM, DDR, MEM, VIRT or HOST.")
     # HOST (and MEM) have no numeric index
     idx = int(idx_str) if (idx_str and domain not in {"MEM", "HOST"}) else ""
     return MemoryTarget(domain=domain, index=idx)
@@ -70,8 +68,7 @@ def _parse_nk_value(val: str) -> NKSpec:
     m = _RE_NK.match(val)
     if not m:
         raise ValueError(
-            f"Invalid nk entry: '{val}' (expected '<kernel>:<count>[:<names>]')."
-        )
+            f"Invalid nk entry: '{val}' (expected '<kernel>:<count>[:<names>]').")
 
     kernel_type = m.group(1).strip()
     count = int(m.group(2))
@@ -95,9 +92,8 @@ def _parse_stream_connect_value(val: str) -> StreamConnect:
         left, right = val.split(":")
         src_inst, src_port = left.split(".", 1)
         dst_inst, dst_port = right.split(".", 1)
-        return StreamConnect(
-            src_inst.strip(), src_port.strip(), dst_inst.strip(), dst_port.strip()
-        )
+        return StreamConnect(src_inst.strip(), src_port.strip(),
+                             dst_inst.strip(), dst_port.strip())
     except Exception as e:
         raise ValueError(
             f"Invalid stream_connect '{val}'. Expected 'a.b:c.d'") from e
@@ -129,7 +125,6 @@ def _parse_debug_net_value(val: str) -> DebugNetSpec:
 # Main parser
 # -----------------------------
 
-
 def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
     """
     Custom parser that supports repeated [clock] sections, [network] section,
@@ -155,14 +150,12 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
         if krnl and freq:
             try:
                 cfg.clocks.append(
-                    ClockSpec(inst=krnl.strip(), freq_hz=int(freq.strip()))
-                )
+                    ClockSpec(inst=krnl.strip(), freq_hz=int(freq.strip())))
             except ValueError:
                 raise ValueError(f"Invalid freqhz value in [clock]: '{freq}'")
         elif krnl or freq:
             raise ValueError(
-                "Incomplete [clock] block: both 'krnl' and 'freqhz' are required."
-            )
+                "Incomplete [clock] block: both 'krnl' and 'freqhz' are required.")
         pending_clock = {}
 
     for raw in lines:
@@ -180,9 +173,8 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
             if line.startswith("nk="):
                 cfg.nk.append(_parse_nk_value(line.split("=", 1)[1].strip()))
             elif line.startswith("stream_connect="):
-                cfg.streams.append(
-                    _parse_stream_connect_value(line.split("=", 1)[1].strip())
-                )
+                cfg.streams.append(_parse_stream_connect_value(
+                    line.split("=", 1)[1].strip()))
             elif line.startswith("sp="):
                 cfg.sps.append(_parse_sp_value(line.split("=", 1)[1].strip()))
             elif line.startswith("shell="):
@@ -227,8 +219,7 @@ def parse_connectivity_file(path: str | Path) -> ConnectivityConfig:
             if k.lower() == "pre_synth":
                 if not v:
                     raise ValueError(
-                        "Invalid line in [user_region] section: empty pre_synth path"
-                    )
+                        "Invalid line in [user_region] section: empty pre_synth path")
                 tcl_path = Path(v).expanduser()
                 if not tcl_path.is_absolute():
                     tcl_path = path.parent / tcl_path
@@ -279,7 +270,7 @@ def apply_config_to_instances(
     cfg: ConnectivityConfig,
     kernel_library: List[Kernel],
     *,
-    default_ddr_index: int = 0,  # DDR0 fallback for missing AXI4FULL ports
+    default_ddr_index: int = 0  # DDR0 fallback for missing AXI4FULL ports
 ) -> List[KernelInstance]:
     instances: Dict[str, KernelInstance] = {}
     kernel_library = {kernel.name: kernel for kernel in kernel_library}
@@ -288,8 +279,7 @@ def apply_config_to_instances(
     for nk in cfg.nk:
         if nk.kernel_type not in kernel_library:
             raise KeyError(
-                f"Kernel type '{nk.kernel_type}' not found in kernel_library."
-            )
+                f"Kernel type '{nk.kernel_type}' not found in kernel_library.")
         k = kernel_library[nk.kernel_type]
         for name in nk.instance_names:
             if name in instances:

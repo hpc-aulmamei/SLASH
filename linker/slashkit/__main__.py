@@ -85,7 +85,6 @@ def run_with_profiling(label: str, func) -> None:
 
     try:
         import resource
-
         start_rusage = resource.getrusage(resource.RUSAGE_SELF)
     except Exception:
         start_rusage = None
@@ -109,7 +108,6 @@ def run_with_profiling(label: str, func) -> None:
         if start_rusage is not None:
             try:
                 import resource
-
                 end_rusage = resource.getrusage(resource.RUSAGE_SELF)
                 # ru_maxrss is in kilobytes on Linux; convert to MB.
                 rss_mb = end_rusage.ru_maxrss / 1024.0
@@ -185,12 +183,8 @@ def main():
         format="%(asctime)s %(levelname)s %(name)s:%(funcName)s: %(message)s",
     )
 
-    ap = argparse.ArgumentParser(
-        description="Utility to link VRT binaries (VBINs) from user IP cores.",
-        conflict_handler="resolve",
-        epilog=MAIN_HELP_EPILOG,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+    ap = argparse.ArgumentParser(description="Utility to link VRT binaries (VBINs) from user IP cores.", conflict_handler="resolve", epilog=MAIN_HELP_EPILOG,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub_parsers = ap.add_subparsers(required=True)
 
     link_parser = sub_parsers.add_parser("link")
@@ -200,8 +194,7 @@ def main():
     install_parser = sub_parsers.add_parser("install")
     InstallerConfiguration.populate_argument_parser(install_parser)
     install_parser.set_defaults(
-        config_class=InstallerConfiguration, operation=install_static_shell
-    )
+        config_class=InstallerConfiguration, operation=install_static_shell)
 
     static_shell_path_parser = sub_parsers.add_parser(
         "static-shell-path",
