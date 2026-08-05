@@ -25,8 +25,7 @@ from slashkit.core.port import BusType
 from slashkit.core.bd_ports import BlockDesignPorts, BdPort
 
 _RX_SKIP_TOP = re.compile(
-    r"^(M\d{2}_INI|HBM_VNOC_INI_\d{2}|HBM_AXI_\d{2})$", re.IGNORECASE
-)
+    r"^(M\d{2}_INI|HBM_VNOC_INI_\d{2}|HBM_AXI_\d{2})$", re.IGNORECASE)
 
 
 def _is_bd_port(p: BdPort) -> bool:
@@ -50,7 +49,7 @@ def _want_generic_term(p: BdPort) -> bool:
     if not _is_bd_port(p):
         return False
 
-    rtl = p.rtl_name or p.name
+    rtl = (p.rtl_name or p.name)
     if _RX_SKIP_TOP.match(rtl):
         return False
     return True
@@ -73,15 +72,13 @@ def build_axi_terminators_context(
         for p in lst:
             if not _want_generic_term(p):
                 continue
-            dst = p.rtl_name or p.name
+            dst = (p.rtl_name or p.name)
             if dst in used_targets:
                 continue
-            terms.append(
-                {
-                    "name": f"{base_name}_{seq}",
-                    "dst": dst,
-                }
-            )
+            terms.append({
+                "name": f"{base_name}_{seq}",
+                "dst": dst,
+            })
             seq += 1
 
     return {"axi_terminators": terms}
@@ -101,12 +98,10 @@ def build_ddr_noc_terminators(
         dst = noc_pin_fmt.format(index=i)
         if dst in used_targets:
             continue
-        axi_terms.append(
-            {
-                "name": f"{base_name}_{seq}",
-                "dst": dst,
-            }
-        )
+        axi_terms.append({
+            "name": f"{base_name}_{seq}",
+            "dst": dst,
+        })
         seq += 1
     return {"axi_terminators": axi_terms}
 
@@ -125,12 +120,10 @@ def build_mem_noc_terminators(
         dst = noc_pin_fmt.format(index=i)
         if dst in used_targets:
             continue
-        axi_terms.append(
-            {
-                "name": f"{base_name}_{seq}",
-                "dst": dst,
-            }
-        )
+        axi_terms.append({
+            "name": f"{base_name}_{seq}",
+            "dst": dst,
+        })
         seq += 1
     return {"axi_terminators": axi_terms}
 
@@ -149,14 +142,12 @@ def build_virt_noc_terminators(
         dst = noc_pin_fmt.format(index=i)
         if dst in used_targets:
             continue
-        axi_terms.append(
-            {
-                "name": f"{base_name}_{seq}",
-                "dst": dst,  # template uses t.dst
-                "clk": "user_clk",
-                "rst": "ilreduced_logic_0/Res",
-            }
-        )
+        axi_terms.append({
+            "name": f"{base_name}_{seq}",
+            "dst":  dst,  # template uses t.dst
+            "clk": "user_clk",
+            "rst": "ilreduced_logic_0/Res",
+        })
         seq += 1
     return {"axi_terminators": axi_terms}
 
@@ -173,12 +164,10 @@ def build_host_noc_terminator(
     if noc_pin in used_targets:
         return {"axi_terminators": []}
     return {
-        "axi_terminators": [
-            {
-                "name": f"{base_name}_0",
-                "dst": noc_pin,  # template expects t.dst
-                "clk": "user_clk",
-                "rst": "ilreduced_logic_0/Res",
-            }
-        ]
+        "axi_terminators": [{
+            "name": f"{base_name}_0",
+            "dst":  noc_pin,  # template expects t.dst
+            "clk": "user_clk",
+            "rst": "ilreduced_logic_0/Res",
+        }]
     }

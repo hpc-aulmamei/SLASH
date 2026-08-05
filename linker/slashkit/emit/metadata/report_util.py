@@ -90,8 +90,7 @@ class ResourceTotals:
 
 
 CELL_VALUE_PCT = re.compile(
-    r"^\s*(?P<val>\d+)\s*(?:\(\s*(?P<pct>\d+(?:\.\d+)?)%\s*\))?\s*$"
-)
+    r"^\s*(?P<val>\d+)\s*(?:\(\s*(?P<pct>\d+(?:\.\d+)?)%\s*\))?\s*$")
 
 
 def parse_cell_value_and_percent(cell: str) -> ValueWithPercent:
@@ -107,11 +106,7 @@ def parse_cell_value_and_percent(cell: str) -> ValueWithPercent:
     m = CELL_VALUE_PCT.match(cell)
     if not m:
         digits = re.match(r"^\s*(\d+)", cell)
-        return (
-            ValueWithPercent(int(digits.group(1)), None)
-            if digits
-            else ValueWithPercent(None, None)
-        )
+        return ValueWithPercent(int(digits.group(1)), None) if digits else ValueWithPercent(None, None)
 
     val = int(m.group("val"))
     pct = float(m.group("pct")) if m.group("pct") is not None else None
@@ -129,12 +124,7 @@ def parse_vivado_hierarchical_utilization_table(text: str) -> List[UtilRow]:
     in_table = False
 
     for ln in lines:
-        if (
-            ln.startswith("|")
-            and "Instance" in ln
-            and "Module" in ln
-            and "Total LUTs" in ln
-        ):
+        if ln.startswith("|") and "Instance" in ln and "Module" in ln and "Total LUTs" in ln:
             in_table = True
             continue
 
@@ -215,7 +205,6 @@ def write_totals_attributes_from_row(elem: ET.Element, r: UtilRow) -> None:
     @param elem XML element to update.
     @param r Utilization row source.
     """
-
     def _set_val_pct(elem: ET.Element, base: str, v: ValueWithPercent) -> None:
         elem.set(base, str(v.value or 0))
         if v.pct is not None:
@@ -251,9 +240,7 @@ def write_totals_attributes_from_totals(elem: ET.Element, t: ResourceTotals) -> 
     elem.set("dsp", str(t.dsp))
 
 
-def write_cell(
-    parent_element: ET.Element, node: TreeNode, is_kernel=False, recurse=False
-) -> None:
+def write_cell(parent_element: ET.Element, node: TreeNode, is_kernel=False, recurse=False) -> None:
     """! @brief Write a cell/kernel, potentially recursing into sub-cells
 
     @param parent_element Parent element under which to place the new cell
@@ -263,8 +250,7 @@ def write_cell(
     """
     name = "kernel" if is_kernel else "cell"
     cell_element = ET.SubElement(
-        parent_element, name, instance=node.row.instance, module=node.row.module
-    )
+        parent_element, name, instance=node.row.instance, module=node.row.module)
     write_totals_attributes_from_row(
         ET.SubElement(cell_element, "totals"), node.row)
     if not recurse or len(node.children) == 0:
@@ -280,9 +266,8 @@ def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
     @return XML element tree representing utilization report.
     """
     root = ET.Element("utilization_report")
-    write_totals_attributes_from_row(
-        ET.SubElement(root, "totals"), nodes["top_wrapper"].row
-    )
+    write_totals_attributes_from_row(ET.SubElement(
+        root, "totals"), nodes["top_wrapper"].row)
 
     for region_name in ["static_region", "service_layer"]:
         if region_name not in nodes:
@@ -306,13 +291,10 @@ def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
         if inst.startswith("(") and inst.endswith(")"):
             continue
 
-        is_slash_logic = any(
-            p.search(inst)
-            for p in [
-                re.compile(r".*_sc_.*"),  # hbm_sc_01, etc.
-                re.compile(r"^smartconnect.*"),  # smartconnect_0, etc.
-            ]
-        )
+        is_slash_logic = any(p.search(inst) for p in [
+            re.compile(r".*_sc_.*"),        # hbm_sc_01, etc.
+            re.compile(r"^smartconnect.*"),  # smartconnect_0, etc.
+        ])
 
         if is_slash_logic:
             write_cell(slash_logic_cells, child)
@@ -321,15 +303,12 @@ def create_utilization_xml(nodes: Dict[str, TreeNode]) -> ET.ElementTree:
             write_cell(kernels, child, recurse=True, is_kernel=True)
             kernel_sum.add(child.row)
 
-    write_totals_attributes_from_row(
-        ET.SubElement(slash_element, "totals"), slash_node.row
-    )
+    write_totals_attributes_from_row(ET.SubElement(
+        slash_element, "totals"), slash_node.row)
     write_totals_attributes_from_totals(
-        ET.SubElement(slash_element, "kernel_sum"), kernel_sum
-    )
+        ET.SubElement(slash_element, "kernel_sum"), kernel_sum)
     write_totals_attributes_from_totals(
-        ET.SubElement(slash_element, "slash_logic_sum"), slash_logic_sum
-    )
+        ET.SubElement(slash_element, "slash_logic_sum"), slash_logic_sum)
     ET.Comment()
 
     ET.indent(root)
