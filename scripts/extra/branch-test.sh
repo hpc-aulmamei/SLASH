@@ -221,9 +221,9 @@ protected git submodule update --init --recursive
 
 # Build phase
 
-protected python3 -m zipfile -e "${SMBUS_IP}" linker/slashkit/resources/base/iprepo
-if ! compgen -G 'linker/slashkit/resources/base/iprepo/smbus*/' >/dev/null; then
-    echo "ERROR: extracted SMBus IP zip did not create linker/slashkit/resources/base/iprepo/smbus*/" >&2
+protected python3 -m zipfile -e "${SMBUS_IP}" linker/slashkit/resources/base/common/iprepo
+if ! compgen -G 'linker/slashkit/resources/base/common/iprepo/smbus*/' >/dev/null; then
+    echo "ERROR: extracted SMBus IP zip did not create linker/slashkit/resources/base/common/iprepo/smbus*/" >&2
     exit 1
 fi
 
