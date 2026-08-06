@@ -40,7 +40,11 @@ Thumbs.db
 # Ignore IDE specific files
 .vscode/
 .idea/
+.cursor/
 *.iml
+
+# Ignore local git worktrees
+.worktrees/
 
 # Ignore test binaries
 /tests/*.exe
