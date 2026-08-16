@@ -116,13 +116,14 @@ sudo apt install cmake pkg-config ninja-build \
 
 **Clone and submodules:**
 
-SLASH depends on [AVED](https://github.com/Xilinx/AVED) and
-[QDMA](https://github.com/Xilinx/dma_ip_drivers):
+SLASH depends on [AVED](https://github.com/Xilinx/AVED),
+[QDMA](https://github.com/Xilinx/dma_ip_drivers) and, for the Ethernet-capable
+service shell, [Versal-DCMAC](https://github.com/fpgasystems/Versal-DCMAC):
 
 ```bash
 git clone -b dev https://github.com/Xilinx/SLASH.git
 cd SLASH
-git submodule update --init submodules/AVED submodules/qdma_drv
+git submodule update --init submodules/AVED submodules/qdma_drv submodules/Versal-DCMAC
 ```
 
 Do not clone with `--recurse-submodules`. The optional Xilinx QEMU submodule
