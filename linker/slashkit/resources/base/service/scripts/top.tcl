@@ -1691,7 +1691,7 @@ proc create_hier_cell_aved { parentCell nameHier } {
       CPM_PCIE1_PF2_BAR4_QDMA_64BIT {1} \
       CPM_PCIE1_PF2_BAR4_QDMA_ENABLED {1} \
       CPM_PCIE1_PF2_BAR4_QDMA_PREFETCHABLE {1} \
-      CPM_PCIE1_PF2_BAR4_QDMA_SCALE {Gigabytes} \
+      CPM_PCIE1_PF2_BAR4_QDMA_SCALE {Megabytes} \
       CPM_PCIE1_PF2_BAR4_QDMA_SIZE {128} \
       CPM_PCIE1_PF2_BASE_CLASS_VALUE {12} \
       CPM_PCIE1_PF2_CFG_DEV_ID {50c2} \
@@ -1702,8 +1702,26 @@ proc create_hier_cell_aved { parentCell nameHier } {
       CPM_PCIE1_PF2_PCIEBAR2AXIBAR_QDMA_2 {0x0000020300000000} \
       CPM_PCIE1_PF2_PCIEBAR2AXIBAR_QDMA_4 {0x0000020400000000} \
       CPM_PCIE1_PF2_USE_CLASS_CODE_LOOKUP_ASSISTANT {0} \
+      CPM_PCIE1_PF3_BAR0_QDMA_64BIT {1} \
+      CPM_PCIE1_PF3_BAR0_QDMA_PREFETCHABLE {1} \
+      CPM_PCIE1_PF3_BAR0_QDMA_SCALE {Gigabytes} \
+      CPM_PCIE1_PF3_BAR0_QDMA_SIZE {32} \
+      CPM_PCIE1_PF3_BAR2_QDMA_64BIT {1} \
+      CPM_PCIE1_PF3_BAR2_QDMA_ENABLED {1} \
+      CPM_PCIE1_PF3_BAR2_QDMA_PREFETCHABLE {1} \
+      CPM_PCIE1_PF3_BAR2_QDMA_SCALE {Gigabytes} \
+      CPM_PCIE1_PF3_BAR2_QDMA_SIZE {32} \
+      CPM_PCIE1_PF3_BASE_CLASS_VALUE {12} \
+      CPM_PCIE1_PF3_CFG_DEV_ID {50c3} \
+      CPM_PCIE1_PF3_CFG_SUBSYS_ID {000e} \
+      CPM_PCIE1_PF3_CFG_SUBSYS_VEND_ID {10EE} \
+      CPM_PCIE1_PF3_PCIEBAR2AXIBAR_QDMA_0 {0x4000000000} \
+      CPM_PCIE1_PF3_PCIEBAR2AXIBAR_QDMA_2 {0x60000000000} \
+      CPM_PCIE1_PF3_SUB_CLASS_INTF_MENU {RAM} \
+      CPM_PCIE1_PF3_SUB_CLASS_VALUE {80} \
+      CPM_PCIE1_PF3_USE_CLASS_CODE_LOOKUP_ASSISTANT {0} \
       CPM_PCIE1_PL_LINK_CAP_MAX_LINK_WIDTH {X8} \
-      CPM_PCIE1_TL_PF_ENABLE_REG {3} \
+      CPM_PCIE1_TL_PF_ENABLE_REG {4} \
     } \
     CONFIG.PS_PMC_CONFIG { \
       BOOT_MODE {Custom} \
@@ -2713,7 +2731,7 @@ HBM_PC0_WRITE_RATE 25.000 HBM_PC1_WRITE_RATE 25.000 HBM_PC0_PHY_ACTIVE ENABLED H
   set_property -dict [ list \
   CONFIG.CONNECTIONS {HBM10_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} M02_INI {read_bw {800} write_bw {800} read_avg_burst {64} write_avg_burst {64} initial_boot {false}} HBM15_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM10_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} M01_AXI {read_bw {250} write_bw {250} read_avg_burst {4} write_avg_burst {4} initial_boot {false}} HBM5_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM15_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM5_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM1_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM1_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM6_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM12_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM0_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM6_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM14_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} M06_INI {read_bw {5} write_bw {5} initial_boot {false}} HBM12_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM0_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM8_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM8_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM14_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM3_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM3_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM4_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM4_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM9_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} M04_INI {read_bw {5} write_bw {5} initial_boot {false}} HBM2_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM11_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} M00_INI {read_bw {800} write_bw {800} read_avg_burst {64} write_avg_burst {64} initial_boot {false}} HBM9_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM11_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM7_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM13_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM7_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM13_PORT0 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} HBM2_PORT2 {read_bw {360} write_bw {360} read_avg_burst {32} write_avg_burst {32} initial_boot {false}} M00_AXI {read_bw {5} write_bw {5} read_avg_burst {64} write_avg_burst {64}}} \
    CONFIG.DEST_IDS {M01_AXI:0x1:M00_AXI:0x2c1} \
-   CONFIG.REMAPS {M00_INI {{0x20108000000 0x00038000000 0x08000000} {0x20404000000 0x00030000000 0x04000000}} M02_INI {{0x0208_0000_0000 0x0600_0000_0000 32G}}} \
+   CONFIG.REMAPS {M00_INI {{0x20108000000 0x00038000000 0x08000000} {0x20404000000 0x00030000000 0x04000000}}} \
    CONFIG.NOC_PARAMS {} \
    CONFIG.CATEGORY {ps_pcie} \
  ] [get_bd_intf_pins /static_region/noc/axi_noc_cips/S00_AXI]
