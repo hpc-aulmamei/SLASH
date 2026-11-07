@@ -4,8 +4,10 @@
 host_probe is an AXI4 master in the service layer that reaches the host
 through M_QDMA_SLV_BRIDGE -> static NoC -> CPM5 slave bridge, region 0 at AXI
 0xE800_0000. Its translation (the BDF table, CPM5_DMA1_CSR 0xFCEA_2420 +
-0x20 per entry) is set by nobody: it is written over JTAG (xsdb) for this
-test. The IOMMU of the host is off, so the entries point at physical
+0x20 per entry) is set by nobody at boot. A NIC static built with
+NIC_BDF_BAR=1 maps CPM5_DMA1_CSR 0xFCEA_0000 + 16 KiB into PF1 BAR2, and the
+session writes the entries there (--bdf auto/host); otherwise it writes xsdb
+scripts for JTAG (--bdf jtag). The IOMMU of the host is off, so the entries point at physical
 addresses; the probe is limited (WIN_BASE/WIN_SIZE) to the mapped range.
 
 NIC static (default, --windows N, 1-64): region 0 is 128 MiB in 64 windows
@@ -21,6 +23,8 @@ session uses one 128 MiB aligned hugepage and stays inside --win.
   sudo ./host_probe.py -d 0000:1b:00 session             # guided: read, write, bandwidth
   sudo ./host_probe.py -d 0000:1b:00 session --windows 4 --steps read
   sudo ./host_probe.py -d 0000:1b:00 session --windows 0  # m05 static
+  sudo ./host_probe.py -d 0000:1b:00 bdf                  # BDF entries 0..3 via PF1 BAR2, read only
+  sudo ./host_probe.py -d 0000:1b:00 bdf --entries 64 --clear
 
 The session needs hugepages: sudo sysctl vm.nr_hugepages=256 (512 MiB, freed
 again with vm.nr_hugepages=0). Every write step asks for confirmation.
@@ -241,6 +245,120 @@ class HugeBuf:
         self.pages = []
 
 
+# ---------------------------------------------------------------- BDF table from the host
+class BdfBar:
+    """CPM5_DMA1_CSR 0xFCEA_0000 + 16 KiB through PF1 BAR2 (NIC static with
+    NIC_BDF_BAR=1: the BAR translates to AXI 0xFCEA_0000, and CPM_PCIE_NOC_0/1
+    reach the CPM registers through the NoC and NOC_PMC_AXI_0). Covers
+    BRG_SLV_TZ_ERR_ADDR (0x0E88) and BDF entries 0..63 (0x2420 + 0x20 * i)."""
+    BASE = 0xFCEA_0000
+    SIZE = 0x4000
+
+    def __init__(self, bdf):
+        if bdf.count(":") == 1:
+            bdf = "0000:" + bdf
+        bdf = bdf.split(".")[0]
+        self.path = f"/sys/bus/pci/devices/{bdf}.1/resource2"
+        self.cfg_path = f"/sys/bus/pci/devices/{bdf}.1/resource0"
+        self.mv = None
+        try:
+            size = os.stat(self.path).st_size
+        except OSError:
+            self.why = f"{self.path} does not exist (static without the PF1 BAR2 window)"
+            return
+        if size < self.SIZE:
+            self.why = f"PF1 BAR2 is {size} B, not the {self.SIZE} B window"
+            return
+        fd = os.open(self.path, os.O_RDWR | os.O_SYNC)
+        self.mv = memoryview(mmap.mmap(fd, self.SIZE, mmap.MAP_SHARED,
+                                       mmap.PROT_READ | mmap.PROT_WRITE)).cast("I")
+        self.why = ""
+
+    def rd(self, axi):
+        return int(self.mv[(axi - self.BASE) >> 2])
+
+    def wr(self, axi, val):
+        self.mv[(axi - self.BASE) >> 2] = val & 0xFFFFFFFF
+
+    def check(self):
+        """read-only test of the path: offset 0 through this window and through
+        the QDMA config BAR (PF1 BAR0) should be the same CSR"""
+        via_bar2 = self.rd(self.BASE)
+        fd = os.open(self.cfg_path, os.O_RDONLY | os.O_SYNC)
+        try:
+            cfg = memoryview(mmap.mmap(fd, 4096, mmap.MAP_SHARED, mmap.PROT_READ)).cast("I")
+            via_bar0 = int(cfg[0])
+        finally:
+            os.close(fd)
+        print(f"BDF window: CSR 0x0 reads 0x{via_bar2:08x} through PF1 BAR2, 0x{via_bar0:08x} through PF1 BAR0;"
+              f" BRG_SLV_TZ_ERR_ADDR 0x{self.rd(BRG_ERR):08x}")
+        return via_bar2 == via_bar0 and via_bar2 != 0xFFFFFFFF
+
+    def entry(self, i):
+        return [self.rd(BDF0 + 0x20 * i + 4 * k) for k in range(6)]
+
+    def program(self, entries):
+        """[(index, pa, window reg)], pa 0 = clear; the six registers in order,
+        smid (offset 0x14) last. Traffic through the slave bridge must be
+        stopped (PG347: quiesce before programming the BDF table)."""
+        for i, pa, window in entries:
+            regs = [pa & 0xFFFFF000, pa >> 32, 0, 0, window, 0]
+            for k, v in enumerate(regs):
+                self.wr(BDF0 + 0x20 * i + 4 * k, v)
+        bad = []
+        for i, pa, window in entries:
+            want = [pa & 0xFFFFF000, pa >> 32, 0, 0, window, 0]
+            got = self.entry(i)
+            if got[0] != want[0] or got[1] != want[1] or got[4] != want[4]:
+                bad.append((i, got))
+        first, last = entries[0][0], entries[-1][0]
+        print(f"  entry {first}: " + " ".join(f"0x{v:08x}" for v in self.entry(first)))
+        print(f"  entry {last}: " + " ".join(f"0x{v:08x}" for v in self.entry(last)))
+        print(f"  BRG_SLV_TZ_ERR_ADDR 0x{self.rd(BRG_ERR):08x}")
+        for i, got in bad[:4]:
+            print(f"  entry {i} reads back " + " ".join(f"0x{v:08x}" for v in got))
+        return not bad
+
+
+def bdf_path(args):
+    """BdfBar when --bdf host, or --bdf auto and the window works; else None (xsdb)"""
+    if args.bdf == "jtag":
+        return None
+    b = BdfBar(args.device)
+    if b.mv is None:
+        if args.bdf == "host":
+            sys.exit(f"--bdf host: {b.why}")
+        print(f"BDF table over JTAG: {b.why}")
+        return None
+    if b.check():
+        print("BDF table from the host (PF1 BAR2)")
+        return b
+    if args.bdf == "host" and ask("The two reads differ: type 'yes' to write the BDF table through PF1 BAR2 anyway: "):
+        return b
+    print("BDF table over JTAG: the PF1 BAR2 window does not read the CSR")
+    return None
+
+
+def cmd_bdf(p, args):
+    """show (read only) or clear BDF entries through PF1 BAR2"""
+    b = BdfBar(args.device)
+    if b.mv is None:
+        sys.exit(b.why)
+    ok = b.check()
+    if not ok:
+        print("warning: PF1 BAR2 and PF1 BAR0 read different values at CSR 0x0")
+    n = args.entries
+    for i in range(n):
+        print(f"  entry {i:2}: " + " ".join(f"0x{v:08x}" for v in b.entry(i)))
+    if args.clear:
+        if p.rd64("WIN_SIZE_LO") != 0:
+            print("note: the probe window is set; clearing it first")
+            p.window(0, 0)
+        if not ask(f"Type 'yes' to clear BDF entries 0..{n - 1}: "):
+            return
+        print("cleared" if b.program([(i, 0, 0) for i in range(n)]) else "clear did not read back as zeros")
+
+
 # ---------------------------------------------------------------- xsdb commands
 def xsdb_set(pa, perm, prot, win):
     # window: access_perm [31:30] (3 = read/write), prot [28:26], win_size [25:0] in 4 KiB
@@ -322,18 +440,31 @@ def cmd_session_nic(p, args):
     win_reg = (args.perm << 30) | (args.prot << 26) | (PAGE >> 12)
     set_tcl = os.path.abspath(f"host_probe_bdf_set.{os.getpid()}.tcl")
     clr_tcl = os.path.abspath(f"host_probe_bdf_clear.{os.getpid()}.tcl")
-    xsdb_script(set_tcl, [(i, pa, win_reg) for i, (_, _, pa) in enumerate(pages)])
-    xsdb_script(clr_tcl, [(i, 0, 0) for i in range(N)])
+    if args.bdf != "host":
+        xsdb_script(set_tcl, [(i, pa, win_reg) for i, (_, _, pa) in enumerate(pages)])
+        xsdb_script(clr_tcl, [(i, 0, 0) for i in range(N)])
     print(f"host buffer: {N} hugepages, physical " +
           ", ".join(f"0x{pa:x}" for _, _, pa in pages[:4]) + (" ..." if N > 4 else ""))
     print(f"probe AXI 0x{AXI_BASE:x} .. 0x{AXI_BASE + W - 1:x} ({N} x 2 MiB)")
-    print(f"\n1) Program BDF entries 0..{N - 1} (as root, in another terminal):\n")
-    print(f"   source /nfs/amd/2025.1/Vivado/settings64.sh; sudo -E xsdb {set_tcl}")
-    print(f"   (entry 0 and {N - 1} are read back at the end: addr_lo/hi = the page, window 0x{win_reg:08X})")
-    if not ask("\nType 'yes' when the entries are written and read back as set: "):
-        print("stopped; nothing was sent to the card")
-        buf.free_all()
-        return
+    host = bdf_path(args)
+    set_entries = [(i, pa, win_reg) for i, (_, _, pa) in enumerate(pages)]
+    clr_entries = [(i, 0, 0) for i in range(N)]
+    if host:
+        print(f"\n1) Program BDF entries 0..{N - 1} through PF1 BAR2"
+              f" (addr_lo/hi = the page, window 0x{win_reg:08X}):")
+        if not host.program(set_entries):
+            print("stopped: the entries did not read back as written; clearing them")
+            host.program(clr_entries)
+            buf.free_all()
+            return
+    else:
+        print(f"\n1) Program BDF entries 0..{N - 1} (as root, in another terminal):\n")
+        print(f"   source /nfs/amd/2025.1/Vivado/settings64.sh; sudo -E xsdb {set_tcl}")
+        print(f"   (entry 0 and {N - 1} are read back at the end: addr_lo/hi = the page, window 0x{win_reg:08X})")
+        if not ask("\nType 'yes' when the entries are written and read back as set: "):
+            print("stopped; nothing was sent to the card")
+            buf.free_all()
+            return
 
     def fill(seed):
         for i, (_, mm, _) in enumerate(pages):
@@ -415,10 +546,19 @@ def cmd_session_nic(p, args):
         print(f"\nstopped: {e}")
     finally:
         p.window(0, 0)
-        print(f"\n5) Clear BDF entries 0..{N - 1} again (the hugepages stay allocated until you confirm):\n")
-        print(f"   source /nfs/amd/2025.1/Vivado/settings64.sh; sudo -E xsdb {clr_tcl}")
-        while not ask("\nType 'yes' when the entries read back as all zeros: "):
-            pass
+        if host:
+            print(f"\n5) Clear BDF entries 0..{N - 1} through PF1 BAR2:")
+            while not host.program(clr_entries):
+                if not ask("   the entries did not read back as zeros; type 'yes' to retry"
+                           " ('no' keeps the hugepages allocated and exits): "):
+                    print("hugepages kept: clear the entries over JTAG with " + clr_tcl)
+                    xsdb_script(clr_tcl, clr_entries)
+                    os._exit(1)
+        else:
+            print(f"\n5) Clear BDF entries 0..{N - 1} again (the hugepages stay allocated until you confirm):\n")
+            print(f"   source /nfs/amd/2025.1/Vivado/settings64.sh; sudo -E xsdb {clr_tcl}")
+            while not ask("\nType 'yes' when the entries read back as all zeros: "):
+                pass
         buf.free_all()
         print("hugepages released. Afterwards: sudo sysctl vm.nr_hugepages=0")
 
@@ -539,11 +679,20 @@ def main():
                    help="m05 static (--windows 0): usable window in bytes (default 4096: its CPM5"
                         " slave region decodes 4 KiB; further accesses get DECERR)")
     s.add_argument("--bw-reps", type=int, default=10)
+    s.add_argument("--bdf", choices=["auto", "host", "jtag"], default="auto",
+                   help="NIC static: how the BDF table is written. host = through PF1 BAR2 (static"
+                        " built with NIC_BDF_BAR=1); jtag = print xsdb scripts; auto (default) = host"
+                        " when PF1 BAR2 reads the same CSR as PF1 BAR0, else jtag")
+    s = sub.add_parser("bdf", help="NIC static: show BDF entries through PF1 BAR2 (read only), --clear to zero them")
+    s.add_argument("--entries", type=int, default=4, help="entries 0..N-1 (default 4, at most 64)")
+    s.add_argument("--clear", action="store_true", help="write zeros to the entries (asks first)")
     args = ap.parse_args()
     if os.geteuid() != 0:
         sys.exit("run as root (BAR2 mapping, /proc/self/pagemap)")
     p = Probe(Bar(args.device))
-    {"status": cmd_status, "session": cmd_session}[args.cmd](p, args)
+    if args.cmd == "bdf" and not 1 <= args.entries <= 64:
+        sys.exit("--entries must be 1..64")
+    {"status": cmd_status, "session": cmd_session, "bdf": cmd_bdf}[args.cmd](p, args)
 
 
 if __name__ == "__main__":

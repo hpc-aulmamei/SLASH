@@ -11,6 +11,9 @@ Changes, all in resources/base/service:
     aved/cips   CPM_PCIE1_DMA_INTF AXI_MM_and_AXI_Stream (QDMA streaming, internal
                 descriptors, no bypass); slave-bridge region 0 = 128 MB in 64 x 2 MB
                 windows at AXI 0xE800_0000 (stock: 4 KB, 1 window)
+                NIC_BDF_BAR=1 (default): PF1 BAR2 = 16 KiB at AXI 0xFCEA_0000
+                (CPM5_DMA1_CSR, with the slave-bridge BDF table), and the CPM
+                register segment mapped for CPM_PCIE_NOC_0/1 (stock: excluded)
     aved        dma_clk_wiz: MMCM pl2_ref_clk 250 -> NIC_DMA_MHZ (CIPS PL reference
                 clocks stop at 350 MHz on this part). 433.33 failed timing in the
                 CPM's soft QDMA-ST logic (-0.228 ns) and the CPM user clock min
@@ -41,6 +44,10 @@ HERE = Path(__file__).resolve().parent
 MARK = "# NIC static (slash-roce shell/patch_shell.py)"  # kept: run_nic_shell.sh and patched trees match it
 
 DMA_HZ = int(float(os.environ.get("NIC_DMA_MHZ", "390")) * 1e6)  # dma_clk_wiz output
+# PF1 BAR2 -> CPM5_DMA1_CSR 0xFCEA_0000 + 16 KiB, so the host can write the
+# slave-bridge BDF table (0xFCEA_2420 + 0x20 * i). 0 leaves the BAR disabled.
+BDF_BAR = os.environ.get("NIC_BDF_BAR", "1") != "0"
+BDF_AXI, BDF_KB = 0xFCEA_0000, 16
 
 # CIPS dma1 streaming interface -> qdma_noc_bridge interface (CPM side)
 CPM = [
@@ -147,6 +154,35 @@ def noc_pass(cell, streams, prefix="  "):
     return L
 
 
+def patch_bdf_bar(t):
+    """PF1 BAR2 (stock: disabled, 4 KB AXI bridge master) -> 16 KiB window on
+    CPM5_DMA1_CSR, and the CPM register segment (psv_cpm, which the stock
+    address map excludes) mapped for the CPM's PCIe-to-NoC masters. PG347
+    names the NoC AXI slave side as the BDF table's programming interface;
+    AMD's QDMA driver has no BDF code and offset 0x2420 of the DMA BAR (PF1
+    BAR0) is the PF mailbox, not the table."""
+    span = proc_span(t, "create_hier_cell_aved")
+    for old, new in [("CPM_PCIE1_PF1_BAR2_QDMA_ENABLED {0}", "CPM_PCIE1_PF1_BAR2_QDMA_ENABLED {1}"),
+                     ("CPM_PCIE1_PF1_BAR2_QDMA_SIZE {4}", f"CPM_PCIE1_PF1_BAR2_QDMA_SIZE {{{BDF_KB}}}"),
+                     ("CPM_PCIE1_PF1_PCIEBAR2AXIBAR_QDMA_2 {0x0000020200000000}",
+                      f"CPM_PCIE1_PF1_PCIEBAR2AXIBAR_QDMA_2 {{0x{BDF_AXI:016X}}}")]:
+        t = sub_in(t, span, f"      {old} \\\n", f"      {new} \\\n")
+        span = proc_span(t, "create_hier_cell_aved")
+    for chk in ["CPM_PCIE1_PF1_BAR2_QDMA_SCALE {Kilobytes}", "CPM_PCIE1_PF1_BAR2_QDMA_TYPE {AXI_Bridge_Master}",
+                "CPM_PCIE1_PF1_BAR2_QDMA_64BIT {0}", "CPM_PCIE1_PF1_BAR2_QDMA_PREFETCHABLE {0}"]:
+        if t[slice(*span)].count(chk) != 1:
+            die(f"aved: expected {chk!r} once")
+    for noc in ("CPM_PCIE_NOC_0", "CPM_PCIE_NOC_1"):
+        old = ("  exclude_bd_addr_seg -offset 0xFC000000 -range 0x01000000 -target_address_space "
+               f"[get_bd_addr_spaces static_region/aved/cips/{noc}] "
+               "[get_bd_addr_segs static_region/aved/cips/NOC_PMC_AXI_0/pspmc_0_psv_cpm]\n")
+        if t.count(old) != 1:
+            die(f"psv_cpm exclude for {noc} not found once")
+        t = t.replace(old, f"  {MARK}: host BAR -> CPM registers (BDF table)\n" +
+                      old.replace("exclude_bd_addr_seg", "assign_bd_address").replace("\n", " -force\n"))
+    return t
+
+
 def patch_top(t):
     if MARK in t:
         die("top.tcl is already patched")
@@ -162,6 +198,8 @@ def patch_top(t):
                "      CPM_PCIE1_PCIE_REGION_0_SIZE {128} \\\n")
     if re.search(r"CPM_PCIE1_DMA_INTF \{(?!AXI_MM_and_AXI_Stream)", t[slice(*proc_span(t, "create_hier_cell_aved"))]):
         die("top.tcl sets CPM_PCIE1_DMA_INTF already")
+    if BDF_BAR:
+        t = patch_bdf_bar(t)
     # ---- aved: DMA clock MMCM on the stock pl2 net ----
     span = proc_span(t, "create_hier_cell_aved")
     t = sub_in(t, span, "  # Create interface connections\n",

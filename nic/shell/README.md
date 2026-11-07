@@ -33,6 +33,7 @@ project and is not touched.
 |---|---|
 | CIPS CPM | `CPM_PCIE1_DMA_INTF AXI_MM_and_AXI_Stream`: QDMA streaming with internal descriptors, no bypass |
 | CIPS CPM | slave-bridge region 0 (CPM `axibar2pciebar_new_2`, AXI `0xE800_0000`): 128 MB in 64 × 2 MB windows, BDF entries 0–63. The m05 static had 4 KB with 1 window |
+| CIPS CPM, address map | `NIC_BDF_BAR=1` (default): PF1 BAR2 enabled as a 16 KiB window translated to AXI `0xFCEA_0000` (CPM5_DMA1_CSR, BDF table at `0x2420 + 0x20 × i`), and the CPM register segment `psv_cpm` (`0xFC00_0000`, 16 MiB) assigned for `CPM_PCIE_NOC_0/1` instead of excluded, so the host can write the BDF table. Not yet built or tested; `NIC_BDF_BAR=0` gives the tested static |
 | aved | `dma_clk_wiz` MMCM `pl2_ref_clk` 250 → 390 MHz. The CIPS PL reference clocks stop at 350 MHz on this part. 433.333 MHz failed: −0.228 ns inside the CPM's soft QDMA streaming logic, and the CPM user-clock input needs a period of at least 2.309 ns. 400 MHz failed by 25 ps and 390 MHz by 103 ps (direct partition pins) in the same logic. The MMCM output takes `pl2_ref_clk`'s place on the stock net: `dma1_intrfc_clk`, `hw_discovery` `aclk_pcie` and `pcie_psr`. `pcie_psr` now waits for the MMCM lock |
 | aved | `qdma_noc_bridge` on the CIPS ports; `axis_noc` cells `qnoc_nmu` (h2c0, h2c1, evt) and `qnoc_nsu` (c2h0, c2h1, cmpt, cmd) on the DMA clock |
 | static_region, top | the 7 INIs passed through to the service_layer container |
