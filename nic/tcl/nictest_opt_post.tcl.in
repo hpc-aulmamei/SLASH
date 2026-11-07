@@ -1,0 +1,5 @@
+# opt_design post hook of the nictest service-layer RM (named like SLASH's,
+# which service_layer_build.tcl looks up): SLASH's service-layer hook only.
+# nictest has no DCMAC, GT or RoCE node, so none of the DCMAC RM's LOCs,
+# pblocks or clocks apply.
+source {@SLASH_OPT_POST@}
