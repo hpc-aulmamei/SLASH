@@ -1854,6 +1854,17 @@ rollback:
  *   - qconf.cmpl_desc_sz = CMPT_DESC_SZ_16B: 16-byte completion
  *     descriptors (C2H and CMPT queues only).
  *
+ * Streaming C2H queues override three of these:
+ *   - qconf.cmpl_trig_mode = TRIG_MODE_ANY: libqdma reads the completion
+ *     PIDX from the status writeback, which the hardware writes only with
+ *     a trigger mode set.
+ *   - qconf.pfetch_en = 1, qconf.fetch_credit = 1: without fetch credits
+ *     the hardware fetches every posted descriptor ahead of the packets.
+ *     Stopping the queue does not drop those, so the next queue's packets
+ *     were written through descriptors of the freed buffers. With prefetch
+ *     on, the prefetch engine holds the credits and the card needs no
+ *     descriptor credit input.
+ *
  * For CMPT-type queues, streaming mode is forced off (qconf.st = 0)
  * because the completion queue is always memory-mapped regardless of
  * the data queue mode.
@@ -1920,6 +1931,19 @@ static int slash_qdma_ioctl_qpair_add_q(struct slash_qdma_dev *qdma_dev,
         qconf.desc_rng_sz_idx = req->c2h_ring_sz;   /* CSR table index for C2H descriptor ring */
         qconf.cmpl_rng_sz_idx = req->cmpt_ring_sz;  /* CSR table index for C2H completion ring */
         qconf.cmpl_desc_sz = CMPT_DESC_SZ_16B;      /* 16-byte completion descriptors */
+        /*
+         * ST: libqdma reads the completion PIDX from the status writeback,
+         * which the hardware writes only with a trigger mode set.
+         *
+         * Without fetch credits the hardware fetches every posted descriptor
+         * ahead of the packets. With prefetch on, the prefetch engine holds
+         * the credits, so no descriptor credit input is needed from the card.
+         */
+        if (qconf.st) {
+            qconf.cmpl_trig_mode = TRIG_MODE_ANY;
+            qconf.pfetch_en = 1;
+            qconf.fetch_credit = 1;
+        }
         break;
     case Q_CMPT:
         qconf.st = 0;                               /* CMPT queue is always memory-mapped */
