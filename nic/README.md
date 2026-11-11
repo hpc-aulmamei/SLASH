@@ -34,8 +34,7 @@ about 100 GB of memory.
    NIC_DMA_MHZ=390 shell/patch_shell.py <workspace>/shell-nic/pylib/slashkit
    NIC_WORK=<workspace> shell/run_nic_shell.sh 8
    ```
-   `NIC_BDF_BAR=0` leaves out the PF1 BAR2 window onto the BDF table;
-   that is how the tested static was built.
+   `NIC_BDF_BAR=0` leaves out the PF1 BAR2 window onto the BDF table.
    The script runs `slashkit install` inside a memory-capped systemd scope.
    The scope's watchdog stops the build if MemAvailable drops below 30 GB.
    `resume_nic_shell.sh` finishes a run whose Vivado died or whose timing
@@ -76,23 +75,17 @@ sudo sw/host_probe.py -d 0000:1b:00 session --windows 64   # slave bridge, 64 x 
 sudo sysctl vm.nr_hugepages=0
 ```
 
-`host_probe.py session` also programs the slave-bridge BDF table, which
-lives at CPM5_DMA1_CSR `0xFCEA_2420`, `0x20` per entry. AMD's QDMA driver
-has no code for it. Offset `0x2420` of the host's DMA BAR (PF1 BAR0) is the
-PF mailbox, not this table. PG347 names the NoC AXI slave side as the
-table's programming interface. How the session writes it depends on the
-static:
+`host_probe.py session` also programs the slave-bridge BDF table
+(CPM5_DMA1_CSR `0xFCEA_2420`, `0x20` per entry). The QDMA driver has no code
+for it, and offset `0x2420` of PF1 BAR0 is the PF mailbox, not this table.
 
-- **Tested static:** the session writes xsdb scripts to run over JTAG.
-- **Static built with `NIC_BDF_BAR=1`** (the default, not yet built): PF1
-  BAR2 is a 16 KiB window onto `0xFCEA_0000`, and the session writes the
-  entries through it (`--bdf auto|host|jtag`).
+- With `NIC_BDF_BAR=1` (default), PF1 BAR2 is a 16 KiB window onto
+  `0xFCEA_0000` and the session writes the entries through it.
+- With `NIC_BDF_BAR=0`, it writes xsdb scripts to run over JTAG instead.
 
-`host_probe.py bdf` reads the entries through that window (read only), and
-`bdf --clear` zeroes them after asking. Both first compare CSR offset 0 read
-through PF1 BAR2 and through PF1 BAR0. A firewall in the PS (XPPU/XMPU)
-could still block the route; only hardware will tell. A read that never
-completes can hang the host.
+`--bdf auto|host|jtag` picks the method. `host_probe.py bdf` reads the
+entries and `bdf --clear` zeroes them. Both check CSR offset 0 through PF1
+BAR2 against PF1 BAR0 first.
 
 ## Results
 
@@ -106,6 +99,7 @@ On a Gen3 x8 host (63 Gb/s raw, about 57.6 Gb/s of 256 B payload), on
 | `loop` 16 MiB (both directions at once, ring wraps past 2048) | PASS, 51.2 Gb/s each way |
 | `loop`/`gen`, 64 KiB to 1 MiB, repeated on fresh queues in one driver load | PASS |
 | slave bridge, 64 windows, 128 MiB, read and write, window guards | PASS; read 17.3 Gb/s, write 8.4 Gb/s, about 1 us read latency |
+| BDF table written and cleared from the host through PF1 BAR2 (`NIC_BDF_BAR=1`, 2026-11-09) | PASS, same slave-bridge results |
 
 All of these are limited by the PCIe link, not by the NoC or the RM. The RM
 runs at 250 MHz (128 Gb/s per direction) and the static's DMA clock at
@@ -129,8 +123,6 @@ With no IOMMU on the host, that can corrupt any memory. This branch sets
 
 ## Open
 
-- **BDF table from the host.** The `NIC_BDF_BAR=1` route needs a static
-  build and a hardware test.
 - **`ERR_FAB`.** `QDMA_GLBL_ERR_STAT` bit 17 (`FAB_ERR_LOG` `0x53`) is set
   once per run that uses H2C queues. It is not decoded yet and has no
   visible effect.

@@ -28,8 +28,8 @@ for every packet), and never posts. Someone else rings the H2C PIDX doorbell:
 
   --producer host   this tool, through PF1 BAR0 (0x18004 + 0x10 * qidx); it
                     tests the driver mode on any static
-  --producer rpu    the R5_1 test ELF (nic/rpu/rpuq.elf, rpuq
-                    static), through the CPM AXI slave: this tool writes the
+  --producer rpu    the R5_1 test ELF (nic/rpu/rpuq.elf, static patched by
+                    patch_rpuq.py), through the CPM AXI slave: this tool writes the
                     job into the ELF's mailbox (R5 0x3010_0000 = PF2 BAR4 +
                     0x0410_0000), waits for its ack and drains to the PIDX the
                     ELF reports

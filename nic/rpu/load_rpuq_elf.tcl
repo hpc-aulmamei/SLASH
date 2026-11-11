@@ -75,9 +75,8 @@ set tid [lindex $r 0]
 puts "RPUQ: V80 R5_1 is target $tid"
 targets $tid
 catch {stop}
-# No "rst -processor": on this card it first activates the default subsystem in the PLM,
-# and after it the PCIe functions had lost their BARs. The ELF masks interrupts and
-# resets its MPU, caches and vectors itself.
+# no rst -processor here: it breaks the PCIe BARs on the V80. The ELF sets up the
+# MPU, caches and vectors itself.
 dow $elf
 con
 after 300

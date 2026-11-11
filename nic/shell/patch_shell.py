@@ -155,12 +155,8 @@ def noc_pass(cell, streams, prefix="  "):
 
 
 def patch_bdf_bar(t):
-    """PF1 BAR2 (stock: disabled, 4 KB AXI bridge master) -> 16 KiB window on
-    CPM5_DMA1_CSR, and the CPM register segment (psv_cpm, which the stock
-    address map excludes) mapped for the CPM's PCIe-to-NoC masters. PG347
-    names the NoC AXI slave side as the BDF table's programming interface;
-    AMD's QDMA driver has no BDF code and offset 0x2420 of the DMA BAR (PF1
-    BAR0) is the PF mailbox, not the table."""
+    """PF1 BAR2 -> 16 KiB window on CPM5_DMA1_CSR, and map the CPM register
+    segment (psv_cpm, excluded in stock) for the CPM's PCIe-to-NoC masters."""
     span = proc_span(t, "create_hier_cell_aved")
     for old, new in [("CPM_PCIE1_PF1_BAR2_QDMA_ENABLED {0}", "CPM_PCIE1_PF1_BAR2_QDMA_ENABLED {1}"),
                      ("CPM_PCIE1_PF1_BAR2_QDMA_SIZE {4}", f"CPM_PCIE1_PF1_BAR2_QDMA_SIZE {{{BDF_KB}}}"),

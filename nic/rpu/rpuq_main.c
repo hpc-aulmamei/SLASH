@@ -21,7 +21,7 @@
 /*
  * RPU QDMA test ELF (R5_1, bare metal, loaded over JTAG in place of RP1).
  *
- * The R5 reaches the CPM5 AXI slave through the rpuq static (shell/patch_rpuq.py):
+ * The R5 reaches the CPM5 AXI slave through the static patched by nic/shell/patch_rpuq.py:
  *   R5 0x9000_0000 + n * 2 MiB  -> slave bridge window n (BDF entry n) -> host memory
  *   R5 0x9800_0000, 16 MiB      -> QDMA CSRs and queue space (CPM5 "MULTQ" decode)
  * and the CPM5 registers (BDF table at 0xFCEA_2420 + 0x20 * n) on the PS bus.
