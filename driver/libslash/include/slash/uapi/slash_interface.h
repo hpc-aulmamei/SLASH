@@ -256,7 +256,117 @@ struct slash_qdma_qpair_add {
 
     /* Userspace to kernel; appended for ABI compatibility. */
     __u32 aperture_size; /**< [in]  0 = linear MM addressing, non-zero = keyhole aperture. */
+    __u32 flags;         /**< [in]  SLASH_QDMA_QPAIR_F_* (appended; 0 if absent). */
 };
+
+/**
+ * External producer (ST or MM, H2C and/or C2H, no CMPT): an agent on the card
+ * (the RPU, through the CPM AXI slave) writes the queue's PIDX doorbell.  The
+ * driver programs the contexts and owns the rings and buffers, but never
+ * posts or polls: no initial PIDX / CMPT CIDX, no completion thread, and no
+ * transfer fd (SLASH_QDMA_IOCTL_QPAIR_GET_FD fails with -EPERM).
+ *
+ * Lifecycle: ADD(flags) -> START -> EXT_FILL (H2C) -> EXT_INFO -> hand the
+ * doorbell parameters to the producer -> producer stops -> EXT_DRAIN -> STOP
+ * -> DEL.  A C2H ring is filled by libqdma with its own 4 KiB pages at START.
+ */
+#define SLASH_QDMA_QPAIR_F_EXT_PRODUCER 0x1u
+
+/**
+ * @brief Ring layout of one direction of a started external-producer qpair.
+ *
+ * Doorbells in the DMA BAR (and at the same offsets through the CPM AXI
+ * slave): H2C PIDX 0x18004 + 0x10 * @qidx, C2H PIDX 0x18008 + 0x10 * @qidx,
+ * CMPT CIDX 0x1800C + 0x10 * @qidx.  Contexts use @qidx_hw = @qbase + @qidx.
+ * The status writeback at @wb_bus holds { __le16 pidx; __le16 cidx; } as the
+ * hardware last wrote them.
+ */
+struct slash_qdma_ext_info {
+    __u32 size;          /**< Struct size for ABI versioning. */
+    __u32 qid;           /**< [in]  Queue pair ID. */
+    __u32 dir;           /**< [in]  SLASH_QDMA_XFER_H2C or SLASH_QDMA_XFER_C2H. */
+    __u32 qidx;          /**< [out] Function-relative queue index (doorbell index). */
+    __u32 qidx_hw;       /**< [out] Absolute queue index. */
+    __u32 func_id;       /**< [out] PCIe function. */
+    __s32 qbase;         /**< [out] First absolute queue of the function. */
+    __u32 rngsz;         /**< [out] Usable descriptors; PIDX/CIDX run mod @rngsz. */
+    __u32 desc_sz;       /**< [out] Bytes per descriptor. */
+    __u32 c2h_bufsz;     /**< [out] C2H: bytes per descriptor buffer. */
+    __u32 rngsz_cmpt;    /**< [out] C2H: completion ring entries. */
+    __u32 cmpt_desc_sz;  /**< [out] C2H: bytes per completion entry. */
+    __u64 desc_bus;      /**< [out] Descriptor ring bus address. */
+    __u64 wb_bus;        /**< [out] Status writeback bus address. */
+    __u64 cmpt_bus;      /**< [out] C2H: completion ring bus address. */
+    __u64 cmpt_wb_bus;   /**< [out] C2H: completion status writeback bus address. */
+    __u32 hw_pidx;       /**< [out] Status writeback pidx now. */
+    __u32 hw_cidx;       /**< [out] Status writeback cidx now. */
+};
+#define SLASH_QDMA_EXT_INFO_MIN_SIZE \
+    SLASH_OFFSETOFEND(struct slash_qdma_ext_info, hw_cidx)
+
+/**
+ * @brief Fill every H2C descriptor of an external-producer qpair once.
+ *
+ * Descriptor i (0 <= i < rngsz) gets src = @buf_fd's bytes
+ * [@offset + i * @stride, + @pkt_len), one packet per descriptor (SOP and
+ * EOP).  Each packet must lie inside one 4 KiB page of the buffer.  The queue
+ * pair keeps a reference on the buffer until it is deleted, so the hardware
+ * never reads freed memory.  Allowed once per queue, before the producer
+ * starts.
+ */
+struct slash_qdma_ext_fill {
+    __u32 size;          /**< Struct size for ABI versioning. */
+    __u32 qid;           /**< [in]  Queue pair ID. */
+    __u32 dir;           /**< [in]  SLASH_QDMA_XFER_H2C (only). */
+    __s32 buf_fd;        /**< [in]  Buffer fd from SLASH_QDMA_IOCTL_BUF_CREATE. */
+    __u64 offset;        /**< [in]  Byte offset of descriptor 0's packet. */
+    __u32 stride;        /**< [in]  Bytes between consecutive packets. */
+    __u32 pkt_len;       /**< [in]  Packet length, 1..4096. */
+    __u32 filled;        /**< [out] Descriptors written (= rngsz). */
+};
+#define SLASH_QDMA_EXT_FILL_MIN_SIZE \
+    SLASH_OFFSETOFEND(struct slash_qdma_ext_fill, filled)
+
+/**
+ * @brief Fill every descriptor of an MM external-producer queue once.
+ *
+ * Descriptor i (0 <= i < rngsz) moves @len bytes between @buf_fd's bytes
+ * [@offset + i * @len, + @len) and card address @dev_addr + i * @len
+ * (H2C: buffer -> card, C2H: card -> buffer), as its own request (SOP and
+ * EOP).  Each chunk must lie inside one 4 KiB page of the buffer.  The queue
+ * pair keeps a reference on the buffer until it is deleted.  Allowed once
+ * per queue (one direction per queue pair), before the producer starts.
+ */
+struct slash_qdma_ext_fill_mm {
+    __u32 size;          /**< Struct size for ABI versioning. */
+    __u32 qid;           /**< [in]  Queue pair ID. */
+    __u32 dir;           /**< [in]  SLASH_QDMA_XFER_H2C or SLASH_QDMA_XFER_C2H. */
+    __s32 buf_fd;        /**< [in]  Buffer fd from SLASH_QDMA_IOCTL_BUF_CREATE. */
+    __u64 offset;        /**< [in]  Byte offset of descriptor 0's chunk in the buffer. */
+    __u64 dev_addr;      /**< [in]  Card (AXI) address of descriptor 0's chunk. */
+    __u32 len;           /**< [in]  Bytes per descriptor, 1..4096. */
+    __u32 filled;        /**< [out] Descriptors written (= rngsz). */
+};
+#define SLASH_QDMA_EXT_FILL_MM_MIN_SIZE \
+    SLASH_OFFSETOFEND(struct slash_qdma_ext_fill_mm, filled)
+
+/**
+ * @brief Wait until the hardware has consumed every posted descriptor.
+ *
+ * Polls the status writeback until its cidx equals @pidx (the producer's
+ * last PIDX write), or @timeout_ms passes (-ETIMEDOUT).  Call it after the
+ * producer has stopped and before SLASH_QDMA_QUEUE_OP_STOP.
+ */
+struct slash_qdma_ext_drain {
+    __u32 size;          /**< Struct size for ABI versioning. */
+    __u32 qid;           /**< [in]  Queue pair ID. */
+    __u32 dir;           /**< [in]  SLASH_QDMA_XFER_H2C or SLASH_QDMA_XFER_C2H. */
+    __u32 pidx;          /**< [in]  Final PIDX the producer wrote. */
+    __u32 timeout_ms;    /**< [in]  0 = 1000 ms. */
+    __u32 hw_cidx;       /**< [out] Last cidx seen. */
+};
+#define SLASH_QDMA_EXT_DRAIN_MIN_SIZE \
+    SLASH_OFFSETOFEND(struct slash_qdma_ext_drain, hw_cidx)
 #define SLASH_QDMA_QPAIR_ADD_MIN_SIZE \
     SLASH_OFFSETOFEND(struct slash_qdma_qpair_add, cmpt_ring_sz)
 
@@ -437,8 +547,16 @@ struct slash_qdma_transfer {
 #define SLASH_QDMA_IOCTL_INFO \
     _IOC(_IOC_READ | _IOC_WRITE, 'v', 0x50, SLASH_QDMA_INFO_IOCTL_SIZE)
 
+/**
+ * Encoded size of slash_qdma_qpair_add up to aperture_size.  The ioctl number
+ * keeps it as fields (flags) are appended; the leading size member carries
+ * the caller's actual structure size.
+ */
+#define SLASH_QDMA_QPAIR_ADD_IOCTL_SIZE (9U * sizeof(__u32))
+
 /** Allocate a new queue pair; returns assigned qid. */
-#define SLASH_QDMA_IOCTL_QPAIR_ADD     _IOWR('v', 0x51, struct slash_qdma_qpair_add)
+#define SLASH_QDMA_IOCTL_QPAIR_ADD \
+    _IOC(_IOC_READ | _IOC_WRITE, 'v', 0x51, SLASH_QDMA_QPAIR_ADD_IOCTL_SIZE)
 
 /** Start, stop, or delete an existing queue pair. */
 #define SLASH_QDMA_IOCTL_Q_OP          _IOWR('v', 0x52, struct slash_qdma_qpair_op)
@@ -461,6 +579,12 @@ struct slash_qdma_transfer {
  * control device); returns the number of bytes transferred.
  */
 #define SLASH_QDMA_QPAIR_IOCTL_TRANSFER _IOWR('v', 0x56, struct slash_qdma_transfer)
+
+/** External-producer queue pairs (SLASH_QDMA_QPAIR_F_EXT_PRODUCER), on the control device. */
+#define SLASH_QDMA_IOCTL_EXT_INFO      _IOWR('v', 0x57, struct slash_qdma_ext_info)
+#define SLASH_QDMA_IOCTL_EXT_FILL      _IOWR('v', 0x58, struct slash_qdma_ext_fill)
+#define SLASH_QDMA_IOCTL_EXT_DRAIN     _IOWR('v', 0x59, struct slash_qdma_ext_drain)
+#define SLASH_QDMA_IOCTL_EXT_FILL_MM   _IOWR('v', 0x5A, struct slash_qdma_ext_fill_mm)
 
 /**
  * io_uring command opcode (SQE cmd_op) for an asynchronous buffer transfer

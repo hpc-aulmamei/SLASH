@@ -1,0 +1,159 @@
+SLASH local modification to the pinned QDMA submodule (libqdma).
+
+libqdma: external-producer queues and a ring-layout export
+
+For queues whose PIDX doorbell is written by an agent outside the host (the
+V80's RPU, through the CPM AXI slave), libqdma must program the contexts but
+never service the queue: a completion thread would advance its own shadow
+CIDX, and for ST C2H it would consume the completion ring, write CMPT CIDX
+and re-post descriptors, i.e. become a second producer.
+
+- qdma_queue_conf.ext_producer: qdma_queue_start() does not add the queue to
+  a completion thread. Combine with init_pidx_dis for ST C2H so that no
+  initial PIDX / CMPT CIDX is written either. qdma_thread_remove_work()
+  already copes with a queue that was never added.
+- qdma_queue_ext_info(): ring layout of an online queue (function-relative
+  and absolute index, function, qbase, ring and status-writeback addresses,
+  ST C2H completion ring), so the SLASH driver can fill the ring once and
+  hand the doorbell parameters to the external producer.
+
+Generated against qdma_drv @ 03ac7f3 (pinned submodule commit).
+diff --git a/libqdma_export.c b/libqdma_export.c
+index f0524d8..e7b9038 100755
+--- a/libqdma_export.c
++++ b/libqdma_export.c
+@@ -1845,7 +1845,9 @@ int qdma_queue_start(unsigned long dev_hndl, unsigned long id,
+ 		spin_unlock_irqrestore(&dev_intr_info_list->vec_q_list, flags);
+ 	}
+ 
+-	qdma_thread_add_work(descq);
++	/* external producer: nobody in the host services this queue */
++	if (!descq->conf.ext_producer)
++		qdma_thread_add_work(descq);
+ 
+ 	snprintf(buf, buflen, "queue %s, idx %u started\n",
+ 			descq->conf.name, descq->conf.qidx);
+@@ -2816,3 +2818,52 @@ static void __exit libqdma_mod_exit(void)
+ module_init(libqdma_mod_init);
+ module_exit(libqdma_mod_exit);
+ #endif /* ifdef __LIBQDMA_MOD__ */
++
++int qdma_queue_ext_info(unsigned long dev_hndl, unsigned long id,
++			struct qdma_queue_ext_info *info)
++{
++	struct xlnx_dma_dev *xdev = (struct xlnx_dma_dev *)dev_hndl;
++	struct qdma_descq *descq;
++	char buf[64];
++
++	if (!xdev || !info)
++		return -EINVAL;
++	if (xdev_check_hndl(__func__, xdev->conf.pdev, dev_hndl) < 0)
++		return -EINVAL;
++	descq = qdma_device_get_descq_by_id(xdev, id, buf, sizeof(buf), 0);
++	if (!descq)
++		return -EINVAL;
++
++	memset(info, 0, sizeof(*info));
++	lock_descq(descq);
++	if (descq->q_state != Q_STATE_ONLINE || !descq->desc ||
++	    !descq->desc_cmpl_status || !descq->conf.rngsz) {
++		unlock_descq(descq);
++		return -EAGAIN;
++	}
++	info->qidx = descq->conf.qidx;
++	info->qidx_hw = descq->qidx_hw;
++	info->func_id = xdev->func_id;
++	info->qbase = xdev->conf.qsets_base;
++	info->rngsz = descq->conf.rngsz;
++	info->desc_sz = (unsigned int)(((u8 *)descq->desc_cmpl_status -
++					descq->desc) / descq->conf.rngsz);
++	info->desc = descq->desc;
++	info->desc_bus = descq->desc_bus;
++	info->wb = descq->desc_cmpl_status;
++	info->wb_bus = descq->desc_bus +
++		((u8 *)descq->desc_cmpl_status - descq->desc);
++	if (descq->conf.st && descq->conf.q_type == Q_C2H &&
++	    descq->desc_cmpt && descq->desc_cmpt_cmpl_status) {
++		info->rngsz_cmpt = descq->conf.rngsz_cmpt;
++		info->cmpt_desc_sz = descq->cmpt_entry_len;
++		info->cmpt = descq->desc_cmpt;
++		info->cmpt_bus = descq->desc_cmpt_bus;
++		info->cmpt_wb = descq->desc_cmpt_cmpl_status;
++		info->cmpt_wb_bus = descq->desc_cmpt_bus +
++			((u8 *)descq->desc_cmpt_cmpl_status - descq->desc_cmpt);
++		info->c2h_bufsz = descq->conf.c2h_bufsz;
++	}
++	unlock_descq(descq);
++	return 0;
++}
+diff --git a/libqdma_export.h b/libqdma_export.h
+index baeb78e..21177aa 100755
+--- a/libqdma_export.h
++++ b/libqdma_export.h
+@@ -661,6 +661,12 @@ struct qdma_queue_conf {
+ 	u8 latency_optimize:1;
+ 	/**  Disable pidx initialiaztion for ST C2H */
+ 	u8 init_pidx_dis:1;
++	/**  External producer: another agent (e.g. the card's RPU) rings this
++	 *   queue's PIDX doorbell. libqdma programs the contexts but never
++	 *   services the queue: it is kept off the completion threads. Use it
++	 *   with init_pidx_dis for ST C2H.
++	 */
++	u8 ext_producer:1;
+ 
+ 	/**  MM Channel */
+ 	u8 mm_channel:1;
+@@ -1323,6 +1329,53 @@ int qdma_get_queue_state(unsigned long dev_hndl, unsigned long id,
+ int qdma_queue_remove(unsigned long dev_hndl, unsigned long id, char *buf,
+ 				int buflen);
+ 
++/**
++ * struct qdma_queue_ext_info - ring layout of a started queue, for an
++ * external producer (see qdma_queue_conf.ext_producer)
++ */
++struct qdma_queue_ext_info {
++	/** function-relative queue index: the doorbell index in the DMA BAR */
++	unsigned int qidx;
++	/** absolute hardware queue index (qbase + qidx), used by contexts */
++	unsigned int qidx_hw;
++	/** PCIe function of this device */
++	unsigned int func_id;
++	/** first absolute queue of this function */
++	int qbase;
++	/** usable descriptors in the ring (the status entry follows them) */
++	unsigned int rngsz;
++	/** bytes per descriptor */
++	unsigned int desc_sz;
++	/** descriptor ring, kernel virtual and bus address */
++	void *desc;
++	dma_addr_t desc_bus;
++	/** status writeback (struct qdma_desc_cmpl_status) after the ring */
++	void *wb;
++	dma_addr_t wb_bus;
++	/** ST C2H only: completion ring and its status entry, else 0 */
++	unsigned int rngsz_cmpt;
++	unsigned int cmpt_desc_sz;
++	void *cmpt;
++	dma_addr_t cmpt_bus;
++	void *cmpt_wb;
++	dma_addr_t cmpt_wb_bus;
++	/** ST C2H only: buffer size per descriptor */
++	unsigned int c2h_bufsz;
++};
++
++/*****************************************************************************/
++/**
++ * qdma_queue_ext_info(): ring layout of a started (online) queue
++ *
++ * @param dev_hndl	dev_hndl returned from qdma_device_open()
++ * @param id		the opaque qhndl
++ * @param info		filled on success
++ *
++ * @returns		0 for success and <0 for error
++ *****************************************************************************/
++int qdma_queue_ext_info(unsigned long dev_hndl, unsigned long id,
++			struct qdma_queue_ext_info *info);
++
+ /*****************************************************************************/
+ /**
+  * retrieve the configuration of a queue

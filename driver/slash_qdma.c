@@ -237,7 +237,14 @@ struct slash_qdma_qpair_entry {
     enum qdma_q_mode mode;
     u32 irq_mode;
     u32 irq_vector;
+    /* SLASH_QDMA_QPAIR_F_*; EXT_PRODUCER: the card rings the doorbells */
+    u32 flags;
+    /* EXT_PRODUCER H2C: buffer behind the filled ring, held until release */
+    struct slash_qdma_buf *ext_buf;
 };
+
+struct slash_qdma_buf;
+static void slash_qdma_buf_put(struct slash_qdma_buf *buf);
 
 /**
  * struct slash_qdma_dev - Per-PCI-device QDMA state.
@@ -497,6 +504,9 @@ static void slash_qdma_qpair_entry_release(struct kref *ref)
     struct slash_qdma_qpair_entry *entry =
         container_of(ref, struct slash_qdma_qpair_entry, ref);
 
+    /* the HW queues are gone by now, so nothing reads the buffer any more */
+    if (entry->ext_buf)
+        slash_qdma_buf_put(entry->ext_buf);
     kfree(entry);
 }
 
@@ -659,6 +669,8 @@ static int slash_qdma_ioctl_qpair_get_fd_w(struct slash_qdma_dev *qdma_dev,
 static int slash_qdma_ioctl_buf_create_w(struct slash_qdma_dev *qdma_dev,
                                           void __user *uarg);
 static void slash_qdma_buf_release(struct kref *ref);
+static long slash_qdma_ioctl_ext(struct slash_qdma_dev *qdma_dev,
+                                 unsigned int op, void __user *uarg);
 static void slash_qdma_buf_put(struct slash_qdma_buf *buf);
 static long slash_qdma_qpair_transfer(struct file *file, void __user *uarg);
 
@@ -1497,6 +1509,13 @@ static long slash_qdma_fop_ioctl(struct file *file, unsigned int op, unsigned lo
         ret = slash_qdma_ioctl_buf_create_w(qdma_dev, uarg);
         break;
 
+    case SLASH_QDMA_IOCTL_EXT_INFO:
+    case SLASH_QDMA_IOCTL_EXT_FILL:
+    case SLASH_QDMA_IOCTL_EXT_DRAIN:
+    case SLASH_QDMA_IOCTL_EXT_FILL_MM:
+        ret = slash_qdma_ioctl_ext(qdma_dev, op, uarg);
+        break;
+
     default:
         ret = -ENOTTY;
         break;
@@ -1708,6 +1727,14 @@ static int slash_qdma_ioctl_qpair_add_w(struct slash_qdma_dev *qdma_dev,
         (req.aperture_size & (req.aperture_size - 1)) != 0)
         return -EINVAL;
 
+    /* External producer: ST or MM, H2C/C2H only; the ST C2H completion
+     * ring belongs to the C2H queue, so CMPT is never part of it. */
+    if (req.flags & ~SLASH_QDMA_QPAIR_F_EXT_PRODUCER)
+        return -EINVAL;
+    if ((req.flags & SLASH_QDMA_QPAIR_F_EXT_PRODUCER) &&
+        (dir_mask & SLASH_QDMA_DIR_CMPT))
+        return -EINVAL;
+
     mutex_lock(&qdma_dev->lock);
     if (qdma_dev->hw_shutdown || !qdma_dev->have_qdma_handle) {
         mutex_unlock(&qdma_dev->lock);
@@ -1766,6 +1793,7 @@ static int slash_qdma_ioctl_qpair_add(struct slash_qdma_dev *qdma_dev,
         return -ENOMEM;
 
     entry->mode = req->mode;
+    entry->flags = req->flags;
     entry->irq_mode = 0;
     entry->irq_vector = 0;
 
@@ -1900,6 +1928,16 @@ static int slash_qdma_ioctl_qpair_add_q(struct slash_qdma_dev *qdma_dev,
     qconf.cmpl_stat_en = 1;                         /* Enable completion status generation */
 
     qconf.aperture_size = req->aperture_size;       /* 0 = linear MM; non-zero = keyhole aperture */
+
+    /*
+     * External producer: libqdma programs the contexts but keeps the queue
+     * off its completion threads, and (ST C2H) writes no initial PIDX or
+     * CMPT CIDX.  The card is the only one that rings this queue.
+     */
+    if (entry->flags & SLASH_QDMA_QPAIR_F_EXT_PRODUCER) {
+        qconf.ext_producer = 1;
+        qconf.init_pidx_dis = 1;
+    }
     /*
      * CPM5 exposes two MM channels.  The per-queue mm_channel selection
      * (validated in slash_qdma_ioctl_qpair_add_w) chooses the channel: AUTO
@@ -3500,13 +3538,16 @@ static int slash_qdma_ioctl_qpair_get_fd_w(struct slash_qdma_dev *qdma_dev,
         struct slash_qdma_qpair_entry *entry =
             slash_qdma_qpair_lookup(qdma_dev, ids[i]);
 
-        if (!entry || !entry->dir_mask) {
+        if (!entry || !entry->dir_mask ||
+            (entry->flags & SLASH_QDMA_QPAIR_F_EXT_PRODUCER)) {
+            int rc = (entry && entry->dir_mask) ? -EPERM : -ENOENT;
+
             /* Drop refs taken so far for the earlier entries. */
             while (i-- > 0)
                 slash_qdma_qpair_put(ctx->entries[i]);
             mutex_unlock(&qdma_dev->lock);
             kfree(ctx);
-            return -ENOENT;
+            return rc;
         }
 
         /*
@@ -3568,4 +3609,353 @@ static int slash_qdma_ioctl_qpair_get_fd_w(struct slash_qdma_dev *qdma_dev,
     fd_install(fd, file);
 
     return fd;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * IOCTL: external-producer queue pairs (SLASH_QDMA_QPAIR_F_EXT_PRODUCER)
+ *
+ * The card's RPU writes the PIDX doorbells of these queues through the CPM
+ * AXI slave.  The driver adds and starts them, fills the H2C ring once from
+ * a kernel buffer (the C2H ring holds libqdma's own pages), reports the ring
+ * layout, and on the way down waits for the hardware CIDX to reach the
+ * producer's last PIDX before the usual STOP.  libqdma never services them
+ * (0004-libqdma-ext-producer.patch).
+ * ───────────────────────────────────────────────────────────────────── */
+
+/* ST H2C descriptor as libqdma writes it for internal descriptors
+ * (struct qdma_h2c_desc in libqdma qdma_regs.h, CPU byte order). */
+struct slash_qdma_ext_h2c_desc {
+    u16 cdh_flags;
+    u16 pld_len;
+    u16 len;
+    u16 flags;
+    u64 src_addr;
+};
+#define SLASH_QDMA_EXT_H2C_ZERO_CDH 13u   /* S_H2C_DESC_F_ZERO_CDH, ORed in as libqdma does */
+
+/* MM descriptor as libqdma writes it (struct qdma_mm_desc in libqdma
+ * qdma_regs.h, CPU byte order): len[27:0], DV 28, SOP 29, EOP 30. */
+struct slash_qdma_ext_mm_desc {
+    u64 src_addr;
+    u32 flag_len;
+    u32 rsvd0;
+    u64 dst_addr;
+    u64 rsvd1;
+};
+#define SLASH_QDMA_EXT_MM_DV_SOP_EOP ((1u << 28) | (1u << 29) | (1u << 30))
+
+union slash_qdma_ext_req {
+    struct slash_qdma_ext_info info;
+    struct slash_qdma_ext_fill fill;
+    struct slash_qdma_ext_drain drain;
+    struct slash_qdma_ext_fill_mm fill_mm;
+};
+
+static int slash_qdma_ext_lookup(struct slash_qdma_dev *qdma_dev, u32 qid, u32 dir,
+                                 struct slash_qdma_qpair_entry **pentry,
+                                 struct qdma_queue_ext_info *qi)
+{
+    struct slash_qdma_qpair_entry *entry;
+    enum queue_type_t qtype;
+    int err;
+
+    if (dir == SLASH_QDMA_XFER_H2C)
+        qtype = Q_H2C;
+    else if (dir == SLASH_QDMA_XFER_C2H)
+        qtype = Q_C2H;
+    else
+        return -EINVAL;
+
+    entry = slash_qdma_qpair_lookup(qdma_dev, qid);
+    if (!entry)
+        return -ENOENT;
+    if (!(entry->flags & SLASH_QDMA_QPAIR_F_EXT_PRODUCER))
+        return -EPERM;
+    if (!(entry->dir_mask & slash_qdma_qtype_to_dir(qtype)) ||
+        !slash_qdma_qhndl_is_valid(entry->qhndl[qtype]))
+        return -ENOENT;
+
+    err = qdma_queue_ext_info(qdma_dev->qdma_handle, entry->qhndl[qtype], qi);
+    if (err)
+        return err;     /* -EAGAIN: not started */
+    *pentry = entry;
+    return 0;
+}
+
+static void slash_qdma_ext_wb(const struct qdma_queue_ext_info *qi, u32 *pidx, u32 *cidx)
+{
+    const __le16 *wb = qi->wb;
+
+    rmb();
+    *pidx = le16_to_cpu(READ_ONCE(wb[0]));
+    *cidx = le16_to_cpu(READ_ONCE(wb[1]));
+}
+
+static int slash_qdma_ext_fill_h2c(struct slash_qdma_dev *qdma_dev,
+                                   struct slash_qdma_qpair_entry *entry,
+                                   const struct qdma_queue_ext_info *qi,
+                                   struct slash_qdma_ext_fill *req)
+{
+    struct slash_qdma_ext_h2c_desc *desc = qi->desc;
+    struct device *dev = &qdma_dev->pdev->dev;
+    struct slash_qdma_buf *buf;
+    struct file *file;
+    unsigned int i;
+    int err = 0;
+
+    if (entry->ext_buf)
+        return -EBUSY;          /* filled once; the producer may be running */
+    if (qi->desc_sz != sizeof(*desc))
+        return -EINVAL;
+    if (!req->pkt_len || req->pkt_len > PAGE_SIZE)
+        return -EINVAL;
+
+    file = fget(req->buf_fd);
+    if (!file)
+        return -EBADF;
+    buf = slash_qdma_buf_from_file(file);
+    if (!buf || buf->qdma_dev != qdma_dev || !buf->dma_mapped || !buf->sgl) {
+        fput(file);
+        return -EINVAL;
+    }
+
+    /* validate every packet first: inside the buffer, inside one page */
+    for (i = 0; i < qi->rngsz; i++) {
+        u64 off = req->offset + (u64)i * req->stride;
+        u64 pg = off >> PAGE_SHIFT;
+
+        if (off + req->pkt_len > buf->length || pg >= buf->pages_nr ||
+            (off & ~PAGE_MASK) + req->pkt_len > PAGE_SIZE ||
+            buf->sgl[pg].offset != 0 || buf->sgl[pg].len != PAGE_SIZE ||
+            !buf->sgl[pg].dma_addr) {
+            err = -ERANGE;
+            break;
+        }
+    }
+    if (err) {
+        fput(file);
+        return err;
+    }
+
+    for (i = 0; i < qi->rngsz; i++) {
+        u64 off = req->offset + (u64)i * req->stride;
+        struct qdma_sw_sg *sg = &buf->sgl[off >> PAGE_SHIFT];
+
+        dma_sync_single_for_device(dev, sg->dma_addr, sg->len, DMA_TO_DEVICE);
+        desc[i].src_addr = sg->dma_addr + (off & ~PAGE_MASK);
+        desc[i].len = (u16)req->pkt_len;
+        desc[i].pld_len = (u16)req->pkt_len;
+        desc[i].flags = 0;
+        desc[i].cdh_flags = SLASH_QDMA_EXT_H2C_ZERO_CDH;
+    }
+    wmb();      /* ring contents before anyone can ring the doorbell */
+
+    slash_qdma_buf_get(buf);
+    entry->ext_buf = buf;
+    fput(file);
+    req->filled = qi->rngsz;
+    dev_info(dev, "qdma: ext qid=%u h2c ring filled: %u x %u B, stride %u, buf off 0x%llx\n",
+             req->qid, qi->rngsz, req->pkt_len, req->stride,
+             (unsigned long long)req->offset);
+    return 0;
+}
+
+static int slash_qdma_ext_fill_mm(struct slash_qdma_dev *qdma_dev,
+                                  struct slash_qdma_qpair_entry *entry,
+                                  const struct qdma_queue_ext_info *qi,
+                                  struct slash_qdma_ext_fill_mm *req)
+{
+    struct slash_qdma_ext_mm_desc *desc = qi->desc;
+    struct device *dev = &qdma_dev->pdev->dev;
+    bool h2c = (req->dir == SLASH_QDMA_XFER_H2C);
+    struct slash_qdma_buf *buf;
+    struct file *file;
+    unsigned int i;
+    int err = 0;
+
+    if (entry->mode != QDMA_Q_MODE_MM)
+        return -EINVAL;
+    if (entry->ext_buf)
+        return -EBUSY;          /* filled once; the producer may be running */
+    if (qi->desc_sz != sizeof(*desc))
+        return -EINVAL;
+    if (!req->len || req->len > PAGE_SIZE)
+        return -EINVAL;
+    if (req->dev_addr + (u64)qi->rngsz * req->len < req->dev_addr)
+        return -ERANGE;
+
+    file = fget(req->buf_fd);
+    if (!file)
+        return -EBADF;
+    buf = slash_qdma_buf_from_file(file);
+    if (!buf || buf->qdma_dev != qdma_dev || !buf->dma_mapped || !buf->sgl) {
+        fput(file);
+        return -EINVAL;
+    }
+
+    /* validate every chunk first: inside the buffer, inside one page */
+    for (i = 0; i < qi->rngsz; i++) {
+        u64 off = req->offset + (u64)i * req->len;
+        u64 pg = off >> PAGE_SHIFT;
+
+        if (off + req->len > buf->length || pg >= buf->pages_nr ||
+            (off & ~PAGE_MASK) + req->len > PAGE_SIZE ||
+            buf->sgl[pg].offset != 0 || buf->sgl[pg].len != PAGE_SIZE ||
+            !buf->sgl[pg].dma_addr) {
+            err = -ERANGE;
+            break;
+        }
+    }
+    if (err) {
+        fput(file);
+        return err;
+    }
+
+    for (i = 0; i < qi->rngsz; i++) {
+        u64 off = req->offset + (u64)i * req->len;
+        struct qdma_sw_sg *sg = &buf->sgl[off >> PAGE_SHIFT];
+        u64 host = sg->dma_addr + (off & ~PAGE_MASK);
+        u64 card = req->dev_addr + (u64)i * req->len;
+
+        if (h2c)
+            dma_sync_single_for_device(dev, sg->dma_addr, sg->len, DMA_TO_DEVICE);
+        desc[i].src_addr = h2c ? host : card;
+        desc[i].dst_addr = h2c ? card : host;
+        desc[i].flag_len = req->len | SLASH_QDMA_EXT_MM_DV_SOP_EOP;
+        desc[i].rsvd0 = 0;
+        desc[i].rsvd1 = 0;
+    }
+    wmb();      /* ring contents before anyone can ring the doorbell */
+
+    slash_qdma_buf_get(buf);
+    entry->ext_buf = buf;
+    fput(file);
+    req->filled = qi->rngsz;
+    dev_info(dev, "qdma: ext qid=%u mm %s ring filled: %u x %u B, buf off 0x%llx, card 0x%llx\n",
+             req->qid, h2c ? "h2c" : "c2h", qi->rngsz, req->len,
+             (unsigned long long)req->offset, (unsigned long long)req->dev_addr);
+    return 0;
+}
+
+static int slash_qdma_ext_drain(struct slash_qdma_dev *qdma_dev,
+                                const struct qdma_queue_ext_info *qi,
+                                struct slash_qdma_ext_drain *req)
+{
+    u32 tmo = req->timeout_ms ? min_t(u32, req->timeout_ms, 10000u) : 1000u;
+    ktime_t end = ktime_add_ms(ktime_get(), tmo);
+    u32 want = req->pidx % qi->rngsz;
+    u32 pidx, cidx;
+
+    for (;;) {
+        slash_qdma_ext_wb(qi, &pidx, &cidx);
+        req->hw_cidx = cidx;
+        if (cidx == want)
+            return 0;
+        if (ktime_after(ktime_get(), end))
+            break;
+        usleep_range(50, 100);
+    }
+    dev_warn(&qdma_dev->pdev->dev,
+             "qdma: ext qid=%u dir=%u drain timeout: cidx %u, want %u (wb pidx %u)\n",
+             req->qid, req->dir, cidx, want, pidx);
+    return -ETIMEDOUT;
+}
+
+static long slash_qdma_ioctl_ext(struct slash_qdma_dev *qdma_dev,
+                                 unsigned int op, void __user *uarg)
+{
+    union slash_qdma_ext_req req;
+    struct slash_qdma_qpair_entry *entry = NULL;
+    struct qdma_queue_ext_info qi;
+    size_t ksize, minsize;
+    __u32 user_size = 0;
+    u32 qid, dir;
+    long err;
+
+    switch (op) {
+    case SLASH_QDMA_IOCTL_EXT_INFO:
+        ksize = sizeof(req.info);
+        minsize = SLASH_QDMA_EXT_INFO_MIN_SIZE;
+        break;
+    case SLASH_QDMA_IOCTL_EXT_FILL:
+        ksize = sizeof(req.fill);
+        minsize = SLASH_QDMA_EXT_FILL_MIN_SIZE;
+        break;
+    case SLASH_QDMA_IOCTL_EXT_DRAIN:
+        ksize = sizeof(req.drain);
+        minsize = SLASH_QDMA_EXT_DRAIN_MIN_SIZE;
+        break;
+    case SLASH_QDMA_IOCTL_EXT_FILL_MM:
+        ksize = sizeof(req.fill_mm);
+        minsize = SLASH_QDMA_EXT_FILL_MM_MIN_SIZE;
+        break;
+    default:
+        return -ENOTTY;
+    }
+
+    if (copy_from_user(&user_size, uarg, sizeof(user_size)))
+        return -EFAULT;
+    if (user_size < minsize)
+        return -EINVAL;
+    memset(&req, 0, sizeof(req));
+    if (copy_from_user(&req, uarg, min_t(size_t, user_size, ksize)))
+        return -EFAULT;
+
+    /* size, qid and dir lead every request (same offsets in all three) */
+    qid = req.info.qid;
+    dir = req.info.dir;
+
+    mutex_lock(&qdma_dev->lock);
+    if (qdma_dev->hw_shutdown || !qdma_dev->have_qdma_handle) {
+        err = -ENODEV;
+        goto out;
+    }
+    err = slash_qdma_ext_lookup(qdma_dev, qid, dir, &entry, &qi);
+    if (err)
+        goto out;
+
+    switch (op) {
+    case SLASH_QDMA_IOCTL_EXT_INFO: {
+        struct slash_qdma_ext_info *o = &req.info;
+        u32 p, c;
+
+        o->qidx = qi.qidx;
+        o->qidx_hw = qi.qidx_hw;
+        o->func_id = qi.func_id;
+        o->qbase = qi.qbase;
+        o->rngsz = qi.rngsz;
+        o->desc_sz = qi.desc_sz;
+        o->c2h_bufsz = qi.c2h_bufsz;
+        o->rngsz_cmpt = qi.rngsz_cmpt;
+        o->cmpt_desc_sz = qi.cmpt_desc_sz;
+        o->desc_bus = qi.desc_bus;
+        o->wb_bus = qi.wb_bus;
+        o->cmpt_bus = qi.cmpt_bus;
+        o->cmpt_wb_bus = qi.cmpt_wb_bus;
+        slash_qdma_ext_wb(&qi, &p, &c);
+        o->hw_pidx = p;
+        o->hw_cidx = c;
+        break;
+    }
+    case SLASH_QDMA_IOCTL_EXT_FILL:
+        err = (dir == SLASH_QDMA_XFER_H2C && entry->mode == QDMA_Q_MODE_ST) ?
+              slash_qdma_ext_fill_h2c(qdma_dev, entry, &qi, &req.fill) : -EINVAL;
+        break;
+    case SLASH_QDMA_IOCTL_EXT_FILL_MM:
+        err = slash_qdma_ext_fill_mm(qdma_dev, entry, &qi, &req.fill_mm);
+        break;
+    case SLASH_QDMA_IOCTL_EXT_DRAIN:
+        /* keeps the lock: the rings cannot be freed under the poll */
+        err = slash_qdma_ext_drain(qdma_dev, &qi, &req.drain);
+        break;
+    }
+out:
+    mutex_unlock(&qdma_dev->lock);
+    if (err && err != -ETIMEDOUT)
+        return err;
+
+    req.info.size = (u32)ksize;
+    if (copy_to_user(uarg, &req, min_t(size_t, user_size, ksize)))
+        return -EFAULT;
+    return err;
 }
