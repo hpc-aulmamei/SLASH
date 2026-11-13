@@ -445,6 +445,35 @@ def cmd_regs(lb, args):
             print(f"  {k:18} 0x{v:08x}")
 
 
+# srcversions of slash modules known to carry the ST C2H fix (completion
+# trigger, prefetch, fetch credits). The stock DKMS module (46DAD330...) does
+# not: on it C2H times out and leaves fetched descriptors in the CPM, so a
+# later queue's packets land in freed host pages (no IOMMU on the test host).
+# srcversions of slash builds that carry the ST C2H fix (cd90b07):
+#   77FD64BB...  slash_st_fix.ko (2026-11-06)
+#   086CFCC7...  slash_rpuq.ko, external-producer queues (2026-11-10)
+#   7E25FA77...  slash_rpuq.ko, plus EXT_FILL_MM (2026-11-11)
+ST_FIXED_SRCVERSIONS = {"77FD64BB49F8D1397BDCF25", "086CFCC7255A07708F853DA",
+                        "7E25FA7788B2723EBD3114D"}
+
+
+def check_st_driver(force):
+    """refuse ST queues on a slash module that is not known to have the fix"""
+    try:
+        with open("/sys/module/slash/srcversion") as f:
+            v = f.read().strip()
+    except OSError:
+        sys.exit("slash module not loaded")
+    if v in ST_FIXED_SRCVERSIONS:
+        return
+    msg = (f"slash srcversion {v} is not a known ST-fixed build ({', '.join(sorted(ST_FIXED_SRCVERSIONS))}).\n"
+           "The stock driver corrupts host memory on ST C2H. Load the fixed module "
+           "(insmod .../slash_st_fix.ko) and reload the static before testing again.")
+    if not force:
+        sys.exit(msg)
+    print(f"warning: {msg}\n--force-driver given, continuing")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("-d", "--device", required=True, help="BDF of the V80, e.g. 0000:1b:00")
@@ -465,12 +494,16 @@ def main():
             s.add_argument("--skip-qid", type=int, default=0, help="add this many idle queues first")
         if name == "h2c":
             s.add_argument("--reps", type=int, default=1)
+        s.add_argument("--force-driver", action="store_true",
+                       help="run even if the loaded slash module is not a known ST-fixed build")
     args = ap.parse_args()
     if os.geteuid() != 0:
         sys.exit("run as root (BAR2 mapping, /dev/slash_qdma_ctl0)")
     for a in ("bytes",):
         if hasattr(args, a) and getattr(args, a) % 4096:
             sys.exit("--bytes must be a multiple of 4096 (SLASH buffers are page multiples)")
+    if args.cmd in ("h2c", "loop", "gen"):
+        check_st_driver(args.force_driver)
     lb = Lb(Bar(args.device))
     lb.qdma = Qdma(args.device)
     {"status": cmd_status, "regs": cmd_regs, "h2c": cmd_h2c, "loop": cmd_loop, "gen": cmd_gen}[args.cmd](lb, args)

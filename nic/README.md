@@ -84,8 +84,25 @@ for it, and offset `0x2420` of PF1 BAR0 is the PF mailbox, not this table.
 - With `NIC_BDF_BAR=0`, it writes xsdb scripts to run over JTAG instead.
 
 `--bdf auto|host|jtag` picks the method. `host_probe.py bdf` reads the
-entries and `bdf --clear` zeroes them. Both check CSR offset 0 through PF1
-BAR2 against PF1 BAR0 first.
+entries and `bdf --clear` zeroes them. Both first read CSR offset 0
+through PF1 BAR2. CPM5_DMA1_CSR starts with a memory-mapped copy of PF0's
+PCIe config header, so this must return PF0's vendor/device ID
+(`0x50b410ee`). PF1 BAR0 is the QDMA register block (`0x1fd3xxxx` at
+offset 0), not this one.
+
+PF1 BAR2 is 32-bit and non-prefetchable. The host firmware sizes the bridge
+windows for the image the card boots from flash, which has no such BAR.
+After a JTAG load, `/sys/bus/pci/rescan` then reports `BAR 2: no space`,
+because PF2's two 128 MiB BARs fill the switch's non-prefetchable window.
+Removing the switch above the card and rescanning the root port's
+secondary bus re-sized the windows once on arhatlas00:
+```
+echo 1 | sudo tee /sys/bus/pci/devices/0000:19:00.0/remove
+echo 1 | sudo tee /sys/class/pci_bus/0000:19/rescan
+```
+On 2026-11-09 it did not, and a warm reboot did (the JTAG-loaded static
+survives it). A 64-bit prefetchable BAR would fit in the existing
+prefetchable window without either step.
 
 ## Results
 
@@ -123,6 +140,8 @@ With no IOMMU on the host, that can corrupt any memory. This branch sets
 
 ## Open
 
+- **PF1 BAR2 after a JTAG load.** It needs the switch rescan or a warm
+  reboot (see above); a 64-bit prefetchable BAR would avoid that.
 - **`ERR_FAB`.** `QDMA_GLBL_ERR_STAT` bit 17 (`FAB_ERR_LOG` `0x53`) is set
   once per run that uses H2C queues. It is not decoded yet and has no
   visible effect.
