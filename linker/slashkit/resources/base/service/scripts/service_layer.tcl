@@ -238,8 +238,11 @@ slash_setup_dcmac
 
 set ::DCMAC0_ENABLED   1
 set ::DCMAC1_ENABLED   1
-set ::DUAL_QSFP_DCMAC0 0
-set ::DUAL_QSFP_DCMAC1 0
+# Four-port shell: both 200GAUI-4 ports of each DCMAC, so all four QSFP cages
+# (qsfp0..3_4x) are driven and exist on the static/RM boundary. A port left
+# undriven here drops out of top_wrapper and of every shell checkpoint.
+set ::DUAL_QSFP_DCMAC0 1
+set ::DUAL_QSFP_DCMAC1 1
 
 
 proc create_root_design { parentCell } {
@@ -1555,7 +1558,11 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net qsfp_0_n_1_M_AXIS_0 [get_bd_intf_pins dummy_noc_m_0/S00_AXIS] [get_bd_intf_pins qsfp_0_n_1/M_AXIS_0]
   connect_bd_intf_net -intf_net qsfp_0_n_1_qsfp_gt0 [get_bd_intf_ports qsfp0_4x] [get_bd_intf_pins qsfp_0_n_1/qsfp_gt0]
   connect_bd_intf_net -intf_net qsfp_2_n_3_M_AXIS_0 [get_bd_intf_pins dummy_noc_m_4/S00_AXIS] [get_bd_intf_pins qsfp_2_n_3/M_AXIS_0]
-  connect_bd_intf_net -intf_net qsfp_2_n_3_qsfp_gt0 [get_bd_intf_ports qsfp2_4x] [get_bd_intf_pins qsfp_2_n_3/qsfp_gt0]
+  # Dual mode: DCMAC0 port 0 = QSFP0 (GTM_QUAD_X1Y7), port 2 = QSFP1 (X1Y8);
+  # DCMAC1 port 0 = QSFP3 (X0Y9), port 2 = QSFP2 (X0Y10), as the DCMAC IP maps DCMAC_X0Y2.
+  connect_bd_intf_net -intf_net qsfp_0_n_1_qsfp_gt1 [get_bd_intf_ports qsfp1_4x] [get_bd_intf_pins qsfp_0_n_1/qsfp_gt1]
+  connect_bd_intf_net -intf_net qsfp_2_n_3_qsfp_gt0 [get_bd_intf_ports qsfp3_4x] [get_bd_intf_pins qsfp_2_n_3/qsfp_gt0]
+  connect_bd_intf_net -intf_net qsfp_2_n_3_qsfp_gt1 [get_bd_intf_ports qsfp2_4x] [get_bd_intf_pins qsfp_2_n_3/qsfp_gt1]
   connect_bd_intf_net -intf_net sl2noc_0_M00_INI [get_bd_intf_ports SL2NOC_0] [get_bd_intf_pins sl2noc_0/M00_INI]
   connect_bd_intf_net -intf_net sl2noc_1_M00_INI [get_bd_intf_ports SL2NOC_1] [get_bd_intf_pins sl2noc_1/M00_INI]
   connect_bd_intf_net -intf_net sl2noc_2_M00_INI [get_bd_intf_ports SL2NOC_2] [get_bd_intf_pins sl2noc_2/M00_INI]
@@ -1582,10 +1589,14 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net smartconnect_1_M01_AXI [get_bd_intf_pins smartconnect_1/M01_AXI] [get_bd_intf_pins qsfp_0_n_1/s_axi]
   connect_bd_intf_net -intf_net smartconnect_1_M02_AXI [get_bd_intf_pins smartconnect_1/M02_AXI] [get_bd_intf_pins qsfp_2_n_3/s_axi]
   connect_bd_intf_net -intf_net traffic_producer_1_axis_out [get_bd_intf_pins traffic_producer_1/axis_out] [get_bd_intf_pins dummy_noc_m_1/S00_AXIS]
-  connect_bd_intf_net -intf_net traffic_producer_2_axis_out [get_bd_intf_pins traffic_producer_2/axis_out] [get_bd_intf_pins dummy_noc_m_2/S00_AXIS]
+  # second port of qsfp_0_n_1 on NoC stream pair 2, in place of traffic_producer_2
+  connect_bd_intf_net -intf_net qsfp_0_n_1_M_AXIS_1 [get_bd_intf_pins dummy_noc_m_2/S00_AXIS] [get_bd_intf_pins qsfp_0_n_1/M_AXIS_1]
+  connect_bd_intf_net -intf_net qsfp_0_n_1_S_AXIS_1 [get_bd_intf_pins dummy_noc_2/M00_AXIS] [get_bd_intf_pins qsfp_0_n_1/S_AXIS_1]
   connect_bd_intf_net -intf_net traffic_producer_3_axis_out [get_bd_intf_pins traffic_producer_3/axis_out] [get_bd_intf_pins dummy_noc_m_3/S00_AXIS]
   connect_bd_intf_net -intf_net traffic_producer_5_axis_out [get_bd_intf_pins traffic_producer_5/axis_out] [get_bd_intf_pins dummy_noc_m_5/S00_AXIS]
-  connect_bd_intf_net -intf_net traffic_producer_6_axis_out [get_bd_intf_pins traffic_producer_6/axis_out] [get_bd_intf_pins dummy_noc_m_6/S00_AXIS]
+  # second port of qsfp_2_n_3 on NoC stream pair 6, in place of traffic_producer_6
+  connect_bd_intf_net -intf_net qsfp_2_n_3_M_AXIS_1 [get_bd_intf_pins dummy_noc_m_6/S00_AXIS] [get_bd_intf_pins qsfp_2_n_3/M_AXIS_1]
+  connect_bd_intf_net -intf_net qsfp_2_n_3_S_AXIS_1 [get_bd_intf_pins dummy_noc_6/M00_AXIS] [get_bd_intf_pins qsfp_2_n_3/S_AXIS_1]
   connect_bd_intf_net -intf_net traffic_producer_7_axis_out [get_bd_intf_pins traffic_producer_7/axis_out] [get_bd_intf_pins dummy_noc_m_7/S00_AXIS]
 
   # Create port connections
@@ -1704,10 +1715,8 @@ proc create_root_design { parentCell } {
 
   connect_bd_net -net xlconstant_0_dout  [get_bd_pins xlconstant_0/dout] \
   [get_bd_pins dummy_noc_1/M00_AXIS_tready] \
-  [get_bd_pins dummy_noc_2/M00_AXIS_tready] \
   [get_bd_pins dummy_noc_3/M00_AXIS_tready] \
   [get_bd_pins dummy_noc_5/M00_AXIS_tready] \
-  [get_bd_pins dummy_noc_6/M00_AXIS_tready] \
   [get_bd_pins dummy_noc_7/M00_AXIS_tready]
 
   # Create address segments
