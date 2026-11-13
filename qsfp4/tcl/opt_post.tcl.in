@@ -1,0 +1,200 @@
+# ##################################################################################################
+#  The MIT License (MIT)
+#  Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
+#
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+#  and associated documentation files (the "Software"), to deal in the Software without restriction,
+#  including without limitation the rights to use, copy, modify, merge, publish, distribute,
+#  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+#
+#  The above copyright notice and this permission notice shall be included in all copies or
+#  substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# ##################################################################################################
+
+# opt_design post hook of the four-port Ethernet RM (named like SLASH's, which
+# service_layer_build.tcl looks up): SLASH's service-layer hook, then the
+# quad placement and the clocks the static shell does not define.
+source {@SLASH_OPT_POST@}
+
+# Eight clocks to a half column, as route_design asked for in build qsfp2 when
+# the DCMAC1 AXIS and user clocks could not share one (Route 35-4647).
+set_param place.adv.maxNumClocksInHalfColumn 8
+set_param place.adv.enforceMaxNumClocksInHalfColumn 1
+
+# All four GT quads, by cage. SLASH's hook LOCs them by the cell names of its
+# own DCMAC stack (quietly, so it matches nothing here); left unplaced, the
+# placer once put QSFP2's quad on QSFP3's, and that port had no link for days.
+# DCMAC1 as the IP's own XDC for DCMAC_X0Y2: port 0 on X0Y9, port 2 on X0Y10.
+foreach {q g loc} {
+    qsfp_0_n_1 0 GTM_QUAD_X1Y7
+    qsfp_0_n_1 1 GTM_QUAD_X1Y8
+    qsfp_2_n_3 0 GTM_QUAD_X0Y9
+    qsfp_2_n_3 1 GTM_QUAD_X0Y10
+} {
+    set c [get_cells -quiet top_i/service_layer/$q/gt_wrapper/gtwiz_versal_$g/inst/intf_quad_map_inst/quad_top_inst/gt_quad_base_0_inst/inst/quad_inst]
+    if {[llength $c] != 1} {
+        error "qsfp_opt_post: GT quad $g of $q not found"
+    }
+    set_property LOC $loc $c
+    puts "qsfp_opt_post: LOC $loc on $c"
+}
+
+# The static shell defines no clock on the QSFP reference clock inputs, so
+# without these the DCMAC clock wizards' outputs (DCMAC core / AXIS clocks and
+# the tester clock), the GT clocks and everything they clock are left
+# unconstrained. 322.265625 MHz (Versal-DCMAC board_config.tcl).
+foreach port {qsfp0_322mhz_clk_p qsfp2_322mhz_clk_p} {
+    set p [get_ports -quiet $port]
+    if {[llength $p] == 0} {
+        puts "qsfp_opt_post: WARNING: no port $port"
+    } elseif {[llength [get_clocks -quiet -of_objects $p]] == 0} {
+        create_clock -period 3.103 -name ${port}_refclk $p
+        puts "qsfp_opt_post: create_clock 322.265625 MHz on $port"
+    }
+}
+
+# Both DCMACs sit in SLR1, their clock wizards (the only MMCMs of the service
+# pblock) in SLR0. DCMAC1 (DCMAC_X0Y2, clock region X0Y7) feeds the 1024-bit
+# RX FIFO of seg_to_axis straight from the hard block at 391 MHz; left alone
+# the placer puts that FIFO and the rest of the qsfp_2_n_3 fabric in SLR0 and
+# the crossing misses by 2.3 ns. Keep the DCMAC-side fabric of both ports of
+# qsfp_2_n_3 in the SLR1 part of the service pblock around DCMAC1; the testers
+# reach it through the 230 MHz side of the CDC FIFOs.
+#
+# The pblock is soft: both ports of a DCMAC are about 215 RAMB36, and when they
+# were 320 against the 288 of clock regions X0-X3 the placer dropped it and
+# spread both DCMACs over SLR1 (build qsfp2: -2.2 ns). X4Y5 and X5Y5 add 96.
+
+# Sites of the clock regions crs that lie inside pblock parent.
+proc qsfp_sites_in_pblock {crs parent} {
+    set ranges {}
+    foreach r [get_property GRID_RANGES $parent] {
+        if {[regexp {^(\w+)_X(\d+)Y(\d+):\w+_X(\d+)Y(\d+)$} $r -> t x0 y0 x1 y1]} {
+            lappend ranges [list $t $x0 $y0 $x1 $y1]
+        }
+    }
+    set out {}
+    foreach s [get_sites -of_objects [get_clock_regions -quiet $crs] \
+            -filter {SITE_TYPE =~ SLICE* || SITE_TYPE =~ RAMB* || SITE_TYPE =~ URAM*}] {
+        if {![regexp {^(\w+)_X(\d+)Y(\d+)$} $s -> t x y]} continue
+        foreach r $ranges {
+            lassign $r rt x0 y0 x1 y1
+            if {$rt eq $t && $x >= $x0 && $x <= $x1 && $y >= $y0 && $y <= $y1} {
+                lappend out $s
+                break
+            }
+        }
+    }
+    return $out
+}
+
+set dc1_cells [get_cells -quiet {
+    top_i/service_layer/qsfp_2_n_3/dcmac_wrapper/seg_to_axis_0
+    top_i/service_layer/qsfp_2_n_3/dcmac_wrapper/axis_to_seg_0
+    top_i/service_layer/qsfp_2_n_3/dcmac_wrapper/seg_to_axis_1
+    top_i/service_layer/qsfp_2_n_3/dcmac_wrapper/axis_to_seg_1
+    top_i/service_layer/qsfp_2_n_3/datapath_rx_1
+    top_i/service_layer/qsfp_2_n_3/datapath_tx_1
+    top_i/service_layer/qsfp_2_n_3/datapath_rx_1_1
+    top_i/service_layer/qsfp_2_n_3/datapath_tx_1_1}]
+if {[llength $dc1_cells] != 8} {
+    puts "qsfp_opt_post: WARNING: DCMAC1 fabric cells not found ($dc1_cells)"
+} else {
+    set parent [get_pblocks pblock_service_layer]
+    set pb [create_pblock pblock_qsfp_dcmac1]
+    set_property PARENT $parent $pb
+    resize_pblock $pb -add [qsfp_sites_in_pblock \
+        {X0Y6 X0Y7 X1Y5 X1Y6 X2Y5 X2Y6 X3Y5 X3Y6 X4Y5 X5Y5} $parent]
+    add_cells_to_pblock $pb $dc1_cells
+    puts "qsfp_opt_post: pblock_qsfp_dcmac1 [get_property GRID_RANGES $pb]"
+
+    # The TX output register and axis_to_seg feed DCMAC1 at 391 MHz through
+    # two LUTs; anywhere in the pblock above the route alone can take the
+    # period (build 12: -0.070 ns). Keep them in DCMAC1's clock region.
+    set tx_cells [get_cells -quiet {
+        top_i/service_layer/qsfp_2_n_3/datapath_tx_1/tx_path/inst/inst_skid
+        top_i/service_layer/qsfp_2_n_3/dcmac_wrapper/axis_to_seg_0
+        top_i/service_layer/qsfp_2_n_3/datapath_tx_1_1/tx_path/inst/inst_skid
+        top_i/service_layer/qsfp_2_n_3/dcmac_wrapper/axis_to_seg_1}]
+    if {[llength $tx_cells] != 4} {
+        puts "qsfp_opt_post: WARNING: DCMAC1 TX output cells not found ($tx_cells)"
+    } else {
+        set pb_tx [create_pblock pblock_qsfp_dcmac1_tx]
+        set_property PARENT $pb $pb_tx
+        # Hard: create_pblock is soft here, and soft this one was ignored in
+        # build qsfp4 (TX registers at X66, -0.065 ns). With it hard: +0.001 ns.
+        set_property IS_SOFT FALSE $pb_tx
+        resize_pblock $pb_tx -add [qsfp_sites_in_pblock {X0Y7} $pb]
+        add_cells_to_pblock $pb_tx $tx_cells
+        puts "qsfp_opt_post: pblock_qsfp_dcmac1_tx [get_property GRID_RANGES $pb_tx]"
+    }
+}
+
+# DCMAC0 the same way: with the second port its fabric no longer fits above the
+# SLR line by itself, and the RX write enable from DCMAC_X1Y1 missed by 1.4 ns
+# into a FIFO placed in SLR0 (build qsfp3). All of X6-X8 in SLR1 is 336 RAMB36.
+set dc0_cells [get_cells -quiet {
+    top_i/service_layer/qsfp_0_n_1/dcmac_wrapper/seg_to_axis_0
+    top_i/service_layer/qsfp_0_n_1/dcmac_wrapper/axis_to_seg_0
+    top_i/service_layer/qsfp_0_n_1/dcmac_wrapper/seg_to_axis_1
+    top_i/service_layer/qsfp_0_n_1/dcmac_wrapper/axis_to_seg_1
+    top_i/service_layer/qsfp_0_n_1/datapath_rx_0
+    top_i/service_layer/qsfp_0_n_1/datapath_tx_0
+    top_i/service_layer/qsfp_0_n_1/datapath_rx_0_1
+    top_i/service_layer/qsfp_0_n_1/datapath_tx_0_1}]
+if {[llength $dc0_cells] != 8} {
+    error "qsfp_opt_post: DCMAC0 fabric cells not found ($dc0_cells)"
+}
+set pb0 [create_pblock pblock_qsfp_dcmac0]
+set_property PARENT [get_pblocks pblock_service_layer] $pb0
+resize_pblock $pb0 -add [qsfp_sites_in_pblock \
+    {X6Y5 X6Y6 X7Y5 X7Y6 X8Y5 X8Y6 X9Y5 X9Y6 X10Y5 X10Y6 X11Y5 X11Y6} [get_pblocks pblock_service_layer]]
+add_cells_to_pblock $pb0 $dc0_cells
+puts "qsfp_opt_post: pblock_qsfp_dcmac0 [get_property GRID_RANGES $pb0]"
+
+# DCMAC core resets are asynchronous inputs; at the 782 MHz core clock the
+# recovery check from the reset synchronizers of the DCMAC clock/reset
+# controller cannot be met by any placement (-0.6 ns with a 0.64 ns route).
+set rst_ff [get_cells -quiet -hier -filter \
+    {NAME =~ top_i/service_layer/*/dcmac_reset_ctrl/* && NAME =~ *arststages_ff_reg*}]
+set dcmacs [get_cells -quiet -hier -filter {REF_NAME == DCMAC}]
+if {[llength $rst_ff] && [llength $dcmacs]} {
+    set_false_path -from $rst_ff -to $dcmacs
+    puts "qsfp_opt_post: false path from [llength $rst_ff] DCMAC reset synchronizer flops to the DCMACs"
+}
+
+# dcmac_tx_cdc: its LUT RAM is written in the node clock and read into
+# registers in the DCMAC clock; a half is only used three DCMAC cycles after
+# its write pointer crossed, so bound the path by one DCMAC clock period.
+set tx_mem [get_cells -quiet -hier -filter \
+    {NAME =~ *tx_path/inst/inst_cdc/g_slice*mem_reg* && IS_PRIMITIVE}]
+set tx_q [get_cells -quiet -hier -filter \
+    {NAME =~ *tx_path/inst/inst_cdc/g_slice*q_reg* && IS_PRIMITIVE}]
+if {[llength $tx_mem] && [llength $tx_q]} {
+    set_max_delay -datapath_only -from $tx_mem -to $tx_q 2.5
+    puts "qsfp_opt_post: max delay 2.5 ns from [llength $tx_mem] TX CDC LUT RAMs to [llength $tx_q] registers"
+} else {
+    puts "qsfp_opt_post: WARNING: TX CDC cells not found ([llength $tx_mem] RAMs, [llength $tx_q] registers)"
+}
+
+# Dynamic Configuration (QSFP_DYNAMIC=1): the DCMAC IP brings config_switch
+# into each serdes clock through its own synchronizer and uses the last stage
+# as the select of the TX/RX lane mux (640 GT data bits at 664 MHz). Both the
+# crossing and the select are static outside a rate change, which happens with
+# the port held in reset. As AMD's example design (dcmac_dyn_example_top.xdc);
+# without it build qsfp6 failed at -9.0 ns (sys clock -> s_out_d2_cdc_to) and
+# -1.4 ns (s_out_d4 replicated 84 times).
+set cs_ff [get_cells -quiet -hier -filter \
+    {NAME =~ top_i/service_layer/*/dcmac_wrapper/dcmac_*/inst/*config_switch_*_cdc_sync/s_out_d* && IS_SEQUENTIAL}]
+if {[llength $cs_ff]} {
+    set_false_path -to [get_pins -of_objects [filter $cs_ff {NAME =~ *_cdc_to*}] -filter {REF_PIN_NAME == D}]
+    set_false_path -from [get_pins -of_objects $cs_ff -filter {REF_PIN_NAME == C}]
+    puts "qsfp_opt_post: false paths into and from [llength $cs_ff] config_switch synchronizer flops"
+}
