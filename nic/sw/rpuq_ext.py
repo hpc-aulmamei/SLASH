@@ -33,12 +33,18 @@ for every packet), and never posts. Someone else rings the H2C PIDX doorbell:
                     job into the ELF's mailbox (R5 0x3010_0000 = PF2 BAR4 +
                     0x0410_0000), waits for its ack and drains to the PIDX the
                     ELF reports
+  --producer rm     the service-layer RM (rm_mmio of the smart nictest RM,
+                    smart static, shell/patch_smart.py): this tool tells
+                    rm_mmio (PF2 BAR2 0x0) to write each PIDX to
+                    0x7_1000_0000 + fn*0x1_0000 + 0x18004 + 0x10*qidx; the
+                    doorbell itself is an RM write through M_QDMA_SLV_BRIDGE
 
 Then: EXT_DRAIN (hardware CIDX = final PIDX), STOP, DEL, and the qnoc_lb SINK
 counters and pattern check.
 
   sudo ./rpuq_ext.py -d 0000:1b:00 h2c --producer host --packets 10000 --pkt 4096
   sudo ./rpuq_ext.py -d 0000:1b:00 h2c --producer rpu --packets 2047        # one doorbell, no CIDX
+  sudo ./rpuq_ext.py -d 0000:1b:00 h2c --producer rm --packets 10000       # RM rings the doorbell
   sudo ./rpuq_ext.py -d 0000:1b:00 h2c --producer rpu --flow --packets 100000 # CIDX via BDF entry
   sudo ./rpuq_ext.py -d 0000:1b:00 rpu-probe                    # QDMA ident through the R5 path
   sudo ./rpuq_ext.py -d 0000:1b:00 rpu-probe --addr 0x98010000  # any R5 address the ELF allows
@@ -273,6 +279,34 @@ def host_produce(dbar, info, packets, batch):
     return posted, pidx, time.time() - t0
 
 
+def rm_produce(rm, info, packets, batch, fn_stride):
+    """host_produce, but each doorbell write is issued by the RM (rm_mmio)"""
+    import rm_mmio
+    n = info.rngsz
+    db = rm_mmio.QSPC + fn_stride * info.func_id + DB_H2C_PIDX + DB_STRIDE * info.qidx
+    print(f"  RM producer: doorbell AXI 0x{db:x} (fn {info.func_id}, qidx {info.qidx}), batch {batch}")
+    posted = 0
+    pidx = 0
+    lat = []
+    t0 = time.time()
+    while posted < packets:
+        cidx = qe.info().hw_cidx
+        free = (cidx - pidx - 1) % n
+        k = min(free, batch, packets - posted)
+        if k <= 0:
+            if time.time() - t0 > 10:
+                print(f"  RM producer: no progress (pidx {pidx}, cidx {cidx})")
+                break
+            continue
+        pidx = (pidx + k) % n
+        lat.append(rm.write(db, pidx))          # pidx[15:0], irq_en 0
+        posted += k
+    if lat:
+        print(f"  RM producer: {len(lat)} doorbells, BRESP latency min {min(lat)} / max {max(lat)} cycles"
+              f" (service_clk), status {rm.status_str(rm.rd('STATUS'))}")
+    return posted, pidx, time.time() - t0
+
+
 class ExtMmQueue:
     """one direction of an MM external-producer queue pair"""
 
@@ -430,7 +464,7 @@ def main():
     ap.add_argument("-d", "--device", required=True, help="card BDF without function, e.g. 0000:1b:00")
     sp = ap.add_subparsers(dest="cmd", required=True)
     h = sp.add_parser("h2c")
-    h.add_argument("--producer", choices=("host", "rpu"), required=True)
+    h.add_argument("--producer", choices=("host", "rpu", "rm"), required=True)
     h.add_argument("--pkt", type=int, default=4096, help="packet bytes, 1..4096 (one descriptor each)")
     h.add_argument("--packets", type=int, default=10000, help="host producer: packets to post")
     h.add_argument("--batch", type=int, default=64, help="host producer: descriptors per doorbell")
@@ -441,7 +475,7 @@ def main():
     h.add_argument("--bdf-entry", type=int, default=63, help="rpu --flow: BDF entry (window) to use")
     h.add_argument("--bdf-prot", type=lambda s: int(s, 0), default=2, help="rpu --flow: BDF prot")
     h.add_argument("--fn-stride", type=lambda s: int(s, 0), default=0x1_0000,
-                   help="rpu: bytes per function in the AXI-side QDMA window (PG347: 64 KiB)")
+                   help="rpu, rm: bytes per function in the AXI-side QDMA window (PG347: 64 KiB)")
     m = sp.add_parser("mm", help="host buffer -> HBM/DDR -> host buffer, MM queues started by the R5 (or host)")
     m.add_argument("--producer", choices=("host", "rpu"), default="rpu")
     m.add_argument("--mem", choices=("hbm", "ddr"), default="hbm")
@@ -530,10 +564,16 @@ def main():
               f" (pidx {i.hw_pidx}, cidx {i.hw_cidx}); {filled} descriptors filled, {args.pkt} B each")
         if args.info_only:
             return
-        if args.producer == "host":
-            posted, final, dt = host_produce(DmaBar(args.device), i, args.packets, args.batch)
-            print(f"  host producer: {posted} packets, final pidx {final}, {posted * args.pkt * 8 / dt / 1e9:.2f}"
-                  f" Gb/s ({dt * 1e3:.1f} ms incl. doorbells)")
+        if args.producer in ("host", "rm"):
+            if args.producer == "host":
+                posted, final, dt = host_produce(DmaBar(args.device), i, args.packets, args.batch)
+            else:
+                import rm_mmio
+                rm = rm_mmio.RmMmio(Bar(args.device))
+                rm.check_id()
+                posted, final, dt = rm_produce(rm, i, args.packets, args.batch, args.fn_stride)
+            print(f"  {args.producer} producer: {posted} packets, final pidx {final},"
+                  f" {posted * args.pkt * 8 / dt / 1e9:.2f} Gb/s ({dt * 1e3:.1f} ms incl. doorbells)")
         else:
             db = R5_QDMA + args.fn_stride * i.func_id + DB_H2C_PIDX + DB_STRIDE * i.qidx
             par.update(r5_doorbell=f"0x{db:08x}", flow=args.flow)

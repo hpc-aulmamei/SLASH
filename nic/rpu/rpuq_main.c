@@ -24,6 +24,8 @@
  * The R5 reaches the CPM5 AXI slave through the static patched by nic/shell/patch_rpuq.py:
  *   R5 0x9000_0000 + n * 2 MiB  -> slave bridge window n (BDF entry n) -> host memory
  *   R5 0x9800_0000, 16 MiB      -> QDMA CSRs and queue space (CPM5 "MULTQ" decode)
+ * On the smart static (nic/shell/patch_smart.py) also:
+ *   R5 0x9C00_0000, 64 KiB      -> service layer 0x203_0000_0000 (the RM's registers)
  * and the CPM5 registers (BDF table at 0xFCEA_2420 + 0x20 * n) on the PS bus.
  * PG347: Device memory, 32-bit accesses only, for all of these.
  *
@@ -51,6 +53,8 @@
 #define R5_HOST_WIN      0x00200000u     /* 2 MiB per BDF entry */
 #define R5_QDMA_BASE     0x98000000u
 #define R5_QDMA_SIZE     0x00800000u     /* the CPM decodes 8 MiB (qspc_csr_size 3); the remap is 16 MiB */
+#define R5_SL_BASE       0x9C000000u     /* smart static: service layer 0x203_0000_0000 */
+#define R5_SL_SIZE       0x00010000u
 #define BDF_TABLE        0xFCEA2420u
 #define BDF_STRIDE       0x20u
 
@@ -175,6 +179,8 @@ static int r5_addr_ok(uint32_t a)
     if (a >= R5_HOST_BASE && a < R5_HOST_BASE + 64u * R5_HOST_WIN)
         return 1;
     if (a >= R5_QDMA_BASE && a < R5_QDMA_BASE + R5_QDMA_SIZE)
+        return 1;
+    if (a >= R5_SL_BASE && a < R5_SL_BASE + R5_SL_SIZE)   /* MPU region 1 covers it (Device) */
         return 1;
     if (a >= 0xFCE90000u && a < 0xFCEB0000u)                 /* CPM5_DMA1_ATTR / _CSR only */
         return 1;

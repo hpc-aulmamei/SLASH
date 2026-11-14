@@ -14,8 +14,14 @@ stream ports (S_QNOC_*, M_QNOC_*, dma_clk, dma_resetn); this script adds the
 NoC endpoints for them, built from the stream table in shell/patch_shell.py
 so the two sides cannot drift apart.
 
-usage: gen_service_layer.py <slash checkout> <out.tcl> <nic dir>
+NIC_SMART=1 builds the RM for the smart NIC static (shell/patch_smart.py): the
+rendered template gets the static's second M_QDMA_SLV_BRIDGE aperture (the
+QDMA queue space), and nictest_service_layer.tcl adds rm_mmio (rtl/rm_mmio.sv)
+at service-layer offset 0x0, which the R5 reaches too.
+
+usage: [NIC_SMART=1] gen_service_layer.py <slash checkout> <out.tcl> <nic dir>
 """
+import os
 import sys
 from pathlib import Path
 
@@ -78,10 +84,17 @@ def main():
                       trim_blocks=True, lstrip_blocks=True)
     env.filters["zip"] = lambda a, b: zip(a, b)
     text = env.get_template("service_layer.tcl").render(**ctx)
+    smart = os.environ.get("NIC_SMART", "0") == "1"
+    if smart:
+        # the RM boundary must match the smart static's service-layer BDC
+        sys.path.insert(0, str(root / "shell"))
+        import patch_smart
+        text = patch_smart.patch_rm_template(text)
 
     block = "\n".join([
         f"# ===== RM contents: {kind} (nic/) =====",
         f"set ::nic(root) {{{root}}}",
+        f"set ::nic(smart) {1 if smart else 0}",
         f"source {{{root / 'tcl' / 'nictest_service_layer.tcl'}}}",
         "",
     ])
