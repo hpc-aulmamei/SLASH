@@ -8,7 +8,7 @@
 #         abstract shells (the tail of build_project.tcl).
 # Step 2: slashkit install --stage base-shell with the project step replaced by
 #         step 1's output, then --stage firmware (AVED firmware + PDI repack).
-# Same memory cap and watchdog as run_nic_shell.sh.
+# Same memory cap and watchdog as run_nic_shell.sh (MemTotal - NIC_OS_GB, floor NIC_OS_GB).
 set -u
 JOBS=${1:-8}
 IGN=${2:-}
@@ -18,6 +18,8 @@ W=$R/shell-nic${NIC_TAG:+-$NIC_TAG}
 LOG=$R/builds/nic_resume${NIC_TAG:+_$NIC_TAG}.log
 unit=nicresume${NIC_TAG}
 B=$W/build
+OS_GB=${NIC_OS_GB:-2}
+MAX_GB=$(( $(awk '/MemTotal/ {print int($2/1048576)}' /proc/meminfo) - OS_GB ))
 grep -q "write_device_image" $B/slash.runs/impl_1/runme.log && \
   ls $B/slash.runs/impl_1/top_wrapper.pdi >/dev/null 2>&1 || { echo "impl_1 not complete"; exit 2; }
 pgrep -f "top_wrapper.vdi" >/dev/null && { echo "impl_1 still running"; exit 2; }
@@ -64,14 +66,14 @@ from slashkit.__main__ import main
 main()
 PY
 
-( while sleep 30; do
+( while sleep 5; do
     a=$(awk '/MemAvailable/{print int($2/1048576)}' /proc/meminfo)
     systemctl --user is-active --quiet $unit.scope || { sleep 60; systemctl --user is-active --quiet $unit.scope || exit 0; }
-    [ "$a" -lt 30 ] && { echo "WATCHDOG MemAvailable ${a}G, stopping" >> $LOG; systemctl --user stop $unit.scope; exit 0; }
+    [ "$a" -lt $OS_GB ] && { echo "WATCHDOG MemAvailable ${a}G < ${OS_GB}G, stopping" >> $LOG; systemctl --user stop $unit.scope; exit 0; }
   done ) &
 
 echo "start $(date -u +%FT%TZ)" > $LOG
-systemd-run --user --scope -p MemoryMax=100G -p MemorySwapMax=0 --unit=$unit bash -c "
+systemd-run --user --scope -p MemoryMax=${MAX_GB}G -p MemorySwapMax=0 --unit=$unit bash -c "
   source /nfs/amd/2025.1/Vivado/settings64.sh; source /nfs/amd/2025.1/Vitis/settings64.sh
   cd $W; export PYTHONPATH=$W/pylib SKIP_POST_IMPL=${SKIP_POST_IMPL:-0}
   python3 $B/resume_install.py install --shell-type service --stage base-shell $IGN --build-dir $B --out-dir $W/pylib/slashkit/resources --jobs $JOBS &&
