@@ -22,8 +22,10 @@
 
 // Host control and status of one DCMAC's GT quad and reset sequencer
 // (Versal-DCMAC dcmac_reset_ctrl), between the port tester registers (PHY_CTRL /
-// PHY_STATUS of eth_test, user clock) and the DCMAC hierarchy (sys_clk, the GT free-running
-// clock).
+// PHY_STATUS of eth_test, user clock) and the DCMAC hierarchy: the GT controls
+// (loopback, CDR hold, datapath resets, line rate) in gt_clk, the GT wizard's
+// free-running clock; the sequencer hold and the DCMAC / converter selects in
+// sys_clk, the clock of dcmac_reset_ctrl.
 //
 // ctrl (user clock, quasi-static):
 //   [2:0] GT loopback, all four channels (0 normal, 1 near-end PCS,
@@ -49,13 +51,15 @@ module dcmac_phy_ctl #(
     parameter integer PORT = 0              // DCMAC port of status[6]
 ) (
     input  wire        sys_clk,
+    input  wire        gt_clk,
     input  wire        user_clk,
     input  wire        aresetn,             // hierarchy reset (asynchronous)
 
     input  wire [15:0] ctrl,                // user_clk
     output wire [15:0] status,              // user_clk
 
-    // sys_clk
+    // gt_loopback .. gt_rst_tx_datapath and gt_rate in gt_clk; config_switch,
+    // tx_half in sys_clk; fsm_resetn asynchronous
     output reg  [2:0]  gt_loopback,
     output reg         gt_rxcdrhold,
     output reg         gt_rst_rx_datapath,
@@ -82,15 +86,25 @@ module dcmac_phy_ctl #(
         .src_clk(user_clk), .src_in(ctrl[8:0]), .dest_clk(sys_clk), .dest_out(ctrl_s)
     );
 
+    wire [8:0] ctrl_g;
+    xpm_cdc_array_single #(
+        .DEST_SYNC_FF(4), .INIT_SYNC_FF(0), .SIM_ASSERT_CHK(0), .SRC_INPUT_REG(1), .WIDTH(9)
+    ) inst_ctrl_gt_cdc (
+        .src_clk(user_clk), .src_in(ctrl[8:0]), .dest_clk(gt_clk), .dest_out(ctrl_g)
+    );
+
+    always @(posedge gt_clk) begin
+        gt_loopback <= ctrl_g[2:0];
+        gt_rxcdrhold <= ctrl_g[3];
+        gt_rst_rx_datapath <= ctrl_g[4];
+        gt_rst_rx_pll_datapath <= ctrl_g[5];
+        gt_rst_tx_datapath <= ctrl_g[6];
+        gt_rate <= {7'd0, ctrl_g[8]};
+    end
+
     reg hold = 1'b0;
     always @(posedge sys_clk) begin
-        gt_loopback <= ctrl_s[2:0];
-        gt_rxcdrhold <= ctrl_s[3];
-        gt_rst_rx_datapath <= ctrl_s[4];
-        gt_rst_rx_pll_datapath <= ctrl_s[5];
-        gt_rst_tx_datapath <= ctrl_s[6];
         hold <= ctrl_s[7];
-        gt_rate <= {7'd0, ctrl_s[8]};
         config_switch <= {2'd0, ctrl_s[8]};
         tx_half <= ctrl_s[8];
     end

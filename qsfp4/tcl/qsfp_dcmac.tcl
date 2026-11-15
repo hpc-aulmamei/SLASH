@@ -113,6 +113,7 @@ proc qsfp_connect_dcmac_extra {qsfp dcmac_index} {
         connect_bd_net [get_bd_pins $qsfp/phy_ctrl_$q] [get_bd_pins $phy/ctrl]
         connect_bd_net [get_bd_pins $phy/status] [get_bd_pins $qsfp/phy_status_$q]
         connect_bd_net [get_bd_pins $crc/sys_clk] [get_bd_pins $phy/sys_clk]
+        connect_bd_net [get_bd_pins $gw/gtwiz_freerun_clk] [get_bd_pins $phy/gt_clk]
         connect_bd_net [get_bd_pins $crc/user_clk] [get_bd_pins $phy/user_clk]
         connect_bd_net [get_bd_pins $qsfp/aresetn] [get_bd_pins $phy/aresetn]
         connect_bd_net [get_bd_pins $phy/fsm_resetn] \
