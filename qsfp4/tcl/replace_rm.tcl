@@ -24,8 +24,12 @@
 # 391 MHz and sit up to three clock regions from DCMAC1; on the dev shell the
 # run's Congestion_SSI_SpreadLogic_high placement routed at -0.121 ns, while
 # set B closed at +0.001 ns, C at 0.000 and A at 0.000 after one phys_opt.
+# Against the rebuilt shell (qsfp4-rm3) B, C and A missed by 0.09 .. 0.16 ns
+# with the DCMAC1 RX converter drifting out of pblock_qsfp_dcmac1 (soft); set
+# F (B placement, AggressiveExplore route, that pblock hard) closed at
+# 0.000 / +0.002 ns.
 # Writes the RM cell checkpoint only when timing is met; exits 2 otherwise.
-#   vivado -mode batch -source replace_rm.tcl -tclargs <opt full dcp> <set A|B|C> <out rm cell dcp> <report prefix>
+#   vivado -mode batch -source replace_rm.tcl -tclargs <opt full dcp> <set A|B|C|F> <out rm cell dcp> <report prefix>
 lassign $argv opt v out rpt
 set_param general.maxThreads 8
 proc wns {} { get_property SLACK [get_timing_paths -max_paths 1 -nworst 1 -setup] }
@@ -43,6 +47,10 @@ switch $v {
     C { place_design -directive ExtraPostPlacementOpt
         phys_opt_design -directive AggressiveExplore
         phys_opt_design -directive AlternateReplication
+        route_design -directive AggressiveExplore }
+    F { set_property IS_SOFT FALSE [get_pblocks pblock_qsfp_dcmac1]
+        place_design -directive Explore -net_delay_weight high
+        phys_opt_design -directive AggressiveExplore
         route_design -directive AggressiveExplore }
     default { error "replace_rm: unknown set $v" }
 }

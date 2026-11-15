@@ -96,10 +96,11 @@ if [ -f "$rpt" ] && ! grep -q "All user specified timing constraints are met" "$
             -source "$here/tcl/post_route_fix.tcl" \
             -tclargs "$impl/top_wrapper_routed.dcp" "$rm_dcp" "$B/logs/post_route_fix"); then
         # Missed by more than phys_opt recovers: place and route again from the
-        # opt checkpoint with other directives (tcl/replace_rm.tcl) until one closes.
+        # opt checkpoint with other directives (tcl/replace_rm.tcl) until one
+        # closes; F, with the DCMAC1 fabric pblock hard, first.
         met=0
-        for v in B C A; do
-            echo "build_rm: $(date '+%F %T %Z') post_route_fix did not close, re-place with set $v"
+        for v in F B C A; do
+            echo "build_rm: $(date '+%F %T %Z') re-place with set $v"
             if (cd "$B/logs" && vivado -mode batch -nojournal -log "$B/logs/replace_rm_$v.log" \
                     -source "$here/tcl/replace_rm.tcl" \
                     -tclargs "$impl/top_wrapper_opt.dcp" "$v" "$rm_dcp" "$B/logs/replace_rm_$v"); then
