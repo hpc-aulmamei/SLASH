@@ -355,10 +355,14 @@ def probe(ports, peer, args, frames=2000):
 
 
 def bring_up(bar, ports, peer, args):
-    """Links up and frames clean. For a port that fails: the DCMAC TX serdes reset
-    of its sender (the far end, or itself in loopback) and its own GT RX and DCMAC
-    RX reset; then the reset sequence of its DCMAC, which also takes down the
-    DCMAC's other port and the far ends, then all RX resets."""
+    """Links up and frames clean. For a port that fails, each try (--recover gt,
+    the default): the GT TX datapath reset of its sender (the far end, or itself in
+    loopback) with the sender's DCMAC TX serdes held, then its own GT RX and DCMAC
+    RX reset. A failing port is often FEC lane-locked but not aligned (rx fec 0x3c);
+    the DCMAC reset sequence (--recover mixed, the old default) does not clear that
+    and puts working ports into the same state. Measured 2026-11-15 on the cabled
+    QSFP0-QSFP2 pair after a rate switch, 20 rounds each: gt up within 3 tries
+    every time (13 at the first), serdes within 3, mixed 1 to 4 failures in 20."""
     t0 = time.time()
     set_loopbacks(ports, peer)
     time.sleep(0.05)
@@ -375,7 +379,17 @@ def bring_up(bar, ports, peer, args):
             break
         for n in down:
             print(f"QSFP{n}: {why[n]}", flush=True)
-        if attempt % 2 == 0:
+        if args.recover == "gt":
+            # the sender's GT TX datapath (its DCMAC TX serdes held), then the RX
+            senders = sorted({peer[n] for n in down})
+            print(f"try {attempt + 1}/{args.tries}: GT TX reset of {senders}, RX reset of {down}",
+                  flush=True)
+            for n in senders:
+                if not ports[n].tx_reset():
+                    print(f"QSFP{n}: GT TX reset not done after 2 s", flush=True)
+            for n in down:
+                ports[n].rx_reset()
+        elif args.recover == "serdes" or attempt % 2 == 0:
             # the sender may be the broken side: its DCMAC TX serdes too
             senders = sorted({peer[n] for n in down})
             print(f"try {attempt + 1}/{args.tries}: TX serdes reset of {senders}, RX reset of {down}",
@@ -734,6 +748,10 @@ def main():
         s.add_argument("--seed", type=lambda x: int(x, 0), default=0x9E3779B97F4A7C15)
         s.add_argument("--tries", type=int, default=6)
         s.add_argument("--wait", type=float, default=3.0)
+        s.add_argument("--recover", choices=["gt", "serdes", "mixed"], default="gt",
+                       help="bring-up tries: gt (default: GT TX datapath of the sender + RX resets), "
+                            "serdes (DCMAC TX serdes of the sender + RX resets), mixed (serdes "
+                            "alternating with the DCMAC reset sequence)")
 
     sub.add_parser("id").set_defaults(fn=cmd_id)
     s = sub.add_parser("phy")

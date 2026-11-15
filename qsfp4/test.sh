@@ -52,6 +52,14 @@ done
 exec > >(tee qsfp4_test.log) 2>&1
 Q="sudo $here/sw/qsfp_loop.py -d $D"
 die() { echo "STOP: $*"; $Q stop > /dev/null 2>&1; exit 1; }
+# step <filter> <qsfp_loop args>: the summary (filter) of a passing step, all of
+# the output of a failing one (bring-up tries and PHY status included)
+step() {
+    local filter=$1 out rc; shift
+    out=$($Q "$@" 2>&1); rc=$?
+    if [ $rc = 0 ]; then printf '%s\n' "$out" | eval "$filter"; else printf '%s\n' "$out"; fi
+    return $rc
+}
 
 # paths: the pairs, and every port not in a pair in loopback
 PATHS=()
@@ -71,27 +79,24 @@ $Q id || die "the testers do not answer: is the RM loaded (qsfp4/load.sh)?"
 $Q stop > /dev/null
 
 echo "=== 2. 200G, $SECS s"
-$Q speed 200 > /dev/null 2>&1 || true          # 200G-only builds have no rate switch
-$Q run "${PATHS[@]}" --seconds "$SECS" --interval 5 | tail -12
-[ "${PIPESTATUS[0]}" = 0 ] || die "200G"
+# 200G-only builds have no rate switch: shown, not fatal
+step 'cat > /dev/null' speed 200 || echo "(speed 200 failed: fine on a QSFP_DYNAMIC=0 RM)"
+step 'tail -12' run "${PATHS[@]}" --seconds "$SECS" --interval 5 || die "200G"
 
 if [ $DO100 = 1 ]; then
     echo "=== 3. 100G"
     $Q speed 100 || die "rate switch to 100G (RM built with QSFP_DYNAMIC=0? then use --no-100g)"
-    $Q up "${PATHS[@]}" | tail -4
-    [ "${PIPESTATUS[0]}" = 0 ] || die "100G links"
+    step 'tail -4' up "${PATHS[@]}" || die "100G links"
     for L in 60 61 124 125 252 1496 8996; do
         echo "== 100G, $L B frames"
-        $Q run --no-up "${PATHS[@]}" --len $L --seconds 2 --interval 1 | grep -E "^QSFP|^PASS|^FAIL"
-        [ "${PIPESTATUS[0]}" = 0 ] || die "100G, $L B frames"
+        step 'grep -E "^QSFP|^PASS|^FAIL"' run --no-up "${PATHS[@]}" --len $L --seconds 2 --interval 1 ||
+            die "100G, $L B frames"
     done
-    $Q run --no-up "${PATHS[@]}" --seconds "$SECS" --interval 5 | tail -12
-    [ "${PIPESTATUS[0]}" = 0 ] || die "100G"
+    step 'tail -12' run --no-up "${PATHS[@]}" --seconds "$SECS" --interval 5 || die "100G"
 
     echo "=== 4. back to 200G, $SECS s"
     $Q speed 200 || die "rate switch to 200G"
-    $Q run "${PATHS[@]}" --seconds "$SECS" --interval 5 | tail -12
-    [ "${PIPESTATUS[0]}" = 0 ] || die "200G after 100G"
+    step 'tail -12' run "${PATHS[@]}" --seconds "$SECS" --interval 5 || die "200G after 100G"
 fi
 $Q stop > /dev/null
 echo "=== PASS $(date '+%F %T %Z')"
