@@ -92,9 +92,22 @@ rm_dcp=$impl/top_i_service_layer_service_layer_qsfploop_rm_routed.dcp
 if [ -f "$rpt" ] && ! grep -q "All user specified timing constraints are met" "$rpt"; then
     echo "build_rm: routed timing not met, running post_route_fix"
     [ -f "$rm_dcp.unfixed" ] || cp "$rm_dcp" "$rm_dcp.unfixed"
-    (cd "$B/logs" && vivado -mode batch -nojournal -log "$B/logs/post_route_fix.log" \
-        -source "$here/tcl/post_route_fix.tcl" \
-        -tclargs "$impl/top_wrapper_routed.dcp" "$rm_dcp" "$B/logs/post_route_fix")
+    if ! (cd "$B/logs" && vivado -mode batch -nojournal -log "$B/logs/post_route_fix.log" \
+            -source "$here/tcl/post_route_fix.tcl" \
+            -tclargs "$impl/top_wrapper_routed.dcp" "$rm_dcp" "$B/logs/post_route_fix"); then
+        # Missed by more than phys_opt recovers: place and route again from the
+        # opt checkpoint with other directives (tcl/replace_rm.tcl) until one closes.
+        met=0
+        for v in B C A; do
+            echo "build_rm: $(date '+%F %T %Z') post_route_fix did not close, re-place with set $v"
+            if (cd "$B/logs" && vivado -mode batch -nojournal -log "$B/logs/replace_rm_$v.log" \
+                    -source "$here/tcl/replace_rm.tcl" \
+                    -tclargs "$impl/top_wrapper_opt.dcp" "$v" "$rm_dcp" "$B/logs/replace_rm_$v"); then
+                met=1; break
+            fi
+        done
+        [ $met = 1 ] || die "timing not met with any directive set, see $B/logs/replace_rm_*"
+    fi
 fi
 
 rm_pdi=$B/images/top_i_service_layer_service_layer_qsfploop_inst_0_partial.pdi
