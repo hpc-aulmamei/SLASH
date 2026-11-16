@@ -940,8 +940,13 @@ set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_03]
   connect_bd_net -net util_ds_buf_0_BUFG_FABRIC_O  [get_bd_pins util_ds_buf_0/BUFG_FABRIC_O] \
   [get_bd_pins ilreduced_logic_0/Op1]
 
+  # Reset of the network_clk domain (DCMAC aclk side, AXIS NoC ports)
+  set proc_sys_reset_network [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 proc_sys_reset_network ]
+  set_property CONFIG.C_EXT_RESET_HIGH {0} $proc_sys_reset_network
+
   connect_bd_net -net arstn_1  [get_bd_ports arstn] \
-  [get_bd_pins c_shift_ram_0/D]
+  [get_bd_pins c_shift_ram_0/D] \
+  [get_bd_pins proc_sys_reset_network/ext_reset_in]
   
   connect_bd_net -net c_shift_ram_0_Q  [get_bd_pins c_shift_ram_0/Q] \
   [get_bd_pins util_ds_buf_0/BUFG_FABRIC_I]
@@ -1035,7 +1040,7 @@ set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_03]
   connect_bd_intf_net -intf_net sl2noc_7_M00_INI [get_bd_intf_ports SL2NOC_7] [get_bd_intf_pins sl2noc_7/M00_INI]
 
 
-  connect_bd_net -net service_clk_1  [get_bd_pins service_clk] \
+  connect_bd_net -net network_clk_1  [get_bd_ports network_clk] \
   [get_bd_pins dummy_noc_0/aclk0] \
   [get_bd_pins dummy_noc_1/aclk0] \
   [get_bd_pins dummy_noc_2/aclk0] \
@@ -1052,6 +1057,9 @@ set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_03]
   [get_bd_pins dummy_noc_m_5/aclk0] \
   [get_bd_pins dummy_noc_m_6/aclk0] \
   [get_bd_pins dummy_noc_m_7/aclk0] \
+  [get_bd_pins proc_sys_reset_network/slowest_sync_clk]
+
+  connect_bd_net -net service_clk_1  [get_bd_pins service_clk] \
   [get_bd_pins sl2noc_0/aclk0] \
   [get_bd_pins sl2noc_1/aclk0] \
   [get_bd_pins sl2noc_2/aclk0] \
@@ -1214,6 +1222,10 @@ set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_03]
   # Clocks & reset (design pins to SC pins)
   connect_bd_net [get_bd_pins {{ sl_clk0 }}] [get_bd_pins {{ sl_smartconnect_name }}/aclk]
   connect_bd_net [get_bd_pins {{ sl_rstn }}] [get_bd_pins {{ sl_smartconnect_name }}/aresetn]
+  {% if sl_num_clks > 1 %}
+  # DCMAC AXI4-Lite runs on freerunning_clk (Versal-DCMAC bd_dcmac_qsfp)
+  connect_bd_net [get_bd_ports freerunning_clk] [get_bd_pins {{ sl_smartconnect_name }}/aclk1]
+  {% endif %}
 
   # SI: service_layer design's S_AXILITE -> SmartConnect S00_AXI
   connect_bd_intf_net \
@@ -1230,8 +1242,8 @@ set_property APERTURES {{0x208_0000_0000 32G}} [get_bd_intf_ports S_VIRT_03]
 
   # Tie QSFP block clocks/resets
   {% for q in sl_qsfp_blocks %}
-    connect_bd_net [get_bd_pins {{ sl_clk0 }}] [get_bd_pins {{ q }}/aclk]
-    connect_bd_net [get_bd_pins {{ sl_rstn }}] [get_bd_pins {{ q }}/aresetn]
+    connect_bd_net [get_bd_ports network_clk] [get_bd_pins {{ q }}/aclk]
+    connect_bd_net [get_bd_pins proc_sys_reset_network/peripheral_aresetn] [get_bd_pins {{ q }}/aresetn]
   {% endfor %}
 
 {% else %}

@@ -502,7 +502,7 @@ proc create_root_design { parentCell } {
 
 
   # Create ports
-  set service_clk [ create_bd_port -dir I -type clk -freq_hz 300000000 service_clk ]
+  set service_clk [ create_bd_port -dir I -type clk -freq_hz 250000000 service_clk ]
   set_property -dict [ list \
    CONFIG.ASSOCIATED_RESET {arstn} \
    CONFIG.CLK_DOMAIN {bd_4885_pspmc_0_0_pl0_ref_clk} \
