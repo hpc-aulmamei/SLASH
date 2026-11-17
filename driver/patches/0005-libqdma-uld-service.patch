@@ -1,0 +1,69 @@
+# ##################################################################################################
+#  The MIT License (MIT)
+#  Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
+#
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+#  and associated documentation files (the "Software"), to deal in the Software without restriction,
+#  including without limitation the rights to use, copy, modify, merge, publish, distribute,
+#  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+#
+#  The above copyright notice and this permission notice shall be included in all copies or
+#  substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# ##################################################################################################
+
+SLASH local modification to the pinned QDMA submodule (libqdma).
+
+libqdma: queues serviced by their user (uld_service)
+
+The SLASH NIC netdev (slash_nic.c) services its ST C2H queues from a NAPI
+poll: qdma_queue_service() with a budget, then qdma_queue_update_pointers().
+In POLL_MODE, qdma_queue_start() puts every queue on a libqdma completion
+thread; for these queues the thread would be a second consumer of the
+completion ring.
+
+- qdma_queue_conf.uld_service: qdma_queue_start() does not add the queue to
+  a completion thread. Unlike ext_producer, everything else is as usual (the
+  host initialises the PIDX and posts the descriptors).
+  qdma_thread_remove_work() already copes with a queue that was never added.
+
+Applies on top of 0004-libqdma-ext-producer.patch.
+Generated against qdma_drv @ 03ac7f3 (pinned submodule commit).
+diff -ru a/libqdma_export.c b/libqdma_export.c
+--- a/libqdma_export.c
++++ b/libqdma_export.c
+@@ -1845,8 +1845,10 @@
+ 		spin_unlock_irqrestore(&dev_intr_info_list->vec_q_list, flags);
+ 	}
+ 
+-	/* external producer: nobody in the host services this queue */
+-	if (!descq->conf.ext_producer)
++	/* external producer: nobody in the host services this queue;
++	 * uld_service: its user services it (e.g. a NAPI poll)
++	 */
++	if (!descq->conf.ext_producer && !descq->conf.uld_service)
+ 		qdma_thread_add_work(descq);
+ 
+ 	snprintf(buf, buflen, "queue %s, idx %u started\n",
+diff -ru a/libqdma_export.h b/libqdma_export.h
+--- a/libqdma_export.h
++++ b/libqdma_export.h
+@@ -667,6 +667,12 @@
+ 	 *   with init_pidx_dis for ST C2H.
+ 	 */
+ 	u8 ext_producer:1;
++	/**  Serviced by its user: the host owns the queue as usual (PIDX
++	 *   initialised, descriptors posted), but only the user calls
++	 *   qdma_queue_service() / qdma_queue_update_pointers() on it, e.g.
++	 *   from a NAPI poll. libqdma keeps it off the completion threads.
++	 */
++	u8 uld_service:1;
+ 
+ 	/**  MM Channel */
+ 	u8 mm_channel:1;

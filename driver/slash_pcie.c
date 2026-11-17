@@ -36,6 +36,7 @@
 #include "slash.h"
 #include "slash_ctldev.h"
 #include "slash_hotplug_driver.h"
+#include "slash_nic.h"
 
 static int slash_pcie_probe(struct pci_dev *pdev, const struct pci_device_id *id);
 static void slash_pcie_remove(struct pci_dev *pdev);
@@ -108,6 +109,9 @@ static int slash_pcie_probe(struct pci_dev *pdev, const struct pci_device_id *id
         goto err_disable_device;
     }
 
+    /* the NIC netdevs (slash_nic.c): sysfs `nic` attribute, attach on request */
+    slash_nic_ctl_add(pdev, ((struct slash_ctldev *)pci_get_drvdata(pdev))->slot);
+
     dev_info(&pdev->dev, "slash: probe successful\n");
     return 0;
 
@@ -132,6 +136,8 @@ static void slash_pcie_remove(struct pci_dev *pdev)
 {
     dev_info(&pdev->dev, "slash: remove start for %s\n", pci_name(pdev));
 
+    /* netdevs go before the BARs they use */
+    slash_nic_ctl_remove(pdev);
     slash_ctldev_destroy(pdev);
     pci_clear_master(pdev);
     pci_disable_device(pdev);

@@ -74,7 +74,7 @@ GCOV_PROFILE := y
 endif
 
 obj-m          := $(MODULE).o
-$(MODULE)-objs := $(MODULE)_main.o $(MODULE)_chrdev.o $(MODULE)_ctldev.o $(MODULE)_pcie.o $(MODULE)_dmabuf.o $(MODULE)_hotplug.o $(MODULE)_qdma.o
+$(MODULE)-objs := $(MODULE)_main.o $(MODULE)_chrdev.o $(MODULE)_ctldev.o $(MODULE)_pcie.o $(MODULE)_dmabuf.o $(MODULE)_hotplug.o $(MODULE)_qdma.o $(MODULE)_nic.o
 ccflags-y += \
 	-I$(src)/libslash/include \
 	-I$(src)/libslash/include/slash/uapi \
@@ -172,10 +172,13 @@ all: libqdma-patches
 # libqdma source tree in use, in filename order, right before building.
 #
 # The pinned submodule is not edited directly by commits: patches live in-tree
-# and are stamped onto the working copy here. Application is idempotent — each patch is first tested
-# for being already applied (reverse dry-run) and skipped if so — so repeated
-# `make` runs, incremental builds, and DKMS rebuilds are all safe. A patch that
-# neither applies cleanly nor is already present aborts the build.
+# and are stamped onto the working copy here, always in order, so the tree
+# holds patches 1..m for some m. The patches stack (a later one may change
+# lines of an earlier one, which then no longer reverse-applies), but the last
+# applied one always does: m is the highest-numbered patch whose reverse
+# dry-run succeeds, and patches m+1.. are applied. Repeated `make` runs,
+# incremental builds, and DKMS rebuilds are all safe. A patch that neither
+# applies cleanly nor is already present aborts the build.
 #
 # $(PWD) is the driver dir for both `make` (in-tree) and DKMS (MAKE[0] runs
 # `make -C driver ...`); ./libqdma is the DKMS-packaged copy, otherwise fall
@@ -196,9 +199,16 @@ libqdma-patches:
 	command -v patch >/dev/null 2>&1 || { \
 		echo "slash: ERROR patch(1) not found; it is required to apply libqdma patches" >&2; \
 		exit 1; }; \
+	m=0; i=0; \
 	for p in "$$@"; do \
+		i=$$((i + 1)); \
+		if patch -R -p1 -d "$$lq" --dry-run -f -s -i "$$p" >/dev/null 2>&1; then m=$$i; fi; \
+	done; \
+	i=0; \
+	for p in "$$@"; do \
+		i=$$((i + 1)); \
 		name="$$(basename "$$p")"; \
-		if patch -R -p1 -d "$$lq" --dry-run -f -s -i "$$p" >/dev/null 2>&1; then \
+		if [ "$$i" -le "$$m" ]; then \
 			echo "slash: libqdma patch already applied, skipping: $$name"; \
 		elif patch -p1 -d "$$lq" --dry-run -f -s -i "$$p" >/dev/null 2>&1; then \
 			echo "slash: applying libqdma patch: $$name"; \

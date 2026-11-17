@@ -453,8 +453,16 @@ def cmd_regs(lb, args):
 #   77FD64BB...  slash_st_fix.ko (2026-11-06)
 #   086CFCC7...  slash_rpuq.ko, external-producer queues (2026-11-10)
 #   7E25FA77...  slash_rpuq.ko, plus EXT_FILL_MM (2026-11-11)
+#   10ADD72C...  slash.ko of slash-nic + slash_nic.c netdev skeleton b1 (2026-11-16)
+#   84C3E3F2...  netdev b2, datapath (2026-11-16)
+#   B0ED7CD5...  netdev b3, needs nic_core 0x00010003 (2026-11-16)
+#   1962D4FF...  netdev b4, libqdma 0006 CPM5 error processing (2026-11-17)
+#                (b2-b4: the netdevs leak one page per received frame; raw path fine)
+#   241447E7...  netdev b5, RX page leak fixed (2026-11-17)
 ST_FIXED_SRCVERSIONS = {"77FD64BB49F8D1397BDCF25", "086CFCC7255A07708F853DA",
-                        "7E25FA7788B2723EBD3114D"}
+                        "7E25FA7788B2723EBD3114D", "10ADD72C8CE680DADB1EA99",
+                        "84C3E3F2F990733DD596B8C", "B0ED7CD5BB315BE2F736316",
+                        "1962D4FFA7ECC6B507FD799", "241447E7926736F50B9EB8A"}
 
 
 def check_st_driver(force):

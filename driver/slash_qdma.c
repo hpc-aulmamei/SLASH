@@ -49,6 +49,7 @@
 
 #include "slash.h"
 #include "slash_chrdev.h"
+#include "slash_nic.h"
 
 #include <asm/cacheflush.h>
 #include <linux/bitops.h>
@@ -174,6 +175,13 @@ static inline const void *slash_qdma_uring_cmd_payload(struct io_uring_cmd *cmd)
  * range.
  */
 #define SLASH_QDMA_QPAIR_ID_RANGE XA_LIMIT(0, SLASH_QDMA_MAX_QPAIRS - 1)
+
+/*
+ * Kernel-owned qpair ids (slash_nic.c reserves its netdev queues here). Not a
+ * uAPI flag: the QPAIR_ADD ioctl rejects every flag but EXT_PRODUCER, and the
+ * ioctl paths refuse to operate on these entries.
+ */
+#define SLASH_QDMA_QPAIR_F_KERNEL BIT(31)
 
 /*
  * Debug logging infrastructure.
@@ -1191,6 +1199,9 @@ static int slash_qdma_probe(struct pci_dev *pdev, const struct pci_device_id *id
     }
     device->is_cdev_registered = true;
 
+    /* the NIC netdevs (slash_nic.c) pair PF1 with PF2; nothing starts until attach */
+    slash_nic_qdma_add(pdev, device->qdma_handle, device->slot);
+
     return 0;
 
 err_free:
@@ -1216,8 +1227,91 @@ static void slash_qdma_remove(struct pci_dev *pdev)
     if (!device)
         return;
 
+    /* netdevs and their queues go before the libqdma device */
+    slash_nic_qdma_remove(pdev);
     slash_qdma_destroy_qdma_device(device);
     kref_put(&device->ref, slash_qdma_dev_release);
+}
+
+/**
+ * slash_qdma_reserve_qids() - Reserve qpair ids @first .. @first + @n - 1.
+ * @pdev:  PF1, bound to slash_qdma.
+ * @first: First qpair id.
+ * @n:     Number of ids.
+ *
+ * For the netdev (slash_nic.c), which adds and starts its own libqdma queues
+ * at these indices: the ids hold placeholder entries that user space cannot
+ * allocate, operate on, or open. All or nothing.
+ *
+ * Return: 0, -EBUSY when an id is already in use (by a user queue pair),
+ *         -ENODEV when the device is going away, or another negative errno.
+ */
+int slash_qdma_reserve_qids(struct pci_dev *pdev, u32 first, u32 n)
+{
+    struct slash_qdma_dev *qdma_dev = pci_get_drvdata(pdev);
+    unsigned int t;
+    u32 i;
+    int err = 0;
+
+    if (!qdma_dev)
+        return -ENODEV;
+    if (!n || first >= SLASH_QDMA_MAX_QPAIRS || n > SLASH_QDMA_MAX_QPAIRS - first)
+        return -EINVAL;
+
+    mutex_lock(&qdma_dev->lock);
+    if (qdma_dev->hw_shutdown || !qdma_dev->have_qdma_handle) {
+        mutex_unlock(&qdma_dev->lock);
+        return -ENODEV;
+    }
+    for (i = 0; i < n; i++) {
+        struct slash_qdma_qpair_entry *entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+
+        if (!entry) {
+            err = -ENOMEM;
+            break;
+        }
+        kref_init(&entry->ref);
+        entry->flags = SLASH_QDMA_QPAIR_F_KERNEL;
+        for (t = 0; t < SLASH_QDMA_QTYPE_COUNT; t++)
+            entry->qhndl[t] = QDMA_QUEUE_IDX_INVALID;
+        err = xa_insert(&qdma_dev->qpairs, first + i, entry, GFP_KERNEL);
+        if (err) {
+            kfree(entry);
+            break;
+        }
+    }
+    if (err) {
+        while (i-- > 0)
+            slash_qdma_qpair_remove(qdma_dev, first + i);
+    }
+    mutex_unlock(&qdma_dev->lock);
+    return err;
+}
+
+/**
+ * slash_qdma_release_qids() - Undo slash_qdma_reserve_qids().
+ * @pdev:  PF1.
+ * @first: First qpair id.
+ * @n:     Number of ids.
+ *
+ * Only removes kernel-owned placeholders; the caller has removed its libqdma
+ * queues first.
+ */
+void slash_qdma_release_qids(struct pci_dev *pdev, u32 first, u32 n)
+{
+    struct slash_qdma_dev *qdma_dev = pci_get_drvdata(pdev);
+    u32 i;
+
+    if (!qdma_dev)
+        return;
+    mutex_lock(&qdma_dev->lock);
+    for (i = 0; i < n && first + i < SLASH_QDMA_MAX_QPAIRS; i++) {
+        struct slash_qdma_qpair_entry *entry = xa_load(&qdma_dev->qpairs, first + i);
+
+        if (entry && (entry->flags & SLASH_QDMA_QPAIR_F_KERNEL))
+            slash_qdma_qpair_remove(qdma_dev, first + i);
+    }
+    mutex_unlock(&qdma_dev->lock);
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -2207,6 +2301,9 @@ static int slash_qdma_ioctl_qpair_op(struct slash_qdma_dev *qdma_dev,
     entry = slash_qdma_qpair_lookup(qdma_dev, req->qid);
     if (!entry)
         return -ENOENT;
+    /* the netdev's queues (slash_nic.c) are not for user space */
+    if (entry->flags & SLASH_QDMA_QPAIR_F_KERNEL)
+        return -EPERM;
 
     switch (req->op) {
     case SLASH_QDMA_QUEUE_OP_START:
