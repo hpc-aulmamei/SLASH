@@ -1,0 +1,99 @@
+# ##################################################################################################
+#  The MIT License (MIT)
+#  Copyright (c) 2026 Advanced Micro Devices, Inc. All rights reserved.
+#
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+#  and associated documentation files (the "Software"), to deal in the Software without restriction,
+#  including without limitation the rights to use, copy, modify, merge, publish, distribute,
+#  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+#
+#  The above copyright notice and this permission notice shall be included in all copies or
+#  substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+# ##################################################################################################
+SLASH local modification to the pinned QDMA submodule (libqdma).
+
+libqdma: CPM5 error processing walks only the flagged aggregators
+
+eqdma_cpm5_hw_error_process() read every leaf aggregator's status register
+whenever GLBL_ERR_STAT was non-zero. The MM engines' entries use
+C2H_MM_STATUS / H2C_MM_STATUS, whose bit 0 is RUN, so any global error
+(on the V80: GLBL_ERR_STAT 0x20000, ERR_FAB, raised while H2C queues run)
+was reported as "MM C2H0 WR SLV Error", with a dump of the MM registers and
+queue contexts. ERR_FAB has no leaf aggregator, and the POLL_MODE error poll
+runs every second, so under traffic this repeated once a second.
+
+- Leaf aggregators are only read when their GLBL_ERR_STAT bit is set.
+- ERR_FAB: FAB_ERR_LOG (0x314) is printed, once per distinct value;
+  "Global Err Reg" is printed when any other bit is set.
+GLBL_ERR_STAT is still cleared as before; nothing is masked.
+
+Applies on top of 0005-libqdma-uld-service.patch (touches no file of 0003-0005).
+Generated against qdma_drv @ 03ac7f3 (pinned submodule commit).
+diff -ru a/qdma_access/eqdma_cpm5_access/eqdma_cpm5_access.c b/qdma_access/eqdma_cpm5_access/eqdma_cpm5_access.c
+--- a/qdma_access/eqdma_cpm5_access/eqdma_cpm5_access.c
++++ b/qdma_access/eqdma_cpm5_access/eqdma_cpm5_access.c
+@@ -5447,6 +5447,13 @@
+ 			eqdma_cpm5_error_idx)err_idx].err_name;
+ }
+ 
++/*
++ * SLASH: last FAB_ERR_LOG value printed for GLBL_ERR_STAT.ERR_FAB, which has
++ * no leaf aggregator. One value for all devices: a card whose log differs
++ * from the last one printed is printed again.
++ */
++static uint32_t eqdma_cpm5_fab_err_log_last = 0xFFFFFFFF;
++
+ /*****************************************************************************/
+ /**
+  * eqdma_cpm5_hw_error_process() - Function to find the error that got
+@@ -5493,14 +5500,42 @@
+ 	if (!glbl_err_stat)
+ 		return QDMA_HW_ERR_NOT_DETECTED;
+ 
++	/*
++	 * SLASH: ERR_FAB alone is printed once per FAB_ERR_LOG value; on the
++	 * V80 it is raised while H2C queues run, so polled every second it
++	 * would print once a second.
++	 */
++	if (glbl_err_stat & GLBL_ERR_STAT_ERR_FAB_MASK) {
++		uint32_t fab_log = qdma_reg_read(dev_hndl,
++				EQDMA_CPM5_FAB_ERR_LOG_ADDR);
++
++		if (fab_log != eqdma_cpm5_fab_err_log_last) {
++			qdma_log_info("%s: fabric error (GLBL_ERR_STAT.ERR_FAB), FAB_ERR_LOG(0x%x) = 0x%x; not printed again while the log stays the same\n",
++				__func__, EQDMA_CPM5_FAB_ERR_LOG_ADDR,
++				fab_log);
++			eqdma_cpm5_fab_err_log_last = fab_log;
++		}
++	}
+ 
+-	qdma_log_info("%s: Global Err Reg(0x%x) = 0x%x\n",
++	if (glbl_err_stat & ~GLBL_ERR_STAT_ERR_FAB_MASK)
++		qdma_log_info("%s: Global Err Reg(0x%x) = 0x%x\n",
+ 				  __func__, EQDMA_CPM5_GLBL_ERR_STAT_ADDR,
+ 				  glbl_err_stat);
+ 
+ 	for (i = 0; i < EQDMA_CPM5_TOTAL_LEAF_ERROR_AGGREGATORS; i++) {
+ 		bit = hw_err_position[i];
+ 
++		/*
++		 * SLASH: only the leaf aggregators the global status points
++		 * at. The MM engines' entries read C2H/H2C_MM_STATUS, whose
++		 * bit 0 is RUN, not an error: walking every aggregator on any
++		 * global error reported "MM C2H0 WR SLV Error" (and dumped the
++		 * MM registers and queue contexts) whenever an MM engine ran.
++		 */
++		if (!(glbl_err_stat &
++				eqdma_cpm5_err_info[bit].global_err_mask))
++			continue;
++
+ 		if ((!dev_cap.st_en) &&
+ 			(bit == EQDMA_CPM5_ST_C2H_ERR_MTY_MISMATCH ||
+ 			bit == EQDMA_CPM5_ST_FATAL_ERR_MTY_MISMATCH ||
