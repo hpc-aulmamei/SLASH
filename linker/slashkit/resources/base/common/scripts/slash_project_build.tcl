@@ -45,6 +45,7 @@ array set opts {
     --util-report-file ""
     --user-clock-xdc ""
     --user-clock-hz ""
+    --floorplan-xdc ""
     --jobs 8
 }
 
@@ -94,6 +95,10 @@ set util_report_file $opts(--util-report-file)
 set user_clock_xdc $opts(--user-clock-xdc)
 if {$user_clock_xdc ne ""} {
     set user_clock_xdc [file normalize $user_clock_xdc]
+}
+set floorplan_xdc $opts(--floorplan-xdc)
+if {$floorplan_xdc ne ""} {
+    set floorplan_xdc [file normalize $floorplan_xdc]
 }
 set user_clock_hz $opts(--user-clock-hz)
 if {$user_clock_hz ne "" && ![string is integer -strict $user_clock_hz]} {
@@ -201,6 +206,19 @@ if {$user_clock_xdc ne ""} {
     set_property SCOPED_TO_CELLS {top_i/slash} [get_files $user_clock_xdc]
 }
 
+# Apply the [floorplan] pblocks: child pblocks of pblock_slash, which the static
+# checkpoint brings in, holding the kernels pinned to each SLR. Implementation
+# only, and unscoped because it names pblock_slash and full top_i/slash/... paths.
+# LATE, because the checkpoint's own constraints create pblock_slash and then add
+# all of top_i/slash to it, which would pull pinned kernels back to the parent.
+if {$floorplan_xdc ne ""} {
+    puts "Applying floorplan constraints: $floorplan_xdc"
+    _require_file $floorplan_xdc "floorplan XDC"
+    add_files -fileset constrs_1 -norecurse $floorplan_xdc
+    set_property USED_IN {implementation} [get_files $floorplan_xdc]
+    set_property PROCESSING_ORDER LATE [get_files $floorplan_xdc]
+}
+
 launch_runs "${slash_rm_name}_synth_1" -jobs $jobs
 wait_on_run "${slash_rm_name}_synth_1"
 
@@ -227,5 +245,15 @@ close_design
 close_project
 set routed_dcp [file join $rm_work_dir "${slash_proj_name}.runs" "impl_1" "top_wrapper_routed.dcp"]
 _require_file $routed_dcp "routed top checkpoint"
+
+# DFX compatibility check. pr_verify wants no design open, so it runs here,
+# after the project is closed and before the probes are exported. See
+# slash_prverify.tcl for what it fails on and why that is narrower than
+# "pr_verify said no".
+source [file join [file dirname [info script]] slash_prverify.tcl]
+slash_pr_verify $static_shell_dcp $routed_dcp \
+    [file join $rm_work_dir "pr_verify_${proj_name}.rpt"] \
+    $partial_pdi "slash RM"
+
 open_checkpoint $routed_dcp
 write_debug_probes -cell top_i/slash -file $ltx_file
