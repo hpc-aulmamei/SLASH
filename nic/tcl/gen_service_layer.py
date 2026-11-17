@@ -19,7 +19,13 @@ rendered template gets the static's second M_QDMA_SLV_BRIDGE aperture (the
 QDMA queue space), and nictest_service_layer.tcl adds rm_mmio (rtl/rm_mmio.sv)
 at service-layer offset 0x0, which the R5 reaches too.
 
-usage: [NIC_SMART=1] gen_service_layer.py <slash checkout> <out.tcl> <nic dir>
+NIC_RM_KIND=nic builds the NIC RM instead of nictest: nic_bd (qdma_noc_rm +
+rtl/nic_core.sv) takes qnoc_lb's place and the DCMACs of QSFP0 and QSFP2 are
+added (tcl/nic_dcmac.tcl); NIC_DCMAC is the Versal-DCMAC checkout, and
+NIC_DYNAMIC=1 (the default for nic) adds runtime 200G / 100G per port.
+
+usage: [NIC_SMART=1] [NIC_RM_KIND=nic NIC_DCMAC=<Versal-DCMAC>] \
+       gen_service_layer.py <slash checkout> <out.tcl> <nic dir>
 """
 import os
 import sys
@@ -27,17 +33,17 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-KIND = "nictest"
+KINDS = {"nictest": "qnoc_lb", "nic": "nic"}   # RM kind -> cell on the QDMA streams
 # shell/rtl files the RM needs for the QDMA streams
 QNOC_RTL = ["qnoc_lib.v", "qdma_noc_rm.v"]
 
 
-def qnoc_block(root):
-    """tcl: QDMA stream NoC endpoints, connected to cell qnoc_lb (created by
-    nictest_service_layer.tcl; it has qdma_noc_rm_stub's interface names)"""
+def qnoc_block(root, target):
+    """tcl: QDMA stream NoC endpoints, connected to cell target (qnoc_lb or nic,
+    created by nictest_service_layer.tcl; both have qdma_noc_rm_stub's
+    interface names)"""
     sys.path.insert(0, str(root / "shell"))
     import patch_shell as ps
-    target = "qnoc_lb"
     L = ["# ===== QDMA streams over the NoC (shell/patch_shell.py tables) ====="]
     files = " ".join(f"{{{root / 'shell' / 'rtl' / f}}}" for f in QNOC_RTL)
     L.append(f"add_files -fileset sources_1 -norecurse [list {files}]")
@@ -50,7 +56,7 @@ def qnoc_block(root):
     for i, (name, port, *_) in enumerate(ps.NOC_FROM_RM):
         L.append(f"connect_bd_intf_net [get_bd_intf_pins {target}/m_{port}] [get_bd_intf_pins qnoc_rm_nmu/S{i:02d}_AXIS]")
         L.append(f"connect_bd_intf_net [get_bd_intf_pins qnoc_rm_nmu/M{i:02d}_INIS] [get_bd_intf_ports M_{name}]")
-    # qnoc_lb on service_clk (250 MHz): at 390 MHz its paths and the static's
+    # qnoc_lb / nic on service_clk (250 MHz): at 390 MHz its paths and the static's
     # reset missed by up to 1.6 ns; the NoC crosses to the static's DMA clock.
     L.append(f"connect_bd_net [get_bd_ports service_clk] [get_bd_pins {target}/clk] "
              "[get_bd_pins qnoc_rm_nsu/aclk0] [get_bd_pins qnoc_rm_nmu/aclk0]")
@@ -62,7 +68,9 @@ def main():
     if len(sys.argv) != 4:
         raise SystemExit(__doc__)
     slash, out, root = (Path(a).resolve() for a in sys.argv[1:4])
-    kind = KIND
+    kind = os.environ.get("NIC_RM_KIND", "nictest")
+    if kind not in KINDS:
+        raise SystemExit(f"NIC_RM_KIND {kind}: not one of {', '.join(KINDS)}")
 
     sys.path.insert(0, str(slash / "linker"))
     from slashkit.emit.hw.service_region.service_layer_ctx import (
@@ -91,14 +99,25 @@ def main():
         import patch_smart
         text = patch_smart.patch_rm_template(text)
 
-    block = "\n".join([
+    lines = [
         f"# ===== RM contents: {kind} (nic/) =====",
         f"set ::nic(root) {{{root}}}",
         f"set ::nic(smart) {1 if smart else 0}",
-        f"source {{{root / 'tcl' / 'nictest_service_layer.tcl'}}}",
-        "",
-    ])
-    block += qnoc_block(root)
+        f"set ::nic(kind) {kind}",
+    ]
+    if kind == "nic":
+        dcmac = os.environ.get("NIC_DCMAC")
+        if not dcmac or not (Path(dcmac) / "tcl" / "dcmac.tcl").is_file():
+            raise SystemExit("NIC_RM_KIND=nic: set NIC_DCMAC to a Versal-DCMAC checkout (tcl/dcmac.tcl)")
+        wrapper = slash / "linker" / "slashkit" / "resources" / "dcmac" / "tcl" / "slash_wrapper.tcl"
+        lines += [
+            f"set ::nic(versal_dcmac) {{{Path(dcmac).resolve()}}}",
+            f"set ::nic(slash_wrapper) {{{wrapper}}}",
+            f"set ::nic(dynamic) {1 if os.environ.get('NIC_DYNAMIC', '1') == '1' else 0}",
+        ]
+    lines += [f"source {{{root / 'tcl' / 'nictest_service_layer.tcl'}}}", ""]
+    block = "\n".join(lines)
+    block += qnoc_block(root, KINDS[kind])
     marker = "assign_bd_address -offset 0xE0000000"
     if text.count(marker) != 1:
         raise SystemExit("address assignment marker not found in the service-layer template")
