@@ -63,28 +63,32 @@ RESP = {0: "OKAY", 1: "EXOKAY", 2: "SLVERR", 3: "DECERR"}
 
 
 class Probe:
-    def __init__(self, bar):
+    """a host_probe instance at PF2 BAR2 + base (0x0700_0000: the one in front
+    of the slave bridge; the slvmem RM adds host_probe_vm at 0x0701_0000)"""
+
+    def __init__(self, bar, base=PROBE):
         self.bar = bar
+        self.base = base
 
     def rd(self, name):
-        return self.bar.rd(PROBE + R[name])
+        return self.bar.rd(self.base + R[name])
 
     def rd64(self, name):
-        lo = self.bar.rd(PROBE + R[name])
-        hi = self.bar.rd(PROBE + R[name] + 4)
+        lo = self.bar.rd(self.base + R[name])
+        hi = self.bar.rd(self.base + R[name] + 4)
         return (hi << 32) | lo
 
     def wr(self, name, val):
-        self.bar.wr(PROBE + R[name], val)
+        self.bar.wr(self.base + R[name], val)
 
     def wr64(self, name, val):
-        self.bar.wr(PROBE + R[name], val & 0xFFFFFFFF)
-        self.bar.wr(PROBE + R[name] + 4, val >> 32)
+        self.bar.wr(self.base + R[name], val & 0xFFFFFFFF)
+        self.bar.wr(self.base + R[name] + 4, val >> 32)
 
     def check_id(self):
         ident = self.rd("ID")
         if ident != ID:
-            sys.exit(f"no host_probe at BAR2 0x{PROBE:08x} (ID 0x{ident:08x}); is build 14 loaded?")
+            sys.exit(f"no host_probe at BAR2 0x{self.base:08x} (ID 0x{ident:08x}); is build 14 loaded?")
 
     def status(self):
         st = self.rd("STATUS")
@@ -259,7 +263,7 @@ class BdfBar:
             bdf = "0000:" + bdf
         bdf = bdf.split(".")[0]
         self.path = f"/sys/bus/pci/devices/{bdf}.1/resource2"
-        self.cfg_path = f"/sys/bus/pci/devices/{bdf}.1/resource0"
+        self.pf0_config = f"/sys/bus/pci/devices/{bdf}.0/config"
         self.mv = None
         try:
             size = os.stat(self.path).st_size
@@ -281,18 +285,16 @@ class BdfBar:
         self.mv[(axi - self.BASE) >> 2] = val & 0xFFFFFFFF
 
     def check(self):
-        """read-only test of the path: offset 0 through this window and through
-        the QDMA config BAR (PF1 BAR0) should be the same CSR"""
+        """read-only test of the path: CPM5_DMA1_CSR starts with a memory-mapped
+        copy of PF0's PCIe config header, so offset 0 through this window must
+        read PF0's vendor/device ID (on hardware: 0x50b410ee). PF1 BAR0 is the
+        QDMA register block (offset 0 reads 0x1fd3xxxx there), not this one."""
         via_bar2 = self.rd(self.BASE)
-        fd = os.open(self.cfg_path, os.O_RDONLY | os.O_SYNC)
-        try:
-            cfg = memoryview(mmap.mmap(fd, 4096, mmap.MAP_SHARED, mmap.PROT_READ)).cast("I")
-            via_bar0 = int(cfg[0])
-        finally:
-            os.close(fd)
-        print(f"BDF window: CSR 0x0 reads 0x{via_bar2:08x} through PF1 BAR2, 0x{via_bar0:08x} through PF1 BAR0;"
+        with open(self.pf0_config, "rb") as f:
+            pf0_id = int.from_bytes(f.read(4), "little")
+        print(f"BDF window: CSR 0x0 reads 0x{via_bar2:08x} through PF1 BAR2, PF0 vendor/device 0x{pf0_id:08x};"
               f" BRG_SLV_TZ_ERR_ADDR 0x{self.rd(BRG_ERR):08x}")
-        return via_bar2 == via_bar0 and via_bar2 != 0xFFFFFFFF
+        return via_bar2 == pf0_id and via_bar2 != 0xFFFFFFFF
 
     def entry(self, i):
         return [self.rd(BDF0 + 0x20 * i + 4 * k) for k in range(6)]
@@ -333,9 +335,9 @@ def bdf_path(args):
     if b.check():
         print("BDF table from the host (PF1 BAR2)")
         return b
-    if args.bdf == "host" and ask("The two reads differ: type 'yes' to write the BDF table through PF1 BAR2 anyway: "):
+    if args.bdf == "host" and ask("PF1 BAR2 does not read PF0's ID: type 'yes' to write the BDF table through it anyway: "):
         return b
-    print("BDF table over JTAG: the PF1 BAR2 window does not read the CSR")
+    print("BDF table over JTAG: the PF1 BAR2 window does not read CPM5_DMA1_CSR")
     return None
 
 
@@ -346,7 +348,7 @@ def cmd_bdf(p, args):
         sys.exit(b.why)
     ok = b.check()
     if not ok:
-        print("warning: PF1 BAR2 and PF1 BAR0 read different values at CSR 0x0")
+        print("warning: CSR 0x0 through PF1 BAR2 is not PF0's vendor/device ID")
     n = args.entries
     for i in range(n):
         print(f"  entry {i:2}: " + " ".join(f"0x{v:08x}" for v in b.entry(i)))
@@ -682,7 +684,7 @@ def main():
     s.add_argument("--bdf", choices=["auto", "host", "jtag"], default="auto",
                    help="NIC static: how the BDF table is written. host = through PF1 BAR2 (static"
                         " built with NIC_BDF_BAR=1); jtag = print xsdb scripts; auto (default) = host"
-                        " when PF1 BAR2 reads the same CSR as PF1 BAR0, else jtag")
+                        " when CSR 0x0 through PF1 BAR2 reads PF0's vendor/device ID, else jtag")
     s = sub.add_parser("bdf", help="NIC static: show BDF entries through PF1 BAR2 (read only), --clear to zero them")
     s.add_argument("--entries", type=int, default=4, help="entries 0..N-1 (default 4, at most 64)")
     s.add_argument("--clear", action="store_true", help="write zeros to the entries (asks first)")

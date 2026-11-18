@@ -21,7 +21,7 @@
 proc nictest_service_layer {} {
     global nic
 
-    foreach f {host_probe.sv host_probe_bd.v qnoc_lb.sv qnoc_lb_bd.v} {
+    foreach f {host_probe.sv host_probe_bd.v qnoc_lb.sv qnoc_lb_bd.v rst_pipe_bd.v} {
         lappend files [file join $nic(root) rtl $f]
     }
     add_files -fileset sources_1 -norecurse $files
@@ -29,6 +29,27 @@ proc nictest_service_layer {} {
         set_property file_type SystemVerilog $f
     }
     update_compile_order -fileset sources_1
+
+    # The template's register slices and passthroughs take aresetn straight
+    # from the BUFG_FABRIC reset (ilreduced_logic_0/Res). On the BDF static that
+    # net crossed SLRs and missed by up to 124 ps, so they get a local
+    # pipeline instead (rtl/rst_pipe_bd.v).
+    set rnet [get_bd_nets -of_objects [get_bd_pins ilreduced_logic_0/Res]]
+    set moved {}
+    foreach p [get_bd_pins -of_objects $rnet] {
+        set c [get_property NAME [get_bd_cells -of_objects $p]]
+        if {[get_property NAME $p] eq "aresetn" &&
+            ([string match axi_register_slice_* $c] || [string match axi4_full_passthrough_* $c])} {
+            lappend moved $p
+        }
+    }
+    if {[llength $moved] == 0} { error "nictest: no register slice or passthrough on [get_property NAME $rnet]" }
+    puts "nictest: [llength $moved] aresetn pins moved to sl_rst_pipe"
+    disconnect_bd_net $rnet $moved
+    create_bd_cell -type module -reference rst_pipe_bd sl_rst_pipe
+    connect_bd_net [get_bd_ports service_clk] [get_bd_pins sl_rst_pipe/clk]
+    connect_bd_net [get_bd_pins ilreduced_logic_0/Res] [get_bd_pins sl_rst_pipe/rstn_in]
+    connect_bd_net [get_bd_pins sl_rst_pipe/rstn_out] {*}$moved
 
     set xbar [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 sl_xbar]
     set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_MI {2} CONFIG.NUM_CLKS {1}] $xbar

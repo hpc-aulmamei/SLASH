@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Generate service_layer.tcl for the nictest RM of the NIC static shell.
+"""Generate service_layer.tcl for a service-layer RM of the NIC static shell
+(nictest, or slvmem: nictest plus the sl_vmem address translator).
 
 The SLASH (dev) service-layer template provides the reconfigurable module's
 NoC boundary (S_AXILITE_INI, the DCMAC INIS ports, SL2NOC, the virtual NoC
 and QDMA bridge pass-throughs). It is rendered with no Ethernet ports, so it
 creates neither DCMACs nor the control SmartConnect. The RM's contents,
-tcl/nictest_service_layer.tcl, are inserted before the address assignment:
+tcl/<kind>_service_layer.tcl, are inserted before the address assignment:
 host_probe (card -> host through the CPM5 slave bridge) and qnoc_lb, a QDMA
 streaming sink, loopback and generator behind qdma_noc_rm.
 
@@ -14,14 +15,14 @@ stream ports (S_QNOC_*, M_QNOC_*, dma_clk, dma_resetn); this script adds the
 NoC endpoints for them, built from the stream table in shell/patch_shell.py
 so the two sides cannot drift apart.
 
-usage: gen_service_layer.py <slash checkout> <out.tcl> <nic dir>
+usage: gen_service_layer.py <slash checkout> <out.tcl> <nic dir> [kind]   (default nictest)
 """
 import sys
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-KIND = "nictest"
+KINDS = ("nictest", "slvmem")
 # shell/rtl files the RM needs for the QDMA streams
 QNOC_RTL = ["qnoc_lib.v", "qdma_noc_rm.v"]
 
@@ -53,10 +54,12 @@ def qnoc_block(root):
 
 
 def main():
-    if len(sys.argv) != 4:
+    if len(sys.argv) not in (4, 5):
         raise SystemExit(__doc__)
     slash, out, root = (Path(a).resolve() for a in sys.argv[1:4])
-    kind = KIND
+    kind = sys.argv[4] if len(sys.argv) == 5 else "nictest"
+    if kind not in KINDS:
+        raise SystemExit(f"unknown RM kind {kind}; one of {', '.join(KINDS)}")
 
     sys.path.insert(0, str(slash / "linker"))
     from slashkit.emit.hw.service_region.service_layer_ctx import (
@@ -82,7 +85,7 @@ def main():
     block = "\n".join([
         f"# ===== RM contents: {kind} (nic/) =====",
         f"set ::nic(root) {{{root}}}",
-        f"source {{{root / 'tcl' / 'nictest_service_layer.tcl'}}}",
+        f"source {{{root / 'tcl' / (kind + '_service_layer.tcl')}}}",
         "",
     ])
     block += qnoc_block(root)
