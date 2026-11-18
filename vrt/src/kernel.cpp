@@ -47,6 +47,9 @@ MemoryConfig parseMemoryTarget(const std::string& target) {
     if (target.rfind("MEM", 0) == 0) {
         return {MemoryRangeType::HBM_VNOC, std::nullopt};
     }
+    if (target == "HOST") {
+        return {MemoryRangeType::HOST, std::nullopt};
+    }
     throw std::runtime_error("Unknown memory target '" + target + "'");
 }
 
@@ -361,6 +364,13 @@ void Kernel::validateBufferMemoryType(const FunctionalArg& argMeta, MemoryRangeT
         return;
     }
     const std::string& target = it->second;
+
+    if ((target == "HOST") != (memType == MemoryRangeType::HOST)) {
+        throw std::runtime_error(
+            "Memory type mismatch for kernel '" + name + "' argument '" + argMeta.name +
+            "' (port " + argMeta.port + "): target is " + target +
+            (memType == MemoryRangeType::HOST ? " but buffer is HOST" : " but buffer is not HOST"));
+    }
 
     if (target.rfind("DDR", 0) == 0) {
         if (memType != MemoryRangeType::DDR) {

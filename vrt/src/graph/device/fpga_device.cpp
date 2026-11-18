@@ -280,6 +280,8 @@ std::string memoryRegionTag(const ::vrt::MemoryConfig& region) {
             return "HBM";
         case ::vrt::MemoryRangeType::DDR:
             return "DDR";
+        case ::vrt::MemoryRangeType::HOST:
+            return "HOST";
     }
     return "UNKNOWN";
 }

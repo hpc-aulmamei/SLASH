@@ -30,6 +30,8 @@
 #include <cstring>
 #include <memory>
 
+#include <vrtd/host_buffer.hpp>
+
 #include <vrt/allocator/allocator.hpp>
 #include <vrt/device.hpp>
 #include <vrt/qdma/qdma_intf.hpp>
@@ -179,6 +181,7 @@ class Buffer {
     bool hasPort = false;            ///< Whether an explicit HBM port was specified
     Device device;                   ///< The device associated with the buffer
     std::unique_ptr<Block> block;    ///< Allocator block (hardware only)
+    std::unique_ptr<vrtd::HostBuffer> host;  ///< Host buffer (HOST type, hardware only)
     UntypedBuffer* view;             ///< Cached view into the allocator block
     bool ownsLocalBuffer;            ///< Whether localBuffer should be deleted
     std::size_t index;               // Member variable to store the index of the buffer
@@ -243,7 +246,14 @@ Buffer<T>::Buffer(Device device, size_t size, MemoryConfig config)
 template <typename T>
 void Buffer<T>::initAllocate() {
     Platform platform = this->device.getPlatform();
-    if (platform == Platform::HARDWARE) {
+    if (platform == Platform::HARDWARE && type == MemoryRangeType::HOST) {
+        host = std::make_unique<vrtd::HostBuffer>(
+            this->device.getHandle()->getVrtdDevice().openHostBuffer(size * sizeof(T)));
+        startAddress = host->cardAddr();
+        localBuffer = static_cast<T*>(host->data());
+        utils::Logger::log(utils::LogLevel::DEBUG, __PRETTY_FUNCTION__,
+                           "Opened host buffer size={} card_addr={x}", host->size(), startAddress);
+    } else if (platform == Platform::HARDWARE) {
         BufferAllocType allocType = resolveAllocType(type, hasPort);
         HBMRegion region = resolveRegion(type, hasPort, hbmPort);
         block = this->device.getHandle()->getAllocator()->allocate(this->device.getHandle()->getVrtdDevice(), allocType,
@@ -276,6 +286,7 @@ void Buffer<T>::initAllocate() {
 
 template <typename T>
 Buffer<T>::~Buffer() {
+    host.reset();   /* the card can no longer reach it */
     if (block) {
         device.getHandle()->getAllocator()->deallocate(std::move(block));
     }
@@ -338,7 +349,14 @@ std::string Buffer<T>::getName() {
 template <typename T>
 void Buffer<T>::sync(SyncType syncType) {
     Platform platform = device.getPlatform();
-    if (platform == Platform::HARDWARE) {
+    if (platform == Platform::HARDWARE && host) {
+        /* Shared, cache-coherent memory: only order the CPU's accesses
+         * against the kernel start / completion register accesses. */
+        if (syncType != SyncType::HOST_TO_DEVICE && syncType != SyncType::DEVICE_TO_HOST) {
+            throw std::invalid_argument("Invalid sync type");
+        }
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+    } else if (platform == Platform::HARDWARE) {
         if (view == nullptr) {
             throw std::runtime_error("Buffer view unavailable for hardware sync");
         }
@@ -423,6 +441,7 @@ Buffer<T>::Buffer(Buffer&& other) noexcept
       hasPort(other.hasPort),
       device(other.device),
       block(std::move(other.block)),
+      host(std::move(other.host)),
       view(other.view),
       ownsLocalBuffer(other.ownsLocalBuffer),
       index(other.index) {
@@ -448,6 +467,7 @@ Buffer<T>& Buffer<T>::operator=(Buffer&& other) noexcept {
         if (block) {
             device.getHandle()->getAllocator()->deallocate(std::move(block));
         }
+        host = std::move(other.host);
 
         device = other.device;
         size = other.size;

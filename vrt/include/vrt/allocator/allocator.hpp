@@ -53,6 +53,13 @@ enum class MemoryRangeType {
     HBM,
     DDR,
     HBM_VNOC,
+    /**
+     * Host memory, reached by kernel ports connected to HOST (linker:
+     * sp=<kernel>.<port>:HOST) through the service-layer translator.  The
+     * buffer's address is its card address; the CPU and the kernel share the
+     * same memory, so sync() moves nothing.
+     */
+    HOST,
 };
 
 enum class HBMRegion : uint64_t {
