@@ -611,3 +611,80 @@ ssize_t slash_qdma_qpair_transfer(int qpair_fd, int buf_fd, uint64_t buf_offset,
 
     return slash_qdma_qpair_transfer_batch(qpair_fd, &xfer, 1);
 }
+
+/* ---- Slave-bridge windows ------------------------------------------------ */
+
+static int slv_check(struct slash_qdma *qdma) {
+    if (qdma == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (qdma->transport != SLASH_TRANSPORT_IOCTL) {
+        errno = ENOTSUP;
+        return -1;
+    }
+    return 0;
+}
+
+int slash_qdma_slv_info(struct slash_qdma *qdma, struct slash_qdma_slv_info *info) {
+    if (slv_check(qdma) != 0) {
+        return -1;
+    }
+    if (info == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    memset(info, 0, sizeof(*info));
+    info->size = sizeof(*info);
+    return ioctl(qdma->fd, SLASH_QDMA_IOCTL_SLV_INFO, info) < 0 ? -1 : 0;
+}
+
+int slash_qdma_slv_buffer_create(struct slash_qdma *qdma, uint64_t length) {
+    struct slash_qdma_buf_create req;
+
+    if (slv_check(qdma) != 0) {
+        return -1;
+    }
+    if (length == 0 || (length % SLASH_QDMA_SLV_WINDOW_SIZE) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    memset(&req, 0, sizeof(req));
+    req.size = sizeof(req);
+    req.flags = O_CLOEXEC;
+    req.length = length;
+    return ioctl(qdma->fd, SLASH_QDMA_IOCTL_SLV_BUF_CREATE, &req);
+}
+
+int slash_qdma_slv_map(struct slash_qdma *qdma, uint32_t window, int buf_fd,
+                       uint64_t offset, uint64_t *dma_addr) {
+    struct slash_qdma_slv_map req;
+
+    if (slv_check(qdma) != 0) {
+        return -1;
+    }
+    memset(&req, 0, sizeof(req));
+    req.size = sizeof(req);
+    req.window = window;
+    req.buf_fd = buf_fd;
+    req.buf_offset = offset;
+    if (ioctl(qdma->fd, SLASH_QDMA_IOCTL_SLV_MAP, &req) < 0) {
+        return -1;
+    }
+    if (dma_addr != NULL) {
+        *dma_addr = req.dma_addr;
+    }
+    return 0;
+}
+
+int slash_qdma_slv_unmap(struct slash_qdma *qdma, uint32_t window) {
+    struct slash_qdma_slv_unmap req;
+
+    if (slv_check(qdma) != 0) {
+        return -1;
+    }
+    memset(&req, 0, sizeof(req));
+    req.size = sizeof(req);
+    req.window = window;
+    return ioctl(qdma->fd, SLASH_QDMA_IOCTL_SLV_UNMAP, &req) < 0 ? -1 : 0;
+}

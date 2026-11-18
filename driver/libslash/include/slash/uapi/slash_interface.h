@@ -367,6 +367,66 @@ struct slash_qdma_ext_drain {
 };
 #define SLASH_QDMA_EXT_DRAIN_MIN_SIZE \
     SLASH_OFFSETOFEND(struct slash_qdma_ext_drain, hw_cidx)
+
+/*
+ * Slave-bridge windows (card -> host).
+ *
+ * The CPM5 slave bridge maps AXI 0xE800_0000 + w * 2 MiB (window w) to host
+ * memory through BDF table entry w.  A buffer created with
+ * SLASH_QDMA_IOCTL_SLV_BUF_CREATE is made of 2 MiB chunks that are each
+ * contiguous and 2 MiB aligned in DMA address space; SLASH_QDMA_IOCTL_SLV_MAP
+ * points one window at one chunk.  Only windows 0..SLASH_QDMA_SLV_WINDOWS-1
+ * are managed here; the last BDF entry (63) belongs to the on-card R5.
+ *
+ * The control fd that maps a window owns it: the window is cleared by
+ * SLASH_QDMA_IOCTL_SLV_UNMAP, when that fd is closed, or when the device goes
+ * away.  A mapped window holds a reference on its buffer, so the pages are
+ * freed only after their BDF entry is cleared.  The caller must keep card
+ * traffic away from a window while it is mapped or unmapped (PG347: quiesce
+ * the slave bridge before programming the BDF table).
+ *
+ * The windows need the PF1 BAR2 window onto CPM5_DMA1_CSR (0xFCEA_0000) that
+ * NIC-derived statics provide; without it SLV_INFO reports @present = 0 and the
+ * other SLV ioctls fail with -EOPNOTSUPP.
+ */
+#define SLASH_QDMA_SLV_WINDOWS      63u
+#define SLASH_QDMA_SLV_WINDOW_SIZE  0x200000ull      /* 2 MiB */
+#define SLASH_QDMA_SLV_AXI_BASE     0xE8000000ull    /* AXI address of window 0 */
+
+/** SLASH_QDMA_IOCTL_SLV_INFO: slave-bridge window state. */
+struct slash_qdma_slv_info {
+    __u32 size;          /**< Struct size for ABI versioning. */
+    __u32 present;       /**< [out] 1 if the BDF table is reachable. */
+    __u32 n_windows;     /**< [out] SLASH_QDMA_SLV_WINDOWS. */
+    __u32 iommu;         /**< [out] 1 if an IOMMU translates DMA addresses. */
+    __u64 window_size;   /**< [out] SLASH_QDMA_SLV_WINDOW_SIZE. */
+    __u64 axi_base;      /**< [out] SLASH_QDMA_SLV_AXI_BASE. */
+    __u64 used_mask;     /**< [out] Bit w set: window w is mapped. */
+    __u32 brg_err;       /**< [out] BRG_SLV_TZ_ERR_ADDR (CPM5_DMA1_CSR 0x0E88). */
+    __u32 pad0;
+};
+#define SLASH_QDMA_SLV_INFO_MIN_SIZE \
+    SLASH_OFFSETOFEND(struct slash_qdma_slv_info, brg_err)
+
+/** SLASH_QDMA_IOCTL_SLV_MAP: point window @window at a 2 MiB buffer chunk. */
+struct slash_qdma_slv_map {
+    __u32 size;          /**< Struct size for ABI versioning. */
+    __u32 window;        /**< [in]  0..SLASH_QDMA_SLV_WINDOWS-1, unmapped. */
+    __s32 buf_fd;        /**< [in]  Buffer fd from SLASH_QDMA_IOCTL_SLV_BUF_CREATE. */
+    __u32 pad0;
+    __u64 buf_offset;    /**< [in]  Chunk offset in the buffer (2 MiB multiple). */
+    __u64 dma_addr;      /**< [out] Host DMA address written to the BDF entry. */
+};
+#define SLASH_QDMA_SLV_MAP_MIN_SIZE \
+    SLASH_OFFSETOFEND(struct slash_qdma_slv_map, buf_offset)
+
+/** SLASH_QDMA_IOCTL_SLV_UNMAP: clear window @window (mapped by this fd). */
+struct slash_qdma_slv_unmap {
+    __u32 size;          /**< Struct size for ABI versioning. */
+    __u32 window;        /**< [in]  0..SLASH_QDMA_SLV_WINDOWS-1. */
+};
+#define SLASH_QDMA_SLV_UNMAP_MIN_SIZE \
+    SLASH_OFFSETOFEND(struct slash_qdma_slv_unmap, window)
 #define SLASH_QDMA_QPAIR_ADD_MIN_SIZE \
     SLASH_OFFSETOFEND(struct slash_qdma_qpair_add, cmpt_ring_sz)
 
@@ -585,6 +645,18 @@ struct slash_qdma_transfer {
 #define SLASH_QDMA_IOCTL_EXT_FILL      _IOWR('v', 0x58, struct slash_qdma_ext_fill)
 #define SLASH_QDMA_IOCTL_EXT_DRAIN     _IOWR('v', 0x59, struct slash_qdma_ext_drain)
 #define SLASH_QDMA_IOCTL_EXT_FILL_MM   _IOWR('v', 0x5A, struct slash_qdma_ext_fill_mm)
+
+/** Slave-bridge windows, on the control device. */
+#define SLASH_QDMA_IOCTL_SLV_INFO      _IOWR('v', 0x5B, struct slash_qdma_slv_info)
+/**
+ * As SLASH_QDMA_IOCTL_BUF_CREATE (same struct, granule PAGE_SIZE for
+ * transfers), but @length must be a multiple of SLASH_QDMA_SLV_WINDOW_SIZE and
+ * every 2 MiB chunk is contiguous and 2 MiB aligned in DMA address space, so
+ * it can back a slave-bridge window.
+ */
+#define SLASH_QDMA_IOCTL_SLV_BUF_CREATE _IOWR('v', 0x5C, struct slash_qdma_buf_create)
+#define SLASH_QDMA_IOCTL_SLV_MAP       _IOWR('v', 0x5D, struct slash_qdma_slv_map)
+#define SLASH_QDMA_IOCTL_SLV_UNMAP     _IOWR('v', 0x5E, struct slash_qdma_slv_unmap)
 
 /**
  * io_uring command opcode (SQE cmd_op) for an asynchronous buffer transfer

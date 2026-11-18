@@ -54,10 +54,13 @@
 #include <linux/bitops.h>
 #include <linux/completion.h>
 #include <linux/delay.h>
+#include <linux/dma-map-ops.h>
 #include <linux/dma-mapping.h>
 #include <linux/err.h>
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/io.h>
+#include <linux/iommu.h>
 #include <linux/kernel.h>
 #include <linux/kref.h>
 #include <linux/ktime.h>
@@ -66,6 +69,7 @@
 #include <linux/mutex.h>
 #include <linux/pci.h>
 #include <linux/mm.h>
+#include <linux/sizes.h>
 #include <linux/slab.h>
 #include <linux/stddef.h>
 #include <linux/uaccess.h>
@@ -247,6 +251,21 @@ struct slash_qdma_buf;
 static void slash_qdma_buf_put(struct slash_qdma_buf *buf);
 
 /**
+ * struct slash_qdma_slv_win - One mapped slave-bridge window (BDF entry).
+ * @buf:    Buffer whose chunk the window points at (one reference held), or
+ *          NULL if the window is free.
+ * @owner:  Control file that mapped the window; closing it clears the window.
+ * @offset: Chunk offset in @buf.
+ * @dma:    Host DMA address written to the BDF entry.
+ */
+struct slash_qdma_slv_win {
+    struct slash_qdma_buf *buf;
+    struct file *owner;
+    u64 offset;
+    dma_addr_t dma;
+};
+
+/**
  * struct slash_qdma_dev - Per-PCI-device QDMA state.
  * @pdev:               The PCI device (PF1) this instance is bound to.
  * @qdma_handle:        Opaque handle returned by qdma_device_open();
@@ -297,6 +316,15 @@ struct slash_qdma_dev {
     bool have_board_slot;
     bool is_cdev_registered;
     bool hw_shutdown;
+
+    /*
+     * Slave-bridge windows (SLASH_QDMA_IOCTL_SLV_*), protected by @lock.
+     * @slv_csr maps PF1 BAR2 onto CPM5_DMA1_CSR, NULL when the static has no
+     * such window; @slv_iommu is true when an IOMMU translates for PF0/PF1.
+     */
+    void __iomem *slv_csr;
+    bool slv_iommu;
+    struct slash_qdma_slv_win slv_win[SLASH_QDMA_SLV_WINDOWS];
 };
 
 /**
@@ -629,6 +657,15 @@ struct slash_qdma_buf {
     struct page **pages;
     struct qdma_sw_sg *sgl;
     bool dma_mapped;
+
+    /*
+     * Slave-bridge buffers (SLASH_QDMA_IOCTL_SLV_BUF_CREATE): @pages come in
+     * @chunks_nr physically contiguous runs of SLASH_QDMA_SLV_WINDOW_SIZE, each
+     * DMA-mapped once as a whole (@chunk_dma[c], 2 MiB aligned); the per-page
+     * @sgl entries point into those mappings.  @chunks_nr is 0 otherwise.
+     */
+    unsigned int chunks_nr;
+    dma_addr_t *chunk_dma;
 };
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -667,7 +704,12 @@ static int slash_qdma_ioctl_qpair_op_apply(struct slash_qdma_dev *qdma_dev,
 static int slash_qdma_ioctl_qpair_get_fd_w(struct slash_qdma_dev *qdma_dev,
                                            void __user *uarg);
 static int slash_qdma_ioctl_buf_create_w(struct slash_qdma_dev *qdma_dev,
-                                          void __user *uarg);
+                                          void __user *uarg, bool slv);
+static int slash_qdma_slv_init(struct slash_qdma_dev *qdma_dev);
+static void slash_qdma_slv_release(struct slash_qdma_dev *qdma_dev, struct file *owner);
+static void slash_qdma_slv_fini(struct slash_qdma_dev *qdma_dev);
+static long slash_qdma_ioctl_slv(struct slash_qdma_dev *qdma_dev, struct file *file,
+                                 unsigned int op, void __user *uarg);
 static void slash_qdma_buf_release(struct kref *ref);
 static long slash_qdma_ioctl_ext(struct slash_qdma_dev *qdma_dev,
                                  unsigned int op, void __user *uarg);
@@ -1176,6 +1218,9 @@ static int slash_qdma_probe(struct pci_dev *pdev, const struct pci_device_id *id
         goto err_free;
     }
 
+    /* Optional: slave-bridge windows (absent on statics without the window). */
+    slash_qdma_slv_init(device);
+
     snprintf(name, sizeof(name), SLASH_QDMA_CTLDEV_NAME_FMT, pci_name(pdev));
     device->device =
         slash_chrdev_add(&device->cdev, &slash_qdma_fops,
@@ -1350,6 +1395,13 @@ static void slash_qdma_destroy_qdma_device(struct slash_qdma_dev *device)
         xa_destroy(&device->qpairs);
     }
 
+    mutex_unlock(&device->lock);
+
+    /* Clear every slave-bridge window and drop its buffer reference. */
+    slash_qdma_slv_fini(device);
+
+    mutex_lock(&device->lock);
+
     /* Close the libqdma device handle, releasing HW resources. */
     if (device->have_qdma_handle) {
         SLASH_QDMA_OP_DEV_LOG(&device->pdev->dev,
@@ -1506,7 +1558,17 @@ static long slash_qdma_fop_ioctl(struct file *file, unsigned int op, unsigned lo
         break;
 
     case SLASH_QDMA_IOCTL_BUF_CREATE:
-        ret = slash_qdma_ioctl_buf_create_w(qdma_dev, uarg);
+        ret = slash_qdma_ioctl_buf_create_w(qdma_dev, uarg, false);
+        break;
+
+    case SLASH_QDMA_IOCTL_SLV_BUF_CREATE:
+        ret = slash_qdma_ioctl_buf_create_w(qdma_dev, uarg, true);
+        break;
+
+    case SLASH_QDMA_IOCTL_SLV_INFO:
+    case SLASH_QDMA_IOCTL_SLV_MAP:
+    case SLASH_QDMA_IOCTL_SLV_UNMAP:
+        ret = slash_qdma_ioctl_slv(qdma_dev, file, op, uarg);
         break;
 
     case SLASH_QDMA_IOCTL_EXT_INFO:
@@ -1568,6 +1630,9 @@ static int slash_qdma_fop_release(struct inode *inode, struct file *file)
 
     if (!qdma_dev)
         return 0;
+
+    /* Windows mapped through this fd die with it (vrtd exit or crash). */
+    slash_qdma_slv_release(qdma_dev, file);
 
     kref_put(&qdma_dev->ref, slash_qdma_dev_release);
 
@@ -2331,6 +2396,20 @@ static void slash_qdma_buf_dma_unmap(struct slash_qdma_buf *buf)
     if (!buf->sgl || !buf->dma_mapped)
         return;
 
+    if (buf->chunks_nr) {
+        for (i = 0; i < buf->chunks_nr; i++) {
+            if (buf->chunk_dma[i]) {
+                dma_unmap_page(dev, buf->chunk_dma[i], SLASH_QDMA_SLV_WINDOW_SIZE,
+                               DMA_BIDIRECTIONAL);
+                buf->chunk_dma[i] = 0;
+            }
+        }
+        for (i = 0; i < buf->pages_nr; i++)
+            buf->sgl[i].dma_addr = 0UL;
+        buf->dma_mapped = false;
+        return;
+    }
+
     for (i = 0; i < buf->pages_nr; i++) {
         struct qdma_sw_sg *sg = &buf->sgl[i];
 
@@ -2357,6 +2436,38 @@ static int slash_qdma_buf_dma_map(struct slash_qdma_buf *buf)
 {
     struct device *dev = &buf->qdma_dev->pdev->dev;
     unsigned int i;
+
+    if (buf->chunks_nr) {
+        const unsigned int per_chunk = SLASH_QDMA_SLV_WINDOW_SIZE / PAGE_SIZE;
+
+        for (i = 0; i < buf->chunks_nr; i++) {
+            dma_addr_t d = dma_map_page(dev, buf->pages[i * per_chunk], 0,
+                                        SLASH_QDMA_SLV_WINDOW_SIZE,
+                                        DMA_BIDIRECTIONAL);
+            unsigned int j;
+
+            if (dma_mapping_error(dev, d)) {
+                pr_err("slash: qdma: slave-bridge chunk DMA map failed at %u/%u\n",
+                       i, buf->chunks_nr);
+                buf->dma_mapped = true;
+                slash_qdma_buf_dma_unmap(buf);
+                return -ENOMEM;
+            }
+            buf->chunk_dma[i] = d;
+            /* A window maps 2 MiB at a 2 MiB-aligned host address. */
+            if (d & (SLASH_QDMA_SLV_WINDOW_SIZE - 1)) {
+                pr_err("slash: qdma: slave-bridge chunk %u DMA address 0x%llx is not 2 MiB aligned\n",
+                       i, (unsigned long long)d);
+                buf->dma_mapped = true;
+                slash_qdma_buf_dma_unmap(buf);
+                return -ENOMEM;
+            }
+            for (j = 0; j < per_chunk; j++)
+                buf->sgl[i * per_chunk + j].dma_addr = d + (dma_addr_t)j * PAGE_SIZE;
+        }
+        buf->dma_mapped = true;
+        return 0;
+    }
 
     for (i = 0; i < buf->pages_nr; i++) {
         struct qdma_sw_sg *sg = &buf->sgl[i];
@@ -2401,11 +2512,15 @@ static void slash_qdma_buf_free_pages(struct slash_qdma_buf *buf)
     kvfree(buf->sgl);
     buf->sgl = NULL;
     buf->pages_nr = 0;
+    kvfree(buf->chunk_dma);
+    buf->chunk_dma = NULL;
+    buf->chunks_nr = 0;
 }
 
 /**
  * slash_qdma_buf_alloc() - Allocate pages, build the SGL, and DMA-map.
  * @buf: Buffer with @length and @qdma_dev set; @granule defaults to PAGE_SIZE.
+ *      @chunks_nr non-zero asks for a slave-bridge buffer (2 MiB chunks).
  *
  * Allocates @length / PAGE_SIZE individual base pages (not contiguous), builds
  * a one-page-per-entry SGL, and DMA-maps every page.  All of this is the
@@ -2437,8 +2552,41 @@ static int slash_qdma_buf_alloc(struct slash_qdma_buf *buf)
         return -ENOMEM;
     }
 
+    if (buf->chunks_nr) {
+        /*
+         * Slave-bridge buffer: one order-N allocation per 2 MiB chunk (the
+         * buddy allocator returns it naturally aligned), split into ordinary
+         * pages so mmap and put_page() treat them like any other buffer page.
+         */
+        const unsigned int order = get_order(SLASH_QDMA_SLV_WINDOW_SIZE);
+        const unsigned int per_chunk = 1u << order;
+        unsigned int c, j;
+
+        if ((u64)buf->chunks_nr * per_chunk != entries)
+            goto err_inval;
+        buf->chunk_dma = kvcalloc(buf->chunks_nr, sizeof(*buf->chunk_dma), GFP_KERNEL);
+        if (!buf->chunk_dma) {
+            rv = -ENOMEM;
+            goto err_free;
+        }
+        for (c = 0; c < buf->chunks_nr; c++) {
+            struct page *pg = alloc_pages(GFP_KERNEL | __GFP_ZERO | __GFP_NOWARN |
+                                          __GFP_RETRY_MAYFAIL, order);
+
+            if (!pg) {
+                pr_err("slash: qdma: no contiguous 2 MiB for slave-bridge chunk %u/%u\n",
+                       c, buf->chunks_nr);
+                rv = -ENOMEM;
+                goto err_free;
+            }
+            split_page(pg, order);
+            for (j = 0; j < per_chunk; j++)
+                buf->pages[c * per_chunk + j] = nth_page(pg, j);
+        }
+    }
+
     for (i = 0; i < entries; i++) {
-        struct page *pg = alloc_page(GFP_KERNEL | __GFP_ZERO);
+        struct page *pg = buf->chunks_nr ? buf->pages[i] : alloc_page(GFP_KERNEL | __GFP_ZERO);
         struct qdma_sw_sg *sg = &buf->sgl[i];
 
         if (!pg) {
@@ -2460,6 +2608,8 @@ static int slash_qdma_buf_alloc(struct slash_qdma_buf *buf)
 
     return 0;
 
+err_inval:
+    rv = -EINVAL;
 err_free:
     slash_qdma_buf_free_pages(buf);
     return rv;
@@ -2692,10 +2842,14 @@ static struct slash_qdma_buf *slash_qdma_buf_from_file(struct file *file)
  * the BAR/queue-pair fd ioctls).  Closing the fd (and unmapping any VMA)
  * releases the buffer.
  *
+ * With @slv (SLASH_QDMA_IOCTL_SLV_BUF_CREATE) @length must be a multiple of
+ * SLASH_QDMA_SLV_WINDOW_SIZE and each 2 MiB chunk is contiguous and 2 MiB
+ * aligned in DMA address space, so it can back a slave-bridge window.
+ *
  * Return: The new buffer fd (>= 0) on success, negative errno on failure.
  */
 static int slash_qdma_ioctl_buf_create_w(struct slash_qdma_dev *qdma_dev,
-                                         void __user *uarg)
+                                         void __user *uarg, bool slv)
 {
     struct slash_qdma_buf_create req;
     struct slash_qdma_buf *buf;
@@ -2723,10 +2877,18 @@ static int slash_qdma_ioctl_buf_create_w(struct slash_qdma_dev *qdma_dev,
 
     if (req.length == 0 || (req.length % PAGE_SIZE) != 0)
         return -EINVAL;
+    if (slv && ((req.length % SLASH_QDMA_SLV_WINDOW_SIZE) != 0 ||
+                req.length / SLASH_QDMA_SLV_WINDOW_SIZE > UINT_MAX))
+        return -EINVAL;
+    /* The card writes these pages with no sync calls in between. */
+    if (slv && !dev_is_dma_coherent(&qdma_dev->pdev->dev))
+        return -EOPNOTSUPP;
 
     buf = kzalloc(sizeof(*buf), GFP_KERNEL);
     if (!buf)
         return -ENOMEM;
+    if (slv)
+        buf->chunks_nr = (unsigned int)(req.length / SLASH_QDMA_SLV_WINDOW_SIZE);
 
     kref_init(&buf->ref);
     /* The buffer holds a device reference for its whole lifetime. */
@@ -3403,7 +3565,7 @@ static long slash_qdma_qpair_ioctl(struct file *file,
     switch (cmd) {
     case SLASH_QDMA_IOCTL_BUF_CREATE:
         return slash_qdma_ioctl_buf_create_w(ctx->qdma_dev,
-                                             (void __user *)arg);
+                                             (void __user *)arg, false);
     case SLASH_QDMA_QPAIR_IOCTL_TRANSFER:
         return slash_qdma_qpair_transfer(file, (void __user *)arg);
     default:
@@ -3958,4 +4120,353 @@ out:
     if (copy_to_user(uarg, &req, min_t(size_t, user_size, ksize)))
         return -EFAULT;
     return err;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Slave-bridge windows (card -> host)
+ *
+ * NIC-derived statics map PF1 BAR2 onto CPM5_DMA1_CSR (AXI 0xFCEA_0000),
+ * which holds the slave bridge's BDF table: entry w translates AXI
+ * 0xE800_0000 + w * 2 MiB to a host DMA address.  The service-layer
+ * translator (sl_vmem) decides which window a user-region access uses; this
+ * driver decides what host memory a window reaches, so a window can only ever
+ * point at pages of a live SLV buffer.  Entry 63 belongs to the R5 and is
+ * never touched here.
+ * ───────────────────────────────────────────────────────────────────── */
+
+#define SLV_CSR_SIZE        0x4000u
+#define SLV_CSR_BRG_ERR     0x0E88u   /* BRG_SLV_TZ_ERR_ADDR */
+#define SLV_CSR_BDF0        0x2420u   /* bdf_lookup_entry 0 */
+#define SLV_CSR_BDF_STRIDE  0x20u
+/*
+ * BDF window register: access_perm [31:30] = 3 (read and write), prot [28:26]
+ * = 010 (admits the non-secure AxPROT the slave bridge sees from the NoC),
+ * win_size [25:0] in 4 KiB units.  Same value as the hardware-tested
+ * nic/sw/sl_vmem.py mappings (0xC8000200).
+ */
+#define SLV_BDF_WINDOW_RW   ((3u << 30) | (2u << 26) | (u32)(SLASH_QDMA_SLV_WINDOW_SIZE >> 12))
+
+static void __iomem *slash_qdma_slv_entry(struct slash_qdma_dev *d, u32 w)
+{
+    return d->slv_csr + SLV_CSR_BDF0 + w * SLV_CSR_BDF_STRIDE;
+}
+
+/* Program entry @w; @addr 0 clears it.  Caller holds d->lock, d->slv_csr set. */
+static void slash_qdma_slv_write_entry(struct slash_qdma_dev *d, u32 w, u64 addr)
+{
+    void __iomem *e = slash_qdma_slv_entry(d, w);
+
+    if (addr) {
+        iowrite32(lower_32_bits(addr) & 0xFFFFF000u, e + 0x00);
+        iowrite32(upper_32_bits(addr), e + 0x04);
+        iowrite32(0, e + 0x08);                 /* pasid */
+        iowrite32(0, e + 0x0C);                 /* function 0 (PF0) */
+        iowrite32(SLV_BDF_WINDOW_RW, e + 0x10);
+        iowrite32(0, e + 0x14);                 /* smid, written last */
+    } else {
+        iowrite32(0, e + 0x10);                 /* revoke access first */
+        iowrite32(0, e + 0x00);
+        iowrite32(0, e + 0x04);
+        iowrite32(0, e + 0x08);
+        iowrite32(0, e + 0x0C);
+        iowrite32(0, e + 0x14);
+    }
+}
+
+static bool slash_qdma_slv_entry_is(struct slash_qdma_dev *d, u32 w, u64 addr)
+{
+    void __iomem *e = slash_qdma_slv_entry(d, w);
+    u32 want_lo = addr ? (lower_32_bits(addr) & 0xFFFFF000u) : 0;
+    u32 want_win = addr ? SLV_BDF_WINDOW_RW : 0;
+
+    return ioread32(e + 0x00) == want_lo && ioread32(e + 0x04) == upper_32_bits(addr) &&
+           ioread32(e + 0x10) == want_win;
+}
+
+/**
+ * slash_qdma_slv_init() - Find the CPM5_DMA1_CSR window and reset the windows.
+ * @d: QDMA device, after qdma_device_open() (memory decoding enabled).
+ *
+ * The window is used only if PF1 BAR2 offset 0 reads PF0's vendor/device ID
+ * (CPM5_DMA1_CSR starts with a copy of PF0's config header) and PF0, whose
+ * requester ID the slave bridge uses, shares PF1's IOMMU domain, so DMA
+ * addresses mapped here are valid for its requests.  Entries 0..62 left over
+ * from an earlier session may point at memory that is no longer ours; they are
+ * cleared.
+ *
+ * Return: 0 if the windows are available, negative errno otherwise (not fatal).
+ */
+static int slash_qdma_slv_init(struct slash_qdma_dev *d)
+{
+    struct pci_dev *pdev = d->pdev;
+    struct pci_dev *pf0;
+    struct iommu_domain *dom0, *dom1;
+    void __iomem *csr;
+    u32 id0 = 0, via, w, stale = 0;
+
+    if (!(pci_resource_flags(pdev, 2) & IORESOURCE_MEM) ||
+        pci_resource_len(pdev, 2) < SLV_CSR_SIZE) {
+        dev_info(&pdev->dev, "slash: qdma: no PF1 BAR2 CSR window; slave-bridge windows disabled\n");
+        return -ENODEV;
+    }
+
+    pf0 = pci_get_slot(pdev->bus, PCI_DEVFN(PCI_SLOT(pdev->devfn), 0));
+    if (!pf0) {
+        dev_info(&pdev->dev, "slash: qdma: no PF0; slave-bridge windows disabled\n");
+        return -ENODEV;
+    }
+    pci_read_config_dword(pf0, PCI_VENDOR_ID, &id0);
+    dom0 = iommu_get_domain_for_dev(&pf0->dev);
+    dom1 = iommu_get_domain_for_dev(&pdev->dev);
+    pci_dev_put(pf0);
+    if (dom0 != dom1) {
+        dev_warn(&pdev->dev,
+                 "slash: qdma: PF0 and PF1 are in different IOMMU domains; slave-bridge windows disabled\n");
+        return -EOPNOTSUPP;
+    }
+
+    csr = pci_iomap_range(pdev, 2, 0, SLV_CSR_SIZE);
+    if (!csr)
+        return -ENOMEM;
+    via = ioread32(csr);
+    if (via != id0 || via == 0xFFFFFFFFu) {
+        pci_iounmap(pdev, csr);
+        dev_info(&pdev->dev,
+                 "slash: qdma: PF1 BAR2 reads 0x%08x, not PF0's ID 0x%08x; slave-bridge windows disabled\n",
+                 via, id0);
+        return -ENODEV;
+    }
+
+    mutex_lock(&d->lock);
+    d->slv_csr = csr;
+    d->slv_iommu = dom1 && dom1->type != IOMMU_DOMAIN_IDENTITY;
+    for (w = 0; w < SLASH_QDMA_SLV_WINDOWS; w++) {
+        if (ioread32(slash_qdma_slv_entry(d, w) + 0x10)) {
+            slash_qdma_slv_write_entry(d, w, 0);
+            stale++;
+        }
+    }
+    mutex_unlock(&d->lock);
+
+    dev_info(&pdev->dev,
+             "slash: qdma: slave-bridge windows 0..%u available (IOMMU %s); %u stale entries cleared\n",
+             SLASH_QDMA_SLV_WINDOWS - 1, d->slv_iommu ? "translating" : "off/pass-through", stale);
+    return 0;
+}
+
+/**
+ * slash_qdma_slv_release() - Clear windows and drop their buffer references.
+ * @d:     QDMA device.
+ * @owner: Clear only the windows mapped through this control file; NULL
+ *         clears all of them (device teardown).
+ *
+ * The BDF entry is cleared before the buffer reference is dropped, so the
+ * pages are never freed while the card can still reach them.
+ */
+static void slash_qdma_slv_release(struct slash_qdma_dev *d, struct file *owner)
+{
+    struct slash_qdma_buf *put[SLASH_QDMA_SLV_WINDOWS];
+    unsigned int n = 0, w;
+
+    mutex_lock(&d->lock);
+    for (w = 0; w < SLASH_QDMA_SLV_WINDOWS; w++) {
+        struct slash_qdma_slv_win *win = &d->slv_win[w];
+
+        if (!win->buf || (owner && win->owner != owner))
+            continue;
+        if (d->slv_csr)
+            slash_qdma_slv_write_entry(d, w, 0);
+        put[n++] = win->buf;
+        memset(win, 0, sizeof(*win));
+    }
+    if (n && d->slv_csr)
+        (void)ioread32(d->slv_csr + SLV_CSR_BRG_ERR);   /* flush the posted writes */
+    mutex_unlock(&d->lock);
+
+    if (n)
+        dev_info(&d->pdev->dev, "slash: qdma: %u slave-bridge windows cleared (%s)\n",
+                 n, owner ? "control fd closed" : "device teardown");
+    for (w = 0; w < n; w++)
+        slash_qdma_buf_put(put[w]);
+}
+
+static void slash_qdma_slv_fini(struct slash_qdma_dev *d)
+{
+    void __iomem *csr;
+
+    slash_qdma_slv_release(d, NULL);
+    mutex_lock(&d->lock);
+    csr = d->slv_csr;
+    d->slv_csr = NULL;
+    mutex_unlock(&d->lock);
+    if (csr)
+        pci_iounmap(d->pdev, csr);
+}
+
+static int slash_qdma_slv_copy_in(void __user *uarg, void *req, size_t req_size,
+                                  size_t min_size, u32 *user_size)
+{
+    if (copy_from_user(user_size, uarg, sizeof(*user_size)))
+        return -EFAULT;
+    if (*user_size < min_size)
+        return -EINVAL;
+    memset(req, 0, req_size);
+    if (copy_from_user(req, uarg, min_t(size_t, *user_size, req_size)))
+        return -EFAULT;
+    return 0;
+}
+
+static int slash_qdma_slv_copy_out(void __user *uarg, void *req, size_t req_size,
+                                   u32 user_size)
+{
+    *(u32 *)req = (u32)req_size;
+    if (copy_to_user(uarg, req, min_t(size_t, user_size, req_size)))
+        return -EFAULT;
+    return 0;
+}
+
+static long slash_qdma_slv_map(struct slash_qdma_dev *d, struct file *file,
+                               void __user *uarg)
+{
+    struct slash_qdma_slv_map req;
+    struct slash_qdma_buf *buf;
+    struct file *bf;
+    u32 user_size;
+    dma_addr_t dma;
+    long rv;
+
+    rv = slash_qdma_slv_copy_in(uarg, &req, sizeof(req), SLASH_QDMA_SLV_MAP_MIN_SIZE, &user_size);
+    if (rv)
+        return rv;
+    if (req.window >= SLASH_QDMA_SLV_WINDOWS ||
+        (req.buf_offset % SLASH_QDMA_SLV_WINDOW_SIZE) != 0)
+        return -EINVAL;
+
+    bf = fget(req.buf_fd);
+    if (!bf)
+        return -EBADF;
+    buf = slash_qdma_buf_from_file(bf);
+    if (!buf || buf->qdma_dev != d || !buf->chunks_nr || !buf->dma_mapped ||
+        req.buf_offset >= buf->length) {
+        fput(bf);
+        return -EINVAL;
+    }
+    dma = buf->chunk_dma[req.buf_offset / SLASH_QDMA_SLV_WINDOW_SIZE];
+
+    mutex_lock(&d->lock);
+    if (d->hw_shutdown || !d->slv_csr) {
+        rv = -EOPNOTSUPP;
+    } else if (d->slv_win[req.window].buf) {
+        rv = -EBUSY;
+    } else if (ioread32(slash_qdma_slv_entry(d, req.window) + 0x10)) {
+        /* Programmed behind our back (e.g. a test tool through sysfs). */
+        dev_warn(&d->pdev->dev, "slash: qdma: BDF entry %u is in use by someone else\n",
+                 req.window);
+        rv = -EBUSY;
+    } else {
+        slash_qdma_slv_write_entry(d, req.window, dma);
+        if (!slash_qdma_slv_entry_is(d, req.window, dma)) {
+            slash_qdma_slv_write_entry(d, req.window, 0);
+            dev_err(&d->pdev->dev, "slash: qdma: BDF entry %u did not read back\n", req.window);
+            rv = -EIO;
+        } else {
+            slash_qdma_buf_get(buf);
+            d->slv_win[req.window].buf = buf;
+            d->slv_win[req.window].owner = file;
+            d->slv_win[req.window].offset = req.buf_offset;
+            d->slv_win[req.window].dma = dma;
+            rv = 0;
+        }
+    }
+    mutex_unlock(&d->lock);
+    fput(bf);
+    if (rv)
+        return rv;
+
+    req.dma_addr = dma;
+    return slash_qdma_slv_copy_out(uarg, &req, sizeof(req), user_size);
+}
+
+static long slash_qdma_slv_unmap(struct slash_qdma_dev *d, struct file *file,
+                                 void __user *uarg)
+{
+    struct slash_qdma_slv_unmap req;
+    struct slash_qdma_buf *buf = NULL;
+    u32 user_size;
+    long rv;
+
+    rv = slash_qdma_slv_copy_in(uarg, &req, sizeof(req), SLASH_QDMA_SLV_UNMAP_MIN_SIZE, &user_size);
+    if (rv)
+        return rv;
+    if (req.window >= SLASH_QDMA_SLV_WINDOWS)
+        return -EINVAL;
+
+    mutex_lock(&d->lock);
+    if (!d->slv_win[req.window].buf) {
+        rv = -ENOENT;
+    } else if (d->slv_win[req.window].owner != file) {
+        rv = -EPERM;
+    } else {
+        if (d->slv_csr) {
+            slash_qdma_slv_write_entry(d, req.window, 0);
+            (void)ioread32(d->slv_csr + SLV_CSR_BRG_ERR);
+        }
+        buf = d->slv_win[req.window].buf;
+        memset(&d->slv_win[req.window], 0, sizeof(d->slv_win[req.window]));
+    }
+    mutex_unlock(&d->lock);
+    if (buf)
+        slash_qdma_buf_put(buf);
+    return rv;
+}
+
+static long slash_qdma_slv_info(struct slash_qdma_dev *d, void __user *uarg)
+{
+    struct slash_qdma_slv_info req;
+    u32 user_size, w;
+    long rv;
+
+    rv = slash_qdma_slv_copy_in(uarg, &req, sizeof(req), sizeof(u32), &user_size);
+    if (rv)
+        return rv;
+
+    memset(&req, 0, sizeof(req));
+    req.n_windows = SLASH_QDMA_SLV_WINDOWS;
+    req.window_size = SLASH_QDMA_SLV_WINDOW_SIZE;
+    req.axi_base = SLASH_QDMA_SLV_AXI_BASE;
+    mutex_lock(&d->lock);
+    req.present = d->slv_csr ? 1 : 0;
+    req.iommu = d->slv_iommu ? 1 : 0;
+    for (w = 0; w < SLASH_QDMA_SLV_WINDOWS; w++)
+        if (d->slv_win[w].buf)
+            req.used_mask |= 1ull << w;
+    if (d->slv_csr)
+        req.brg_err = ioread32(d->slv_csr + SLV_CSR_BRG_ERR);
+    mutex_unlock(&d->lock);
+
+    return slash_qdma_slv_copy_out(uarg, &req, sizeof(req), user_size);
+}
+
+/**
+ * slash_qdma_ioctl_slv() - SLASH_QDMA_IOCTL_SLV_{INFO,MAP,UNMAP}.
+ * @d:    QDMA device.
+ * @file: Control file issuing the ioctl (owner of the windows it maps).
+ * @op:   Ioctl number.
+ * @uarg: User argument.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+static long slash_qdma_ioctl_slv(struct slash_qdma_dev *d, struct file *file,
+                                 unsigned int op, void __user *uarg)
+{
+    switch (op) {
+    case SLASH_QDMA_IOCTL_SLV_INFO:
+        return slash_qdma_slv_info(d, uarg);
+    case SLASH_QDMA_IOCTL_SLV_MAP:
+        return slash_qdma_slv_map(d, file, uarg);
+    case SLASH_QDMA_IOCTL_SLV_UNMAP:
+        return slash_qdma_slv_unmap(d, file, uarg);
+    default:
+        return -ENOTTY;
+    }
 }

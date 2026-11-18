@@ -279,6 +279,47 @@ ssize_t slash_qdma_qpair_transfer_batch(int qpair_fd,
                                         const struct slash_qdma_subxfer *xfers,
                                         uint32_t count);
 
+/*
+ * Slave-bridge windows (card -> host).  Character-device transport only; on
+ * other transports these fail with ENOTSUP.  See SLASH_QDMA_IOCTL_SLV_* in
+ * slash/uapi/slash_interface.h.
+ */
+
+/**
+ * @brief Read the slave-bridge window state.
+ *
+ * @return 0 on success, -1 on failure (errno set).
+ */
+int slash_qdma_slv_info(struct slash_qdma *qdma, struct slash_qdma_slv_info *info);
+
+/**
+ * @brief Create a slave-bridge buffer (2 MiB chunks, each contiguous and
+ * 2 MiB aligned in DMA address space).
+ *
+ * @param length A multiple of SLASH_QDMA_SLV_WINDOW_SIZE.
+ *
+ * @return The buffer fd (O_CLOEXEC) on success, -1 on failure (errno set).
+ */
+int slash_qdma_slv_buffer_create(struct slash_qdma *qdma, uint64_t length);
+
+/**
+ * @brief Point slave-bridge window @p window at the 2 MiB chunk of @p buf_fd
+ * at @p offset.  The window is owned by @p qdma's file descriptor.
+ *
+ * @param dma_addr [out, may be NULL] Host DMA address written to the BDF entry.
+ *
+ * @return 0 on success, -1 on failure (errno set; EBUSY: window in use).
+ */
+int slash_qdma_slv_map(struct slash_qdma *qdma, uint32_t window, int buf_fd,
+                       uint64_t offset, uint64_t *dma_addr);
+
+/**
+ * @brief Clear slave-bridge window @p window (mapped through @p qdma).
+ *
+ * @return 0 on success, -1 on failure (errno set).
+ */
+int slash_qdma_slv_unmap(struct slash_qdma *qdma, uint32_t window);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif /* __cplusplus */
