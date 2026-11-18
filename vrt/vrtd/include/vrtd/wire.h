@@ -121,7 +121,23 @@ enum vrtd_opcode {
 
     /** Set vrtd's in-memory shell/JTAG state for a device. */
     VRTD_REQ_SET_SHELL_STATE,
+
+    /** Query the host-memory translator (sl_vmem) and its slave-bridge windows. */
+    VRTD_REQ_HOST_MEM_INFO,
+
+    /** Open a host buffer the card reaches at a card address (fd via SCM_RIGHTS). */
+    VRTD_REQ_HOST_BUFFER_OPEN,
+
+    /** Close a host buffer: the card can no longer reach it. */
+    VRTD_REQ_HOST_BUFFER_CLOSE,
 };
+
+/**
+ * @brief The service BAR (PF2 BAR2): the service layer, including the
+ * host-memory translator.  vrtd drives it; GET_BAR_FD for it needs
+ * "bar-access = service".
+ */
+#define VRTD_SERVICE_BAR 2
 
 /**
  * @brief Return codes for vrtd operations.
@@ -589,6 +605,67 @@ struct vrtd_req_get_sensor_info {
 struct vrtd_resp_get_sensor_info {
     uint32_t num_sensors; ///< Number of sensor entries following.
     struct vrtd_sensor_entry sensors[]; ///< Variable-length array of sensor entries.
+} __attribute__((packed));
+
+/*
+ * Host buffers (card -> host memory).
+ *
+ * A user-region kernel port connected to HOST (linker: sp=<kernel>.<port>:HOST)
+ * addresses host memory at card addresses in the translator's aperture
+ * (va_base, va_size).  vrtd maps each 2 MiB page of a host buffer to one
+ * slave-bridge window (the slash driver writes the BDF entry) and to one entry
+ * of the translator's table (vrtd writes it through the service BAR).  An
+ * access outside every open host buffer faults in the translator and never
+ * leaves the card.  Host buffers are closed with HOST_BUFFER_CLOSE or when the
+ * owning client disconnects.
+ */
+
+/** Permission bits of a host buffer (what the card may do). */
+#define VRTD_HOST_BUFFER_READ  0x1u  ///< The card may read the buffer.
+#define VRTD_HOST_BUFFER_WRITE 0x2u  ///< The card may write the buffer.
+
+struct vrtd_req_host_mem_info {
+    uint32_t dev_number; ///< Device index (0-based).
+} __attribute__((packed));
+
+struct vrtd_resp_host_mem_info {
+    uint8_t present;        ///< 1 if the loaded design has the translator and the driver the windows.
+    uint8_t iommu;          ///< 1 if an IOMMU translates host DMA addresses.
+    uint16_t reserved;
+    uint32_t windows_total; ///< Slave-bridge windows vrtd may use.
+    uint32_t windows_free;  ///< Of which not in use.
+    uint32_t page_size;     ///< Bytes per window / translator page (2 MiB).
+    uint64_t va_base;       ///< Card address of the translator aperture.
+    uint64_t va_size;       ///< Aperture size in bytes.
+    uint32_t fault_count;   ///< Translator faults since the last clear.
+    uint32_t fault_info;    ///< Translator FAULT_INFO (bit 31 valid, 30 write, 26:24 cause).
+    uint64_t fault_addr;    ///< Card address of the first fault.
+} __attribute__((packed));
+
+struct vrtd_req_host_buffer_open {
+    uint32_t dev_number; ///< Device index (0-based).
+    uint32_t flags;      ///< VRTD_HOST_BUFFER_READ | VRTD_HOST_BUFFER_WRITE (0 = both).
+    uint64_t size;       ///< Requested size in bytes (rounded up to page_size).
+} __attribute__((packed));
+
+/**
+ * The buffer fd is sent via SCM_RIGHTS when ret == VRTD_RET_OK.  mmap it
+ * (offset 0, @ref size bytes, MAP_SHARED) for the CPU view.  The card sees the
+ * same memory at [@ref card_addr, @ref card_addr + @ref size); no sync calls
+ * are needed on cache-coherent hosts.
+ */
+struct vrtd_resp_host_buffer_open {
+    uint64_t size;      ///< Mapped size in bytes (a multiple of page_size).
+    uint64_t card_addr; ///< Card address of byte 0 (pass it to the kernel).
+} __attribute__((packed));
+
+struct vrtd_req_host_buffer_close {
+    uint32_t dev_number; ///< Device index (0-based).
+    uint64_t card_addr;  ///< Card address from HOST_BUFFER_OPEN.
+} __attribute__((packed));
+
+struct vrtd_resp_host_buffer_close {
+    uint8_t zero; ///< Placeholder.
 } __attribute__((packed));
 
 #ifdef __cplusplus

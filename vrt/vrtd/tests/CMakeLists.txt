@@ -36,3 +36,13 @@ add_vrtd_test(flash_worker_test flash_worker_test.cpp)
 add_vrtd_test(reset_test reset_test.cpp)
 add_vrtd_test(clock_test clock_test.cpp)
 add_vrtd_test(shell_build_id_test shell_build_id_test.cpp)
+
+# hostmem against a fake service BAR; the driver's slave-bridge calls are
+# replaced by the test (__wrap_slash_qdma_slv_*).
+add_vrtd_test(hostmem_test hostmem_test.cpp)
+target_link_options(hostmem_test PRIVATE
+  -Wl,--wrap=slash_qdma_slv_info
+  -Wl,--wrap=slash_qdma_slv_buffer_create
+  -Wl,--wrap=slash_qdma_slv_map
+  -Wl,--wrap=slash_qdma_slv_unmap
+)

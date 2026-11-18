@@ -1181,3 +1181,104 @@ enum vrtd_ret vrtd_get_sensor_info(
 
     return VRTD_RET_OK;
 }
+
+/* ---- host buffers -------------------------------------------------------- */
+
+enum vrtd_ret vrtd_host_mem_info(int fd, uint32_t dev, struct vrtd_resp_host_mem_info *info_out)
+{
+    if (info_out == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+
+    struct vrtd_req_host_mem_info req = {
+        .dev_number = dev,
+    };
+    memset(info_out, 0, sizeof(*info_out));
+
+    return vrtd_raw_request(fd, VRTD_REQ_HOST_MEM_INFO,
+                            &req, sizeof(req),
+                            info_out, sizeof(*info_out),
+                            NULL, NULL);
+}
+
+enum vrtd_ret vrtd_host_buffer_open(int fd, uint32_t dev, uint32_t flags, uint64_t size,
+                                    struct vrtd_host_buffer *buf_out)
+{
+    if (buf_out == NULL || size == 0) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+    buf_out->fd = -1;
+    buf_out->map = NULL;
+    buf_out->size = 0;
+    buf_out->card_addr = 0;
+    buf_out->dev = dev;
+
+    struct vrtd_req_host_buffer_open req = {
+        .dev_number = dev,
+        .flags = flags,
+        .size = size,
+    };
+    struct vrtd_resp_host_buffer_open resp = {0};
+    int buf_fd = -1;
+    enum vrtd_ret ret = vrtd_raw_request(fd, VRTD_REQ_HOST_BUFFER_OPEN,
+                                         &req, sizeof(req),
+                                         &resp, sizeof(resp),
+                                         &buf_fd, NULL);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+    if (buf_fd < 0 || resp.size == 0) {
+        if (buf_fd >= 0) {
+            close(buf_fd);
+        }
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    void *map = mmap(NULL, resp.size, PROT_READ | PROT_WRITE, MAP_SHARED, buf_fd, 0);
+    if (map == MAP_FAILED) {
+        struct vrtd_host_buffer tmp = { .fd = buf_fd, .map = NULL, .size = resp.size,
+                                        .card_addr = resp.card_addr, .dev = dev };
+        (void) vrtd_host_buffer_close(fd, &tmp);
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+
+    buf_out->fd = buf_fd;
+    buf_out->map = map;
+    buf_out->size = resp.size;
+    buf_out->card_addr = resp.card_addr;
+    return VRTD_RET_OK;
+}
+
+enum vrtd_ret vrtd_host_buffer_close(int fd, struct vrtd_host_buffer *buf)
+{
+    if (buf == NULL) {
+        return VRTD_RET_BAD_LIB_CALL;
+    }
+    if (buf->fd < 0 && buf->map == NULL) {
+        return VRTD_RET_OK;
+    }
+
+    enum vrtd_ret ret = VRTD_RET_OK;
+    if (buf->card_addr != 0) {
+        struct vrtd_req_host_buffer_close req = {
+            .dev_number = buf->dev,
+            .card_addr = buf->card_addr,
+        };
+        struct vrtd_resp_host_buffer_close resp = {0};
+        ret = vrtd_raw_request(fd, VRTD_REQ_HOST_BUFFER_CLOSE,
+                               &req, sizeof(req),
+                               &resp, sizeof(resp),
+                               NULL, NULL);
+    }
+    if (buf->map != NULL) {
+        (void) munmap(buf->map, buf->size);
+    }
+    if (buf->fd >= 0) {
+        (void) close(buf->fd);
+    }
+    buf->fd = -1;
+    buf->map = NULL;
+    buf->card_addr = 0;
+    buf->size = 0;
+    return ret;
+}

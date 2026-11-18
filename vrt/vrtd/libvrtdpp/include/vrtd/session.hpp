@@ -288,6 +288,15 @@ private:
         MmChannel mmChannel
     ) const;
 
+    /** @internal Host-memory translator state (HOST_MEM_INFO). */
+    HostMemInfo hostMemInfo(const Device& device) const;
+
+    /** @internal Open a host buffer (HOST_BUFFER_OPEN) and map it. */
+    HostBuffer openHostBuffer(const Device& device, uint64_t size, HostBufferPerm perm) const;
+
+    /** @internal Close a host buffer (HOST_BUFFER_CLOSE), unmap it, close its fd. */
+    void closeHostBuffer(struct vrtd_host_buffer& buf) const noexcept;
+
     /**
      * @internal Perform a PCIe hotplug operation.
      *

@@ -209,6 +209,12 @@ int auth_request_buffer_open(
  * @param req_body The parsed request body containing device index and address.
  * @return 0 if authorized, non-zero if denied.
  */
+int auth_request_host_buffer(
+    struct client *client,
+    uint32_t dev_number,
+    const char *what
+);
+
 int auth_request_buffer_open_raw(
     struct client *client,
     const struct vrtd_req_buffer_open_raw *req_body

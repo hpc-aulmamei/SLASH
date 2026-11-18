@@ -183,7 +183,9 @@ Device Session::getDevice(size_t i) const {
         },
         [&](const Device& device, ClockRegion region) { return getClockRate(device, region); },
         [&](const Device& device, ClockRegion region, uint32_t rate_hz, bool roundDown) { return setClockRate(device, region, rate_hz, roundDown); },
-        [&](const Device& device) { return getSensorInfo(device); }
+        [&](const Device& device) { return getSensorInfo(device); },
+        [&](const Device& device) { return hostMemInfo(device); },
+        [&](const Device& device, uint64_t size, HostBufferPerm perm) { return openHostBuffer(device, size, perm); }
     );
 }
 
@@ -260,7 +262,9 @@ Device Session::getDeviceByBdf(std::string_view bdf) const {
         },
         [&](const Device& device, ClockRegion region) { return getClockRate(device, region); },
         [&](const Device& device, ClockRegion region, uint32_t rate_hz, bool roundDown) { return setClockRate(device, region, rate_hz, roundDown); },
-        [&](const Device& device) { return getSensorInfo(device); }
+        [&](const Device& device) { return getSensorInfo(device); },
+        [&](const Device& device) { return hostMemInfo(device); },
+        [&](const Device& device, uint64_t size, HostBufferPerm perm) { return openHostBuffer(device, size, perm); }
     );
 }
 
@@ -753,6 +757,53 @@ bool Session::isClosed() const noexcept {
     } else {
         return false;
     }
+}
+
+HostMemInfo Session::hostMemInfo(const Device& device) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    struct vrtd_resp_host_mem_info r;
+    auto ret = vrtd_host_mem_info(fd, device.getNum(), &r);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+    HostMemInfo info;
+    info.present = r.present != 0;
+    info.iommu = r.iommu != 0;
+    info.windowsTotal = r.windows_total;
+    info.windowsFree = r.windows_free;
+    info.pageSize = r.page_size;
+    info.vaBase = r.va_base;
+    info.vaSize = r.va_size;
+    info.faultCount = r.fault_count;
+    info.faultInfo = r.fault_info;
+    info.faultAddr = r.fault_addr;
+    return info;
+}
+
+HostBuffer Session::openHostBuffer(const Device& device, uint64_t size, HostBufferPerm perm) const {
+    if (isClosed()) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    std::lock_guard<std::mutex> lk(*m);
+
+    struct vrtd_host_buffer b;
+    auto ret = vrtd_host_buffer_open(fd, device.getNum(), static_cast<uint32_t>(perm), size, &b);
+    if (ret != VRTD_RET_OK) {
+        throw Error(ret);
+    }
+    return HostBuffer(b, [this](struct vrtd_host_buffer& hb) { closeHostBuffer(hb); });
+}
+
+void Session::closeHostBuffer(struct vrtd_host_buffer& b) const noexcept {
+    if (isClosed()) {
+        return;     // vrtd already closed it with the connection; the caller unmaps
+    }
+    std::lock_guard<std::mutex> lk(*m);
+    (void) vrtd_host_buffer_close(fd, &b);
 }
 
 }

@@ -31,6 +31,7 @@ add_library(vrtd_core STATIC
   ${CMAKE_CURRENT_SOURCE_DIR}/device.c
   ${CMAKE_CURRENT_SOURCE_DIR}/flash.c
   ${CMAKE_CURRENT_SOURCE_DIR}/flash_worker.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/hostmem.c
   ${CMAKE_CURRENT_SOURCE_DIR}/hotplug.c
   ${CMAKE_CURRENT_SOURCE_DIR}/reset.c
   ${CMAKE_CURRENT_SOURCE_DIR}/serve.c

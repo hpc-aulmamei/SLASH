@@ -86,6 +86,8 @@ enum auth_subsystem {
     AUTH_SUBSYSTEM_CLOCK,
     AUTH_SUBSYSTEM_PCIE_HOTPLUG,
     AUTH_SUBSYSTEM_RAW_MEM_ACCESS,
+    AUTH_SUBSYSTEM_BAR_SERVICE,
+    AUTH_SUBSYSTEM_HOST_BUFFER,
 };
 
 /**
@@ -102,6 +104,8 @@ static const char *auth_subsystem_name(enum auth_subsystem subsystem)
     case AUTH_SUBSYSTEM_CLOCK:        return "clock";
     case AUTH_SUBSYSTEM_PCIE_HOTPLUG:  return "pcie-hotplug";
     case AUTH_SUBSYSTEM_RAW_MEM_ACCESS: return "raw-mem-access";
+    case AUTH_SUBSYSTEM_BAR_SERVICE:  return "bar-access=service";
+    case AUTH_SUBSYSTEM_HOST_BUFFER:  return "host-buffer";
     default:                           return "unknown";
     }
 }
@@ -120,6 +124,8 @@ static bool device_policy_check(const struct device_policy *dp, enum auth_subsys
     case AUTH_SUBSYSTEM_CLOCK:        return dp->clock;
     case AUTH_SUBSYSTEM_PCIE_HOTPLUG:  return dp->pcie_hotplug;
     case AUTH_SUBSYSTEM_RAW_MEM_ACCESS: return dp->raw_mem_access;
+    case AUTH_SUBSYSTEM_BAR_SERVICE:  return dp->bar_service;
+    case AUTH_SUBSYSTEM_HOST_BUFFER:  return dp->host_buffer;
     default:                           return false;
     }
 }
@@ -507,9 +513,44 @@ int auth_request_get_bar_fd(
     int ret = ensure_role(client);
     PROPAGATE_ERROR(ret);
 
+    /*
+     * The service BAR holds the service layer, including the host-memory
+     * translator: whoever maps it can point the card at any window.  vrtd
+     * drives it itself; clients need the separate service level.
+     */
+    if (req_body->bar_number == VRTD_SERVICE_BAR) {
+        return auth_check_device_permission(
+            client, req_body->dev_number, AUTH_SUBSYSTEM_BAR_SERVICE, "get_bar_fd(service BAR)"
+        );
+    }
+
     return auth_check_device_permission(
         client, req_body->dev_number, AUTH_SUBSYSTEM_BAR, "get_bar_fd"
     );
+}
+
+/**
+ * @brief Authorize a host_buffer_open / host_buffer_close request.
+ *
+ * Requires: query + host-buffer permission on the target device.
+ *
+ * @param client     The requesting client.
+ * @param dev_number Target device.
+ * @param what       Request name for the log.
+ * @return 1 if authorized, 0 if denied, <0 on internal error.
+ */
+int auth_request_host_buffer(
+    struct client *client,
+    uint32_t dev_number,
+    const char *what
+)
+{
+    assert(client != NULL);
+
+    int ret = ensure_role(client);
+    PROPAGATE_ERROR(ret);
+
+    return auth_check_device_permission(client, dev_number, AUTH_SUBSYSTEM_HOST_BUFFER, what);
 }
 
 /**

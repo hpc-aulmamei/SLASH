@@ -46,6 +46,7 @@
 struct design_writer;
 struct clock_driver;
 struct device_memory_map;
+struct hostmem;
 
 /**
  * @brief Represents a single discovered SLASH FPGA device.
@@ -75,6 +76,8 @@ struct device {
     struct device_memory_map *memory_map;
     /** @brief Currently allocated DMA buffers on this device (owning array). */
     struct buffer_ptr_array buffers;
+    /** @brief Host buffers through the service-layer translator (owning, created on first use, may be NULL). */
+    struct hostmem *hostmem;
     /** @brief PCI identity (vendor/device ID, BDF address) reported to clients. */
     struct vrtd_pci_info pci_info;
     /** @brief Shell that vrtd believes is currently booted. In-memory only. */

@@ -30,6 +30,7 @@
 
 #include <vrtd/bar.hpp>
 #include <vrtd/buffer.hpp>
+#include <vrtd/host_buffer.hpp>
 #include <vrtd/qdma_qpair.hpp>
 #include <vrtd/vrtd.h>
 
@@ -232,6 +233,28 @@ public:
                          MmChannel mmChannel = MmChannel::Auto) const;
 
     /**
+     * @brief Query the host-memory translator of the loaded design.
+     *
+     * Requires the @c host-buffer permission on this device.
+     * @throws vrtd::Error on error.
+     */
+    HostMemInfo getHostMemInfo() const;
+
+    /**
+     * @brief Open host memory that HOST-connected kernel ports reach.
+     *
+     * Requires the @c host-buffer permission on this device.  The size is
+     * rounded up to the translator page (2 MiB); at most one window per page.
+     *
+     * @param size Bytes.
+     * @param perm What the card may do.
+     * @return An owning @c HostBuffer (cardAddr() is what the kernel gets).
+     * @throws vrtd::Error on error (VRTD_RET_NOEXIST: no translator in the
+     *         loaded design; VRTD_RET_BUSY: no free windows).
+     */
+    HostBuffer openHostBuffer(uint64_t size, HostBufferPerm perm = HostBufferPerm::ReadWrite) const;
+
+    /**
      * @brief Perform a PCIe hotplug operation for this device.
      *
      * For ResetSequence, @p function is ignored. For Remove and Hotplug,
@@ -430,7 +453,9 @@ private:
            std::function<void(const Device&, std::string_view, uint8_t, uint32_t)> fCfgmemProgramFile,
            std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate,
            std::function<uint32_t(const Device&, ClockRegion, uint32_t, bool)> fSetClockRate,
-           std::function<std::vector<SensorEntry>(const Device&)> fGetSensorInfo);
+           std::function<std::vector<SensorEntry>(const Device&)> fGetSensorInfo,
+           std::function<HostMemInfo(const Device&)> fHostMemInfo = nullptr,
+           std::function<HostBuffer(const Device&, uint64_t, HostBufferPerm)> fOpenHostBuffer = nullptr);
 
     uint32_t num;
     std::string name;
@@ -456,6 +481,8 @@ private:
     std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate;
     std::function<uint32_t(const Device&, ClockRegion, uint32_t, bool)> fSetClockRate;
     std::function<std::vector<SensorEntry>(const Device&)> fGetSensorInfo;
+    std::function<HostMemInfo(const Device&)> fHostMemInfo;
+    std::function<HostBuffer(const Device&, uint64_t, HostBufferPerm)> fOpenHostBuffer;
 };
 
 }

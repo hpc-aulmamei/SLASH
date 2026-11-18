@@ -19,6 +19,7 @@
  */
 
 #include <vrtd/device.hpp>
+#include <vrtd/error.hpp>
 
 namespace vrtd {
 
@@ -44,7 +45,9 @@ Device::Device(uint32_t num,
                std::function<void(const Device&, std::string_view, uint8_t, uint32_t)> fCfgmemProgramFile,
                std::function<uint32_t(const Device&, ClockRegion)> fGetClockRate,
                std::function<uint32_t(const Device&, ClockRegion, uint32_t, bool)> fSetClockRate,
-               std::function<std::vector<SensorEntry>(const Device&)> fGetSensorInfo) {
+               std::function<std::vector<SensorEntry>(const Device&)> fGetSensorInfo,
+               std::function<HostMemInfo(const Device&)> fHostMemInfo,
+               std::function<HostBuffer(const Device&, uint64_t, HostBufferPerm)> fOpenHostBuffer) {
     this->num = num;
     this->name = name;
     this->bdf = bdf;
@@ -68,6 +71,22 @@ Device::Device(uint32_t num,
     this->fGetClockRate = fGetClockRate;
     this->fSetClockRate = fSetClockRate;
     this->fGetSensorInfo = fGetSensorInfo;
+    this->fHostMemInfo = fHostMemInfo;
+    this->fOpenHostBuffer = fOpenHostBuffer;
+}
+
+HostMemInfo Device::getHostMemInfo() const {
+    if (!fHostMemInfo) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    return fHostMemInfo(*this);
+}
+
+HostBuffer Device::openHostBuffer(uint64_t size, HostBufferPerm perm) const {
+    if (!fOpenHostBuffer) {
+        throw Error(VRTD_RET_BAD_LIB_CALL);
+    }
+    return fOpenHostBuffer(*this, size, perm);
 }
 
 uint32_t Device::getNum() const noexcept {

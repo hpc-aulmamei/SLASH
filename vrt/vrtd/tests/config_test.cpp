@@ -224,3 +224,23 @@ TEST(ConfigCleanupTest, CleanupRoleZeroed) {
     auto *r = static_cast<struct role *>(calloc(1, sizeof(struct role)));
     cleanup_role(r);
 }
+
+TEST(RoleMergeTest, MergeOrsServiceBarAndHostBuffer) {
+    struct role *dst = nullptr;
+    ASSERT_EQ(role_merge_new(&dst, "dst"), 0);
+    struct role *src = nullptr;
+    ASSERT_EQ(role_merge_new(&src, "src"), 0);
+    struct device_policy *dp = make_device_policy("any", true, false, false, false, false, false, false, false);
+    dp->bar_service = true;
+    dp->host_buffer = true;
+    ASSERT_EQ(device_policy_ptr_array_push_move(&src->device_policies, &dp), 0);
+
+    ASSERT_EQ(role_merge_add_role(dst, src), 0);
+    ASSERT_EQ(dst->device_policies.len, 1u);
+    EXPECT_TRUE(dst->device_policies.d[0]->bar);
+    EXPECT_TRUE(dst->device_policies.d[0]->bar_service);
+    EXPECT_TRUE(dst->device_policies.d[0]->host_buffer);
+
+    cleanup_role(src);
+    cleanup_role(dst);
+}

@@ -392,3 +392,56 @@ TEST_F(AuthTest, EnsureRoleEmptyDefaultDeniesAll) {
     struct vrtd_req_get_num_devices req{};
     EXPECT_EQ(auth_request_get_num_devices(&cl, &req), 0);
 }
+
+// --- Service BAR and host buffers ---
+
+TEST_F(AuthTest, UserBarsAllowedFullaccess) {
+    assignRole(fullaccess_role);
+    struct vrtd_req_get_bar_fd req{};
+    req.dev_number = 0;
+    req.bar_number = 0;
+    EXPECT_EQ(auth_request_get_bar_fd(&cl, &req), 1);
+    req.bar_number = 4;
+    EXPECT_EQ(auth_request_get_bar_fd(&cl, &req), 1);
+}
+
+TEST_F(AuthTest, ServiceBarDeniedFullaccess) {
+    // bar-access = full covers the user BARs only: the service BAR holds the
+    // host-memory translator, which vrtd drives itself.
+    assignRole(fullaccess_role);
+    struct vrtd_req_get_bar_fd req{};
+    req.dev_number = 0;
+    req.bar_number = VRTD_SERVICE_BAR;
+    EXPECT_EQ(auth_request_get_bar_fd(&cl, &req), 0);
+}
+
+TEST_F(AuthTest, ServiceBarAllowedWithServiceLevel) {
+    fullaccess_role->device_policies.d[0]->bar_service = true;
+    assignRole(fullaccess_role);
+    struct vrtd_req_get_bar_fd req{};
+    req.dev_number = 0;
+    req.bar_number = VRTD_SERVICE_BAR;
+    EXPECT_EQ(auth_request_get_bar_fd(&cl, &req), 1);
+}
+
+TEST_F(AuthTest, HostBufferNeedsItsOwnPermission) {
+    assignRole(fullaccess_role);
+    EXPECT_EQ(auth_request_host_buffer(&cl, 0, "host_buffer_open"), 0);
+}
+
+TEST_F(AuthTest, HostBufferAllowedWithPermission) {
+    fullaccess_role->device_policies.d[0]->host_buffer = true;
+    assignRole(fullaccess_role);
+    EXPECT_EQ(auth_request_host_buffer(&cl, 0, "host_buffer_open"), 1);
+}
+
+TEST_F(AuthTest, HostBufferDeniedInfoOnly) {
+    assignRole(info_role);
+    EXPECT_EQ(auth_request_host_buffer(&cl, 0, "host_buffer_open"), 0);
+}
+
+TEST_F(AuthTest, HostBufferDeviceIndexOutOfRange) {
+    fullaccess_role->device_policies.d[0]->host_buffer = true;
+    assignRole(fullaccess_role);
+    EXPECT_EQ(auth_request_host_buffer(&cl, 99, "host_buffer_open"), 0);
+}

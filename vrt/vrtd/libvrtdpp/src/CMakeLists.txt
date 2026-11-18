@@ -22,6 +22,7 @@ add_library(
     libvrtdpp
 
     ${CMAKE_CURRENT_SOURCE_DIR}/buffer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/host_buffer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bar_file.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bar.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/qdma_qpair.cpp

@@ -341,6 +341,8 @@ int role_merge_add_role(struct role *dst, const struct role *src)
         dst_dp->clock        = dst_dp->clock        || src_dp->clock;
         dst_dp->pcie_hotplug    = dst_dp->pcie_hotplug    || src_dp->pcie_hotplug;
         dst_dp->raw_mem_access  = dst_dp->raw_mem_access  || src_dp->raw_mem_access;
+        dst_dp->bar_service     = dst_dp->bar_service     || src_dp->bar_service;
+        dst_dp->host_buffer     = dst_dp->host_buffer     || src_dp->host_buffer;
     }
 
     return 0;
@@ -1009,7 +1011,8 @@ static int role_device_find_and_add_value(
  * @brief Apply a single key/value pair to a device_policy.
  *
  * Supported keys:
- *   - "bar-access":    "full"       -- grants BAR mmap access.
+ *   - "bar-access":    "full"       -- grants mmap of the user BARs (0 and 4).
+ *                      "service"    -- also the service BAR (2); debug only.
  *   - "qdma":          "yes" | "no" -- controls QDMA queue pair operations.
  *   - "buffer":        "yes" | "no" -- controls DMA buffer operations.
  *   - "design-write":  "yes" | "no" -- controls FPGA bitstream programming.
@@ -1017,6 +1020,7 @@ static int role_device_find_and_add_value(
  *   - "clock":         "yes" | "no" -- controls clock get/set operations.
  *   - "pcie-hotplug":  "yes" | "no" -- controls per-device hotplug operations.
  *   - "raw-mem-access": "yes" | "no" -- controls raw DMA buffer open (bypasses allocator).
+ *   - "host-buffer":   "yes" | "no" -- controls host buffers reached through the slave bridge.
  *
  * @param dp     The device_policy to modify.
  * @param name   Key name.
@@ -1028,6 +1032,10 @@ static int device_policy_add_value(struct device_policy *dp, const char *name, c
     if (strcmp(name, "bar-access") == 0) {
         if (strcmp(value, "full") == 0) {
             dp->bar = true;
+            return 0;
+        } else if (strcmp(value, "service") == 0) {
+            dp->bar = true;
+            dp->bar_service = true;
             return 0;
         } else {
             LOG(LOG_ERR, "Invalid value for device bar-access: '%s'", value);
@@ -1097,6 +1105,17 @@ static int device_policy_add_value(struct device_policy *dp, const char *name, c
             return 0;
         } else {
             LOG(LOG_ERR, "Invalid value for device pcie-hotplug: '%s'", value);
+            return -1;
+        }
+    } else if (strcmp(name, "host-buffer") == 0) {
+        if (strcmp(value, "yes") == 0) {
+            dp->host_buffer = true;
+            return 0;
+        } else if (strcmp(value, "no") == 0) {
+            dp->host_buffer = false;
+            return 0;
+        } else {
+            LOG(LOG_ERR, "Invalid value for device host-buffer: '%s'", value);
             return -1;
         }
     } else if (strcmp(name, "raw-mem-access") == 0) {

@@ -135,6 +135,7 @@
 #include "design_writer.h"
 #include "flash.h"
 #include "flash_worker.h"
+#include "hostmem.h"
 #include "hotplug.h"
 #include "reset.h"
 #include "serve.h"
@@ -312,6 +313,29 @@ static uint16_t client_handle_request_get_sensor_info(
     uint16_t *resp_size
 );
 
+static uint16_t client_handle_request_host_mem_info(
+    struct client *client,
+    const struct vrtd_req_host_mem_info *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_host_mem_info *resp_body,
+    uint16_t *resp_size
+);
+static uint16_t client_handle_request_host_buffer_open(
+    struct client *client,
+    const struct vrtd_req_host_buffer_open *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_host_buffer_open *resp_body,
+    uint16_t *resp_size,
+    int *out_fd,
+    bool *have_out_fd
+);
+static uint16_t client_handle_request_host_buffer_close(
+    struct client *client,
+    const struct vrtd_req_host_buffer_close *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_host_buffer_close *resp_body,
+    uint16_t *resp_size
+);
 static uint16_t device_refresh_pf2_after_design_write(struct device *d);
 static void cleanup_buffers_for_conn_id(struct vrtd *state, uint64_t conn_id);
 static void cleanup_client_buffers(struct client *client);
@@ -349,6 +373,9 @@ static const char *vrtd_opcode_to_string(uint16_t opcode)
     case VRTD_REQ_GET_SENSOR_INFO:   return "GET_SENSOR_INFO";
     case VRTD_REQ_BUFFER_OPEN_RAW:   return "BUFFER_OPEN_RAW";
     case VRTD_REQ_SET_SHELL_STATE:   return "SET_SHELL_STATE";
+    case VRTD_REQ_HOST_MEM_INFO:     return "HOST_MEM_INFO";
+    case VRTD_REQ_HOST_BUFFER_OPEN:  return "HOST_BUFFER_OPEN";
+    case VRTD_REQ_HOST_BUFFER_CLOSE: return "HOST_BUFFER_CLOSE";
     default:                         return "UNKNOWN";
     }
 }
@@ -586,6 +613,10 @@ static void cleanup_buffers_for_conn_id(struct vrtd *state, uint64_t conn_id)
              * element slides into position i.
              */
             buffer_ptr_array_rm_by_reference(&d->buffers, buf);
+        }
+
+        if (d->hostmem != NULL) {
+            hostmem_cleanup_client(d->hostmem, conn_id);
         }
     }
 }
@@ -1286,6 +1317,38 @@ static int client_handle_request(struct client *client)
                 CLIENT_IN_BODY(*client, vrtd_req_buffer_close),
                 req_header->size,
                 CLIENT_OUT_BODY(*client, vrtd_resp_buffer_close),
+                &size
+            );
+        break;
+    case VRTD_REQ_HOST_MEM_INFO:
+        resp_header->ret =
+            client_handle_request_host_mem_info(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_host_mem_info),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_host_mem_info),
+                &size
+            );
+        break;
+    case VRTD_REQ_HOST_BUFFER_OPEN:
+        resp_header->ret =
+            client_handle_request_host_buffer_open(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_host_buffer_open),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_host_buffer_open),
+                &size,
+                &client->out_fds[0],
+                &client->have_out_fd
+            );
+        break;
+    case VRTD_REQ_HOST_BUFFER_CLOSE:
+        resp_header->ret =
+            client_handle_request_host_buffer_close(
+                client,
+                CLIENT_IN_BODY(*client, vrtd_req_host_buffer_close),
+                req_header->size,
+                CLIENT_OUT_BODY(*client, vrtd_resp_host_buffer_close),
                 &size
             );
         break;
@@ -3852,4 +3915,155 @@ done:
         (unsigned int)client->uid, (unsigned long long)client->conn_id);
 
     return VRTD_RET_OK;
+}
+
+/* ---- HOST_MEM_INFO / HOST_BUFFER_OPEN / HOST_BUFFER_CLOSE ----------------- */
+
+/**
+ * Returns the device's host-memory manager, creating it on first use, or NULL
+ * if the loaded design has no translator (or the driver no windows).  A
+ * manager whose translator disappeared (another design loaded) is dropped
+ * together with its buffers.
+ */
+static struct hostmem *device_hostmem(struct device *d)
+{
+    if (d->hostmem != NULL && !hostmem_present(d->hostmem)) {
+        LOG(LOG_WARNING, "hostmem: the translator is gone from %s; closing its host buffers", d->path);
+        cleanup_hostmem(d->hostmem);
+        d->hostmem = NULL;
+    }
+    if (d->hostmem == NULL && d->qdma != NULL) {
+        d->hostmem = hostmem_open(d->qdma, &d->bar_files[VRTD_SERVICE_BAR]);
+    }
+    return d->hostmem;
+}
+
+static uint16_t host_request_device(struct client *client, uint32_t dev_number, uint16_t req_size,
+                                    size_t want, const char *what, struct device **d_out)
+{
+    int ret = auth_request_host_buffer(client, dev_number, what);
+    if (ret == -1) {
+        return VRTD_RET_INTERNAL_ERROR;
+    } else if (ret == 0) {
+        return VRTD_RET_AUTH_ERROR;
+    }
+    if (req_size < want) {
+        LOG(LOG_WARNING, "%s: malformed request", what);
+        return VRTD_RET_BAD_REQUEST;
+    }
+    if (dev_number >= client->state->devices.len || client->state->devices.d[dev_number] == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+    *d_out = client->state->devices.d[dev_number];
+    return VRTD_RET_OK;
+}
+
+/**
+ * Handles VRTD_REQ_HOST_MEM_INFO: translator presence, windows, last fault.
+ * Auth: host-buffer.  A device without the translator answers present = 0.
+ */
+static uint16_t client_handle_request_host_mem_info(
+    struct client *client,
+    const struct vrtd_req_host_mem_info *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_host_mem_info *resp_body,
+    uint16_t *resp_size
+)
+{
+    struct device *d = NULL;
+    *resp_size = 0;
+    uint16_t ret = host_request_device(client, req_size >= sizeof(*req_body) ? req_body->dev_number : 0,
+                                       req_size, sizeof(*req_body), "host_mem_info", &d);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+    struct hostmem *hm = device_hostmem(d);
+    if (hm == NULL) {
+        memset(resp_body, 0, sizeof(*resp_body));
+    } else {
+        hostmem_info(hm, resp_body);
+    }
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
+/**
+ * Handles VRTD_REQ_HOST_BUFFER_OPEN: host memory the card reaches at a card
+ * address.  The buffer fd goes to the client via SCM_RIGHTS; vrtd keeps its
+ * own copy until the buffer is closed.
+ * Auth: host-buffer.
+ */
+static uint16_t client_handle_request_host_buffer_open(
+    struct client *client,
+    const struct vrtd_req_host_buffer_open *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_host_buffer_open *resp_body,
+    uint16_t *resp_size,
+    int *out_fd,
+    bool *have_out_fd
+)
+{
+    struct device *d = NULL;
+    *resp_size = 0;
+    *have_out_fd = false;
+    uint16_t ret = host_request_device(client, req_size >= sizeof(*req_body) ? req_body->dev_number : 0,
+                                       req_size, sizeof(*req_body), "host_buffer_open", &d);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+    if (client->conn_id == 0) {
+        return VRTD_RET_INTERNAL_ERROR;
+    }
+    struct hostmem *hm = device_hostmem(d);
+    if (hm == NULL) {
+        LOG(LOG_NOTICE, "host_buffer_open: %s has no host-memory translator", d->path);
+        return VRTD_RET_NOEXIST;
+    }
+
+    int fd = -1;
+    uint64_t card_addr = 0, size = 0;
+    ret = hostmem_buffer_open(hm, client->conn_id, req_body->flags, req_body->size, &fd, &card_addr, &size);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+
+    resp_body->size = size;
+    resp_body->card_addr = card_addr;
+    client->out_fds[0] = fd;
+    client->out_fd_count = 1;
+    *out_fd = fd;
+    *have_out_fd = true;
+    *resp_size = sizeof(*resp_body);
+    return VRTD_RET_OK;
+}
+
+/**
+ * Handles VRTD_REQ_HOST_BUFFER_CLOSE.  Only the owning connection may close a
+ * host buffer; the client's own mapping stays valid as plain memory.
+ * Auth: host-buffer, plus ownership.
+ */
+static uint16_t client_handle_request_host_buffer_close(
+    struct client *client,
+    const struct vrtd_req_host_buffer_close *req_body,
+    uint16_t req_size,
+    struct vrtd_resp_host_buffer_close *resp_body,
+    uint16_t *resp_size
+)
+{
+    struct device *d = NULL;
+    *resp_size = 0;
+    uint16_t ret = host_request_device(client, req_size >= sizeof(*req_body) ? req_body->dev_number : 0,
+                                       req_size, sizeof(*req_body), "host_buffer_close", &d);
+    if (ret != VRTD_RET_OK) {
+        return ret;
+    }
+    if (d->hostmem == NULL) {
+        return VRTD_RET_NOEXIST;
+    }
+    ret = hostmem_buffer_close(d->hostmem, client->conn_id, req_body->card_addr);
+    if (ret == VRTD_RET_OK) {
+        resp_body->zero = 0;
+        *resp_size = sizeof(*resp_body);
+    }
+    return ret;
 }

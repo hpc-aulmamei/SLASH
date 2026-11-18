@@ -760,6 +760,46 @@ enum vrtd_ret vrtd_get_sensor_info(
     uint32_t *num_entries_out
 );
 
+/**
+ * @brief A host buffer: host memory a user-region kernel reaches at @ref card_addr.
+ *
+ * Kernel ports connected to HOST (linker: sp=<kernel>.<port>:HOST) address it
+ * at [card_addr, card_addr + size).  The CPU view is @ref map; on
+ * cache-coherent hosts no sync is needed in either direction.
+ */
+struct vrtd_host_buffer {
+    int fd;              ///< Buffer fd from vrtd (-1 when closed).
+    void *map;           ///< CPU mapping of the buffer (NULL when closed).
+    uint64_t size;       ///< Size in bytes (a multiple of the translator page, 2 MiB).
+    uint64_t card_addr;  ///< Card address of byte 0.
+    uint32_t dev;        ///< Device index.
+};
+
+/**
+ * @brief Query the device's host-memory translator and its windows.
+ *
+ * @return #VRTD_RET_OK on success (info_out->present tells whether host
+ *         buffers are possible); otherwise a #vrtd_ret error code.
+ */
+enum vrtd_ret vrtd_host_mem_info(int fd, uint32_t dev, struct vrtd_resp_host_mem_info *info_out);
+
+/**
+ * @brief Open a host buffer of at least @p size bytes and map it.
+ *
+ * @param flags VRTD_HOST_BUFFER_READ | VRTD_HOST_BUFFER_WRITE (what the card
+ *              may do; 0 = both).
+ * @return #VRTD_RET_OK on success; #VRTD_RET_NOEXIST if the loaded design has
+ *         no translator, #VRTD_RET_BUSY if no windows are free.
+ */
+enum vrtd_ret vrtd_host_buffer_open(int fd, uint32_t dev, uint32_t flags, uint64_t size,
+                                    struct vrtd_host_buffer *buf_out);
+
+/**
+ * @brief Close a host buffer: the card can no longer reach it; the mapping is
+ * removed and the fd closed.  Safe on a zeroed or already closed buffer.
+ */
+enum vrtd_ret vrtd_host_buffer_close(int fd, struct vrtd_host_buffer *buf);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

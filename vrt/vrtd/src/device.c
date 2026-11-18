@@ -38,6 +38,7 @@
 #define _GNU_SOURCE
 
 #include "device.h"
+#include "hostmem.h"
 #include "allocator.h"
 #include "clock.h"
 #include "design_writer.h"
@@ -424,6 +425,10 @@ void cleanup_device(struct device *d)
     LOG(LOG_DEBUG, "Cleaning up device %s", d->path ? d->path : "(unknown)");
 
     buffer_ptr_array_free(&d->buffers);
+
+    /* Before the qdma handle and the service BAR it borrows. */
+    cleanup_hostmem(d->hostmem);
+    d->hostmem = NULL;
 
     if (d->design_writer != NULL) {
         cleanup_design_writer(d->design_writer);

@@ -57,8 +57,14 @@
 struct device_policy {
     /** @brief Normalized BDF string ("DDDD:BB:DD") or "any" (heap-allocated, owning). */
     char *bdf; /* owning */
-    /** @brief If true, the client may mmap BAR regions on this device. */
+    /** @brief If true, the client may mmap the user BARs (0 and 4) on this device. */
     bool bar;
+    /**
+     * @brief If true, the client may also mmap the service BAR (2), which
+     * holds the service layer, including the host-memory translator.  Set by
+     * "bar-access = service" only; no role gets it by default.
+     */
+    bool bar_service;
     /** @brief If true, the client may create/operate QDMA queue pairs on this device. */
     bool qdma;
     /** @brief If true, the client may allocate/release DMA buffers on this device. */
@@ -73,6 +79,8 @@ struct device_policy {
     bool pcie_hotplug;
     /** @brief If true, the client may open raw DMA buffers at caller-specified device addresses (bypasses allocator). */
     bool raw_mem_access;
+    /** @brief If true, the client may open host buffers the card reaches through the slave bridge. */
+    bool host_buffer;
 };
 
 /**
